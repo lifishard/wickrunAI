@@ -1,3 +1,6 @@
+import { reconcileProgress } from './task-progress';
+import { deliveryReport } from './delivery';
+import { nativeProgressInstructions, applyNativeProgress } from './native-progress';
 import type {RunAgentArgs,AgentHandle} from './agent';
 import {buildWire} from './agent';
 import type {RunState} from '../types';
@@ -9,16 +12,21 @@ export function runDesktopConversation(args:RunAgentArgs):AgentHandle {
   const bridge=desktop(),events=args.events;
   let cancelled=false,wake:undefined|(()=>void);
   const state:RunState={...structuredClone(args.resume),version:2,runId:args.resume?.runId||args.requestId,
-    working:structuredClone(args.resume?.working??args.history),round:args.resume?.round||1,at:Date.now(),stoppedBy:'unknown',status:'running',phase:'request',
+    working:structuredClone(args.resume?.working??args.conversationMemory?.history??args.history),round:args.resume?.round||1,at:Date.now(),stoppedBy:'unknown',status:'running',phase:'request',
     content:args.resume?.content||'',steps:args.resume?.steps||[],sources:[],attemptId:args.requestId,attemptStartedAt:Date.now()};
+  state.milestones=structuredClone(args.resume?.milestones??args.conversationMemory?.milestones??[]);
+  state.requirements=structuredClone(args.resume?.requirements??args.conversationMemory?.requirements??[]);
+  state.contextArchive=structuredClone(args.resume?.contextArchive??args.conversationMemory?.archive??[]);
+  state.contextArchiveSteps=structuredClone(args.resume?.contextArchiveSteps??args.conversationMemory?.evidence??[]);
+  state.requirementSourceIds=[...new Set([...(state.requirementSourceIds??[]),...state.working.filter(m=>m.role==='user'&&!m.contextKind).map(m=>m.id)])];
   state.harness=taskSeed(args.history,args.config,state.harness);
-  const save=async()=>{state.at=Date.now();await events.onRunState(structuredClone(state));};
+  const save=async()=>{reconcileProgress(state);state.delivery=deliveryReport(state);state.at=Date.now();await events.onRunState(structuredClone(state));};
   void(async()=>{
     try{
       if(!bridge?.nativeAiCreate)throw Error('Claude Desktop 连接需要桌面版。');
       if(state.working.some(m=>m.attachments?.some(a=>a.kind==='image')))throw Error('Claude Desktop 交接暂不自动传图片。图片已保留，可在官方应用添加，或使用支持图片的 API 模型。');
       if(!state.nativeDesktop?.taskId){
-        const goal=JSON.stringify(buildWire(state.working,{...args.config,toolsEnabled:false,historyLimit:0},args.extraSystem+harnessInstructions(args.config,state)));
+        const goal=JSON.stringify(buildWire(state.working,{...args.config,toolsEnabled:false,historyLimit:0},args.extraSystem+harnessInstructions(args.config,state)+nativeProgressInstructions(state)));
         if(goal.length>24000)throw Error('Claude Desktop 的交接材料超过 24000 字符。请使用新对话明确本次目标，或改用 Claude Code / API 模型处理长上下文；原文未裁剪。');
         await save();
         const created=await bridge.nativeAiCreate({provider:'claude-desktop',goal,requestKey:state.runId,
@@ -48,8 +56,10 @@ export function runDesktopConversation(args:RunAgentArgs):AgentHandle {
         if(task.status==='completed'){
           const blocker=completionBlocker(state,task.result||'',args.config);if(blocker)throw Error(blocker);
           if(!task.result?.trim()||state.harness?.action&&planOnly(task.result))throw Error('Claude Desktop 已回传，但内容仍只有计划，任务尚未确认完成。');
+          await applyNativeProgress(state,task.result,check=>args.config.toolsEnabled&&bridge.tool?bridge.tool('inspect_deliverable',check,args.toolCtx()):Promise.resolve({ok:false,content:'',error:'当前连接无法核验文件'}));
+          events.onContentReplace?.(state.content??'','');
           state.status='completed';state.reason=undefined;state.harness!.stage='deliver';
-          state.working.push({id:args.requestId+'-answer',role:'assistant',content:task.result,createdAt:Date.now()});
+          state.working.push({id:args.requestId+'-answer',role:'assistant',content:state.content??'',createdAt:Date.now()});
           await save();await events.onRunState(null);events.onNotice('');events.onDone();return;
         }
         if(task.status==='cancelled')throw Error('Claude Desktop 任务已取消，已有记录保留。');
@@ -58,6 +68,7 @@ export function runDesktopConversation(args:RunAgentArgs):AgentHandle {
       }
       throw Error('已停止等待 Claude Desktop，已有结果保留。');
     }catch(error){
+      events.onContentReplace?.(state.content??'','');
       state.status='paused';state.reason=error instanceof Error?error.message:String(error);state.stoppedBy=cancelled?'user':'error';
       try{await save();}catch{state.reason='交接记录保存失败，请先核实 Claude Desktop 中的原任务。';}
       events.onNotice('');events.onPaused?.(state.reason);

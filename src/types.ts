@@ -57,11 +57,12 @@ export interface ContextSnapshot {
 export interface Milestone {
   id: string;
   title: string;
-  status: 'pending' | 'in_progress' | 'completed' | 'blocked';
+  status: 'pending' | 'in_progress' | 'verifying' | 'completed' | 'blocked';
   acceptance?: string;
   evidence: string[];
   note?: string;
   updatedAt: number;
+  history?: { title: string; status: Milestone['status']; acceptance?: string; evidence: string[]; reason: string; at: number }[];
 }
 
 export interface AcceptanceCheck {

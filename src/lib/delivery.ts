@@ -1,3 +1,4 @@
+import { reconcileProgress, qualityLoop, progressHistory, validProgressEvidence } from './task-progress';
 import type { AcceptanceCheck, DeliveryReport, DeliveryRequirement, RecoveryInfo, RequirementVerification, RunState, ToolResult } from '../types';
 
 export function addRunInput(state:RunState,message:{id:string;content:string;createdAt:number}):RunState {
@@ -7,8 +8,9 @@ export function addRunInput(state:RunState,message:{id:string;content:string;cre
   if(next.phase==='tools' && (next.toolCursor??0)<(next.pendingCalls?.length??0)){
     next.replanPending=true;next.pendingInputMessages=[...(next.pendingInputMessages??[]),input];
   }else {next.working.push(input);next.requirementSourceIds=[...(next.requirementSourceIds??[]),message.id];}
-  for(const r of next.requirements??[])if(r.verification){r.verificationHistory=[...(r.verificationHistory??[]),r.verification];r.verification=undefined;}
-  next.delivery=deliveryReport(next);return next;
+  // A supplement is not proof that every completed item became invalid.
+  // Changed requirements and changed outputs invalidate their own checks.
+  reconcileProgress(next);next.delivery=deliveryReport(next);return next;
 }
 
 const kinds = new Set(['file_exists','json','ics','answer_contains','review']);
@@ -39,16 +41,17 @@ export function updateRequirements(state: RunState, args: Record<string,unknown>
         const sameConditions = r.title === old.title && r.sourceId === old.sourceId && r.sourceQuote === old.sourceQuote && JSON.stringify({...check,path:undefined}) === JSON.stringify({...old.check,path:undefined});
         if (newIndex <= oldIndex && !sameConditions && (old.verification || old.verificationHistory?.length)) throw new Error('已核验要求的变更需要更新的用户消息作为依据；不能为获得通过而放宽检查');
       }
+      if(old?.milestoneId && r.milestoneId && r.milestoneId !== old.milestoneId && state.working.findIndex(m=>m.id===r.sourceId)<=state.working.findIndex(m=>m.id===old.sourceId)) throw new Error('改变验收要求对应的里程碑，需要更新的用户要求作为依据，不能转移失败项来获得通过');
       const unchanged = old && r.title === old.title && r.sourceId === old.sourceId && r.sourceQuote === old.sourceQuote && JSON.stringify(check) === JSON.stringify(old.check);
       const item: DeliveryRequirement = unchanged ? {...old,milestoneId:r.milestoneId ?? old.milestoneId} : {
-        id:r.id,title:r.title,sourceId:r.sourceId,sourceQuote:r.sourceQuote,check,milestoneId:r.milestoneId,
+        id:r.id,title:r.title,sourceId:r.sourceId,sourceQuote:r.sourceQuote,check,milestoneId:r.milestoneId ?? old?.milestoneId,
         revision:(old?.revision ?? 0)+1,at:Date.now(),history:old ? [...old.history,versionOf(old)] : [],
         verificationHistory:[...(old?.verificationHistory ?? []),...(old?.verification ? [old.verification]:[])],
       };
       if (index < 0) next.push(item); else next[index] = item;
     }
     if (next.length > 20) throw new Error('最多 20 项验收要求；请修订现有项');
-    state.requirements = next; state.delivery = deliveryReport(state);
+    state.requirements = next; reconcileProgress(state); state.delivery = deliveryReport(state);
     return {ok:true,content:JSON.stringify(next),summary:`记录 ${next.length} 项交付要求`};
   } catch(e) { return error(e); }
 }
@@ -64,9 +67,7 @@ export async function verifyRequirements(state: RunState, args: Record<string,un
         const reviews = Array.isArray(args.reviews) ? args.reviews : [];
         const review = reviews.find((x: {id?:string}) => x.id === id) as {status?:string;detail?:string;evidence?:string[]} | undefined;
         const evidence = review?.evidence;
-        const valid = Array.isArray(evidence) && evidence.length > 0 && evidence.length <= 20 && evidence.every(e => typeof e === 'string' && (
-          state.steps?.some(s => (s.id === e || s.callId === e) && s.status === 'ok' && !['update_plan','update_requirements','verify_requirements'].includes(s.name)) ||
-          (e.startsWith('text:') && e.length > 15 && state.content?.includes(e.slice(5)))));
+        const valid = Array.isArray(evidence) && evidence.length > 0 && evidence.length <= 20 && evidence.every(e => typeof e === 'string' && validProgressEvidence(state,e));
         if (!review || !['passed','failed','unverifiable'].includes(review.status ?? '') || typeof review.detail !== 'string' || review.detail.length < 8 || review.detail.length > 1600 || (review.status !== 'unverifiable' && !valid)) throw new Error(`要求 ${id} 的模型复核需要具体覆盖说明及已有证据；无法核验时明确标记 unverifiable`);
         v = {revision:r.revision,status:review.status as RequirementVerification['status'],method:'model',detail:review.detail,evidence:valid ? evidence! : [],at:Date.now()};
       } else if (r.check.kind === 'answer_contains') {
@@ -82,7 +83,12 @@ export async function verifyRequirements(state: RunState, args: Record<string,un
       if (r.verification) r.verificationHistory = [...(r.verificationHistory ?? []),r.verification];
       r.verification = v; results.push({id,verification:v});
     }
-    state.requirements = next; state.delivery = deliveryReport(state);
+    state.requirements = next; reconcileProgress(state); state.delivery = deliveryReport(state);
+    const stalled=qualityLoop(state);
+    if(stalled)for(const m of state.milestones??[])if(next.some(r=>r.milestoneId===m.id&&r.verification?.status==='failed')){
+      if(m.status!=='blocked')m.history=progressHistory(m,stalled);
+      m.status='blocked';m.note=stalled;m.updatedAt=Date.now();
+    }
     return {ok:true,content:JSON.stringify(results),summary:`已核验 ${results.length} 项：${results.filter(r => r.verification.status === 'passed').length} 项通过`};
   } catch(e) { return error(e); }
 }

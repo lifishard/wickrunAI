@@ -1,3 +1,4 @@
+import { reconcileProgress, qualityLoop, qualityCheckpoint } from './task-progress';
 import type {
   AccessRequest,
   ChatMessage,
@@ -315,9 +316,9 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
     extraSystem: resume?.extraSystem ?? args.extraSystem,
     usage: { ...resume?.usage }, spentTokens: resume?.spentTokens ?? 0,
     startedAt: resume?.startedAt ?? Date.now(), reason: undefined, errorInfo: undefined,
-    runtimeVersion: RUNTIME_VERSION, milestones: structuredClone(resume?.milestones ?? []),
+    runtimeVersion: RUNTIME_VERSION, milestones: structuredClone(resume?.milestones ?? args.conversationMemory?.milestones ?? []),
     compactions: quoteBoundary > 0 ? [] : structuredClone(resume?.compactions ?? []), requestStats: [...(resume?.requestStats ?? [])],
-    requirements: structuredClone(resume?.requirements ?? []),
+    requirements: structuredClone(resume?.requirements ?? args.conversationMemory?.requirements ?? []),
     requirementSourceIds: [...new Set([...(resume?.requirementSourceIds ?? []),...args.history.filter(m => m.role === 'user').map(m => m.id),...args.history.flatMap(m=>m.supplementalInputs?.map(s=>s.id)??[])])].filter(id => scopedWorking.some(m => m.id === id)),
     recovery: undefined,
     attemptId: args.requestId, attemptStartedAt: Date.now(),
@@ -360,6 +361,7 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
   }, policy.maxMinutes * 60_000);
 
   const save = async () => {
+    reconcileProgress(state);state.delivery=deliveryReport(state);
     state.at = Date.now();
     try { await events.onRunState(structuredClone(state)); }
     catch (e) { persistenceFailed = true; throw new Error(`执行记录写入失败：${e instanceof Error ? e.message : String(e)}。已停止派发新操作。`); }
@@ -369,6 +371,7 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
     state.status = 'paused'; state.reason = reason; state.errorInfo = info;
     subagents.stop();
     state.stoppedBy = userPaused ? 'user' : 'error';
+    reconcileProgress(state);
     state.delivery = deliveryReport(state); state.recovery = recoveryInfo(state);
     if (!persistenceFailed) await save();
     ended = true;
@@ -543,6 +546,7 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
         if (budgetExceeded()) { await finishPause('本阶段达到 token 预算；接着跑会开启下一阶段预算'); return; }
         events.onRound(state.round, maxRound);
         if (state.phase === 'tools') {
+          const previousChecks=qualityCheckpoint(state);
           const calls = state.pendingCalls ?? [];
           for (let i = state.toolCursor ?? 0; i < calls.length; i++) {
             if (control.signal.aborted) throw abortError();
@@ -715,6 +719,8 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
             state.pendingInputMessages=[];
           }
           state.replanPending=false;
+          const stalled=previousChecks!==qualityCheckpoint(state)?qualityLoop(state):undefined;
+          if(stalled){state.phase='request';state.round++;state.pendingCalls=[];state.toolCursor=0;await finishPause(stalled);return;}
           const recent = state.steps!.slice(-5);
           const failures = recent.filter((s) => s.status === 'error' || /(?:is not a function|TypeError|ReferenceError)/i.test(s.output ?? ''));
           if (recent.length >= 5 && failures.length >= 4) {
@@ -955,7 +961,7 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
             { id: uid('m'), role: 'user', content: '计划中仍有未完成项目。请继续执行并核对验收条件，使用 update_plan 更新证据；若无法继续，将对应项目标为 blocked 并写明原因。', createdAt: Date.now() });
           state.round++; await save(); continue;
         }
-        const finalChecks=(state.requirements??[]).filter(r=>r.check.kind!=='review').map(r=>r.id);
+        const finalChecks=(state.requirements??[]).filter(r=>r.check.kind!=='review'&&(r.verification?.status!=='passed'||r.verification.revision!==r.revision||r.verification.at>=(state.attemptStartedAt??0))).map(r=>r.id);
         if(finalChecks.length && toolNames.includes('verify_requirements')){
           const startedAt=Date.now();
           const verified=await interrupted(verifyRequirements(state,{ids:finalChecks},check=>args.canRunHostTools
@@ -964,6 +970,7 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
           const step:ToolStep={id:`acceptance-${state.runId}-${state.round}`,callId:`acceptance-${state.round}`,name:'verify_requirements',args:{ids:finalChecks},status:verified.ok?'ok':'error',summary:'交付前重新核对程序条件',output:verified.content,error:verified.error,startedAt,elapsedMs:Date.now()-startedAt};
           state.steps!.push(step);events.onStep(step);
         }
+        reconcileProgress(state);
         state.delivery = deliveryReport(state);
         if (state.requirements?.length && ['unchecked','failed'].includes(state.delivery.status)) {
           if (!toolNames.includes('verify_requirements') || acceptanceStops++ >= 2 || state.round >= maxRound) {

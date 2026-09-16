@@ -177,6 +177,8 @@ test('milestones merge without dropping pending scope and require existing succe
   const state=longState();
   assert.equal(memory.updatePlan(state,{milestones:[{id:'new',title:'Write',status:'completed',evidence:['fabricated']}]}).ok,false);
   assert.equal(state.milestones.length,1);
+  assert.equal(memory.updatePlan(state,{milestones:[{id:'new',title:'Read course',status:'completed',evidence:['c0']}]}).ok,false);
+  state.requirements=[{id:'check',milestoneId:'new',revision:1,verification:{revision:1,status:'passed'}}];
   assert.equal(memory.updatePlan(state,{milestones:[{id:'new',title:'Read course',status:'completed',evidence:['c0']}]}).ok,true);
   assert.equal(state.milestones[0].status,'pending');assert.equal(state.milestones[1].status,'completed');
   state.steps[0].status='error';
@@ -380,4 +382,18 @@ test('without retrieval, reduction retains full evidence instead of leaving unus
   const context=load(file('src/lib/task-context.ts')),state=longState();
   const view=context.contextView(state.working,state.steps,1000,false);
   assert.equal(JSON.stringify(view),JSON.stringify(state.working));
+});
+
+
+test('resuming after three failed checks can read evidence and change strategy before a new check',async()=>{
+  const failure={revision:1,status:'failed',method:'program',detail:'missing old result',evidence:[],at:1};
+  const resume={version:2,working:[{id:'goal',role:'user',content:'Continue task',createdAt:1}],steps:[],round:1,phase:'request',status:'paused',at:1,stoppedBy:'error',
+    requirements:[{id:'qa',revision:1,title:'Check answer',sourceId:'goal',sourceQuote:'Continue task',check:{kind:'answer_contains',contains:['修复后的结果已确认']},history:[],at:1,verification:failure,verificationHistory:[failure,failure]}],requirementSourceIds:['goal']};
+  let round=0;
+  const h=harness(async(_,e)=>{
+    if(++round===1)response(e,'先读取失败历史',[{id:'read-history',name:'read_context',arguments:'{"section":"progress"}'}]);
+    else if(round===2)response(e,'修复后的结果已确认',[{id:'new-check',name:'verify_requirements',arguments:'{"ids":["qa"]}'}]);
+    else response(e,'修复后的结果已确认');
+  },{resume});
+  await h.finished;assert.equal(h.log.requests.length,3);assert.equal(h.log.done,1);assert.equal(h.log.states.at(-1).requirements[0].verification.status,'passed');
 });

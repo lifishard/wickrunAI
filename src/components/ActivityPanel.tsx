@@ -1,3 +1,4 @@
+import { visibleProgress } from '../lib/task-progress';
 import React from 'react';
 import type { ChatMessage } from '../types';
 import { StepTrace } from './AnswerBlock';
@@ -15,7 +16,8 @@ export default function ActivityPanel({ messages, onHide }: { messages: ChatMess
   const answer = available.find(m => m.id === selected) ?? available[available.length - 1];
   if (!answer) return null;
   const steps = answer.steps ?? answer.runState?.steps ?? [];
-  const milestones = answer.milestones ?? answer.runState?.milestones ?? [];
+  const progress = visibleProgress(messages);
+  const milestones = progress.milestones;
   const latest = steps[steps.length - 1];
   const current = milestones.find(m => m.status === 'in_progress' || m.status === 'blocked');
   return <aside className={`activity-panel${collapsed ? ' collapsed' : ''}`} aria-label="任务动态">
@@ -29,6 +31,7 @@ export default function ActivityPanel({ messages, onHide }: { messages: ChatMess
       <p>{latest?.summary ?? current?.title ?? answer.progress ?? '已记录任务进度'}</p>
     </div>
     {!collapsed ? <div className="activity-body">
+      <MilestonePanel items={milestones} steps={progress.steps} requirements={progress.requirements} />
       {available.length > 1 ? <label className="activity-selector">查看记录
         <select aria-label="查看哪轮任务动态" value={available.some(m => m.id === selected) ? selected : 'latest'} onChange={e => setSelected(e.target.value)}>
           <option value="latest">跟随最新</option>
@@ -36,8 +39,7 @@ export default function ActivityPanel({ messages, onHide }: { messages: ChatMess
         </select>
       </label> : null}
       <StepTrace key={answer.id} steps={steps} live={Boolean(answer.pending)} />
-      <MilestonePanel key={`milestones-${answer.id}`} items={milestones} steps={steps} />
-      {answer.progress ? <details className="activity-progress"><summary>已保存的进度</summary><p>{answer.progress}</p></details> : null}
+      {progress.saved ? <details className="activity-progress"><summary>已保存的进度</summary><p>{progress.saved}</p></details> : null}
     </div> : null}
   </aside>;
 }

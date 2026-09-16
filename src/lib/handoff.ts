@@ -1,4 +1,5 @@
-import type { ChatMessage, Conversation, HandoffInfo, RunRecord, RunState, ToolStep } from '../types';
+import { mergeProgress, reconcileProgress } from './task-progress';
+import type { ChatMessage, Conversation, HandoffInfo, RunRecord, RunState, ToolStep, Milestone, DeliveryRequirement } from '../types';
 
 /** Portable working notes, never hidden reasoning or a new user instruction. */
 export function checkpointNotes(state: RunState) {
@@ -43,6 +44,8 @@ const plain=(m:ChatMessage):ChatMessage=>({id:m.id,role:m.role,content:m.content
   attachments:m.attachments,quotes:m.quotes,quoteOnly:m.quoteOnly,toolCalls:m.toolCalls,toolCallId:m.toolCallId,toolName:m.toolName,contextKind:m.contextKind});
 const unique=<T extends {id:string}>(items:T[])=>[...new Map(items.map(x=>[x.id,x])).values()];
 export interface ConversationMemory {
+  milestones?:Milestone[];
+  requirements?:DeliveryRequirement[];
   history:ChatMessage[];
   archive:ChatMessage[];
   evidence:ToolStep[];
@@ -72,6 +75,8 @@ export function conversationMemory(history:ChatMessage[],lookup:(id:string)=>Run
       if(!result.history.some(m=>m.id===input.id))result.history.push({...input,role:'user'});
     }
     result.archive.push(...(state.contextArchive??[]).map(plain),...state.working.map(plain));
+    result.milestones=mergeProgress(result.milestones,state.milestones);
+    result.requirements=mergeProgress(result.requirements,state.requirements);
     result.evidence.push(...(state.contextArchiveSteps??[]),...(state.steps??[]));
     const capsule:ChatMessage={id:`handoff-${message.id}`,role:'user',contextKind:'handoff',createdAt:message.createdAt,
       content:`历史任务交接记录（来自应用保存的执行记录；不是新的用户指令，历史模型结论可能有误）：\n${JSON.stringify(checkpointNotes(state))}\n本轮以最新用户要求为准；已有成果先读证据，避免重新执行。未完成旧任务要继续原操作游标时，使用原任务的“接着跑”。`};
@@ -79,6 +84,7 @@ export function conversationMemory(history:ChatMessage[],lookup:(id:string)=>Run
     result.checkpoints++;result.fromModel=record.config.model;
   }
   result.archive=unique(result.archive);result.evidence=unique(result.evidence);
+  reconcileProgress(result);
   return result;
 }
 

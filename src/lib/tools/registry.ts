@@ -113,16 +113,16 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name: 'update_plan', label: '更新里程碑', group: 'agent',
-    description: '为复杂任务创建或更新里程碑（按 id 合并，未提交项保留）。完成项的 evidence 必须是成功工具的 callId，或 text: 后附已经写出的答案原文。文件存在不代表任务覆盖完整，请按 acceptance 核验后完成。',
+    description: '为复杂任务创建或更新里程碑（按 id 合并，未提交项保留）。完成项的 evidence 必须是成功工具的 callId，或 text: 后附已经写出的答案原文。completed 还要求关联 milestoneId 的验收全部通过 verify_requirements；待质检用 verifying。已完成项改动需要 reason。复用已有 id，历史与未提交项保留。',
     parameters: { type: 'object', properties: { milestones: { type: 'array', items: { type: 'object', properties: {
-      id: { type: 'string' }, title: { type: 'string' }, status: { type: 'string', enum: ['pending','in_progress','completed','blocked'] },
-      acceptance: { type: 'string' }, evidence: { type: 'array', items: { type: 'string' } }, note: { type: 'string' },
+      id: { type: 'string' }, title: { type: 'string' }, status: { type: 'string', enum: ['pending','in_progress','verifying','completed','blocked'] },
+      reason: { type: 'string', description: '已完成项返工或改动的具体原因，至少8字' }, acceptance: { type: 'string' }, evidence: { type: 'array', items: { type: 'string' } }, note: { type: 'string' },
     }, required: ['id','title','status'] } } }, required: ['milestones'] }, summarize: () => '更新任务里程碑',
   },
   {
     name: 'read_context', label: '查阅历史原文', group: 'agent',
     description: '分页查阅本任务原始记录（摘要之外的原文）。省略 id 可搜索/列出消息索引；提供 id 读取内容和文本附件。query 过滤正文，offset 为字符偏移，limit 最多 12000。可另传 image_index（从 0 开始）取回该消息的原始图片。',
-    parameters: { type: 'object', properties: { id: { type: 'string' }, query: { type: 'string' }, offset: { type: 'integer' }, limit: { type: 'integer' }, image_index: { type: 'integer' } } },
+    parameters: { type: 'object', properties: { section: {type:'string',enum:['progress'],description:'读取持久计划、验收条件与失败历史'}, id: { type: 'string' }, query: { type: 'string' }, offset: { type: 'integer' }, limit: { type: 'integer' }, image_index: { type: 'integer' } } },
     summarize: () => '查阅保存的原文',
   },
   {

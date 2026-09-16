@@ -1,3 +1,6 @@
+import { reconcileProgress } from './task-progress';
+import { deliveryReport } from './delivery';
+import { nativeProgressInstructions, applyNativeProgress } from './native-progress';
 import {runAgent,buildWire,type RunAgentArgs,type AgentHandle} from './agent';
 import {desktop} from './transport';
 import type {RunState} from '../types';
@@ -29,7 +32,12 @@ export function runConnectedAgent(args:RunAgentArgs):AgentHandle {
     requirementSourceIds:args.resume?.requirementSourceIds ?? args.history.filter(m=>m.role==='user'&&!m.contextKind).map(m=>m.id),
     version:2,runId:args.resume?.runId || args.requestId,at:Date.now(),round:args.resume?.round || 1,stoppedBy:'unknown',status:'running',
     content:args.resume?.content || '',lastModel:args.config.model,attemptId:args.requestId,phase:'request',steps:args.resume?.steps || [],sources:args.resume?.sources || []};
-  const save=async()=>{state.at=Date.now();await events.onRunState(structuredClone(state));};
+  const save=async()=>{reconcileProgress(state);state.delivery=deliveryReport(state);state.at=Date.now();await events.onRunState(structuredClone(state));};
+  state.milestones=structuredClone(args.resume?.milestones??args.conversationMemory?.milestones??[]);
+  state.requirements=structuredClone(args.resume?.requirements??args.conversationMemory?.requirements??[]);
+  state.contextArchive=structuredClone(args.resume?.contextArchive??args.conversationMemory?.archive??[]);
+  state.contextArchiveSteps=structuredClone(args.resume?.contextArchiveSteps??args.conversationMemory?.evidence??[]);
+  state.requirementSourceIds=[...new Set([...(state.requirementSourceIds??[]),...state.working.filter(m=>m.role==='user'&&!m.contextKind).map(m=>m.id)])];
   state.harness=taskSeed(state.working,args.config,state.harness);
   void (async()=>{
     try{
@@ -75,7 +83,7 @@ export function runConnectedAgent(args:RunAgentArgs):AgentHandle {
         if(event.requestId!==args.requestId || cancelled)return;
         if(event.type==='delta' && event.text){
           streamed+=event.text;
-          if(/<wickrun_question\b/i.test(streamed))questionMarkupSeen=true;
+          if(/<wickrun_(?:question|progress)\b/i.test(streamed))questionMarkupSeen=true;
           if(!questionMarkupSeen){state.content=(state.content || '')+event.text;events.onContentDelta(event.text);}
         }
         if(event.type==='approval' && event.id){
@@ -84,7 +92,7 @@ export function runConnectedAgent(args:RunAgentArgs):AgentHandle {
           void save().then(()=>args.confirm(step)).then(approved=>bridge.conversationClientApprove(args.requestId,id,approved && !cancelled)).catch(()=>bridge.conversationClientApprove(args.requestId,id,false).catch(()=>{})).finally(()=>{if(!cancelled){state.status='running';state.waitKind=undefined;events.onNotice('正在等待官方客户端返回结果…');}});
         }
       });
-      const context=buildWire(state.working,{...args.config,toolsEnabled:false,historyLimit:0},args.extraSystem+harnessInstructions(args.config,state));
+      const context=buildWire(state.working,{...args.config,toolsEnabled:false,historyLimit:0},args.extraSystem+harnessInstructions(args.config,state)+nativeProgressInstructions(state));
       const prompt=`You are continuing the user's conversation inside wickrunAI. The following JSON is the conversation transcript, with role labels and attached text. Answer the most recent user request while preserving earlier requirements. Do not repeat completed operations from prior turns. ${args.config.toolsEnabled?'Work only within the authorized working directory. Report output paths and unresolved requirements.':'This is Chat mode: discuss only. Do not execute commands or change files.'}
 
 If you need a blocking answer from the user before you can continue, emit exactly one <wickrun_question> marker containing JSON in this schema: {"questions":[{"id":"stable-id","header":"short optional heading","question":"question text","options":[{"label":"choice","description":"optional explanation"}],"multiple":false}]}. Include 1 to 3 questions, at most 6 options per question, and use an empty options array for a free-text question. Do not put markdown around the marker. You may put a short user-visible explanation before or after it. Never use this marker unless the turn has completed successfully.
@@ -120,10 +128,13 @@ ${JSON.stringify(context)}`;
         state.harness.completion={status:'needs_work',reason:'本机客户端仅返回了计划，尚未确认完成。',evidence:[],at:Date.now()};
         throw Error('本机客户端只返回了下一步计划，任务尚未完成。请继续本轮以核实进度；应用没有自动重发可能已执行的本机操作。');
       }
-      state.working.push({id:args.requestId+'-answer',role:'assistant',content:result.text,createdAt:Date.now()});
+      await applyNativeProgress(state,result.text,check=>args.config.toolsEnabled&&bridge.tool?bridge.tool('inspect_deliverable',check,args.toolCtx()):Promise.resolve({ok:false,content:'',error:'当前连接无法核验文件'}));
+      events.onContentReplace?.(state.content??'','');
+      state.working.push({id:args.requestId+'-answer',role:'assistant',content:state.content??'',createdAt:Date.now()});
       state.status='completed';state.reason=undefined;state.pendingCalls=undefined;state.toolCursor=undefined;
       await save();await events.onRunState(null);events.onNotice('');events.onDone();
     }catch(error){
+      events.onContentReplace?.(state.content??'','');
       state.status='paused';state.reason=error instanceof Error?error.message:String(error);state.stoppedBy=cancelled?'user':'error';
       try{await save();}catch{state.reason='执行记录写入失败，已停止；请核实本机客户端的运行状态。';}
       events.onNotice('');events.onPaused?.(state.reason);
