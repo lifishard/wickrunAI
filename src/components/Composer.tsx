@@ -61,6 +61,8 @@ export default function Composer(props: {
   sendKey: 'enter' | 'mod-enter';
   onSend: (text: string, mode?: 'chat' | 'work') => void;
   onStop: () => void;
+  onSendNow?: (text:string)=>boolean;
+  onSendQueuedNow?: (index:number)=>void;
   stream: boolean;
   toolCount: number;
 
@@ -286,6 +288,7 @@ export default function Composer(props: {
                   <span className="queue-text" title={q}>
                     {q}
                   </span>
+                  {props.busy&&props.onSendQueuedNow?<button className="btn sm" onClick={()=>props.onSendQueuedNow?.(i)}>立即送出</button>:null}
                   <button className="icon-btn" title="取消这条" onClick={() => props.onDropQueued(i)}>
                     ✕
                   </button>
@@ -587,6 +590,7 @@ export default function Composer(props: {
                 >
                   排队发送
                 </button>
+                {props.onSendNow?<button className="btn sm primary" disabled={props.disabled||!canSend} title="保存当前执行现场，立即处理这条新要求" onClick={()=>{if(props.onSendNow?.(text.trim()))setText('');}}>立即送出</button>:null}
               </>
             ) : (
               <button className="btn sm primary" onClick={submit} disabled={props.disabled || !canSend}>

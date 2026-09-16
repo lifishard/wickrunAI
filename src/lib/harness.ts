@@ -23,7 +23,8 @@ export function taskSeed(history:ChatMessage[],cfg:GenerationConfig,old?:Harness
   const users=history.filter(m=>m.role==='user'&&!m.contextKind);
   const last=users.at(-1);const source=last&&CONTINUE.test(last.content.trim())?[...users].reverse().find(m=>!CONTINUE.test(m.content.trim()))??last:last;
   const goal=source?.content.trim() || '';
-  return {mode:harnessMode(cfg),goal:goal.slice(0,24000),sourceId:source?.id || '',action:cfg.toolsEnabled&&ACTION.test(goal)&&!EXPLAIN.test(goal),stage:'understand',continuations:0};
+  const actionable=goal.replace(/(?:不要|无需|不必|禁止|请勿|不需要|\bdo not\b|\bdon't\b|\bno need to\b)[^，。；\n;.!?]*?(?=[，。；\n;.!?]|但是|但|改为|而是|\bbut\b|\binstead\b|$)/gi,'');
+  return {mode:harnessMode(cfg),goal:goal.slice(0,24000),sourceId:source?.id || '',action:cfg.toolsEnabled&&ACTION.test(actionable)&&!EXPLAIN.test(actionable),stage:'understand',continuations:0};
 }
 export function harnessInstructions(cfg:GenerationConfig,state?:RunState):string {
   if(harnessMode(cfg)==='off')return '';

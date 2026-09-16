@@ -1,3 +1,4 @@
+import { addRunInput } from './delivery';
 import { reconcileProgress } from './task-progress';
 import { deliveryReport } from './delivery';
 import { nativeProgressInstructions, applyNativeProgress } from './native-progress';
@@ -23,6 +24,7 @@ export function runDesktopConversation(args:RunAgentArgs):AgentHandle {
   const save=async()=>{reconcileProgress(state);state.delivery=deliveryReport(state);state.at=Date.now();await events.onRunState(structuredClone(state));};
   void(async()=>{
     try{
+      if(state.uncertainCallId?.startsWith('desktop-'))throw Error('新输入和原任务现场已保存。Claude Desktop 中的原操作可能仍在运行，请先在官方应用核实结果，再新窗口交接；未自动重复派发。');
       if(!bridge?.nativeAiCreate)throw Error('Claude Desktop 连接需要桌面版。');
       if(state.working.some(m=>m.attachments?.some(a=>a.kind==='image')))throw Error('Claude Desktop 交接暂不自动传图片。图片已保留，可在官方应用添加，或使用支持图片的 API 模型。');
       if(!state.nativeDesktop?.taskId){
@@ -74,5 +76,5 @@ export function runDesktopConversation(args:RunAgentArgs):AgentHandle {
       events.onNotice('');events.onPaused?.(state.reason);
     }
   })();
-  return {abort(){cancelled=true;wake?.();if(state.nativeDesktop?.taskId)void bridge?.nativeAiCancel(state.nativeDesktop.taskId).catch(()=>{});}};
+  return {interrupt(message){Object.assign(state,addRunInput(state,message));state.uncertainCallId='desktop-'+(state.nativeDesktop?.taskId??args.requestId);cancelled=true;wake?.();if(state.nativeDesktop?.taskId)void bridge?.nativeAiCancel(state.nativeDesktop.taskId).catch(()=>{});},abort(){cancelled=true;wake?.();if(state.nativeDesktop?.taskId)void bridge?.nativeAiCancel(state.nativeDesktop.taskId).catch(()=>{});}};
 }

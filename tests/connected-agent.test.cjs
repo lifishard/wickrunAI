@@ -4,7 +4,7 @@ const file=p=>path.join(__dirname,'..',p);
 function fixture(result,previous=null){
   const calls=[],states=[];let done,apiCalls=0;
   const finished=new Promise(resolve=>done=resolve);
-  const bridge={onClientEvent:()=>()=>{},toolAbort:async()=>{},conversationClientRecover:async()=>previous,conversationClientRun:async args=>{calls.push(args);return result;}};
+  const bridge={onClientEvent:()=>()=>{},toolAbort:async()=>{},conversationClientRecover:async()=>previous,conversationClientRun:async args=>{calls.push(args);return typeof result==='function'?result(args):result;}};
   const local=loader({[file('src/lib/transport.ts')]:{desktop:()=>bridge},[file('src/lib/agent.ts')]:{buildWire:history=>history,runAgent:args=>{apiCalls++;states.push(args.resume);queueMicrotask(()=>done('api'));return {abort(){}};}}});
   const args={requestId:'native-request',config:{client:{kind:'codex',model:'test'},model:'test',toolsEnabled:false},history:[{id:'user-1',role:'user',content:'Keep the original goal',createdAt:1}],toolCtx:()=>({workspaceRoots:[]}),extraSystem:'',confirm:async()=>false,
     events:{onContentDelta(){},onContentReplace(){},onNotice(){},onRunState:s=>{if(s)states.push(structuredClone(s));},onPaused:()=>done('paused'),onDone:()=>done('completed')}};
@@ -35,4 +35,32 @@ test('switching from a native question to API carries the submitted answer befor
   const f=fixture({status:'completed',text:marker});f.run();await f.finished;const state=f.states.at(-1);state.userQuestion.answers={choice:{selected:['Friday'],text:'Keep this name'}};
   const next=fixture({status:'completed',text:'unused'});next.run({resume:state,config:{model:'api-model',toolsEnabled:false}});assert.equal(await next.finished,'api');assert.equal(next.apiCalls(),1);
   assert.equal(next.states.at(-1).userQuestion,undefined);assert.match(next.states.at(-1).working.at(-1).content,/Friday/);
+});
+
+
+test('nonblocking native question remains answerable while independent work runs',async()=>{
+  let secondStarted,release;const started=new Promise(r=>secondStarted=r),held=new Promise(r=>release=r);let turn=0;
+  const pending='<wickrun_question>'+JSON.stringify({blocking:false,questions:[{id:'choice',question:'Which day?',options:[{label:'Friday'},{label:'Monday'}]}]})+'</wickrun_question>';
+  const f=fixture(async()=>{turn++;if(turn===1)return {status:'completed',text:pending};if(turn===2){secondStarted();await held;return {status:'completed',text:'Independent source checked'};}return {status:'completed',text:'Finished with Friday'};});
+  const handle=f.run();await started;
+  const question=f.states.at(-1).userQuestion;assert.equal(question.nonBlocking,true);
+  await handle.answerQuestion(question.request.id,{choice:{selected:['Friday'],text:''}});
+  release();assert.equal(await f.finished,'completed');assert.equal(f.calls.length,3);
+  assert.match(f.calls[2].prompt,/Friday/);assert.match(f.calls[2].prompt,/Independent source checked/);
+  assert.equal(f.states.at(-1).userQuestion,undefined);assert.equal(f.states.at(-1).userQuestionHistory.length,1);
+});
+
+test('native completion waits for the outstanding nonblocking question',async()=>{
+  let turn=0;const pending=marker.replace('{"questions"','{"blocking":false,"questions"');
+  const f=fixture(()=>({status:'completed',text:++turn===1?pending:'Independent work completed'}));
+  f.run();assert.equal(await f.finished,'paused');assert.equal(f.calls.length,2);assert.ok(f.states.at(-1).userQuestion);assert.match(f.states.at(-1).reason,/等待用户回答/);
+});
+
+test('recovering a native operation processes a pending new input after the recovered result',async()=>{
+  const f=fixture({status:'completed',text:'New instruction handled'},{status:'completed',text:'Previous operation was completed once'});
+  const input={id:'new-input',role:'user',content:'Now change the target',createdAt:3};
+  f.run({resume:{working:f.args.history,runId:'prior-run',uncertainCallId:'native-prior-attempt',round:1,at:1,stoppedBy:'unknown',pendingInputMessages:[input],supplementalInputs:[input],replanPending:true}});
+  assert.equal(await f.finished,'completed');assert.equal(f.calls.length,1);
+  assert.match(f.calls[0].prompt,/Previous operation was completed once/);assert.match(f.calls[0].prompt,/Now change the target/);
+  const working=f.states.at(-1).working;assert.ok(working.findIndex(m=>m.content==='Previous operation was completed once')<working.findIndex(m=>m.id==='new-input'));
 });

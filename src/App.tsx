@@ -173,16 +173,32 @@ export default function App() {
   const [attachments, setAttachments] = React.useState<Attachment[]>([]);
   /** 生成期间又发的消息，按顺序排队，等这一轮结束再依次发出去 */
   const [queue, setQueue] = React.useState<QueuedInput[]>([]);
+  const queueLoaded=React.useRef(false);
+  const queueSaveChain=React.useRef(Promise.resolve());
   const [quotes, setQuotes] = React.useState<MessageQuote[]>([]);
   const [quoteOnly, setQuoteOnly] = React.useState(true);
   const [queuePaused, setQueuePaused] = React.useState(false);
   const startingRef = React.useRef(false);
+  const interruptingRef = React.useRef<{requestId:string;input:ChatMessage} | null>(null);
+  const [resumeInput,setResumeInput]=React.useState<{convId:string;state:RunState}|null>(null);
   const runningRef = React.useRef<{ requestId: string; convId: string; handle: AgentHandle } | null>(null);
   const questionDraftSaveRef = React.useRef(Promise.resolve());
   const questionSubmitRef = React.useRef(new Set<string>());
 
   const toast = useToast();
   const scrollRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(()=>{
+    if(!settings||!queueLoaded.current)return;
+    const data=JSON.stringify(queue);
+    queueSaveChain.current=queueSaveChain.current.catch(()=>{}).then(()=>getTransport().kvSet('wickrun:input-queue:v1',data)).catch(reportSaveError);
+  },[queue,settings]);
+
+  function notifyTask(kind:'question'|'paused'|'error'|'completed',id:string,conversationId:string,title:string,body:string){
+    if(settingsRef.current?.notifications?.enabled===false)return;
+    void desktop()?.notifyTask?.({kind,id,conversationId,title,body:body.slice(0,500),silent:settingsRef.current?.notifications?.sound===false}).catch(()=>{});
+  }
+  React.useEffect(()=>desktop()?.onTaskNotificationClick?.(event=>{setActiveId(event.conversationId);setTeamVisible(false);}),[]);
 
   /* ---------------- 启动加载 ---------------- */
 
@@ -201,6 +217,12 @@ export default function App() {
       try { recovered = recoverConversations(c, await loadRuns()); }
       catch (err) { toast.show(`执行记录读取失败：${String(err)}`, 6000); }
       if (cancelled) return;
+      try {
+        const savedQueue=JSON.parse(await getTransport().kvGet('wickrun:input-queue:v1')||'[]');
+        if(Array.isArray(savedQueue))setQueue(savedQueue.filter(q=>q&&typeof q.text==='string'&&Array.isArray(q.attachments)&&Array.isArray(q.quotes)&&(q.conversationId===null||typeof q.conversationId==='string')));
+        if(Array.isArray(savedQueue)&&savedQueue.length)setQueuePaused(true);
+      }catch(error){toast.show('排队输入恢复失败：'+String(error));}
+      queueLoaded.current=true;
       setSettings(s);
       setConversations(recovered);
       setProjects(pr);
@@ -975,7 +997,7 @@ export default function App() {
         const result=approvalChain.then(()=>new Promise<boolean>(resolve=>{
           if(approvalsClosed){resolve(false);return;}
           const finish=(ok:boolean)=>{pendingApprovals.delete(finish);resolve(ok);};
-          pendingApprovals.add(finish);setConfirmReq({step,resolve:finish});
+          pendingApprovals.add(finish);notifyTask('question',`${requestId}:approval:${step.id}`,convId,'操作需要你的确认',step.summary);setConfirmReq({step,resolve:finish});
         }));
         approvalChain=result.then(()=>{});return result;
       };
@@ -987,6 +1009,21 @@ export default function App() {
         clearInterval(timer); flush();
         if (runningRef.current?.requestId === requestId) { runningRef.current = null; setBusy(null); }
         startingRef.current = false;
+      };
+      const finishInterruption=()=>{
+        const steering=interruptingRef.current;
+        if(steering?.requestId!==requestId||!latestState)return false;
+        interruptingRef.current=null;startingRef.current=true;setQueuePaused(true);
+        const state=latestState.supplementalInputs?.some(m=>m.id===steering.input.id)?structuredClone(latestState):addRunInput(latestState,steering.input);
+        if(state.status==='completed'){state.phase='request';state.pendingCalls=[];state.toolCursor=0;}
+        state.at=Date.now();state.status='paused';state.reason='新输入和执行现场已保存，正在继续';
+        void saveRun({id:state.runId??requestId,conversationId:convId,answerId:answerMsg.id,question:userMsg,config:cfg,keyProfileId:profile.id,projectId:conv!.projectId,title:nextConv.title,state}).then(()=>{
+          patchMessage(convId,answerMsg.id,{runState:state,supplementalInputs:state.supplementalInputs});
+          startingRef.current=false;
+          if(!state.uncertainCallId)setResumeInput({convId,state});
+          else notifyTask('paused',`${requestId}:uncertain`,convId,'新要求已保存，需要核实上一项操作','上一项操作的结果尚未确认，请回来核实后继续，避免重复执行。');
+        }).catch(error=>{startingRef.current=false;reportSaveError(error);});
+        return true;
       };
       const handle = runConnectedAgent({
         requestId,
@@ -1093,17 +1130,23 @@ export default function App() {
                 question: userMsg, config: cfg, keyProfileId: profile.id, projectId: conv!.projectId,
                 title: nextConv.title, state });
             }
+            if(state?.userQuestion&&!state.userQuestion.answers)notifyTask('question',`${state.runId}:${state.userQuestion.request.id}`,convId,'任务需要你的回答',state.userQuestion.request.questions.map(q=>q.question).join('；'));
             patchMessage(convId, answerMsg.id, { runState: state ?? undefined,
               ...(state ? { harness:state.harness,subagents:state.subagents,milestones: state.milestones, contextSnapshot: state.contextSnapshot, delivery: state.delivery, taskId:state.runId, supplementalInputs:state.supplementalInputs, handoff:state.handoff, userQuestionHistory: state.userQuestionHistory } : {}) });
           },
           onPaused(reason) {
             finishUi(); setQueuePaused(true);
+            const interrupted=finishInterruption();
+            const answeredWhileSaving=!latestState?.userQuestion&&!latestState?.uncertainCallId&&latestState?.pendingInputMessages?.some(m=>m.id.startsWith('answer-'));
+            if(!interrupted&&answeredWhileSaving&&latestState)setResumeInput({convId,state:latestState});
+            else if(!interrupted&&!latestState?.userQuestion)notifyTask('paused',`${requestId}:paused`,convId,'任务已暂停',reason);
             patchMessage(convId, answerMsg.id, { pending: false, notice: undefined,
               content: buf.content, reasoning: buf.reasoning, progress: localProgress(steps, reason),
               artifacts: collectArtifacts(buf.content, steps), elapsedMs: Date.now()-started });
           },
           onDone() {
             finishUi();
+
             const arts = collectArtifacts(buf.content, steps);
             patchMessage(convId, answerMsg.id, {
               pending: false,
@@ -1114,6 +1157,8 @@ export default function App() {
               elapsedMs: Date.now() - started,
               artifacts: arts.length ? arts : undefined,
             });
+            if(finishInterruption())return;
+            notifyTask('completed',`${requestId}:completed`,convId,'任务已完成',buf.content.slice(-240)||nextConv.title);
             // 只有完整响应成功才清除失败记录。
             if (latestState?.status === 'completed') setSettings((prev) =>
               prev
@@ -1128,6 +1173,7 @@ export default function App() {
           },
           onError(msg, info) {
             finishUi(); setQueuePaused(true);
+            if(!finishInterruption())notifyTask('error',`${requestId}:error`,convId,'任务遇到问题',msg);
             patchMessage(convId, answerMsg.id, {
               pending: false,
               notice: undefined,
@@ -1162,7 +1208,29 @@ export default function App() {
     [settings, conversations, active, profile, busy, canRunHostTools, attachments, activeSkills, projects, quotes, quoteOnly],
   );
 
+  React.useEffect(()=>{
+    if(!resumeInput||busy||runningRef.current)return;
+    if(activeId!==resumeInput.convId){setActiveId(resumeInput.convId);return;}
+    setResumeInput(null);
+    void send('继续处理新输入',undefined,resumeInput.state);
+  },[resumeInput,busy,activeId,send]);
+
+  function sendNow(input:QueuedInput):boolean {
+    const running=runningRef.current;
+    if(!running||interruptingRef.current)return false;
+    if(input.conversationId&&input.conversationId!==running.convId){toast.show('这条输入属于另一会话，请在对应会话发送');return false;}
+    const message:ChatMessage={id:uid('input'),role:'user',content:input.text,createdAt:Date.now(),attachments:input.attachments,quotes:input.quotes,quoteOnly:input.quotes.length>0&&input.quoteOnly};
+    setQueuePaused(true);
+    try{
+      interruptingRef.current={requestId:running.requestId,input:message};
+      if(running.handle.interrupt)running.handle.interrupt(message);else running.handle.abort();
+      setConfirmReq(request=>{request?.resolve(false);return null;});setGrantReq(request=>{request?.resolve(false);return null;});
+      toast.show('正在保存当前输出和执行现场，然后处理新要求');return true;
+    }catch(error){interruptingRef.current=null;toast.show(String(error));return false;}
+  }
+
   function stop() {
+    interruptingRef.current=null;setResumeInput(null);
     setQueuePaused(true);
     runningRef.current?.handle.abort();
     setConfirmReq((request) => { request?.resolve(false); return null; });
@@ -1187,6 +1255,10 @@ export default function App() {
   /** Save a pending question draft in both the visible conversation and run journal. */
   const saveQuestionDraft = React.useCallback((msg: ChatMessage, draft: UserQuestionAnswers) => {
     if (!active || !msg.runState?.userQuestion) return;
+    const live=runningRef.current;
+    if(live?.convId===active.id&&msg.pending&&live.handle.questionDraft){
+      void live.handle.questionDraft(msg.runState.userQuestion.request.id,draft).catch(reportSaveError);return;
+    }
     const state = structuredClone(msg.runState);
     if (!state.userQuestion) return;
     state.userQuestion.draft = structuredClone(draft);
@@ -1205,7 +1277,7 @@ export default function App() {
 
   /** Validate once, persist the answer, then resume the same tool cursor. */
   const submitQuestion = React.useCallback((msg: ChatMessage, answers: UserQuestionAnswers) => {
-    if (busy || !active || !msg.runState?.userQuestion) return;
+    if (!active || !msg.runState?.userQuestion) return;
     const pending = msg.runState.userQuestion;
     const key = `${msg.runState.runId ?? msg.id}:${pending.callId}`;
     if (questionSubmitRef.current.has(key) || pending.answers) return;
@@ -1215,6 +1287,12 @@ export default function App() {
     } catch (error) {
       toast.show(error instanceof Error ? error.message : '回答无效，请检查后重试', 5000);
       return;
+    }
+    if(busy){
+      const live=runningRef.current;
+      if(!msg.pending||live?.convId!==active.id||!live.handle.answerQuestion){toast.show('请等待当前任务保存后提交回答');return;}
+      questionSubmitRef.current.add(key);
+      void live.handle.answerQuestion(pending.request.id,normalized).catch(error=>{questionSubmitRef.current.delete(key);toast.show(String(error));});return;
     }
     questionSubmitRef.current.add(key);
     const state = structuredClone(msg.runState);
@@ -1404,7 +1482,7 @@ export default function App() {
 
   const composer = (
     <Composer
-      controls={<ConversationControls config={config} profiles={settings.keyProfiles} modelsByProfile={Object.fromEntries(settings.keyProfiles.map(p=>[p.id,[...(settings.cachedModels[p.id]||[]),...(settings.customModels[p.id]||[])]]))} onChange={setConfig}/>}
+      controls={<><ConversationControls config={config} profiles={settings.keyProfiles} modelsByProfile={Object.fromEntries(settings.keyProfiles.map(p=>[p.id,[...(settings.cachedModels[p.id]||[]),...(settings.customModels[p.id]||[])]]))} onChange={setConfig}/>{active?.messages.filter(m=>m.runState?.userQuestion&&!m.runState.userQuestion.answers).map(m=><button className="btn sm" key={m.id} onClick={()=>document.getElementById(`question-${m.runState!.userQuestion!.request.id}`)?.scrollIntoView({block:'center',behavior:'smooth'})}>Answer Question · 回答问题</button>)}</>}
       key={active?.id ?? 'new'}
       initialDraft={active?.draft}
       onDraftChange={text => { if (active) updateConv(active.id, c => c.draft === text ? c : { ...c, draft: text }); }}
@@ -1431,6 +1509,8 @@ export default function App() {
         }
       }}
       onSend={(t, mode) => void send(t, undefined, undefined, {toolsEnabled: mode === 'work', text: t, attachments: [...attachments], quotes: [...quotes], quoteOnly, conversationId: active?.id ?? null})}
+      onSendNow={t=>{const accepted=sendNow({text:t,attachments:[...attachments],quotes:[...quotes],quoteOnly,conversationId:active?.id??null});if(accepted){setAttachments([]);setQuotes([]);}return accepted;}}
+      onSendQueuedNow={i=>{const input=queue[i];if(input&&sendNow(input))setQueue(all=>all.filter((_,j)=>j!==i));}}
       onStop={stop}
       stream={config.stream}
       toolCount={toolNames.length}
@@ -1647,7 +1727,7 @@ export default function App() {
                     onPauseForContext={t.a?.pending ? stop : undefined}
                     onResumeWithInput={busy || !t.a?.runState ? undefined : (text) => resumeRun(t.a!,undefined,text)}
                     onResolveUncertain={busy || !t.a?.runState ? undefined : (choice) => resumeRun(t.a!, choice)}
-                    onQuestionSubmit={busy || !t.a?.runState?.userQuestion ? undefined : (answers) => submitQuestion(t.a!, answers)}
+                    onQuestionSubmit={!t.a?.runState?.userQuestion ? undefined : (answers) => submitQuestion(t.a!, answers)}
                     onQuestionDraft={!t.a?.runState?.userQuestion ? undefined : (draft) => saveQuestionDraft(t.a!, draft)}
                     onSaveAnnotation={saveAnnotation}
                     onDeleteAnnotation={(messageId, noteId) => changeAnnotation(messageId, noteId)}

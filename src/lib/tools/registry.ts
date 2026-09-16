@@ -62,10 +62,11 @@ export const TOOLS: ToolDef[] = [
     description:
       '当任务缺少用户偏好、关键选择或必要补充信息时，向用户展示问题卡片并等待回答。' +
       'questions 必须是 1 到 3 个对象，每个对象包含稳定 id、question 和 options；options 可为空表示只收文字，最多 6 个选项。' +
-      '需要单选时省略 multiple，需要多选时设为 true。不要替用户预选、猜测或编造答案；有了答案后再继续任务。',
+      '需要单选时省略 multiple，需要多选时设为 true。还有独立工作时务必设 blocking:false，提问后继续执行不依赖答案的部分。只有确实无法继续时设 blocking:true。不要猜测答案，不要重复提问。',
     parameters: {
       type: 'object',
       properties: {
+        blocking: {type:'boolean',description:'有独立工作可继续时设 false；必须等答案时设 true。兼容旧调用：省略时等待。'},
         questions: {
           type: 'array',
           minItems: 1,

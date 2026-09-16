@@ -850,6 +850,8 @@ export default function SettingsDialog(props: {
           />
         </Field>
 
+        <div className="field"><Switch checked={s.notifications?.enabled!==false} onChange={enabled=>props.onChange({notifications:{...s.notifications,enabled}})} label="后台任务通知（提问、暂停、完成）" /></div>
+        <div className="field"><Switch checked={s.notifications?.sound!==false} onChange={sound=>props.onChange({notifications:{...s.notifications,sound}})} label="通知提示音（遵循系统声音与勿扰设置）" /></div>
         <Field label="发送快捷键">
           <Segmented
             value={s.sendKey}

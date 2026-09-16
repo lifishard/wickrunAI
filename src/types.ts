@@ -448,6 +448,7 @@ export interface RunState {
     request: UserQuestionRequest;
     callId: string;
     toolIndex: number;
+    nonBlocking?: boolean;
     draft?: UserQuestionAnswers;
     answers?: UserQuestionAnswers;
   };
@@ -542,6 +543,7 @@ export interface AppSettings {
   cachedModels: Record<string, ModelInfo[]>;
   defaultConfig: GenerationConfig;
   theme: 'system' | 'light' | 'dark';
+  notifications?: { enabled?: boolean; sound?: boolean };
   sendKey: 'enter' | 'mod-enter';
   fontScale: number;
   showReasoningByDefault: boolean;

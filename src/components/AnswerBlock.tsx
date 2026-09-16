@@ -369,7 +369,9 @@ export default function AnswerBlock(props: {
           onSubmit={() => {}}
         />
       ))}
-      {answer?.runState?.userQuestion && !answer.pending ? (
+      {answer?.runState?.userQuestion ? (
+        <details className="pending-question" id={`question-${answer.runState.userQuestion.request.id}`} open>
+        <summary>Answer Question · 回答问题{answer.pending?' · 任务仍在继续':''}</summary>
         <UserQuestionCard
           request={answer.runState.userQuestion.request}
           answers={answer.runState.userQuestion.answers}
@@ -378,6 +380,7 @@ export default function AnswerBlock(props: {
           onSubmit={(answers) => props.onQuestionSubmit?.(answers)}
           onDraft={(draft) => props.onQuestionDraft?.(draft)}
         />
+        </details>
       ) : null}
 
       {/*

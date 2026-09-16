@@ -1,3 +1,4 @@
+import { acceptLiveAnswer } from './live-input';
 import { reconcileProgress, qualityLoop, qualityCheckpoint } from './task-progress';
 import type {
   AccessRequest,
@@ -43,7 +44,7 @@ import { calibratedTokens, capabilities, dispatchBudget, nearContextSuggestion, 
 import { compressionCandidate, memoryInstructions, memoryView, readContext, updatePlan, validateCompaction } from './context-memory';
 import { handoffInfo, repeatedWithoutProgress, type ConversationMemory } from './handoff';
 import { repeatedReadCycle, repetitionWatchdog } from './loop-guard';
-import { deliveryReport, recoveryInfo, updateRequirements, verifyRequirements } from './delivery';
+import { addRunInput, deliveryReport, recoveryInfo, updateRequirements, verifyRequirements } from './delivery';
 import {taskSeed,harnessInstructions,harnessMode,completionIssue,completionBlocker,recordTaskReview,layeredMemoryView} from './harness';
 import {createSubagentRuntime} from './subagent-runtime';
 import {
@@ -51,6 +52,7 @@ import {
   parseUserQuestions,
   validateUserAnswers,
   type UserQuestionRequest,
+  type UserQuestionAnswers,
 } from './user-questions';
 
 export interface AgentEvents {
@@ -134,6 +136,9 @@ export interface RunAgentArgs {
 /** 可以中途叫停的句柄 */
 export interface AgentHandle {
   abort(): void;
+  interrupt?(message: ChatMessage): void;
+  answerQuestion?(id: string, answers: UserQuestionAnswers): Promise<void>;
+  questionDraft?(id: string, draft: UserQuestionAnswers): Promise<void>;
 }
 
 /* ------------------------------------------------------------------ *
@@ -316,9 +321,9 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
     extraSystem: resume?.extraSystem ?? args.extraSystem,
     usage: { ...resume?.usage }, spentTokens: resume?.spentTokens ?? 0,
     startedAt: resume?.startedAt ?? Date.now(), reason: undefined, errorInfo: undefined,
-    runtimeVersion: RUNTIME_VERSION, milestones: structuredClone(resume?.milestones ?? args.conversationMemory?.milestones ?? []),
+    runtimeVersion: RUNTIME_VERSION, milestones: quoteBoundary>0?[]:structuredClone(resume?.milestones ?? args.conversationMemory?.milestones ?? []),
     compactions: quoteBoundary > 0 ? [] : structuredClone(resume?.compactions ?? []), requestStats: [...(resume?.requestStats ?? [])],
-    requirements: structuredClone(resume?.requirements ?? args.conversationMemory?.requirements ?? []),
+    requirements: quoteBoundary>0?[]:structuredClone(resume?.requirements ?? args.conversationMemory?.requirements ?? []),
     requirementSourceIds: [...new Set([...(resume?.requirementSourceIds ?? []),...args.history.filter(m => m.role === 'user').map(m => m.id),...args.history.flatMap(m=>m.supplementalInputs?.map(s=>s.id)??[])])].filter(id => scopedWorking.some(m => m.id === id)),
     recovery: undefined,
     attemptId: args.requestId, attemptStartedAt: Date.now(),
@@ -327,6 +332,8 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
     contextArchiveSteps: quoteBoundary > 0 ? [] : structuredClone(resume?.contextArchiveSteps ?? args.conversationMemory?.evidence ?? []),
     lastModel:cfg.model,
   };
+  if(resume&&state.phase==='request'&&state.content&&!state.content.endsWith('\n\n'))state.content+='\n\n';
+  if(state.userQuestion?.nonBlocking&&state.userQuestion.answers)acceptLiveAnswer(state,state.userQuestion.request.id,state.userQuestion.answers);
   if(resume || args.conversationMemory?.checkpoints){
     state.handoff=handoffInfo(state,resume?.lastModel??args.previousModel??args.conversationMemory?.fromModel,cfg.model,
       resume?'resume':'followup',resume?resume.handoff?.checkpoints??0:args.conversationMemory?.checkpoints??0);
@@ -343,7 +350,7 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
     }
   }
   const startingTokens = state.spentTokens ?? 0;
-  state.harness=taskSeed(args.history,cfg,resume?.harness);
+  state.harness=taskSeed([...scopedWorking,...(state.pendingInputMessages??[])],cfg,quoteBoundary>0?undefined:resume?.harness);
   const maxRound = state.round + Math.max(1, Math.min(1000, cfg.maxToolRounds || 30)) - 1;
   let requestSerial = 0;
   let overflowRetries = 0;
@@ -360,10 +367,12 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
     if (activeRequest) void transport.abort(activeRequest);
   }, policy.maxMinutes * 60_000);
 
+  let saveChain = Promise.resolve();
   const save = async () => {
     reconcileProgress(state);state.delivery=deliveryReport(state);
     state.at = Date.now();
-    try { await events.onRunState(structuredClone(state)); }
+    const checkpoint=structuredClone(state);
+    try { await (saveChain=saveChain.then(()=>events.onRunState(checkpoint))); }
     catch (e) { persistenceFailed = true; throw new Error(`执行记录写入失败：${e instanceof Error ? e.message : String(e)}。已停止派发新操作。`); }
   };
   const finishPause = async (reason: string, info?: ErrorInfo) => {
@@ -415,7 +424,21 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
       })]);
     } finally { off(); }
   };
-  const handle: AgentHandle = { abort() {
+  const handle: AgentHandle = {
+    interrupt(message) {
+      if(ended||control.signal.aborted)throw Error('当前任务已停止，请从已保存的进度继续');
+      Object.assign(state,addRunInput(state,message));
+      handle.abort();state.reason='已保存当前输出和执行现场，正在处理新要求';
+    },
+    async questionDraft(id,draft) {
+      if(state.userQuestion?.request.id!==id||ended)return;
+      state.userQuestion.draft=structuredClone(draft);await save();
+    },
+    async answerQuestion(id,answers) {
+      if(ended||control.signal.aborted)throw Error('当前任务已停止，请从问题卡片继续');
+      acceptLiveAnswer(state,id,answers);await save();
+    },
+    abort() {
     subagents.stop();
     userPaused = true;
     state.reason = state.phase === 'tools' ? '已停止派发新操作；正在执行的工具结果会由桌面端保存，续跑前将核实状态' : '你已暂停任务';
@@ -544,6 +567,11 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
       for (;;) {
         if (control.signal.aborted) throw abortError();
         if (budgetExceeded()) { await finishPause('本阶段达到 token 预算；接着跑会开启下一阶段预算'); return; }
+        if(state.phase!=='tools'&&state.pendingInputMessages?.length){
+          state.working.push(...state.pendingInputMessages);
+          state.requirementSourceIds=[...new Set([...(state.requirementSourceIds??[]),...state.pendingInputMessages.map(m=>m.id)])];
+          state.pendingInputMessages=[];state.replanPending=false;await save();
+        }
         events.onRound(state.round, maxRound);
         if (state.phase === 'tools') {
           const previousChecks=qualityCheckpoint(state);
@@ -593,7 +621,9 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
             const resolving = state.uncertainCallId === call.id;
             const pendingQuestion = state.userQuestion?.callId === call.id ? state.userQuestion : undefined;
             if (call.name === 'request_user_input') {
-              if (parseError || questionParseError || !questionRequest) {
+              if(state.replanPending){result={ok:false,content:'用户已补充信息，请先处理新输入后再决定是否提问'};}
+              else if(state.userQuestion && state.userQuestion.callId!==call.id){result={ok:true,content:'已有尚未回答的问题：'+JSON.stringify(state.userQuestion.request)+ '。请继续不依赖该回答的工作，不要重复提问。'};}
+              else if (parseError || questionParseError || !questionRequest) {
                 result = { ok: false, content: '', error: `问题参数无效：${parseError ?? questionParseError ?? '无法建立问题请求'}` };
               } else if (pendingQuestion?.answers) {
                 try {
@@ -617,7 +647,12 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
                   callId: call.id,
                   toolIndex: i,
                   draft: pendingQuestion?.draft,
+                  nonBlocking: parsed.blocking === false,
                 };
+                if(state.userQuestion.nonBlocking){
+                  result={ok:true,content:JSON.stringify({status:'pending',requestId:questionRequest.id,message:'问题已展示，用户尚未回答。继续不依赖答案的独立工作；不能猜测答案，不要重复询问。依赖回答时结束本次输出并等待。'}),summary:'已提问，继续独立工作'};
+                  await save();
+                }else{
                 state.status = 'waiting';
                 state.waitKind = 'question';
                 state.reason = '等待用户回答';
@@ -626,6 +661,7 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
                 await save();
                 await finishPause('等待用户回答');
                 return;
+                }
               }
             } else if (resolving && args.resolveUncertain === 'skip') {
               result = { ok: false, content: '', error: '用户已核实并选择跳过此操作，程序没有重新执行。' };
@@ -783,6 +819,7 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
           const failure: { message?: string; status?: number } = {};
           let usage: Usage | undefined;
           let responseHeaders: Record<string, string> = {};
+          const requestMessageIds=new Set(state.working.map(m=>m.id));
           const committedContent = state.content ?? '';
           const committedReasoning = state.reasoning ?? '';
           events.onContentReplace?.(committedContent, committedReasoning);
@@ -846,7 +883,14 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
           account(stat,usage,resultContent+resultReasoning,!!failure.message || control.signal.aborted,dispatched,failure.status);
           stat.detail = failure.message;
           observeInput(body,args.profile,cfg,usage?.prompt_tokens);
-          if (control.signal.aborted) throw abortError();
+          if (control.signal.aborted) {
+            state.content=committedContent+resultContent;state.reasoning=committedReasoning+resultReasoning;
+            if(resultContent){
+              const inputIndex=state.working.findIndex(m=>m.role==='user'&&!requestMessageIds.has(m.id));
+              state.working.splice(inputIndex<0?state.working.length:inputIndex,0,{id:uid('partial'),role:'assistant',content:'（中断前的部分回复，尚未完成核验）\n'+resultContent,createdAt:Date.now()});
+            }
+            throw abortError();
+          }
           if(loopDetected){
             state.content=committedContent+resultContent;state.reasoning=committedReasoning+resultReasoning;
             state.failedRequestId=requestId;stat.outcome='failed';stat.failureKind='loop_detected';
@@ -911,6 +955,12 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
           if (resultContent) { state.content += '\n\n'; events.onContentDelta('\n\n'); }
           await save(); continue;
         }
+        if(state.pendingInputMessages?.length){
+          state.working.push({id:uid('m'),role:'assistant',content:resultContent,createdAt:Date.now()});
+          state.content+='\n\n';events.onContentDelta('\n\n');
+          state.round++;state.phase='request';await save();continue;
+        }
+        if(state.userQuestion&&!state.userQuestion.answers){state.waitKind='question';await finishPause('已完成可独立进行的工作，等待用户回答');return;}
         events.onStopReason(stopValue.reason);
         const why = stopReasonInfo(stopValue, { hadContent: !!resultContent.trim(), sentTools: !final && toolNames.length > 0, model: cfg.model });
         if (why) { await finishPause(why.title, why); return; }

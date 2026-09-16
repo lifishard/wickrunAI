@@ -1,7 +1,7 @@
 'use strict';
 
 const path = require('node:path');
-const { app, BrowserWindow, ipcMain, shell, Menu, nativeTheme, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, Menu, nativeTheme, dialog, Notification } = require('electron');
 require('./app-identity.cjs').configureIdentity(app);
 const store = require('./store.cjs');
 const { extractErrorMessage } = require('./sse.cjs');
@@ -26,6 +26,7 @@ let storageStartupError = null;
 let localClients = null;
 let conversationClients = null;
 let nativeAiBridge = null;
+let taskNotifier = null;
 const activeToolControllers = new Map();
 function dataAvailable(){if(storageStartupError)throw Error('本地记录需要恢复，已停止读写：'+storageStartupError);if(restoringData)throw Error('正在恢复数据，请等待重启');const error=dataBackup?.recoveryError;if(error)throw Error('数据恢复未完成，已停止读写：'+error);}
 
@@ -306,6 +307,16 @@ async function handleGetJson(_evt, { url, headers, timeoutMs }) {
  * ------------------------------------------------------------------ */
 
 function registerIpc() {
+  const { activateTaskNotification, createTaskNotifier } = require('./task-notifications.cjs');
+  taskNotifier = createTaskNotifier({
+    Notification,
+    getWindow: () => mainWindow,
+    activateWindow: payload => activateTaskNotification(mainWindow, payload),
+  });
+  ipcMain.handle('snc:notifyTask',(event,input)=>{
+    if (!mainWindow || event.sender !== mainWindow.webContents || event.senderFrame !== mainWindow.webContents.mainFrame) return false;
+    return taskNotifier.notify(input);
+  });
   dataBackup = require('./data-backup.cjs').createDataBackup(app.getPath('userData'));
   const importedBackups = new Map();
   ipcMain.handle('snc:backupStatus',()=>({...dataBackup.status(),storePath:path.join(app.getPath('userData'),'store.json')}));

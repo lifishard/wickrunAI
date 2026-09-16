@@ -3,6 +3,8 @@ import type { AcceptanceCheck, DeliveryReport, DeliveryRequirement, RecoveryInfo
 
 export function addRunInput(state:RunState,message:{id:string;content:string;createdAt:number}):RunState {
   const next=structuredClone(state);
+  // A direct user correction starts a fresh interpretation; old completion gates must not force cancelled work.
+  next.harness=undefined;
   next.supplementalInputs=[...(next.supplementalInputs??[]),message];
   const input={...message,role:'user' as const};
   if(next.phase==='tools' && (next.toolCursor??0)<(next.pendingCalls?.length??0)){

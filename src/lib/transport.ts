@@ -52,6 +52,8 @@ interface NativeEvent {
 }
 
 interface ElectronBridge {
+  notifyTask(input:TaskNotificationInput):Promise<boolean>;
+  onTaskNotificationClick(cb:(event:TaskNotificationClick)=>void):()=>void;
   nativeAiState():Promise<import('./native-ai').NativeAiState>;
   nativeAiConfigure():Promise<{state:import('./native-ai').NativeAiState;message:string}>;
   nativeAiCreate(input:import('./native-ai').NativeAiInput):Promise<{task:import('./native-ai').NativeAiTask;prompt:string}>;
@@ -126,6 +128,23 @@ interface ElectronBridge {
   remoteStart(port: number, token: string): Promise<RemoteStatus>;
   remoteStop(): Promise<RemoteStatus>;
   remoteStatus(): Promise<RemoteStatus>;
+}
+
+export type TaskNotificationKind = 'question' | 'paused' | 'error' | 'completed';
+
+export interface TaskNotificationInput {
+  id: string;
+  conversationId: string;
+  title: string;
+  body: string;
+  kind: TaskNotificationKind;
+  silent?: boolean;
+}
+
+export interface TaskNotificationClick {
+  id: string;
+  conversationId: string;
+  kind: TaskNotificationKind;
 }
 
 /** 技能目录扫描结果 */

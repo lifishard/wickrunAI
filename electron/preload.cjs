@@ -14,6 +14,8 @@ contextBridge.exposeInMainWorld('snc', {
   nativeAiOpen: (provider,taskId) => ipcRenderer.invoke('snc:nativeAiOpen',{provider,taskId}),
   nativeAiCancel: id => ipcRenderer.invoke('snc:nativeAiCancel',id),
   nativeAiRemove: id => ipcRenderer.invoke('snc:nativeAiRemove',id),
+  notifyTask: input => ipcRenderer.invoke('snc:notifyTask', input),
+  onTaskNotificationClick: cb => {const listener=(_e,message)=>cb(message);ipcRenderer.on('snc:taskNotificationClick',listener);return()=>ipcRenderer.removeListener('snc:taskNotificationClick',listener);},
   gatewayRepair: profileId => ipcRenderer.invoke('snc:gatewayRepair',profileId),
   claudeRepair: () => ipcRenderer.invoke('snc:claudeRepair'),
   collaborationRead: () => ipcRenderer.invoke('snc:collaborationRead'),
