@@ -15,7 +15,7 @@ Bring your own API key, switch models inside one task, and keep working.
 
 </div>
 
-wickrunAI is an open-source AI client for Windows, macOS, and Linux. Connect any service that speaks the OpenAI-compatible API and use it to research topics, work through documents, read and write files, drive Chrome, or call the Claude Code installed on your machine.
+wickrunAI is an open-source AI client for Windows, macOS, and Linux. Connect any service that uses the OpenAI-compatible API and use it to research topics, work through documents, read and write files, drive Chrome, or call the Claude Code installed on your machine.
 
 On a long task you can have one model gather the material, pause, then hand the work to another model to organize or check it. wickrunAI keeps your requirements, the run journal, and the original evidence. Press Continue and the new model resumes from the saved position. You still need to check the result, above all citations, arithmetic, and generated files. See [Model handoff](docs/MODEL_HANDOFF.md) for how the relay works.
 
