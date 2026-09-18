@@ -39,6 +39,8 @@ export interface Project {
   prompts: ProjectPrompt[];
   /** 跨对话累积的记忆，模型可读写 */
   memory: string;
+  /** 这个项目的失灵交接名单；会话没设置时用它，它没设置再看应用全局 */
+  failover?: import('./failover').FailoverConfig;
   /** 这个项目默认用哪个模型 / 凭据，新开对话时套上 */
   defaultModel?: string;
   defaultKeyProfileId?: string | null;

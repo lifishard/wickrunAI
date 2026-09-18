@@ -2,7 +2,11 @@
 
 ## Versioning
 
-User requirement: Every delivered application update must increment the release version. Keep package.json, both root version fields in package-lock.json, and src/lib/version.ts synchronized. Never move or overwrite an existing release tag. The current change set targets 2.4.1; subsequent updates must use a new version.
+User requirement: Every delivered application update must increment the release version. Keep package.json, both root version fields in package-lock.json, and src/lib/version.ts synchronized. Never move or overwrite an existing release tag. The current change set targets 2.5.1; subsequent updates must use a new version.
+
+## Shell commands in tests
+
+The development machine is Windows, so tests run under `cmd.exe`. Some verification runs elsewhere under `sh`. A test that shells out must use a command that behaves the same in both: prefer `node -e "..."`. POSIX-only syntax silently changes meaning under `cmd.exe` rather than failing loudly. `echo x; exit 1` is one `echo` there, exit code 0, so a test expecting a failure passes on Linux and misreports on Windows. Keep command output ASCII when a test asserts on it; non-ASCII has to survive the command line and the pipe, and that is a separate failure with the same symptom.
 
 ## Working directories
 

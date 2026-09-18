@@ -55,10 +55,14 @@ export default function ModelPicker(props: {
   onProbe: () => void;
   onStopProbe: () => void;
   onMute: (id: string, muted: boolean) => void;
+  /** 只对手动补的 ID 开放：扫描来的删了下次还会回来，删除对它没有意义 */
+  onRemove?: (id: string) => void;
   onClearHealth: () => void;
 }) {
   const t = useT();
   const [open, setOpen] = React.useState(false);
+  // 删除手动 ID 要点两下：误删虽然补得回来，但不该一下就没
+  const [confirmRemove, setConfirmRemove] = React.useState<string | null>(null);
   const [source,setSource]=React.useState<'api'|'local'>(props.displayModel?'local':'api');
   React.useEffect(()=>setSource(props.displayModel?'local':'api'),[props.displayModel]);
   const [q, setQ] = React.useState('');
@@ -144,8 +148,8 @@ export default function ModelPicker(props: {
   const renderItem = (m: ModelInfo, broken: boolean) => {
     const h = healthOf(props.health, props.profileId, m.id);
     // 「返回 200 但正文是空的」不给勾 —— 那多半根本不是聊天模型
-    const verified = !broken && h?.status === 'ok' && !h.reason;
-    const hollow = !broken && h?.status === 'ok' && Boolean(h.reason);
+    const verified = !broken && h?.status === 'ok';
+    const hollow = !broken && h?.status === 'hollow';
     return (
       <div key={m.id} className={`picker-row${m.id === props.model ? ' on' : ''}`}>
         <button
@@ -180,9 +184,22 @@ export default function ModelPicker(props: {
           {broken && h?.code ? <span className="badge-bad">{h.code}</span> : null}
           {m.ownedBy ? <span className="picker-item-owner">{m.ownedBy}</span> : null}
         </button>
+        {m.custom && props.onRemove ? (
+          <button
+            className={`icon-btn sm${confirmRemove === m.id ? ' danger' : ''}`}
+            title={confirmRemove === m.id ? t('再点一次就彻底删除这个手动 ID') : t('彻底删除这个手动补的 ID')}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (confirmRemove === m.id) { props.onRemove!(m.id); setConfirmRemove(null); }
+              else setConfirmRemove(m.id);
+            }}
+          >
+            {confirmRemove === m.id ? t('确认删除') : '🗑'}
+          </button>
+        ) : null}
         <button
           className="icon-btn sm"
-          title={broken ? t('放回正常列表') : t('手动隐藏：不想在列表里看到它')}
+          title={broken ? t('放回正常列表') : t('手动隐藏：不想在列表里看到它。扫描来的模型只能隐藏，下次扫描还会回来')}
           onClick={(e) => {
             e.stopPropagation();
             props.onMute(m.id, !broken);

@@ -610,6 +610,42 @@ export default function SettingsDialog(props: {
         </div>
 
         <div className="section">
+          <div className="section-title">{t('事件驱动护栏')}</div>
+          <div className="hint" style={{ lineHeight: 1.85, marginBottom: 10 }}>
+            {t('模型每次改完东西，自动跑一条你写的检查命令。没通过就把原文摆到它面前，让它这一轮就看见；通过了一声不吭。')}
+            <br />
+            {t('适合放那些「每次都必须做、但模型总会忘」的规矩，比如改完 package.json 就核对版本号是不是三处都同步了。')}
+            <br />
+            <strong>{t('这些命令只从这里读，绝不从工作目录读。')}</strong>
+            {t('否则任何一个克隆下来的仓库都能在你机器上自动执行命令。')}
+          </div>
+          {(s.hooks ?? []).map((hook, i) => <div className="section" key={hook.id} style={{ marginBottom: 8 }}>
+            <Field label={t('名称')}>
+              <input aria-label={t('护栏名称')} value={hook.name}
+                onChange={e => props.onChange({ hooks: (s.hooks ?? []).map((h, x) => x === i ? { ...h, name: e.target.value } : h) })} />
+            </Field>
+            <Field label={t('检查命令')} hint={t('在工作目录里用本机的 shell 运行（Windows 是 cmd）。退出码非 0 就算没通过。')}>
+              <input aria-label={t('检查命令')} value={hook.command} placeholder="node scripts/check-version.mjs"
+                onChange={e => props.onChange({ hooks: (s.hooks ?? []).map((h, x) => x === i ? { ...h, command: e.target.value } : h) })} />
+            </Field>
+            <Field label={t('改动路径匹配')} hint={t('正则，留空表示不限。例如 package\\.json$')}>
+              <input aria-label={t('改动路径匹配')} value={hook.pathPattern ?? ''}
+                onChange={e => props.onChange({ hooks: (s.hooks ?? []).map((h, x) => x === i ? { ...h, pathPattern: e.target.value || undefined } : h) })} />
+            </Field>
+            <Field label={t('只在这个工作目录下触发')} hint={t('留空表示所有工作目录。')}>
+              <input aria-label={t('只在这个工作目录下触发')} value={hook.workspaceRoot ?? ''}
+                onChange={e => props.onChange({ hooks: (s.hooks ?? []).map((h, x) => x === i ? { ...h, workspaceRoot: e.target.value || undefined } : h) })} />
+            </Field>
+            <div className="field">
+              <Switch checked={hook.enabled} label={t('启用')}
+                onChange={v => props.onChange({ hooks: (s.hooks ?? []).map((h, x) => x === i ? { ...h, enabled: v } : h) })} />
+            </div>
+            <button className="btn sm ghost" onClick={() => props.onChange({ hooks: (s.hooks ?? []).filter((_, x) => x !== i) })}>{t('删除这条护栏')}</button>
+          </div>)}
+          <button className="btn sm" onClick={() => props.onChange({ hooks: [...(s.hooks ?? []), { id: uid('hook'), name: '', command: '', enabled: true }] })}>{t('添加一条护栏')}</button>
+        </div>
+
+        <div className="section">
           <div className="section-title">{t('搜索')}</div>
           <Field label={t('搜索源')}>
             <Segmented<SearchProvider>

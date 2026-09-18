@@ -2866,6 +2866,8 @@ kbd {
 .delivery-path { font-family: var(--mono); font-size: 11px; overflow-wrap: anywhere; }
 .recovery-card { border-left: 3px solid var(--accent); }
 .recovery-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.failover-scopes { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+
 .failover-list { list-style: decimal; margin: 8px 0 12px; padding-left: 22px; display: flex; flex-direction: column; gap: 6px; }
 .failover-list li { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .failover-route { display: flex; align-items: baseline; gap: 8px; min-width: 0; }

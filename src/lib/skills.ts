@@ -1,6 +1,7 @@
 import { getTransport } from './transport';
 import { uid } from './store';
 import { tr } from './i18n';
+import type { ToolResult } from '../types';
 
 /* ------------------------------------------------------------------ *
  * 技能（Skill）
@@ -526,14 +527,56 @@ export async function installFromGithub(
 }
 
 /** 技能注入成什么样的 system 消息 */
-export function skillSystemBlock(skills: Skill[]): string {
+/**
+ * 技能正文进 system 的长度上限。
+ *
+ * 技能正文拼在 system prompt 里，也就是拼在**前缀**里。一份长 SKILL.md 会一直
+ * 占着那段位置，每一轮都跟着算，而其中真正会被用到的往往只有几行。
+ *
+ * 超限的折叠：只留名字和描述，加一段开头，正文留在本地，模型要用具体规范时
+ * 用 read_skill 取回。刻意不是「只放代号」—— 光有代号模型没法判断该不该取，
+ * 只会每个都取一遍，那比原样塞进去还贵。判断要用的信息必须留在上面。
+ */
+export const SKILL_INLINE_LIMIT = 4000;
+/** 折叠后保留的开头长度：够看出这技能在讲什么，不够拿来直接执行 */
+const SKILL_PREVIEW = 600;
+
+export function foldedSkillNames(skills: Skill[], limit = SKILL_INLINE_LIMIT): string[] {
+  return skills.filter((s) => (s.body ?? '').length > limit).map((s) => s.name);
+}
+
+export function skillSystemBlock(skills: Skill[], limit = SKILL_INLINE_LIMIT): string {
   if (!skills.length) return '';
   return skills
-    .map(
-      (s) =>
-        `以下是用户唤起的技能「${s.name}」的指令，本轮请严格按它执行：\n<skill name="${s.name}">\n${s.body}\n</skill>`,
-    )
+    .map((s) => {
+      const body = s.body ?? '';
+      if (body.length <= limit) {
+        return `以下是用户唤起的技能「${s.name}」的指令，本轮请严格按它执行：\n<skill name="${s.name}">\n${body}\n</skill>`;
+      }
+      return `以下是用户唤起的技能「${s.name}」，正文 ${body.length} 字，没有全部载入。` +
+        `需要它的具体规范时，先用 read_skill(name="${s.name}") 取回正文再执行；没取回的部分不能当作已知。\n` +
+        `<skill name="${s.name}" folded="true">\n${s.description || '（这个技能没有写描述）'}\n\n` +
+        `${body.slice(0, SKILL_PREVIEW)}\n…（以上只是开头，其余部分用 read_skill 取回）\n</skill>`;
+    })
     .join('\n\n');
+}
+
+/** 取回被折叠的技能正文。分页跟 read_context 一个形状，省得再学一套。 */
+export function readSkill(skills: Skill[], args: Record<string, unknown>): ToolResult {
+  const name = String(args.name ?? '').trim();
+  const skill = skills.find((s) => s.name === name);
+  if (!skill) {
+    return { ok: false, content: '',
+      error: `本轮没有唤起名为「${name}」的技能。可用的是：${skills.map((s) => s.name).join('、') || '（本轮没有唤起任何技能）'}` };
+  }
+  const body = skill.body ?? '';
+  const offset = Math.max(0, Number(args.offset) || 0);
+  const limit = Math.max(1, Math.min(12000, Number(args.limit) || 12000));
+  const text = body.slice(offset, offset + limit);
+  const next = offset + limit < body.length ? offset + limit : null;
+  return { ok: true,
+    content: JSON.stringify({ name: skill.name, total: body.length, offset, nextOffset: next, text }),
+    summary: `取回技能 /${skill.name} 的正文` };
 }
 
 /* ------------------------------------------------------------------ *

@@ -561,6 +561,19 @@ export interface AppSettings {
   remote: RemoteConfig;
   /** 思考强度的跨厂商映射表 */
   effortMappings: EffortMapping[];
+  /** 事件驱动护栏：只从这里读，绝不从工作目录读，避免仓库自带钩子 */
+  hooks?: {
+    id: string; name: string; enabled: boolean; command: string;
+    /** 哪些工具成功后触发；空 = 所有会改东西的工具 */
+    onTools?: string[];
+    /** 改动路径要匹配这个正则才触发；空 = 不限 */
+    pathPattern?: string;
+    /** 只在这个工作目录下触发；空 = 所有 */
+    workspaceRoot?: string;
+    timeoutMs?: number;
+  }[];
+  /** 应用全局的失灵交接名单；会话和项目都没设置时用它 */
+  failover?: import('./lib/failover').FailoverConfig;
   /** 模型健康度：哪些 ID 在这份凭据下是坏的，默认不进模型列表 */
   modelHealth: ModelHealthMap;
   /** 请求失败后自动重试的次数上限（限流和 5xx 才重试），0 = 关掉 */
@@ -674,6 +687,8 @@ export interface ToolResult {
   /** 原生执行日志显示操作已开始但没有可靠完成记录。 */
   uncertain?: boolean;
   operationStatus?: 'not_started' | 'completed' | 'uncertain';
+  /** 这次操作之后自动跑的护栏没通过，原文已附在 content 里 */
+  hookFailed?: boolean;
   /** 本次任务里已经做过同样的操作，程序没有重复执行 */
   repeated?: { at: number; callId: string };
 }

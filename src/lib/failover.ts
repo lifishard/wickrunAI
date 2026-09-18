@@ -23,6 +23,26 @@ export interface FailoverDecision { route: RouteRef; reason: string }
 export const sameRoute = (a: RouteRef, b: RouteRef): boolean =>
   a.profileId === b.profileId && a.model === b.model;
 
+export type FailoverScope = 'session' | 'project' | 'app';
+
+/**
+ * 三层继承：会话 > 项目 > 应用全局。
+ *
+ * 只有「没设置」（undefined）才继承上层。已经设置的即便是空名单或明确关掉也算数 ——
+ * 「我这一次不想自动交接」和「我这一层没意见」是两件不同的话，必须能分开说，
+ * 否则用户一旦设了全局，就再也没办法为单次任务关掉它。
+ */
+export function resolveFailover(
+  session?: FailoverConfig,
+  project?: FailoverConfig,
+  app?: FailoverConfig,
+): { config: FailoverConfig; from: FailoverScope | 'none' } {
+  if (session) return { config: session, from: 'session' };
+  if (project) return { config: project, from: 'project' };
+  if (app) return { config: app, from: 'app' };
+  return { config: { enabled: false, routes: [] }, from: 'none' };
+}
+
 /**
  * 这次失败值不值得换人。返回换人的理由，或者 null 表示换了也没用。
  *

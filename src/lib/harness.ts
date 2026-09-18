@@ -6,7 +6,7 @@ export interface HarnessCheckpoint {
   review?:{summary:string;checks:string;evidence:string[];nextAction:string;at:number};
   context?:{inputMessages:number;visibleMessages:number;foldedMessages:number};
 }
-const MANAGEMENT=new Set(['update_plan','update_requirements','verify_requirements','complete_task','request_user_input','read_context','read_tool_result','spawn_subagent','list_subagents','wait_subagents']);
+const MANAGEMENT=new Set(['update_plan','update_requirements','verify_requirements','complete_task','request_user_input','read_context','read_tool_result','read_skill','spawn_subagent','list_subagents','wait_subagents']);
 const ACTION=/(?:修复|修好|修改|编辑|替换|重命名|部署|发布|实现|重构|安装|提交|推送|执行|运行|测试|导出|制作|生成.{0,15}(?:文件|文档|报告|表格)|创建.{0,15}(?:文件|应用|网站)|\b(?:fix|implement|refactor|edit|install|commit|push|execute|run tests|build|export)\b)/i;
 const EXPLAIN=/^(?:请)?(?:解释|介绍|说明|什么是|如何|怎么|为什么|分析一下|帮我理解)|^(?:what|why|how|explain|describe)\b/i;
 const CONTINUE=/^(?:请|please\s*)?(?:继续|接着|continue|resume|go on)[\s。.!！]*$/i;

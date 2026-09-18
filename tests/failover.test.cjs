@@ -71,3 +71,39 @@ test('sameRoute 认凭据也认模型',()=>{
   assert.equal(sameRoute(R('a','m'),R('b','m')),false);
   assert.equal(sameRoute(R('a','m'),R('a','n')),false);
 });
+
+/* ---- 三层继承：会话 > 项目 > 应用全局（2.4.2） ---- */
+const {resolveFailover}=loader()(file('src/lib/failover.ts'));
+const cfg=(enabled,n=1)=>({enabled,routes:Array.from({length:n},(_,i)=>R('p',`m${i}`))});
+
+test('哪一层先有设置就用哪一层',()=>{
+  assert.equal(resolveFailover(cfg(true),cfg(false),cfg(false)).from,'session');
+  assert.equal(resolveFailover(undefined,cfg(true),cfg(false)).from,'project');
+  assert.equal(resolveFailover(undefined,undefined,cfg(true)).from,'app');
+});
+
+test('三层都没设置就是不交接',()=>{
+  const r=resolveFailover(undefined,undefined,undefined);
+  assert.equal(r.from,'none');
+  assert.equal(r.config.enabled,false);
+  assert.deepEqual(r.config.routes,[]);
+});
+
+test('「这一层明确关掉」不等于「这一层没意见」',()=>{
+  // 设了全局之后，用户必须还能为单次任务把它关掉
+  const r=resolveFailover({enabled:false,routes:[]},undefined,cfg(true,3));
+  assert.equal(r.from,'session');
+  assert.equal(r.config.enabled,false,'会话层明确关闭不该被全局顶回来');
+});
+
+test('空名单也算「这一层设了」，不再往上继承',()=>{
+  const r=resolveFailover({enabled:true,routes:[]},undefined,cfg(true,3));
+  assert.equal(r.from,'session');
+  assert.deepEqual(r.config.routes,[]);
+});
+
+test('项目层挡在会话和全局之间',()=>{
+  const r=resolveFailover(undefined,{enabled:false,routes:[]},cfg(true,2));
+  assert.equal(r.from,'project');
+  assert.equal(r.config.enabled,false);
+});

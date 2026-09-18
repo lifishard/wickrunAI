@@ -16,6 +16,52 @@ export const LOCALES: { value: Locale; label: string; label2: string; lang: stri
  * 英文查词典，查不到就退回简体原文 —— 半翻译的界面也比缺字的界面好用。
  */
 const EN: Record<string, string> = {
+  '彻底删除这个手动补的 ID': 'Delete this manually added ID for good',
+  '再点一次就彻底删除这个手动 ID': 'Click again to delete this manual ID for good',
+  '确认删除': 'Confirm',
+  '已删除手动模型 {id}': 'Deleted the manual model {id}',
+  '手动隐藏：不想在列表里看到它。扫描来的模型只能隐藏，下次扫描还会回来':
+    'Hide it from the list. Scanned models can only be hidden; the next scan brings them back.',
+  '顺序由你定：免费的排前面还是稳的排前面，程序不替你判断，它也不知道哪条是付费的。':
+    'You decide the order: free routes first, or the reliable ones first. wickrunAI does not judge for you and does not know which routes are paid.',
+  '优先级：本对话 → 项目 → 应用全局。': 'Priority: this chat → project → app-wide.',
+  '某一层没设置就往上找；设置了就算数，哪怕它是空名单或者明确关掉。':
+    'A level that is not set falls through to the one above. A level that is set counts, even when its list is empty or it is switched off.',
+  '设置哪一层': 'Which level to edit',
+  '本对话': 'This chat',
+  '项目「{name}」': 'Project “{name}”',
+  '应用全局': 'App-wide',
+  '没有任何一层设置': 'no level is set',
+  '当前实际生效的是：': 'Currently in effect: ',
+  '（{state}，{n} 条候选）': ' ({state}, {n} candidates)',
+  '已开启': 'on',
+  '已关闭': 'off',
+  '这一层的名单是空的：会按这一层的设置不做交接，也不再往上继承。':
+    'This level has an empty list, so nothing is handed off and it no longer falls through to the level above.',
+  '这一层改回继承上层': 'Make this level inherit again',
+  '这一层没有设置，继承上层。': 'This level is not set, so it inherits from the level above.',
+  '在这一层单独设置': 'Set it separately at this level',
+  '取回技能正文': 'Fetch skill instructions',
+  '取回技能 /{name} 的正文': 'Fetched the instructions for /{name}',
+  /* 事件驱动护栏 */
+  '事件驱动护栏': 'Automatic guardrails',
+  '模型每次改完东西，自动跑一条你写的检查命令。没通过就把原文摆到它面前，让它这一轮就看见；通过了一声不吭。':
+    'Each time the model changes something, a check command of yours runs. If it fails, its output is put in front of the model on the same turn; if it passes, nothing is said.',
+  '适合放那些「每次都必须做、但模型总会忘」的规矩，比如改完 package.json 就核对版本号是不是三处都同步了。':
+    'Good for the rules that must happen every time but the model keeps forgetting, such as checking that all three version fields stayed in sync after package.json changed.',
+  '这些命令只从这里读，绝不从工作目录读。': 'These commands are read only from here, never from a working folder.',
+  '否则任何一个克隆下来的仓库都能在你机器上自动执行命令。':
+    'Otherwise any repository you clone could run commands on your machine by itself.',
+  '护栏名称': 'Guardrail name',
+  '检查命令': 'Check command',
+  '在工作目录里用本机的 shell 运行（Windows 是 cmd）。退出码非 0 就算没通过。':
+    "Runs in the working folder with this machine's own shell (cmd on Windows). A non-zero exit code counts as a failure.",
+  '改动路径匹配': 'Changed path matches',
+  '正则，留空表示不限。例如 package\\.json$': 'A regular expression; leave empty for any path. For example package\\.json$',
+  '只在这个工作目录下触发': 'Only in this working folder',
+  '留空表示所有工作目录。': 'Leave empty for every working folder.',
+  '删除这条护栏': 'Delete this guardrail',
+  '添加一条护栏': 'Add a guardrail',
   /* 失灵交接 */
   '失灵交接名单': 'Failover order',
   '当前路由失灵时，按你排的顺序往下交接，带着已保存的进度继续，不从头再来。':

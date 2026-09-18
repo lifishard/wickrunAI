@@ -39,7 +39,7 @@ import {
   setMuted,
   type ProbeProgress,
 } from './lib/health';
-import { nextRoute, type RouteRef } from './lib/failover';
+import { nextRoute, resolveFailover, type FailoverConfig, type FailoverScope, type RouteRef } from './lib/failover';
 import { TOOL_BY_NAME, availableTools } from './lib/tools/registry';
 import {
   loadConversations,
@@ -564,6 +564,31 @@ export default function App() {
         customModels: { ...st.customModels, [profile.id]: [...cur, { id, custom: true }] },
       };
     });
+  }
+
+  /**
+   * 彻底删掉一个手动补的模型 ID。
+   *
+   * 只对手动补的开放：扫描来的删了下次拉列表还会回来，对它来说删除等于隐藏，
+   * 给两个看起来不一样、实际一样的入口只会让人困惑。顺手清掉它的健康度记录，
+   * 不然这个 ID 已经不在了，记录还留着。
+   */
+  function removeCustomModel(id: string) {
+    if (!profile) return;
+    setSettings((st) => {
+      if (!st) return st;
+      const cur = st.customModels[profile.id] ?? [];
+      if (!cur.some((m) => m.id === id)) return st;
+      const health = { ...(st.modelHealth ?? {}) };
+      if (health[profile.id]?.[id]) {
+        const forProfile = { ...health[profile.id] };
+        delete forProfile[id];
+        health[profile.id] = forProfile;
+      }
+      return { ...st, modelHealth: health,
+        customModels: { ...st.customModels, [profile.id]: cur.filter((m) => m.id !== id) } };
+    });
+    toast.show(t('已删除手动模型 {id}', { id }));
   }
 
   function addPastedImage(dataUrl: string, name: string, mime: string, size: number) {
@@ -1180,6 +1205,7 @@ export default function App() {
                 : prev,
             ),
         },
+        skills: turnSkills,
         extraSystem: [
           projectSystemBlock(projects.find((p) => p.id === conv.projectId) ?? null),
           skillSystemBlock(turnSkills),
@@ -1304,8 +1330,12 @@ export default function App() {
             // 失灵即交接。名单是用户排的，程序只按顺序往下走；名单为空就是原来的行为。
             const current: RouteRef = { profileId: profile.id, model: cfg.model };
             const tried = failoverTriedRef.current.get(convId) ?? [];
-            const decision = !interrupted && latestState && cfg.failover?.enabled && !cfg.client
-              ? nextRoute({ current, order: cfg.failover.routes ?? [], tried, health, info })
+            // 三层继承：本对话 > 项目 > 应用全局。哪一层先有设置就用哪一层。
+            const failover = resolveFailover(cfg.failover,
+              projects.find((p) => p.id === conv!.projectId)?.failover,
+              settingsRef.current?.failover).config;
+            const decision = !interrupted && latestState && failover.enabled && !cfg.client
+              ? nextRoute({ current, order: failover.routes ?? [], tried, health, info })
               : null;
             const note = decision
               ? t('{reason}，已按你的接力名单交给 {model} 接手，进度不重来。', { reason: t(decision.reason), model: decision.route.model })
@@ -1708,6 +1738,7 @@ export default function App() {
         probeStopRef.current = true;
       }}
       onMuteModel={muteModel}
+      onRemoveModel={removeCustomModel}
       onClearHealth={clearProfileHealth}
       effortLevel={config.effortLevel}
       onEffortLevel={(l: EffortLevel) => setConfig({ effortLevel: l })}
@@ -1960,6 +1991,13 @@ export default function App() {
           modelsError={modelsError}
           routeOptions={(settings.keyProfiles ?? []).map(p => ({ profileId: p.id, profileName: p.name,
             models: [...(settings.cachedModels[p.id] ?? []), ...(settings.customModels[p.id] ?? [])].map(m => m.id) }))}
+          failoverScopes={{ session: config.failover, project: activeProject?.failover, app: settings.failover }}
+          failoverProjectName={activeProject?.name}
+          onFailoverChange={(scope: FailoverScope, value: FailoverConfig | undefined) => {
+            if (scope === 'session') setConfig({ failover: value });
+            else if (scope === 'app') setSettings(prev => prev ? { ...prev, failover: value } : prev);
+            else if (activeProject) setProjects(all => all.map(p => p.id === activeProject.id ? { ...p, failover: value } : p));
+          }}
           hasKey={Boolean(profile)}
           canRunHostTools={canRunHostTools}
           onRefreshModels={() => void refreshModels()}

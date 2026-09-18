@@ -101,6 +101,7 @@ export default function Composer(props: {
   onProbe: () => void;
   onStopProbe: () => void;
   onMuteModel: (id: string, muted: boolean) => void;
+  onRemoveModel: (id: string) => void;
   onClearHealth: () => void;
 
   /* 思考强度 */
@@ -532,6 +533,7 @@ export default function Composer(props: {
               onProbe={props.onProbe}
               onStopProbe={props.onStopProbe}
               onMute={props.onMuteModel}
+              onRemove={props.onRemoveModel}
               onClearHealth={props.onClearHealth}
             />
 

@@ -129,6 +129,12 @@ export const TOOLS: ToolDef[] = [
     summarize: () => tr('查阅保存的原文'),
   },
   {
+    name: 'read_skill', label: '取回技能正文', group: 'agent',
+    description: '取回本轮唤起但正文未全部载入的技能（system 里标了 folded="true" 的那些）。需要它的具体规范、格式或清单时调用；没取回的部分不能当作已知。offset 是字符偏移，最多返回 12000 字符。',
+    parameters: { type: 'object', properties: { name: { type: 'string', description: '技能名字' }, offset: { type: 'integer' }, limit: { type: 'integer' } }, required: ['name'] },
+    summarize: (a) => tr('取回技能 /{name} 的正文', { name: clip(a.name) }),
+  },
+  {
     name: 'chrome_fetch_json', label: '读取已登录 API', group: 'chrome', needsHost: true,
     description: '通过已登录的 Chrome 标签页读取同源 JSON API（GET）。自动检查状态和数组结构；用 fields 选择必要字段、limit 控制返回条数。优先处理 nextOffset，再跟随 nextPage，直到所需范围完整。适合读取 Canvas 课程、作业、事件，避免编写重复 fetch/map 脚本。',
     parameters: { type: 'object', properties: { tab_id: { type: 'string' }, path: { type: 'string' },

@@ -4,7 +4,7 @@ export const mergeProgress = <T extends {id:string}>(old:T[] = [], updates:T[] =
   structuredClone([...new Map([...old,...updates].map(item=>[item.id,item])).values()]);
 
 export function validProgressEvidence(state:RunState,e:string):boolean {
-  return [...(state.contextArchiveSteps??[]),...(state.steps??[])].some(s=>(s.id===e||s.callId===e)&&s.status==='ok'&&!['update_plan','update_requirements','verify_requirements'].includes(s.name)) ||
+  return [...(state.contextArchiveSteps??[]),...(state.steps??[])].some(s=>(s.id===e||s.callId===e)&&s.status==='ok'&&!['update_plan','update_requirements','verify_requirements','read_skill'].includes(s.name)) ||
     (e.startsWith('text:')&&e.length>15&&[state.content??'',...[...(state.contextArchive??[]),...state.working].filter(m=>m.role==='assistant').map(m=>m.content)].some(text=>text.includes(e.slice(5))));
 }
 export function milestonePassed(id:string,requirements:DeliveryRequirement[]=[]):boolean {

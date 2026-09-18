@@ -79,6 +79,28 @@ export function updatePlan(state: RunState, args: Record<string, unknown>): Tool
   } catch (e) { return { ok: false, content: '', error: e instanceof Error ? e.message : String(e) }; }
 }
 /** Only compact a prefix ending before a recent complete assistant/tool batch. */
+/**
+ * 压缩之后该把哪几个文件重新读回来。
+ *
+ * 压缩把工具结果折成了摘要，模型手里只剩一句「写了 a.ts」和一个引用编号。
+ * 它得自己想起来去 read_tool_result —— 而最容易忘的时刻，恰恰是刚压缩完、
+ * 手上线索最少的那一刻。所以把「它正在改的那几个文件」直接读回来，
+ * 不指望它想起来。
+ *
+ * 只取本次运行真正写出去的文件，最近的排前面。
+ */
+export function recentOutputFiles(state: RunState, max = 3): string[] {
+  const seen: string[] = [];
+  for (const step of [...(state.steps ?? [])].reverse()) {
+    for (const f of step.files ?? []) {
+      if (f.direction !== 'output' || !f.path) continue;
+      if (!seen.includes(f.path)) seen.push(f.path);
+      if (seen.length >= max) return seen;
+    }
+  }
+  return seen;
+}
+
 export function compressionCandidate(state: RunState, maxTokens: number): { messages: ChatMessage[]; throughIndex: number } | undefined {
   const previous = state.compactions?.at(-1)?.throughIndex ?? -1;
   const starts = state.working.map((m,i) => m.role === 'assistant' ? i : -1).filter(i => i > previous);

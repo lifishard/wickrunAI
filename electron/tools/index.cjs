@@ -18,6 +18,7 @@ const { runtimeStore } = require('../run-store.cjs');
 const { verifyFiles } = require('../file-records.cjs');
 const crypto = require('node:crypto');
 const { inspectDeliverable, recoverExactWrite } = require('./verification.cjs');
+const { runHooks } = require('../hooks.cjs');
 
 /**
  * 操作编号：从「做了什么」派生，不从「在对话的哪个位置发起」派生。
@@ -215,6 +216,15 @@ async function executeTool(name, args, ctx) {
       const raw = String(res.content);
       res.resultRef = journal.saveResult(execution.runId, execution.callId, raw);
       res.content = `${raw.slice(0, 8000)}\n\n[完整结果已保存，${raw.length} 字符；用 read_tool_result(id="${res.resultRef}", offset=8000) 分页读取，不必重新查询。]\n\n${raw.slice(-2000)}`;
+    }
+    // 护栏在工具真的改了东西之后才跑。失败的调用没有可检查的后果，不触发。
+    if (res.ok !== false && !readOnly.has(name)) {
+      try {
+        const note = await runHooks({ name, result: res, ctx: merged });
+        if (note) { res.content = `${res.content ?? ''}${note}`; res.hookFailed = true; }
+      } catch (error) {
+        res.content = `${res.content ?? ''}\n\n【护栏无法运行】${error.message}。这次操作的自动检查没有执行，不代表它通过了。`;
+      }
     }
     if (journal) journal.saveJob(execution.runId, execution.callId, { fingerprint, name, status: 'completed', result: res, at: Date.now() });
     // 只记「做过、什么时候、哪次调用」，不在这里存结果本体。
