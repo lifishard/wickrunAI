@@ -51,7 +51,7 @@ export default function ConversationControls({ config, profiles, modelsByProfile
   return (
     <div className="menu-anchor" ref={anchorRef}>
       <button
-        className="btn sm ghost"
+        className="btn sm ghost run-mode-btn"
         aria-expanded={open}
         aria-haspopup="dialog"
         title={t('对话运行方式：任务引导{harness} · 临时协作{subagents}。只作用于当前会话。', { harness: t(harness ? '开' : '关'), subagents: t(subagents.enabled ? '开' : '关') })}

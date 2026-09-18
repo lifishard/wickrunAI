@@ -1033,9 +1033,17 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
         }
         reconcileProgress(state);
         state.delivery = deliveryReport(state);
-        if (state.requirements?.length && ['unchecked','failed'].includes(state.delivery.status)) {
+        /*
+         * unverifiable 原本不在这张名单里，于是它成了一扇没有代价的门：
+         * 实测中模型写着「将 req1 标记为 unverifiable 以绕过复核问题」，然后照常交付。
+         *
+         * 不能靠取消这个状态来堵 —— 逼模型在 passed / failed 之间二选一只会让它撒谎，
+         * 那比说不清更糟。代价不是「不许说不清」，是「说不清就交回给人，不算完成」。
+         * 这里已有的两次重试和暂停正好是这个代价，加一个状态即可，不必另造机制。
+         */
+        if (state.requirements?.length && ['unchecked','failed','unverifiable'].includes(state.delivery.status)) {
           if (!toolNames.includes('verify_requirements') || acceptanceStops++ >= 2 || state.round >= maxRound) {
-            await finishPause('交付验收尚未通过：请查看未检查或未通过的要求，已有成果已保存'); return;
+            await finishPause('交付验收尚未通过：还有要求未检查、未通过或无法核验，已有成果已保存'); return;
           }
           state.working.push({id:uid('m'),role:'assistant',content:resultContent,createdAt:Date.now()},
             {id:uid('m'),role:'user',content:'交付要求仍有未检查或未通过项。用 verify_requirements 核验已有条件，失败后修复再核验；不得放宽条件。无法检查的语义要求明确标记 unverifiable。',createdAt:Date.now()});

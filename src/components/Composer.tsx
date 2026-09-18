@@ -585,7 +585,8 @@ export default function Composer(props: {
             />}
 
             {props.busy ? (
-              <>
+              /* 编成一组：换行时三个按钮一起走，不会把「立即送出」单独甩到第二行 */
+              <div className="composer-send-group">
                 <button className="btn sm danger" onClick={props.onStop}>
                   {t('停止')}
                 </button>
@@ -598,7 +599,7 @@ export default function Composer(props: {
                   {t('排队发送')}
                 </button>
                 {props.onSendNow?<button className="btn sm primary" disabled={props.disabled||!canSend} title={t('保存当前执行现场，立即处理这条新要求')} onClick={()=>{if(props.onSendNow?.(text.trim()))setText('');}}>{t('立即送出')}</button>:null}
-              </>
+              </div>
             ) : (
               <button className="btn sm primary" onClick={submit} disabled={props.disabled || !canSend}>
                 {t('发送')}

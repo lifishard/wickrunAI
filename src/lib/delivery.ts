@@ -70,7 +70,7 @@ export async function verifyRequirements(state: RunState, args: Record<string,un
         const review = reviews.find((x: {id?:string}) => x.id === id) as {status?:string;detail?:string;evidence?:string[]} | undefined;
         const evidence = review?.evidence;
         const valid = Array.isArray(evidence) && evidence.length > 0 && evidence.length <= 20 && evidence.every(e => typeof e === 'string' && validProgressEvidence(state,e));
-        if (!review || !['passed','failed','unverifiable'].includes(review.status ?? '') || typeof review.detail !== 'string' || review.detail.length < 8 || review.detail.length > 1600 || (review.status !== 'unverifiable' && !valid)) throw new Error(`要求 ${id} 的模型复核需要具体覆盖说明及已有证据；无法核验时明确标记 unverifiable`);
+        if (!review || !['passed','failed','unverifiable'].includes(review.status ?? '') || typeof review.detail !== 'string' || review.detail.length < 8 || review.detail.length > 1600 || (review.status !== 'unverifiable' && !valid)) throw new Error(`要求 ${id} 的模型复核需要具体覆盖说明，以及已有证据的编号：成功工具步骤的 id/callId，或 text: 加上你可见回答里的原文片段。unverifiable 表示这一条交回用户判断、不计入完成，不要用它绕过证据。`);
         v = {revision:r.revision,status:review.status as RequirementVerification['status'],method:'model',detail:review.detail,evidence:valid ? evidence! : [],at:Date.now()};
       } else if (r.check.kind === 'answer_contains') {
         const missing = r.check.contains!.filter(s => !(state.content ?? '').includes(s));

@@ -133,3 +133,41 @@ test('supplement cannot silently skip an uncertain external operation',async()=>
   const h=agentHarness(async()=>assert.fail('must resolve prior action first'),async()=>({ok:false,uncertain:true,operationStatus:'uncertain',content:'',error:'旧操作已开始，无法确认结果'}),{resume:next});
   await h.finished;assert.equal(h.log.done,0);assert.equal(h.log.states.at(-1).uncertainCallId,'command');assert.equal(h.log.states.at(-1).pendingInputMessages.length,1);
 });
+
+/* ---- unverifiable 不再是没有代价的门（2.4.1） ---- */
+
+test('标成 unverifiable 的验收不能当作已完成交付',async()=>{
+  let n=0;
+  const h=agentHarness(
+    async(_,e)=>n++===0
+      ? respond(e,'',[call('req','update_requirements',{requirements:[requirement()]})])
+      : respond(e,'三项都已覆盖，任务完成。'),
+    async()=>({ok:true,content:'{"status":"unverifiable","detail":"当前环境无法核验该文件"}'}));
+  await h.finished;
+  assert.equal(h.log.done,0,'无法核验的验收不该被当成交付完成');
+  assert.match(h.log.reason,/无法核验/);
+  assert.equal(h.log.states.at(-1).delivery.status,'unverifiable');
+});
+
+test('模型复核的报错不再提示可以用 unverifiable 绕过证据',async()=>{
+  const s=state();d.updateRequirements(s,{requirements:[requirement({check:{kind:'review'}})]});
+  const r=await d.verifyRequirements(s,{ids:['r1'],reviews:[{id:'r1',status:'passed',detail:'我觉得覆盖了全部课程',evidence:['不存在的编号']}]},()=>{});
+  assert.equal(r.ok,false);
+  assert.match(r.error,/成功工具步骤的 id\/callId/,'该告诉它什么算有效证据');
+  assert.doesNotMatch(r.error,/无法核验时明确标记 unverifiable/,'不该把绕过方式写在报错里');
+});
+
+test('unverifiable 仍然可以如实标记，只是不计入完成',async()=>{
+  const s=state();d.updateRequirements(s,{requirements:[requirement({check:{kind:'review'}})]});
+  const r=await d.verifyRequirements(s,{ids:['r1'],reviews:[{id:'r1',status:'unverifiable',detail:'这一条要人工看过才能判断'}]},()=>{});
+  assert.equal(r.ok,true,'说不清必须仍然说得出口，否则模型只会改口撒谎');
+  assert.equal(s.requirements[0].verification.status,'unverifiable');
+  assert.equal(d.deliveryReport(s).status,'unverifiable');
+});
+
+test('没挂里程碑的验收条目照样进交付闸门',async()=>{
+  const s=state();
+  d.updateRequirements(s,{requirements:[requirement()]});
+  assert.equal(s.requirements[0].milestoneId,undefined);
+  assert.equal(d.deliveryReport(s).status,'unchecked','不挂里程碑也不该隐形');
+});

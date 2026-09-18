@@ -902,8 +902,10 @@ input[type='range'] {
 
 .composer-bar {
   display: flex;
-  /* 一行过：配置侧栏展开把输入框挤窄时也别折成两行 */
-  flex-wrap: nowrap;
+  /* 优先一行过：配置侧栏展开把输入框挤窄时别急着折成两行。
+     但真的塞不下时要换行 —— 溢出到圆角框外面比换成两行更糟。 */
+  flex-wrap: wrap;
+  row-gap: 6px;
   align-items: center;
   gap: var(--bar-gap);
   min-width: 0;
@@ -911,7 +913,12 @@ input[type='range'] {
   color: var(--fg-faint);
 }
 
-/* 除了模型选择器，底栏的东西都保持原样，宽度不够时先压模型名 */
+/*
+ * 宽度不够时的压缩顺序：先压模型名，再压放行档位和思考强度的文字。
+ *
+ * 每一项都留下限，谁也不许压到看不见 —— 「现在正在用哪个模型」是这一行里
+ * 最要紧的信息，压成一个光秃秃的 ▾ 等于把它弄丢了。压到下限还塞不下就换行。
+ */
 .composer-bar > * {
   flex: 0 0 auto;
 }
@@ -919,6 +926,27 @@ input[type='range'] {
 .composer-bar > .menu-anchor:has(.model-btn) {
   flex: 0 1 auto;
   min-width: 0;
+}
+
+.composer-bar > .menu-anchor:has(.approval-ask, .approval-auto, .approval-all),
+.composer-bar > .menu-anchor:has(.run-mode-btn),
+.composer-bar > .menu-anchor:has(.effort-btn) {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.composer-send-group {
+  display: flex;
+  align-items: center;
+  gap: var(--bar-gap);
+}
+
+/* 能压的那几个压到装不下时截断，而不是把整行顶出框外 */
+.composer-bar .btn {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .composer-bar .spacer {
@@ -2002,6 +2030,8 @@ kbd {
 }
 
 .model-btn-name {
+  /* 下限：宁可显示 `kimi…` 也不能一个字都不剩 */
+  min-width: 3.5em;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
