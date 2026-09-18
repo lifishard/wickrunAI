@@ -1,4 +1,5 @@
 import React from 'react';
+import { useT } from '../lib/i18n';
 import type { GenerationConfig, KeyProfile, ModelInfo, ReasoningEffort, ThinkingStyle } from '../types';
 import { PARAM_DEFS, PARAM_GROUPS } from '../lib/paramSchema';
 import { GROUP_LABEL, TOOLS, availableTools, type ToolGroup } from '../lib/tools/registry';
@@ -36,6 +37,7 @@ export default function ConfigPanel(props: {
   hasKey: boolean;
   canRunHostTools: boolean;
 }) {
+  const t = useT();
   const { config: cfg, onChange } = props;
   const runtime = runtimePolicy(cfg);
 
@@ -44,10 +46,10 @@ export default function ConfigPanel(props: {
     if (!s) return null;
     try {
       const v = JSON.parse(s);
-      if (!v || typeof v !== 'object' || Array.isArray(v)) return '必须是一个 JSON 对象';
+      if (!v || typeof v !== 'object' || Array.isArray(v)) return t('必须是一个 JSON 对象');
       return null;
     } catch (e) {
-      return e instanceof Error ? e.message : 'JSON 解析失败';
+      return e instanceof Error ? e.message : t('JSON 解析失败');
     }
   }, [cfg.customBody]);
 
@@ -64,23 +66,23 @@ export default function ConfigPanel(props: {
     <div>
       <GatewayRecovery profile={props.profile} onReady={r=>{if(r.baseUrl&&props.profile)props.onProfileChange?.({...props.profile,baseUrl:r.baseUrl});}}/>
       <div className="section">
-        <div className="section-title">连续工作</div>
-        <div className="hint">任务会保存进度，在临时限流或断网后等待恢复。阶段预算用完会暂停，接着跑可开启下一阶段。</div>
-        <p className="hint">1M 是上下文建议值，超过仍可继续。实际可发送大小取决于所选模型与上游额度。以下设置在下次启动或续跑时生效。</p>
-        <Switch label="接近建议值时提醒（90%）" checked={runtime.contextAdvisory === true} onChange={v => onChange({ runtime:{ ...runtime,contextAdvisory:v } })} />
-        <Switch label="接近建议值时自动打开交接草稿" checked={runtime.autoHandoff === true} onChange={v => onChange({ runtime:{ ...runtime,autoHandoff:v } })} />
-        <p className="hint">交接会打开新对话并预填上下文，由你决定是否修改、发送。原任务继续运行，不会启动后台 agent。</p>
-        <Switch label="自动压缩历史（使用当前模型，计入用量）" checked={runtime.semanticCompression !== false} onChange={v => onChange({ runtime:{ ...runtime,semanticCompression:v } })} />
-        <Switch label="允许模型按需维护里程碑" checked={runtime.milestones !== false} onChange={v => onChange({ runtime:{ ...runtime,milestones:v } })} />
-        <Switch label="检测回复复读与读取循环" checked={runtime.loopGuard !== false} onChange={v => onChange({ runtime:{ ...runtime,loopGuard:v } })} />
-        <p className="hint">Work 回复连续复读或反复读取相同结果时暂停并保存现场，避免继续消耗。刻意生成重复内容时可关闭。</p>
+        <div className="section-title">{t('连续工作')}</div>
+        <div className="hint">{t('任务会保存进度，在临时限流或断网后等待恢复。阶段预算用完会暂停，接着跑可开启下一阶段。')}</div>
+        <p className="hint">{t('1M 是上下文建议值，超过仍可继续。实际可发送大小取决于所选模型与上游额度。以下设置在下次启动或续跑时生效。')}</p>
+        <Switch label={t('接近建议值时提醒（90%）')} checked={runtime.contextAdvisory === true} onChange={v => onChange({ runtime:{ ...runtime,contextAdvisory:v } })} />
+        <Switch label={t('接近建议值时自动打开交接草稿')} checked={runtime.autoHandoff === true} onChange={v => onChange({ runtime:{ ...runtime,autoHandoff:v } })} />
+        <p className="hint">{t('交接会打开新对话并预填上下文，由你决定是否修改、发送。原任务继续运行，不会启动后台 agent。')}</p>
+        <Switch label={t('自动压缩历史（使用当前模型，计入用量）')} checked={runtime.semanticCompression !== false} onChange={v => onChange({ runtime:{ ...runtime,semanticCompression:v } })} />
+        <Switch label={t('允许模型按需维护里程碑')} checked={runtime.milestones !== false} onChange={v => onChange({ runtime:{ ...runtime,milestones:v } })} />
+        <Switch label={t('检测回复复读与读取循环')} checked={runtime.loopGuard !== false} onChange={v => onChange({ runtime:{ ...runtime,loopGuard:v } })} />
+        <p className="hint">{t('Work 回复连续复读或反复读取相同结果时暂停并保存现场，避免继续消耗。刻意生成重复内容时可关闭。')}</p>
         {([
-          ['contextTokens', '上下文建议值（token）', '默认 1,000,000；用于整理历史和可选提醒，不是停止任务的硬上限。'],
-          ['tpm', '每分钟 token 额度（TPM）', '填上游真实额度；0 表示从响应头或报错学习，未知时使用退避。'],
-          ['rpm', '每分钟请求额度（RPM）', '同一份凭据的请求统一排队；0 表示从上游学习。'],
-          ['maxTokens', '每阶段 token 预算', '按实际用量累计，无 usage 时保守估算。0 表示不限制。'],
-          ['maxMinutes', '每阶段最长时间（分钟）', '包括执行和等待。0 表示不限制。'],
-          ['recoveryMinutes', '单次中断最多自动等待（分钟）', '达到后保留现场，等待你接着跑。'],
+          ['contextTokens', t('上下文建议值（token）'), t('默认 1,000,000；用于整理历史和可选提醒，不是停止任务的硬上限。')],
+          ['tpm', t('每分钟 token 额度（TPM）'), t('填上游真实额度；0 表示从响应头或报错学习，未知时使用退避。')],
+          ['rpm', t('每分钟请求额度（RPM）'), t('同一份凭据的请求统一排队；0 表示从上游学习。')],
+          ['maxTokens', t('每阶段 token 预算'), t('按实际用量累计，无 usage 时保守估算。0 表示不限制。')],
+          ['maxMinutes', t('每阶段最长时间（分钟）'), t('包括执行和等待。0 表示不限制。')],
+          ['recoveryMinutes', t('单次中断最多自动等待（分钟）'), t('达到后保留现场，等待你接着跑。')],
         ] as const).map(([key, label, hint]) => <Field key={key} label={label} hint={hint}>
           <input type="number" min={key === 'contextTokens' ? 2048 : 0} value={runtime[key]}
             onChange={(e) => onChange({ runtime: { ...runtime, [key]: Math.max(0, Number(e.target.value) || 0) } })} />
@@ -89,47 +91,44 @@ export default function ConfigPanel(props: {
       {props.profile && props.onProfileChange ? <RouteSettings profile={props.profile} config={cfg} onChange={props.onProfileChange} /> : null}
       {/* ---------------- 模型 ---------------- */}
       <div className="section">
-        <div className="section-title">模型</div>
+        <div className="section-title">{t('模型')}</div>
         <div className="hint" style={{ marginBottom: 12 }}>
-          模型和凭据的选择挪到<strong>输入框左下角</strong>了 —— 那里带搜索，几百个模型也翻得动，
-          而且改的是<strong>当前这个会话</strong>的绑定，不影响别的对话。
+          {t('模型和凭据的选择挪到了')}<strong>{t('输入框左下角')}</strong>{t('。那里带搜索，几百个模型也翻得动，而且改的是')}<strong>{t('当前这个会话')}</strong>{t('的绑定，不影响别的对话。')}
           <br />
-          当前：<code>{cfg.model || '未选择'}</code>
+          {t('当前：')}<code>{cfg.model || t('未选择')}</code>
         </div>
 
         <div className="field">
-          <Switch checked={cfg.stream} onChange={(v) => onChange({ stream: v })} label="流式响应" />
+          <Switch checked={cfg.stream} onChange={(v) => onChange({ stream: v })} label={t('流式响应')} />
           <div className="hint">
-            开启后逐字返回（SSE）；关掉则等整段生成完一次性返回。调试接口时关掉更容易看清完整响应。
+            {t('开启后逐字返回（SSE）；关掉则等整段生成完一次性返回。调试接口时关掉更容易看清完整响应。')}
           </div>
         </div>
       </div>
 
       {/* ---------------- 工具 ---------------- */}
       <div className="section">
-        <div className="section-title">工具</div>
+        <div className="section-title">{t('工具')}</div>
 
         <div className="field">
           <Switch
             checked={cfg.toolsEnabled}
             onChange={(v) => onChange({ toolsEnabled: v })}
-            label="允许模型调用工具"
+            label={t('允许模型调用工具')}
           />
           <div className="hint">
-            关掉就是纯聊天，请求体里不会出现 tools 字段。模型不支持 function calling 时必须关掉，否则会报 400。
+            {t('关掉就是纯聊天，请求体里不会出现 tools 字段。模型不支持 function calling 时必须关掉，否则会报 400。')}
           </div>
         </div>
 
         {cfg.toolsEnabled ? (
           <>
             <Field
-              label={`工具调用轮次上限：${cfg.maxToolRounds}`}
+              label={t('工具调用轮次上限：{n}', { n: cfg.maxToolRounds })}
               hint={
                 cfg.maxToolRounds > 200
-                  ? '一次提问里模型最多能来回调几轮工具。旧的工具输出会被自动压缩，所以调高不会直接把上下文撑爆 —— ' +
-                    '但每一轮都是一次真实的 API 调用：调到几百意味着一个问题可能烧掉几百次请求，跑偏了也不会自己停。' +
-                    '建议配合「逐步确认」用，别跟「全部放行」叠在一起。'
-                  : '每阶段最多调用几轮工具。到顶后保存阶段汇总并暂停，可接着跑。较早工具输出会缩短，桌面端保留完整证据。'
+                  ? t('一次提问里模型最多能来回调几轮工具。旧的工具输出会被自动压缩，所以调高不会直接把上下文撑爆。但每一轮都是一次真实的 API 调用：调到几百意味着一个问题可能烧掉几百次请求，跑偏了也不会自己停。建议配合「逐步确认」用，别跟「全部放行」叠在一起。')
+                  : t('每阶段最多调用几轮工具。到顶后保存阶段汇总并暂停，可接着跑。较早工具输出会缩短，桌面端保留完整证据。')
               }
             >
               <div className="row" style={{ gap: 8, alignItems: 'center' }}>
@@ -162,22 +161,21 @@ export default function ConfigPanel(props: {
 
             {!props.canRunHostTools ? (
               <div className="hint" style={{ color: 'var(--warn)', marginBottom: 10 }}>
-                这台设备不能直接执行本地工具（文件、命令行、Chrome、Claude Code）。
-                去 设置 → 遥控 配好电脑地址后，这些工具会转发到电脑上执行。
+                {t('这台设备不能直接执行本地工具（文件、命令行、Chrome、Claude Code）。去 设置 → 遥控 配好电脑地址后，这些工具会转发到电脑上执行。')}
               </div>
             ) : null}
 
             {(Object.keys(GROUP_LABEL) as ToolGroup[]).map((group) => {
-              const defs = TOOLS.filter((t) => t.group === group);
+              const defs = TOOLS.filter((item) => item.group === group);
               if (!defs.length) return null;
-              const usable = new Set(availableTools(props.canRunHostTools).map((t) => t.name));
+              const usable = new Set(availableTools(props.canRunHostTools).map((item) => item.name));
               const allOn = defs.every((d) => cfg.enabledTools.includes(d.name));
 
               return (
                 <div key={group} style={{ marginBottom: 12 }}>
                   <div className="row" style={{ marginBottom: 2 }}>
                     <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--fg-dim)' }}>
-                      {GROUP_LABEL[group]}
+                      {t(GROUP_LABEL[group])}
                     </span>
                     <span style={{ flex: 1 }} />
                     <button
@@ -191,7 +189,7 @@ export default function ConfigPanel(props: {
                         });
                       }}
                     >
-                      {allOn ? '全关' : '全开'}
+                      {allOn ? t('全关') : t('全开')}
                     </button>
                   </div>
 
@@ -216,8 +214,8 @@ export default function ConfigPanel(props: {
                           <span className="tool-name">
                             {d.label} <span className="tool-code">{d.name}</span>
                           </span>
-                          {d.dangerous ? <span className="badge-danger">需确认</span> : null}
-                          {!can ? <span className="badge-off">本机不可用</span> : null}
+                          {d.dangerous ? <span className="badge-danger">{t('需确认')}</span> : null}
+                          {!can ? <span className="badge-off">{t('本机不可用')}</span> : null}
                         </label>
                       );
                     })}
@@ -231,14 +229,14 @@ export default function ConfigPanel(props: {
 
       {/* ---------------- 思考强度 ---------------- */}
       <div className="section">
-        <div className="section-title">思考强度</div>
+        <div className="section-title">{t('思考强度')}</div>
 
         <Field
-          label="下发方式"
+          label={t('下发方式')}
           hint={
             cfg.thinkingStyle === 'auto'
-              ? '按当前模型匹配映射表，自动翻译成那家该用的字段。档位在输入框右下角选。'
-              : '手动指定字段，绕过映射表。只有在映射表搞不定某个模型时才需要。'
+              ? t('按当前模型匹配映射表，自动翻译成那家该用的字段。档位在输入框右下角选。')
+              : t('手动指定字段，绕过映射表。只有在映射表搞不定某个模型时才需要。')
           }
         >
           <select
@@ -247,7 +245,7 @@ export default function ConfigPanel(props: {
           >
             {THINKING_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>
-                {o.label}
+                {t(o.label)}
               </option>
             ))}
           </select>
@@ -255,12 +253,12 @@ export default function ConfigPanel(props: {
 
         {cfg.thinkingStyle === 'auto' ? (
           <div className="hint">
-            当前档位：<strong>{cfg.effortLevel}</strong>。映射规则在 设置 → 思考强度 里改。
+            {t('当前档位：')}<strong>{cfg.effortLevel}</strong>{t('。映射规则在 设置 → 思考强度 里改。')}
           </div>
         ) : null}
 
         {cfg.thinkingStyle === 'reasoning_effort' ? (
-          <Field label="强度" hint="不是所有模型都认这四档，报 400 就换一种下发方式。">
+          <Field label={t('强度')} hint={t('不是所有模型都认这四档，报 400 就换一种下发方式。')}>
             <Segmented
               value={cfg.reasoningEffort}
               options={EFFORTS.map((e) => ({ value: e, label: e }))}
@@ -271,8 +269,8 @@ export default function ConfigPanel(props: {
 
         {cfg.thinkingStyle === 'enable_thinking' || cfg.thinkingStyle === 'thinking_object' ? (
           <Field
-            label={`思考预算：${cfg.thinkingBudget} tok`}
-            hint="给思考链留的 token 上限。留太少会出现「想到一半就被截断」。"
+            label={t('思考预算：{n} tok', { n: cfg.thinkingBudget })}
+            hint={t('给思考链留的 token 上限。留太少会出现「想到一半就被截断」。')}
           >
             <input
               type="range"
@@ -288,25 +286,25 @@ export default function ConfigPanel(props: {
 
       {/* ---------------- 上下文 ---------------- */}
       <div className="section">
-        <div className="section-title">上下文</div>
+        <div className="section-title">{t('上下文')}</div>
 
-        <Field label="System Prompt" hint="留空则不下发 system 消息。">
+        <Field label="System Prompt" hint={t('留空则不下发 system 消息。')}>
           <textarea
             rows={4}
             value={cfg.systemPrompt}
-            placeholder="例如：你是一个严谨的量化研究助手，回答用中文，代码用 Python。"
+            placeholder={t('例如：你是一个严谨的量化研究助手，回答用中文，代码用 Python。')}
             onChange={(e) => onChange({ systemPrompt: e.target.value })}
           />
         </Field>
 
-        <p className="hint">任务上下文按当前模型窗口自动整理，保留用户要求、总结和可检索的原始证据。切换模型后继续使用同一份任务记录；旧版“历史条数”限制已停用。</p>
+        <p className="hint">{t('任务上下文按当前模型窗口自动整理，保留用户要求、总结和可检索的原始证据。切换模型后继续使用同一份任务记录；旧版“历史条数”限制已停用。')}</p>
       </div>
 
       {/* ---------------- 采样参数 ---------------- */}
       <div className="section">
-        <div className="section-title">生成参数</div>
+        <div className="section-title">{t('生成参数')}</div>
         <div className="hint" style={{ marginBottom: 10 }}>
-          勾选才会下发。没勾的字段压根不出现在请求体里，走服务端默认值——这样某个模型不认识某个参数时不会直接 400。
+          {t('勾选才会下发。没勾的字段压根不出现在请求体里，走服务端默认值，这样某个模型不认识某个参数时不会直接 400。')}
         </div>
 
         {PARAM_GROUPS.map((group) => {
@@ -315,7 +313,7 @@ export default function ConfigPanel(props: {
           return (
             <div key={group} style={{ marginBottom: 14 }}>
               <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--fg-dim)', marginBottom: 2 }}>
-                {group}
+                {t(group)}
               </div>
               {defs.map((d) => {
                 const st = cfg.params[d.key] ?? { enabled: false, value: d.default };
@@ -325,7 +323,7 @@ export default function ConfigPanel(props: {
                       type="checkbox"
                       checked={st.enabled}
                       onChange={(e) => setParam(d.key, { enabled: e.target.checked })}
-                      aria-label={`启用 ${d.key}`}
+                      aria-label={t('启用 {key}', { key: d.key })}
                     />
                     <span className={`name${st.enabled ? '' : ' off'}`}>{d.label}</span>
                     {d.kind === 'string' ? (
@@ -353,8 +351,7 @@ export default function ConfigPanel(props: {
                   被切断，而现象（答到一半没了）离原因（这个勾）太远 */}
               {group === '长度' && cfg.params.max_tokens?.enabled ? (
                 <div className="hint" style={{ marginTop: 4 }}>
-                  ⚠ 开着 max_tokens = 单轮输出被 {String(cfg.params.max_tokens.value)} token
-                  封顶，长回答会在这里被切断。取消勾选就交给上游用它自己的最大值。
+                  {t('⚠ 开着 max_tokens = 单轮输出被 {n} token 封顶，长回答会在这里被切断。取消勾选就交给上游用它自己的最大值。', { n: String(cfg.params.max_tokens.value) })}
                 </div>
               ) : null}
             </div>
@@ -364,14 +361,14 @@ export default function ConfigPanel(props: {
 
       {/* ---------------- 自由字段 ---------------- */}
       <div className="section">
-        <div className="section-title">附加请求字段</div>
+        <div className="section-title">{t('附加请求字段')}</div>
         <Field
-          label="JSON 对象，最后浅合并进请求体"
+          label={t('JSON 对象，最后浅合并进请求体')}
           hint={
             customBodyError ? (
               <span style={{ color: 'var(--danger)' }}>{customBodyError}</span>
             ) : (
-              '上面没有覆盖到的参数写这里，例如 {"knowledge_config": {...}} 或 {"plugins": [...]}。同名字段会覆盖上面的设置。'
+              t('上面没有覆盖到的参数写这里，例如 knowledge_config 或 plugins。同名字段会覆盖上面的设置。')
             )
           }
         >
@@ -388,10 +385,10 @@ export default function ConfigPanel(props: {
 
       <div className="row" style={{ gap: 8 }}>
         <button className="btn sm" onClick={props.onPreview} style={{ flex: 1 }}>
-          查看请求体
+          {t('查看请求体')}
         </button>
         <button className="btn sm" onClick={props.onSaveAsDefault} style={{ flex: 1 }}>
-          存为新会话默认
+          {t('存为新会话默认')}
         </button>
       </div>
 
@@ -400,9 +397,9 @@ export default function ConfigPanel(props: {
           className="btn sm"
           onClick={props.onRawDump}
           style={{ flex: 1 }}
-          title="最近一次请求实际发出去的内容，和上游一个字节都没改的回复原文。模型「说要调工具然后没动静」时，答案就在这里面"
+          title={t('最近一次请求实际发出去的内容，和上游一个字节都没改的回复原文。模型「说要调工具然后没动静」时，答案就在这里面')}
         >
-          最近一次原始往返
+          {t('最近一次原始往返')}
         </button>
       </div>
     </div>

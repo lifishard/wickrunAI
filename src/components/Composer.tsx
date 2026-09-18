@@ -19,7 +19,9 @@ import {CLIENT_LABELS} from '../lib/connections';
 import ContextMeter, { type ContextPreview } from './ContextMeter';
 import { routeKey } from '../lib/adaptive';
 import {validateAttachmentSize,validateAttachmentBatch} from '../lib/attachment-limits';
+import { useT } from '../lib/i18n';
 
+/** label / desc 是简体源文案，同时充当翻译 key。 */
 const APPROVAL_OPTIONS: { value: ApprovalMode; label: string; desc: string }[] = [
   {
     value: 'ask',
@@ -42,6 +44,8 @@ type SendMode = 'chat' | 'work';
 
 export default function Composer(props: {
   controls?:React.ReactNode;
+  /** 会话级设置的入口，放在底栏里，不再占一整行 */
+  barControls?:React.ReactNode;
   initialDraft?: string;
   onDraftChange?: (text: string) => void;
   client?:import('../lib/connections').ClientSelection;
@@ -118,6 +122,7 @@ export default function Composer(props: {
   queued: string[];
   onDropQueued: (index: number) => void;
 }) {
+  const t = useT();
   const [text, setText] = React.useState(props.initialDraft ?? '');
   const [attachmentError,setAttachmentError]=React.useState('');
   // Keep keystrokes local; synchronizing every key repaints and saves the entire conversation.
@@ -253,7 +258,7 @@ export default function Composer(props: {
       reader.onload = () => {
         const url = String(reader.result ?? '');
         if (!url.startsWith('data:')) return;
-        const name = f.name && f.name !== 'image.png' ? f.name : `粘贴的图片-${Date.now()}.png`;
+        const name = f.name && f.name !== 'image.png' ? f.name : `${t('粘贴的图片')}-${Date.now()}.png`;
         props.onPasteImage(url, name, f.type, f.size);
       };
       reader.readAsDataURL(f);
@@ -272,11 +277,11 @@ export default function Composer(props: {
               {props.quotes.map((q) => (
                 <div className="quote-draft-item" key={q.id}>
                   <span className="quote-mark">“</span><div>{q.text}</div>
-                  <button className="icon-btn" aria-label="移除引用" onClick={() => props.onRemoveQuote(q.id)}>✕</button>
+                  <button className="icon-btn" aria-label={t('移除引用')} onClick={() => props.onRemoveQuote(q.id)}>✕</button>
                 </div>
               ))}
               <label className="quote-scope"><input type="checkbox" checked={props.quoteOnly} onChange={(e) => props.onQuoteOnly(e.target.checked)} />
-                只发送引用段落和本次问题，保留项目规范
+                {t('只发送引用段落和本次问题，保留项目规范')}
               </label>
             </div>
           ) : null}
@@ -288,14 +293,14 @@ export default function Composer(props: {
                   <span className="queue-text" title={q}>
                     {q}
                   </span>
-                  {props.busy&&props.onSendQueuedNow?<button className="btn sm" onClick={()=>props.onSendQueuedNow?.(i)}>立即送出</button>:null}
-                  <button className="icon-btn" title="取消这条" onClick={() => props.onDropQueued(i)}>
+                  {props.busy&&props.onSendQueuedNow?<button className="btn sm" onClick={()=>props.onSendQueuedNow?.(i)}>{t('立即送出')}</button>:null}
+                  <button className="icon-btn" title={t('取消这条')} onClick={() => props.onDropQueued(i)}>
                     ✕
                   </button>
                 </span>
               ))}
-              <span className="queue-note">{props.queuePaused ? '队列已暂停' : '排队中，这一轮结束后依次发出'}</span>
-              {props.queuePaused ? <button className="btn sm" onClick={props.onResumeQueue}>继续队列</button> : null}
+              <span className="queue-note">{props.queuePaused ? t('队列已暂停') : t('排队中，这一轮结束后依次发出')}</span>
+              {props.queuePaused ? <button className="btn sm" onClick={props.onResumeQueue}>{t('继续队列')}</button> : null}
             </div>
           ) : null}
 
@@ -321,7 +326,7 @@ export default function Composer(props: {
 
           {slashOpen ? (
             <div className="slash-menu">
-              <div className="picker-label">技能 · 输入 / 唤起</div>
+              <div className="picker-label">{t('技能 · 输入 / 唤起')}</div>
               {slashHits.map((sk, i) => (
                 <button
                   key={sk.id}
@@ -332,11 +337,11 @@ export default function Composer(props: {
                   <span className="popup-icon">/</span>
                   <span>
                     <strong>{sk.name}</strong>
-                    <small>{sk.description || '没写描述'}</small>
+                    <small>{sk.description || t('没写描述')}</small>
                   </span>
                 </button>
               ))}
-              <div className="picker-foot">↑↓ 选择 · Enter 确认 · Esc 关掉</div>
+              <div className="picker-foot">{t('↑↓ 选择 · Enter 确认 · Esc 关掉')}</div>
             </div>
           ) : null}
 
@@ -352,7 +357,7 @@ export default function Composer(props: {
                 </span>
               ))}
               <span className="queue-note">
-                这些技能的指令会注入每一轮，直到你点 ✕ 摘掉
+                {t('这些技能的指令会注入每一轮，直到你点 ✕ 摘掉')}
               </span>
             </div>
           ) : null}
@@ -383,10 +388,10 @@ export default function Composer(props: {
             value={text}
             placeholder={
               props.disabled
-                ? (props.disabledReason ?? '请先完成配置')
+                ? (props.disabledReason ?? t('请先完成配置'))
                 : props.busy
-                  ? '还在生成，现在输入会排到队尾…'
-                  : '问点什么…（图片可以直接粘贴）'
+                  ? t('还在生成，现在输入会排到队尾…')
+                  : t('问点什么…（图片可以直接粘贴）')
             }
             disabled={props.disabled}
             onChange={(e) => {
@@ -404,7 +409,7 @@ export default function Composer(props: {
             <div className="menu-anchor" ref={plusRef}>
               <button
                 className="btn sm ghost"
-                title="添加文件、图片或工作目录"
+                title={t('添加文件、图片或工作目录')}
                 aria-expanded={plusOpen}
                 aria-haspopup="dialog"
                 onClick={() => {
@@ -415,7 +420,7 @@ export default function Composer(props: {
                 ＋
               </button>
               {plusOpen ? (
-                <AnchoredPopover anchorRef={plusRef} onClose={() => setPlusOpen(false)} className="popup" label="添加附件与工作目录">
+                <AnchoredPopover anchorRef={plusRef} onClose={() => setPlusOpen(false)} className="popup" label={t('添加附件与工作目录')}>
                   <button
                     className="popup-item"
                     disabled={!props.canPickLocal}
@@ -426,11 +431,11 @@ export default function Composer(props: {
                   >
                     <span className="popup-icon">📁</span>
                     <span>
-                      <strong>选择工作目录</strong>
+                      <strong>{t('选择工作目录')}</strong>
                       <small>
                         {props.workspaceCount
-                          ? `已配 ${props.workspaceCount} 个，再加一个`
-                          : '还没配，文件和命令行工具会拒绝执行'}
+                          ? t('已配 {n} 个，再加一个', { n: props.workspaceCount })
+                          : t('还没配，文件和命令行工具会拒绝执行')}
                       </small>
                     </span>
                   </button>
@@ -444,8 +449,8 @@ export default function Composer(props: {
                   >
                     <span className="popup-icon">📄</span>
                     <span>
-                      <strong>添加文件</strong>
-                      <small>文本和代码，内容直接进这轮对话</small>
+                      <strong>{t('添加文件')}</strong>
+                      <small>{t('文本和代码，内容直接进这轮对话')}</small>
                     </span>
                   </button>
                   <button
@@ -458,12 +463,12 @@ export default function Composer(props: {
                   >
                     <span className="popup-icon">🖼</span>
                     <span>
-                      <strong>添加图片</strong>
-                      <small>也可以直接 Ctrl+V 粘贴。需要模型支持多模态</small>
+                      <strong>{t('添加图片')}</strong>
+                      <small>{t('也可以直接 Ctrl+V 粘贴。需要模型支持多模态')}</small>
                     </span>
                   </button>
                   {!props.canPickLocal ? (
-                    <div className="popup-note">这台设备读不了本地文件，去设置里配好遥控。</div>
+                    <div className="popup-note">{t('这台设备读不了本地文件，去设置里配好遥控。')}</div>
                   ) : null}
                 </AnchoredPopover>
               ) : null}
@@ -474,17 +479,17 @@ export default function Composer(props: {
                 className={`btn sm ghost approval-${props.approvalMode}`}
                 aria-expanded={approvalOpen}
                 aria-haspopup="dialog"
-                title={current.desc}
+                title={t(current.desc)}
                 onClick={() => {
                   setApprovalOpen((v) => !v);
                   setPlusOpen(false);
                 }}
               >
                 {props.approvalMode === 'all' ? '⚡' : props.approvalMode === 'auto' ? '◐' : '🔒'}{' '}
-                {current.label}
+                {t(current.label)}
               </button>
               {approvalOpen ? (
-                <AnchoredPopover anchorRef={approvalRef} onClose={() => setApprovalOpen(false)} className="popup wide" label="操作确认方式">
+                <AnchoredPopover anchorRef={approvalRef} onClose={() => setApprovalOpen(false)} className="popup wide" label={t('操作确认方式')}>
                   {APPROVAL_OPTIONS.map((o) => (
                     <button
                       key={o.value}
@@ -498,8 +503,8 @@ export default function Composer(props: {
                         {o.value === 'all' ? '⚡' : o.value === 'auto' ? '◐' : '🔒'}
                       </span>
                       <span>
-                        <strong>{o.label}</strong>
-                        <small>{o.desc}</small>
+                        <strong>{t(o.label)}</strong>
+                        <small>{t(o.desc)}</small>
                       </span>
                     </button>
                   ))}
@@ -507,9 +512,11 @@ export default function Composer(props: {
               ) : null}
             </div>
 
+            {props.barControls}
+
             <ModelPicker
               clientSlot={props.connectionSettings && props.onClient && props.onConnectionSettings ? <ClientConnections selection={props.client} onSelect={props.onClient} settings={props.connectionSettings} onSettings={props.onConnectionSettings}/> : undefined}
-              displayModel={props.client ? `${CLIENT_LABELS[props.client.kind]} · ${props.client.model==='default'?'默认':props.client.model}` : undefined}
+              displayModel={props.client ? `${CLIENT_LABELS[props.client.kind]} · ${props.client.model==='default'?t('默认'):props.client.model}` : undefined}
               profiles={props.profiles}
               profileId={props.profileId}
               onProfile={props.onProfile}
@@ -532,13 +539,13 @@ export default function Composer(props: {
 
             {/* ---- 右下角 ---- */}
             {props.contextPreview ? <ContextMeter preview={props.contextPreview} draft={contextDraft} /> : null}
-            {!props.stream ? <span className="chip">非流式</span> : null}
+            {!props.stream ? <span className="chip">{t('非流式')}</span> : null}
 
-            <div className="composer-mode-switch" role="group" aria-label="请求模式" title="沿用同一段对话和附件；Chat 讨论，Work 接着执行。切换后对下一条消息生效。">
+            <div className="composer-mode-switch" role="group" aria-label={t('请求模式')} title={t('沿用同一段对话和附件；Chat 讨论，Work 接着执行。切换后对下一条消息生效。')}>
               <button
                 type="button"
                 aria-pressed={mode === 'chat'}
-                aria-label="Chat 模式：仅文本对话，不下发工具"
+                aria-label={t('Chat 模式：仅文本对话，不下发工具')}
                 className={`btn sm ghost mode-switch-btn${mode === 'chat' ? ' selected' : ''}`}
                 onClick={() => setSendMode('chat')}
                 onKeyDown={(event) => {
@@ -553,7 +560,7 @@ export default function Composer(props: {
               <button
                 type="button"
                 aria-pressed={mode === 'work'}
-                aria-label="Work 模式：可调用工具，按当前审批规则执行"
+                aria-label={t('Work 模式：可调用工具，按当前审批规则执行')}
                 className={`btn sm ghost mode-switch-btn${mode === 'work' ? ' selected' : ''}`}
                 onClick={() => setSendMode('work')}
                 onKeyDown={(event) => {
@@ -567,7 +574,7 @@ export default function Composer(props: {
               </button>
             </div>
 
-            {props.client ? <span className="chip" title="在模型选择器中调整官方客户端提供的思考强度">{props.client.effort || '官方默认强度'}</span> : <EffortPicker
+            {props.client ? <span className="chip" title={t('在模型选择器中调整官方客户端提供的思考强度')}>{props.client.effort || t('官方默认强度')}</span> : <EffortPicker
               level={props.effortLevel}
               onLevel={props.onEffortLevel}
               model={props.model}
@@ -580,21 +587,21 @@ export default function Composer(props: {
             {props.busy ? (
               <>
                 <button className="btn sm danger" onClick={props.onStop}>
-                  停止
+                  {t('停止')}
                 </button>
                 <button
                   className="btn sm"
                   onClick={submit}
                   disabled={props.disabled || !canSend}
-                  title="排到队尾，这一轮结束后自动发出"
+                  title={t('排到队尾，这一轮结束后自动发出')}
                 >
-                  排队发送
+                  {t('排队发送')}
                 </button>
-                {props.onSendNow?<button className="btn sm primary" disabled={props.disabled||!canSend} title="保存当前执行现场，立即处理这条新要求" onClick={()=>{if(props.onSendNow?.(text.trim()))setText('');}}>立即送出</button>:null}
+                {props.onSendNow?<button className="btn sm primary" disabled={props.disabled||!canSend} title={t('保存当前执行现场，立即处理这条新要求')} onClick={()=>{if(props.onSendNow?.(text.trim()))setText('');}}>{t('立即送出')}</button>:null}
               </>
             ) : (
               <button className="btn sm primary" onClick={submit} disabled={props.disabled || !canSend}>
-                发送
+                {t('发送')}
               </button>
             )}
           </div>

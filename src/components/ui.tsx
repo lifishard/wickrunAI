@@ -1,4 +1,5 @@
 import React from 'react';
+import { useT } from '../lib/i18n';
 
 /* 一批最小化的通用控件，避免每个面板各写一遍 */
 
@@ -63,6 +64,7 @@ export function Modal(props: {
   footer?: React.ReactNode;
   wide?: boolean;
 }) {
+  const t = useT();
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') props.onClose();
@@ -77,7 +79,7 @@ export function Modal(props: {
         <div className="modal-head">
           <span>{props.title}</span>
           <span style={{ flex: 1 }} />
-          <button className="icon-btn" onClick={props.onClose} aria-label="关闭">
+          <button className="icon-btn" onClick={props.onClose} aria-label={t('关闭')}>
             ✕
           </button>
         </div>

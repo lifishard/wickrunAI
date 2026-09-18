@@ -1,21 +1,17 @@
 .conversation-controls {
-  border-top: 1px solid var(--border);
   color: var(--fg);
+  padding: 4px 12px 12px;
+  gap: 0;
 }
 
-.conversation-controls > summary {
+.conversation-control-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 14px;
-  padding: 11px 2px;
+  padding: 9px 0;
   color: var(--fg-dim);
   font-size: 12px;
-  cursor: pointer;
-}
-
-.conversation-controls > summary::marker {
-  color: var(--fg-faint);
 }
 
 .conversation-control-summary {
@@ -131,7 +127,7 @@
 }
 
 @media (max-width: 480px) {
-  .conversation-controls > summary {
+  .conversation-control-head {
     align-items: flex-start;
   }
 

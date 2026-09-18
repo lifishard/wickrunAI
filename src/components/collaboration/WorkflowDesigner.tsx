@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useT } from '../../lib/i18n';
 import WorkflowCanvas from './WorkflowCanvas';
 import type { CanvasSelection } from './WorkflowCanvas';
 import {
@@ -66,6 +67,7 @@ export default function WorkflowDesigner({
   onRun,
   onSavedVersion,
 }: WorkflowDesignerProps) {
+  const t = useT();
   const [local, setLocal] = useState<Workflow>(() => structuredClone(workflow));
   const localRef = useRef(local);
   const [selection, setSelection] = useState<CanvasSelection>(null);
@@ -76,7 +78,7 @@ export default function WorkflowDesigner({
   const [manualFrom, setManualFrom] = useState<string>('');
   const [manualTo, setManualTo] = useState<string>('');
   const [manualPort, setManualPort] = useState<string>('next');
-  const [manualLabel, setManualLabel] = useState<string>('继续');
+  const [manualLabel, setManualLabel] = useState<string>('继续');  // 存进数据的端口标签，渲染时翻译
   const [manualMax, setManualMax] = useState<string>('1');
   const view=local.editorView??(window.innerWidth<600?'list':'canvas');
   const ownRevisions=useRef(new Set<number>());
@@ -256,7 +258,7 @@ export default function WorkflowDesigner({
     mutate((draft) => {
       const copy = structuredClone(activeNode);
       copy.id = copiedId;
-      copy.title = `${copy.title}（副本）`;
+      copy.title = t('{title}（副本）', { title: copy.title });
       copy.x += 28;
       copy.y += 28;
       draft.draft.nodes.push(copy);
@@ -429,9 +431,9 @@ export default function WorkflowDesigner({
 
   const getMemberName = useCallback((id?: string) => {
     if (!id) {
-      return '未设置';
+      return t('未设置');
     }
-    return members.find((member) => member.id === id)?.name ?? '未知成员';
+    return members.find((member) => member.id === id)?.name ?? t('未知成员');
   }, [members]);
 
   return (
@@ -439,7 +441,7 @@ export default function WorkflowDesigner({
       <header className="workflow-designer-header">
         <div className="workflow-designer-top-row">
           <label className="workflow-designer-field">
-            <span>流程名</span>
+            <span>{t('流程名')}</span>
             <input
               value={local.name}
               onChange={(event) => {
@@ -452,7 +454,7 @@ export default function WorkflowDesigner({
           </label>
 
           <label className="workflow-designer-field">
-            <span>最大步骤</span>
+            <span>{t('最大步骤')}</span>
             <input
               type="number"
               min={1}
@@ -467,7 +469,7 @@ export default function WorkflowDesigner({
           </label>
 
           <label className="workflow-designer-field">
-            <span>最大分钟</span>
+            <span>{t('最大分钟')}</span>
             <input
               type="number"
               min={1}
@@ -482,7 +484,7 @@ export default function WorkflowDesigner({
           </label>
 
           <label className="workflow-designer-field">
-            <span>最大 Token</span>
+            <span>{t('最大 Token')}</span>
             <input
               type="number"
               min={1}
@@ -506,23 +508,23 @@ export default function WorkflowDesigner({
                 </option>
               ))}
             </select>
-            <button type="button" onClick={()=>addNode()} className="workflow-designer-btn">新增节点</button>
-            <button type="button" onClick={deleteSelection} className="workflow-designer-btn workflow-designer-danger">删除</button>
-            <button type="button" onClick={duplicateSelection} className="workflow-designer-btn">复制</button>
-            <button type="button" onClick={undo} disabled={undoStack.length === 0} className="workflow-designer-btn">撤销</button>
-            <button type="button" onClick={redo} disabled={redoStack.length === 0} className="workflow-designer-btn">重做</button>
+            <button type="button" onClick={()=>addNode()} className="workflow-designer-btn">{t('新增节点')}</button>
+            <button type="button" onClick={deleteSelection} className="workflow-designer-btn workflow-designer-danger">{t('删除')}</button>
+            <button type="button" onClick={duplicateSelection} className="workflow-designer-btn">{t('复制')}</button>
+            <button type="button" onClick={undo} disabled={undoStack.length === 0} className="workflow-designer-btn">{t('撤销')}</button>
+            <button type="button" onClick={redo} disabled={redoStack.length === 0} className="workflow-designer-btn">{t('重做')}</button>
           </div>
 
           <div className="workflow-designer-inline">
             <button type="button" onClick={saveVersion} disabled={errors.length>0} className="workflow-designer-btn workflow-designer-btn-accent">
-              保存为版本
+              {t('保存为版本')}
             </button>
             <select
               value={runVersionId}
               onChange={(event) => setRunVersionId(event.target.value)}
               className="workflow-designer-select"
             >
-              <option value="">请选择版本</option>
+              <option value="">{t('请选择版本')}</option>
               {currentVersionNames.map((item) => (
                 <option key={item.id} value={item.id}>
                   {item.name}
@@ -530,15 +532,15 @@ export default function WorkflowDesigner({
               ))}
             </select>
             <button type="button" onClick={run} disabled={!canRun} className="workflow-designer-btn">
-              运行版本
+              {t('运行版本')}
             </button>
           </div>
         </div>
 
         <div className="workflow-designer-validation">
-          <span className={`workflow-designer-pill ${errors.length ? 'is-error' : 'is-ok'}`}>错误: {errors.length}</span>
-          <span className="workflow-designer-pill">警告: {issues.length - errors.length}</span>
-          <button className="workflow-designer-btn" aria-pressed={view==='canvas'} onClick={()=>mutate(d=>{d.editorView='canvas';},{record:false})}>画布</button><button className="workflow-designer-btn" aria-pressed={view==='list'} onClick={()=>mutate(d=>{d.editorView='list';},{record:false})}>列表编辑</button><span className="workflow-designer-tip">拖拽端口可新建连线；回退/重做同步更新。</span>
+          <span className={`workflow-designer-pill ${errors.length ? 'is-error' : 'is-ok'}`}>{t('错误: {n}', { n: errors.length })}</span>
+          <span className="workflow-designer-pill">{t('警告: {n}', { n: issues.length - errors.length })}</span>
+          <button className="workflow-designer-btn" aria-pressed={view==='canvas'} onClick={()=>mutate(d=>{d.editorView='canvas';},{record:false})}>{t('画布')}</button><button className="workflow-designer-btn" aria-pressed={view==='list'} onClick={()=>mutate(d=>{d.editorView='list';},{record:false})}>{t('列表编辑')}</button><span className="workflow-designer-tip">{t('拖拽端口可新建连线；回退/重做同步更新。')}</span>
         </div>
       </header>
 
@@ -569,7 +571,7 @@ export default function WorkflowDesigner({
 
         <aside className="workflow-designer-side">
           <section className="workflow-designer-panel">
-            <h3>可编辑节点列表</h3>
+            <h3>{t('可编辑节点列表')}</h3>
             <div className="workflow-designer-list">
               {local.draft.nodes.map((node) => (
                 <div
@@ -605,10 +607,10 @@ export default function WorkflowDesigner({
           </section>
 
           <section className="workflow-designer-panel">
-            <h3>新建连线（列表）</h3>
+            <h3>{t('新建连线（列表）')}</h3>
             <div className="workflow-designer-inline">
               <select value={manualFrom} onChange={(event) => setManualFrom(event.target.value)} className="workflow-designer-select">
-                <option value="">从</option>
+                <option value="">{t('从')}</option>
                 {local.draft.nodes.map((node) => (
                   <option key={node.id} value={node.id}>
                     {node.title}
@@ -616,7 +618,7 @@ export default function WorkflowDesigner({
                 ))}
               </select>
               <select value={manualTo} onChange={(event) => setManualTo(event.target.value)} className="workflow-designer-select">
-                <option value="">到</option>
+                <option value="">{t('到')}</option>
                 {local.draft.nodes.map((node) => (
                   <option key={node.id} value={node.id}>
                     {node.title}
@@ -629,7 +631,7 @@ export default function WorkflowDesigner({
               <select value={manualPort} onChange={(event) => setManualPort(event.target.value)} className="workflow-designer-select">
                 {fromNodePorts.map((port) => (
                   <option key={port.id} value={port.id}>
-                    {port.label}
+                    {t(port.label)}
                   </option>
                 ))}
               </select>
@@ -637,7 +639,7 @@ export default function WorkflowDesigner({
                 value={manualLabel}
                 onChange={(event) => setManualLabel(event.target.value)}
                 className="workflow-designer-input"
-                placeholder="端口文案"
+                placeholder={t('端口文案')}
               />
               <input
                 value={manualMax}
@@ -645,16 +647,16 @@ export default function WorkflowDesigner({
                 className="workflow-designer-input"
                 min={1}
                 type="number"
-                placeholder="最大遍历"
+                placeholder={t('最大遍历')}
               />
               <button type="button" onClick={createManualEdge} className="workflow-designer-btn workflow-designer-btn-accent">
-                新建连线
+                {t('新建连线')}
               </button>
             </div>
           </section>
 
           <section className="workflow-designer-panel">
-            <h3>连线可编辑列表</h3>
+            <h3>{t('连线可编辑列表')}</h3>
             <div className="workflow-designer-list">
               {local.draft.edges.map((edge) => (
                 <div
@@ -710,7 +712,7 @@ export default function WorkflowDesigner({
                         updateEdge(edge.id, { loop: event.target.checked });
                       }}
                     />
-                    <span>循环</span>
+                    <span>{t('循环')}</span>
                     <input
                       type="number"
                       value={edge.maxTraversals}
@@ -727,7 +729,7 @@ export default function WorkflowDesigner({
           </section>
 
           <section className="workflow-designer-panel">
-            <h3>版本（不可变）</h3>
+            <h3>{t('版本（不可变）')}</h3>
             <div className="workflow-designer-list">
               {local.versions.length ? (
                 local.versions
@@ -747,22 +749,22 @@ export default function WorkflowDesigner({
                           onRun(version.id);
                         }}
                       >
-                        运行
+                        {t('运行')}
                       </button>
                     </div>
                   ))
               ) : (
-                <p className="workflow-designer-empty">尚未保存版本。</p>
+                <p className="workflow-designer-empty">{t('尚未保存版本。')}</p>
               )}
             </div>
           </section>
 
           <section className="workflow-designer-panel">
-            <h3>节点属性</h3>
+            <h3>{t('节点属性')}</h3>
             {activeNode ? (
               <div className="workflow-designer-form">
                 <label>
-                  标题
+                  {t('标题')}
                   <input
                     value={activeNode.title}
                     onChange={(event) => updateNode(activeNode.id, { title: event.target.value })}
@@ -770,7 +772,7 @@ export default function WorkflowDesigner({
                   />
                 </label>
                 <label>
-                  类型
+                  {t('类型')}
                   <select
                     value={activeNode.type}
                     onChange={(event) =>
@@ -788,7 +790,7 @@ export default function WorkflowDesigner({
                   </select>
                 </label>
                 <label>
-                  执行次数上限
+                  {t('执行次数上限')}
                   <input
                     type="number"
                     min={1}
@@ -803,7 +805,7 @@ export default function WorkflowDesigner({
                 </label>
 
                 <label>
-                  输入引用（逗号分隔）
+                  {t('输入引用（逗号分隔）')}
                   <input
                     value={activeNode.inputRefs.join(', ')}
                     onChange={(event) => updateNode(activeNode.id, { inputRefs: event.target.value })}
@@ -812,7 +814,7 @@ export default function WorkflowDesigner({
                 </label>
 
                 <label>
-                  输出要求
+                  {t('输出要求')}
                   <textarea
                     value={activeNode.outputRequirement}
                     onChange={(event) =>
@@ -826,7 +828,7 @@ export default function WorkflowDesigner({
                 </label>
 
                 <label>
-                  指令
+                  {t('指令')}
                   <textarea
                     value={activeNode.instructions}
                     onChange={(event) => updateNode(activeNode.id, { instructions: event.target.value })}
@@ -837,13 +839,13 @@ export default function WorkflowDesigner({
 
                 {(activeNode.type === 'agent' || activeNode.type === 'review' || activeNode.type === 'handoff') && (
                   <label>
-                    成员
+                    {t('成员')}
                     <select
                       value={activeNode.memberId ?? ''}
                       onChange={(event) => updateNode(activeNode.id, { memberId: event.target.value })}
                       className="workflow-designer-select"
                     >
-                      <option value="">未设置</option>
+                      <option value="">{t('未设置')}</option>
                       {members
                         .filter((member) => member.enabled)
                         .map((member) => (
@@ -857,7 +859,7 @@ export default function WorkflowDesigner({
 
                 {activeNode.type === 'discussion' ? (
                   <label>
-                    讨论成员
+                    {t('讨论成员')}
                     <div className="workflow-designer-grid-small">
                       {members
                         .filter((member) => member.enabled)
@@ -889,7 +891,7 @@ export default function WorkflowDesigner({
                 {activeNode.type === 'condition' ? (
                   <>
                     <label>
-                      条件来源
+                      {t('条件来源')}
                       <select
                         value={activeNode.condition?.source ?? ''}
                         onChange={(event) =>
@@ -897,7 +899,7 @@ export default function WorkflowDesigner({
                         }
                         className="workflow-designer-select"
                       >
-                        <option value="">未设置</option>
+                        <option value="">{t('未设置')}</option>
                         {local.draft.nodes.map((node) => (
                           <option key={node.id} value={node.id}>
                             {node.title}
@@ -906,7 +908,7 @@ export default function WorkflowDesigner({
                       </select>
                     </label>
                     <label>
-                      命中文本
+                      {t('命中文本')}
                       <input
                         value={activeNode.condition?.contains ?? ''}
                         onChange={(event) =>
@@ -919,7 +921,7 @@ export default function WorkflowDesigner({
                 ) : null}
 
                 <label>
-                  汇合策略
+                  {t('汇合策略')}
                   <select
                     value={activeNode.join}
                     onChange={(event) =>
@@ -934,13 +936,13 @@ export default function WorkflowDesigner({
                   </select>
                 </label>
 
-                <p className="workflow-designer-sub">成员当前：{getMemberName(activeNode.memberId)}</p>
+                <p className="workflow-designer-sub">{t('成员当前：')}{getMemberName(activeNode.memberId)}</p>
               </div>
             ) : activeEdge ? (
               <div className="workflow-designer-form">
-                <p>当前选中连线：{activeEdge.label}</p>
+                <p>{t('当前选中连线：')}{t(activeEdge.label)}</p>
                 <label>
-                  文案
+                  {t('文案')}
                   <input
                     value={activeEdge.label}
                     onChange={(event) => updateEdge(activeEdge.id, { label: event.target.value })}
@@ -949,12 +951,12 @@ export default function WorkflowDesigner({
                 </label>
               </div>
             ) : (
-              <p className="workflow-designer-empty">先选中一个节点或连线查看属性。</p>
+              <p className="workflow-designer-empty">{t('先选中一个节点或连线查看属性。')}</p>
             )}
           </section>
 
           <section className="workflow-designer-panel">
-            <h3>校验</h3>
+            <h3>{t('校验')}</h3>
             <div className="workflow-designer-list">
               {issues.length ? (
                 issues.map((issue) => (
@@ -975,7 +977,7 @@ export default function WorkflowDesigner({
                   </div>
                 ))
               ) : (
-                <p className="workflow-designer-empty">校验通过。</p>
+                <p className="workflow-designer-empty">{t('校验通过。')}</p>
               )}
             </div>
           </section>

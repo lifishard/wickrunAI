@@ -1,4 +1,5 @@
 import React from 'react';
+import { useT } from '../lib/i18n';
 import type { AccessRequest } from '../types';
 
 /* ------------------------------------------------------------------ *
@@ -53,8 +54,7 @@ const SCOPE_INFO: Record<
     title: '截屏并控制鼠标键盘',
     what: '允许截取屏幕、移动和点击鼠标、模拟键盘输入。',
     risk:
-      '截屏会把当时屏幕上的一切发给模型背后的服务商 —— 包括另一个窗口里的密码管理器、' +
-      '私信、银行页面。鼠标键盘则意味着它能点任何按钮。',
+      '截屏会把当时屏幕上的一切发给模型背后的服务商，包括另一个窗口里的密码管理器、私信、银行页面。鼠标键盘则意味着它能点任何按钮。',
   },
 };
 
@@ -62,6 +62,7 @@ export default function GrantDialog(props: {
   req: AccessRequest;
   onDecide: (granted: boolean, remember?: boolean) => void;
 }) {
+  const t = useT();
   const info = SCOPE_INFO[props.req.scope] ?? SCOPE_INFO.path;
   const canRemember = props.req.scope !== 'admin';
 
@@ -83,11 +84,11 @@ export default function GrantDialog(props: {
         <div className="grant-head">
           <span className="grant-icon">{info.icon}</span>
           <div>
-            <div className="grant-title">模型申请权限：{info.title}</div>
+            <div className="grant-title">{t('模型申请权限：')}{t(info.title)}</div>
             <div className="hint">
               {canRemember
-                ? `默认只在这次会话有效。选择记住则 ${REMEMBER_DAYS} 天内不再问，随时可在顶部授权条上撤销`
-                : '提权永远只在这次会话有效，而且不提供记住 —— 这种权限每次都该重新点头'}
+                ? t('默认只在这次会话有效。选择记住则 {days} 天内不再问，随时可在顶部授权条上撤销', { days: REMEMBER_DAYS })
+                : t('提权永远只在这次会话有效，而且不提供记住。这种权限每次都该重新点头')}
             </div>
           </div>
         </div>
@@ -99,32 +100,32 @@ export default function GrantDialog(props: {
         ) : null}
 
         <div className="grant-block">
-          <div className="grant-label">它要拿这个做什么</div>
-          <div className="grant-reason">{props.req.reason || '（模型没有给出理由 —— 这本身就值得拒绝）'}</div>
+          <div className="grant-label">{t('它要拿这个做什么')}</div>
+          <div className="grant-reason">{props.req.reason || t('（模型没有给出理由，这本身就值得拒绝）')}</div>
         </div>
 
         <div className="grant-block">
-          <div className="grant-label">同意之后它能做什么</div>
-          <div>{info.what}</div>
+          <div className="grant-label">{t('同意之后它能做什么')}</div>
+          <div>{t(info.what)}</div>
         </div>
 
         <div className="grant-block warn">
-          <div className="grant-label">风险</div>
-          <div>{info.risk}</div>
+          <div className="grant-label">{t('风险')}</div>
+          <div>{t(info.risk)}</div>
         </div>
 
         <div className="grant-foot">
-          <span className="hint">拒绝不会中断对话，模型会换个办法继续</span>
+          <span className="hint">{t('拒绝不会中断对话，模型会换个办法继续')}</span>
           <span style={{ flex: 1 }} />
           <button className="btn" onClick={() => props.onDecide(false)}>
-            拒绝（Esc）
+            {t('拒绝（Esc）')}
           </button>
           <button className="btn" onClick={() => props.onDecide(true, false)}>
-            同意，仅本次
+            {t('同意，仅本次')}
           </button>
           {canRemember ? (
             <button className="btn primary" onClick={() => props.onDecide(true, true)}>
-              同意并记住 {REMEMBER_DAYS} 天
+              {t('同意并记住 {days} 天', { days: REMEMBER_DAYS })}
             </button>
           ) : null}
         </div>

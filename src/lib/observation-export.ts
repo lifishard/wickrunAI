@@ -1,3 +1,4 @@
+import { translate } from './i18n';
 import type { ObservationStore, TaskObservation } from './observations';
 import { MAX_EVENTS, MAX_TASKS, RETENTION_DAYS, MAX_INDEX_BYTES, isCurrentFeedback } from './observations';
 
@@ -8,14 +9,23 @@ export function filterTasks(tasks:TaskObservation[],filter:ObservationFilter):Ta
   return tasks.filter(t=>(filter.from===undefined||t.startedAt>=filter.from)&&(filter.to===undefined||t.startedAt<=filter.to)&&
     (!filter.model||t.attempts.some(a=>a.model===filter.model))&&(!filter.version||t.attempts.some(a=>a.appVersion===filter.version)));
 }
+/** 返回翻译 key；要填的数字走 acceptanceVars。导出报告用 translate 填成简体，界面用当前语言填。 */
 export function acceptanceLabel(t:TaskObservation):string {
   const a=t.acceptance;
   if(!a.total)return '未建立验收清单';
-  if(a.failed)return `${a.failed} 项未通过`;
-  if(a.unchecked)return `${a.unchecked} 项未检查`;
-  if(a.unverifiable)return `${a.unverifiable} 项无法核验`;
-  return `已列 ${a.total} 项通过（程序 ${a.program}／模型 ${a.model}）`;
+  if(a.failed)return '{failed} 项未通过';
+  if(a.unchecked)return '{unchecked} 项未检查';
+  if(a.unverifiable)return '{unverifiable} 项无法核验';
+  return '已列 {total} 项通过（程序 {program}／模型 {model}）';
 }
+
+export function acceptanceVars(t:TaskObservation):Record<string,number> {
+  const a=t.acceptance;
+  return {failed:a.failed,unchecked:a.unchecked,unverifiable:a.unverifiable,total:a.total,program:a.program,model:a.model};
+}
+
+/** 导出报告固定用简体：它是给人和助手看的诊断包，不跟界面语言走。 */
+const zh=(text:string,vars?:Record<string,number>)=>translate('zh-Hans',text,vars);
 export function summarizeTasks(tasks:TaskObservation[]){
   const stateCounts:Record<string,number>={};for(const t of tasks)stateCounts[t.status]=(stateCounts[t.status]??0)+1;
   const feedback=tasks.filter(isCurrentFeedback),accepted=tasks.filter(t=>t.acceptance.total>0&&t.acceptance.passed===t.acceptance.total);
@@ -38,7 +48,7 @@ export function reportMarkdown(store:ObservationStore,tasks:TaskObservation[],fi
     `输入估算合计 ${sum(t=>t.requests.estimatedInput)} token；输出预留合计 ${sum(t=>t.requests.reservedOutput)} token。预留不是实际消耗，不与实际值相加。无可靠价格时不换算金额。\n\n`+
     `已观测运行分段约 ${Math.round(sum(t=>t.attempts.reduce((n,a)=>n+a.activeMs,0))/1000)} 秒、额度等待分段约 ${Math.round(sum(t=>t.attempts.reduce((n,a)=>n+a.waitMs,0))/1000)} 秒。五分钟以上观测间隔不归因，用户离开时间不计为运行时间。工具耗时与模型请求耗时可能重叠，不能直接相加。\n\n`+
     `## 值得核查的任务\n\n选取规则：当前范围中出现暂停、验收失败或用户反馈部分可用/未解决的全部任务，按最近活动排列；这里最多列 20 个，完整样本见 tasks.jsonl。\n\n`+
-    (failures.slice(0,20).map(t=>`- ${t.id}：${statusLabel[t.status]??'未知'}；${acceptanceLabel(t)}；${t.feedback?(isCurrentFeedback(t)?'':'较早阶段反馈：')+outcomeLabel[t.feedback.outcome]:'未反馈'}。`).join('\n')||'当前没有符合以上规则的记录；这不证明所有任务正确。')+
+    (failures.slice(0,20).map(t=>`- ${t.id}：${statusLabel[t.status]??'未知'}；${zh(acceptanceLabel(t),acceptanceVars(t))}；${t.feedback?(isCurrentFeedback(t)?'':'较早阶段反馈：')+outcomeLabel[t.feedback.outcome]:'未反馈'}。`).join('\n')||'当前没有符合以上规则的记录；这不证明所有任务正确。')+
     `\n\n## 数据限制和观察期\n\n记录系统启用时间 ${new Date(store.createdAt).toISOString()}。按任务开始时间筛选 ${filter.from?new Date(filter.from).toISOString():'不限起点'} 至 ${filter.to?new Date(filter.to).toISOString():'导出时'}；反馈和后续事件截至导出时。模型/版本筛选会包含匹配过的整个任务；跨模型续跑不归因给最后模型。\n\n`+
     `累计因保留范围裁剪 ${store.droppedTasks} 个任务；本包所选任务裁剪 ${sum(t=>t.droppedEvents)} 条事件，${tasks.filter(t=>t.detailLimitReached).length} 个任务达到明细追踪上限；发生 ${store.writeFailures} 次统计读写问题。${store.lastError??''}\n\n`+
     `压缩后发生错误只构成排查线索，不能证明因果；不同任务组合不能直接比较模型优劣。默认包不包含任务正文，无法据此判断答案语义正确性。${tasks.some(t=>t.missing.length)?'部分任务有额外观测缺口，详见 tasks.jsonl。':''}\n`;

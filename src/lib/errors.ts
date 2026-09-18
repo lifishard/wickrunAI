@@ -183,10 +183,12 @@ export function classifyError(
 
   if (status === 401 || status === 403 || has(lower, /invalid api key|unauthorized|authentication|无效的?密钥|鉴权/)) {
     return mk('auth', '这份凭据没通过验证', [
-      `到设置 → API 凭据里重新粘一次 ${ctx.profileName ? `「${ctx.profileName}」` : '当前凭据'} 的 Key，注意首尾空格`,
+      ctx.profileName
+        ? '到设置 → API 凭据里重新粘一次「{profile}」的 Key，注意首尾空格'
+        : '到设置 → API 凭据里重新粘一次当前凭据的 Key，注意首尾空格',
       'Base URL 和 Key 要配套：拿 A 家的 key 去打 B 家的地址一定是 401',
       '点一下「测试连接」，能拉到模型列表才说明凭据是通的',
-    ]);
+    ], { vars: { profile: ctx.profileName ?? '' } });
   }
 
   /* ---------------- 402 / 余额 ---------------- */
@@ -206,7 +208,7 @@ export function classifyError(
       'rate_limit',
       '被上游限流了（不是出错，是发太快）',
       [
-        '等几秒重发就行 —— 应用已经会自动退避重试，这条说明重试次数也用完了',
+        '等几秒重发就行。应用已经会自动退避重试，这条说明重试次数也用完了',
         '工具轮次开得高时一轮要打好几次接口，把「工具轮次上限」调低能少撞几次',
         '同一个 key 在别处也在跑的话，额度是共享的',
         '换一份凭据或换一条不那么热门的路由',
@@ -222,13 +224,13 @@ export function classifyError(
   ) {
     return mk(
       'model_missing',
-      `上游说没有 ${model} 这个模型`,
+      '上游说没有 {model} 这个模型',
       [
         '点模型选择器里的 ↻ 重新拉一次列表，手动加的 ID 可能已经下线了',
         '确认 Base URL 对：同一个 ID 在不同网关下的写法可能不一样（有的要带 owner/ 前缀）',
         '在选择器里搜一个相近的名字换上',
       ],
-      { blameModel: true },
+      { blameModel: true, vars: { model } },
     );
   }
 
@@ -249,16 +251,18 @@ export function classifyError(
       return mk(
         'model_broken',
         binary
-          ? `这条路由要在网关那台机器上跑 ${binary}，但它没装`
+          ? '这条路由要在网关那台机器上跑 {binary}，但它没装'
           : '这条路由背后的命令行工具没装',
         [
-          `换一个模型 —— 这跟你的请求无关，是${binary ? ` ${binary} ` : '那个'}可执行文件不在网关的 PATH 里`,
           binary
-            ? `如果那个网关就跑在你自己电脑上，装好 ${binary} 并确保命令行里直接敲 ${binary} 能跑通，再重启网关`
+            ? '换一个模型。这跟你的请求无关，是 {binary} 可执行文件不在网关的 PATH 里'
+            : '换一个模型。这跟你的请求无关，是那个可执行文件不在网关的 PATH 里',
+          binary
+            ? '如果那个网关就跑在你自己电脑上，装好 {binary} 并确保命令行里直接敲 {binary} 能跑通，再重启网关'
             : '如果网关是你自己跑的，看它的日志确认缺哪个命令',
-          '重试没有意义 —— 缺的可执行文件不会因为多等一会儿就出现',
+          '重试没有意义，缺的可执行文件不会因为多等一会儿就出现',
         ],
-        { blameModel: true },
+        { blameModel: true, vars: { binary: binary ?? '' } },
       );
     }
 
@@ -277,8 +281,7 @@ export function classifyError(
         'model_broken',
         '上游开了流，但一个内容都没发过来',
         [
-          '**把流式关掉再发一次** —— 非流式下上游能返回完整的错误说明，' +
-            '多半会直接告诉你真实原因（余额、配额、路由不可用）。开着流式时它已经没法回一个正经错误码了',
+          '把流式关掉再发一次。非流式下上游能返回完整的错误说明，多半会直接告诉你真实原因（余额、配额、路由不可用）。开着流式时它已经没法回一个正经错误码了',
           '这条路由如果是按量计费的，先去上游控制台看一眼余额',
           '换一条能用的路由（比如网关里的 auto）',
         ],
@@ -290,23 +293,23 @@ export function classifyError(
     if (deterministic) {
       return mk(
         'model_broken',
-        `${model} 这条路由在服务端是坏的`,
+        '{model} 这条路由在服务端是坏的',
         [
-          '换一个模型 —— 这个错误来自上游服务器内部（环境变量、沙箱路径之类），客户端改什么都没用',
+          '换一个模型。这个错误来自上游服务器内部（环境变量、沙箱路径之类），客户端改什么都没用',
           '在模型选择器里点「批量体检」，一次性筛出这个网关上所有能用/不能用的模型',
           '如果整个网关的模型全都这样，那是网关或你的 key 的问题，去上游控制台看看',
         ],
-        { blameModel: true },
+        { blameModel: true, vars: { model } },
       );
     }
     return mk(
       'model_broken',
-      `上游返回了 ${status}，多半是抖了一下`,
+      '上游返回了 {status}，多半是抖了一下',
       [
-        '稍等重试 —— 网关类 5xx 经常是瞬时的',
+        '稍等重试，网关类 5xx 经常是瞬时的',
         '连着几次都这样就换个模型，或者去上游状态页看看',
       ],
-      { retryable: true, blameModel: false },
+      { retryable: true, blameModel: false, vars: { status: status ?? '' } },
     );
   }
 
@@ -314,20 +317,20 @@ export function classifyError(
 
   if (status === 400 || status === 422) {
     if (has(lower, /image|vision|multimodal|image_url|图片|多模态/)) {
-      return mk('multimodal', `${model} 不认识图片`, [
+      return mk('multimodal', '{model} 不认识图片', [
         '换一个多模态模型再发这张图（名字里常带 vl / vision / flash-lite 之类）',
         '或者把图片从输入框里去掉，只发文字',
-      ], { blameModel: true });
+      ], { blameModel: true, vars: { model } });
     }
     if (
       has(lower, /reasoning|thinking|budget|effort/) ||
       (ctx.sentEffort && has(lower, /unsupported|unknown|invalid|not allowed|unrecognized/))
     ) {
-      return mk('bad_param', `${model} 不接受我们下发的思考强度字段`, [
+      return mk('bad_param', '{model} 不接受我们下发的思考强度字段', [
         '把输入框右下角的思考强度调成「不下发」，这一条最快',
-        '如果模型名里本来就带 high / thinking 这类后缀，强度已经烤在路由里了，再叠字段就会 400 —— 去设置 → 思考强度确认「模型名自带强度」那条规则排在第一位',
+        '如果模型名里本来就带 high / thinking 这类后缀，强度已经烤在路由里了，再叠字段就会 400。去设置 → 思考强度确认「模型名自带强度」那条规则排在第一位',
         '这个厂商的映射写错了的话，在同一页改那一行就行，不用改代码',
-      ]);
+      ], { vars: { model } });
     }
     if (has(lower, /context length|maximum context|too long|exceeds?.{0,20}token|上下文/)) {
       return mk('context_too_long', '上下文超出这个模型的窗口了', [
@@ -337,13 +340,13 @@ export function classifyError(
       ]);
     }
     if (ctx.sentTools && has(lower, /tool|function|tools\b/)) {
-      return mk('tools_unsupported', `${model} 不支持工具调用`, [
+      return mk('tools_unsupported', '{model} 不支持工具调用', [
         '在右侧配置面板关掉「给模型下发工具」，纯聊天就能用',
         '要用工具就换一个支持 function calling 的模型',
-      ], { blameModel: true });
+      ], { blameModel: true, vars: { model } });
     }
     return mk('bad_param', '上游说这个请求体它不认', [
-      '右侧配置面板里把刚勾上的生成参数取消掉试试 —— 没勾的参数不会下发，逐个排除最快',
+      '右侧配置面板里把刚勾上的生成参数取消掉试试。没勾的参数不会下发，逐个排除最快',
       '思考强度调成「不下发」再试一次',
       '配置面板的「预览请求体」能看到实际发出去的内容，对着上游文档比一下',
     ]);
@@ -351,9 +354,9 @@ export function classifyError(
 
   /* ---------------- 兜底 ---------------- */
 
-  return mk('unknown', `请求失败（HTTP ${status}）`, [
+  return mk('unknown', '请求失败（HTTP {status}）', [
     '原文在下面。反复出现的话，带上模型 ID 和请求体预览开 issue',
-  ]);
+  ], { vars: { status: status ?? '' } });
 }
 
 /** 第 n 次重试要等多久：指数退避 + 抖动，上游指定了就听上游的 */
@@ -399,7 +402,7 @@ export function stopReasonInfo(
       retryable: false,
       fixes: [
         '右侧配置面板把 max_tokens 调大，或者干脆取消勾选让上游用它自己的上限',
-        '上面这段是**完整收到**的部分，不是全部 —— 直接说「接着写」通常能续上',
+        '上面这段是完整收到的部分，不是全部。直接说「接着写」通常能续上',
         '开了工具的话，截断往往发生在它正要发工具调用的那一刻，所以看起来像「说要干活然后没动静」',
       ],
     };
@@ -411,7 +414,7 @@ export function stopReasonInfo(
       kind: 'unknown',
       title: '上游的内容过滤把这次回答拦下了',
       retryable: false,
-      fixes: ['换个说法重问一次', '换一条别的路由 —— 各家的过滤尺度不一样'],
+      fixes: ['换个说法重问一次', '换一条别的路由，各家的过滤尺度不一样'],
     };
   }
 
@@ -422,11 +425,12 @@ export function stopReasonInfo(
       kind: 'tools_unsupported',
       title:
         stop.droppedCalls > 0
-          ? `有 ${stop.droppedCalls} 个工具调用只传了一半就断了`
+          ? '有 {n} 个工具调用只传了一半就断了'
           : '上游说这轮要调工具，但工具调用没传过来',
+      vars: { n: stop.droppedCalls },
       retryable: true,
       fixes: [
-        '直接重发一次 —— 这种多半是流在工具调用中间被掐断了',
+        '直接重发一次，这种多半是流在工具调用中间被掐断了',
         '右侧配置面板把「流式」关掉再试：非流式是整包返回，不存在传一半',
         '换一条路由。有些网关代理工具调用时会把 tool_calls 字段吃掉',
       ],

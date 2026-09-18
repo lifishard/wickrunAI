@@ -1,4 +1,5 @@
 import React from 'react';
+import { useT } from '../lib/i18n';
 import type { AppSettings, KeyProfile, SearchProvider } from '../types';
 import { BASE_URL_PRESETS, normalizeBaseUrl } from '../lib/api';
 import { secretDelete, secretGet, secretSet, uid } from '../lib/store';
@@ -31,6 +32,7 @@ function SecretInput(props: {
   placeholder: string;
   onSaved?: () => void;
 }) {
+  const t = useT();
   const [value, setValue] = React.useState('');
   const [saved, setSaved] = React.useState(false);
   const [dirty, setDirty] = React.useState(false);
@@ -49,7 +51,7 @@ function SecretInput(props: {
     <div className="row">
       <input
         type="password"
-        placeholder={saved && !dirty ? '已保存（留空不改动）' : props.placeholder}
+        placeholder={saved && !dirty ? t('已保存（留空不改动）') : props.placeholder}
         value={value}
         autoComplete="off"
         onChange={(e) => {
@@ -68,7 +70,7 @@ function SecretInput(props: {
           props.onSaved?.();
         }}
       >
-        保存
+        {t('保存')}
       </button>
       {saved ? (
         <button
@@ -79,7 +81,7 @@ function SecretInput(props: {
             setValue('');
           }}
         >
-          清除
+          {t('清除')}
         </button>
       ) : null}
     </div>
@@ -110,6 +112,7 @@ function buildTime(): string {
 }
 
 function RateLimitRow() {
+  const t = useT();
   const [state, setState] = React.useState<
     { remaining: number; limit: number; resetAt: number } | null
   >(null);
@@ -125,12 +128,12 @@ function RateLimitRow() {
         { method: 'GET', path: '/rate_limit' },
         { toolTimeoutMs: 20000 } as never,
       );
-      if (!res.ok) throw new Error(res.error ?? '查询失败');
+      if (!res.ok) throw new Error(res.error ?? t('查询失败'));
       const data = JSON.parse(res.content) as {
         resources?: { core?: { remaining: number; limit: number; reset: number } };
       };
       const core = data.resources?.core;
-      if (!core) throw new Error('返回里没有 core 额度');
+      if (!core) throw new Error(t('返回里没有 core 额度'));
       setState({ remaining: core.remaining, limit: core.limit, resetAt: core.reset * 1000 });
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -144,13 +147,13 @@ function RateLimitRow() {
   return (
     <div className="row" style={{ alignItems: 'center', gap: 8, marginTop: 4 }}>
       <button className="btn sm" onClick={() => void check()} disabled={busy}>
-        {busy ? '查询中…' : '查看剩余额度'}
+        {busy ? t('查询中…') : t('查看剩余额度')}
       </button>
       {state ? (
         <span className="hint">
-          还剩 <b>{state.remaining}</b> / {state.limit} 次
-          {state.remaining === 0 ? ` —— ${mins} 分钟后自动恢复` : `，${mins} 分钟后重置计数`}
-          {state.limit <= 60 ? '（这是未登录的额度，填 token 会变成 5000）' : '（token 生效中）'}
+          {t('还剩 {remaining} / {limit} 次', { remaining: state.remaining, limit: state.limit })}
+          {state.remaining === 0 ? t('，{mins} 分钟后自动恢复', { mins }) : t('，{mins} 分钟后重置计数', { mins })}
+          {state.limit <= 60 ? t('（这是未登录的额度，填 token 会变成 5000）') : t('（token 生效中）')}
         </span>
       ) : null}
       {err ? <span className="hint" style={{ color: 'var(--danger-fg, #b91c1c)' }}>{err}</span> : null}
@@ -159,6 +162,7 @@ function RateLimitRow() {
 }
 
 function ChromeSection(props: { port: number; onPort: (p: number) => void }) {
+  const t = useT();
   const bridge = desktop();
   const [status, setStatus] = React.useState<ChromeStatus | null>(null);
   const [busy, setBusy] = React.useState(false);
@@ -178,15 +182,12 @@ function ChromeSection(props: { port: number; onPort: (p: number) => void }) {
       <div className="section-title">Chrome</div>
 
       <div className="hint" style={{ marginBottom: 10, lineHeight: 1.85 }}>
-        Chrome 136 之后，<code>--remote-debugging-port</code> 在<strong>默认用户目录</strong>下会被直接忽略
-        —— 这是 Google 为了堵住「拿调试端口偷 cookie」做的安全变更。所以没法直接控制你日常那个
-        Chrome，必须用一份独立的配置目录。
+        {t('Chrome 136 之后，--remote-debugging-port 在默认用户目录下会被直接忽略。Google 用这条变更堵住「拿调试端口偷 cookie」，所以没法直接控制你日常那个 Chrome，必须用一份独立的配置目录。')}
         <br />
-        下面这个按钮会用一份专属配置拉起 Chrome。<strong>第一次需要在那个窗口里登录一遍你要用的网站</strong>，
-        之后配置一直留着，不用重复登录，也完全不碰你日常那份。
+        {t('下面这个按钮会用一份专属配置拉起 Chrome。第一次需要在那个窗口里登录一遍你要用的网站，之后配置一直留着，不用重复登录，也完全不碰你日常那份。')}
       </div>
 
-      <Field label="远程调试端口">
+      <Field label={t('远程调试端口')}>
         <input
           type="number"
           value={props.port}
@@ -208,11 +209,11 @@ function ChromeSection(props: { port: number; onPort: (p: number) => void }) {
                   if (r.ok) {
                     setMsg(
                       r.alreadyRunning
-                        ? `端口上已经有一个实例在跑：${r.browser ?? ''}`
-                        : `已启动 ${r.browserName ?? ''}${r.browser ? `（${r.browser}）` : ''}`,
+                        ? t('端口上已经有一个实例在跑：{browser}', { browser: r.browser ?? '' })
+                        : t('已启动 {name}{detail}', { name: r.browserName ?? '', detail: r.browser ? `（${r.browser}）` : '' }),
                     );
                   } else {
-                    setMsg(r.error ?? '启动失败');
+                    setMsg(r.error ?? t('启动失败'));
                   }
                 } finally {
                   setBusy(false);
@@ -220,12 +221,12 @@ function ChromeSection(props: { port: number; onPort: (p: number) => void }) {
                 }
               }}
             >
-              {busy ? '启动中…' : '启动可控制的 Chrome'}
+              {busy ? t('启动中…') : t('启动可控制的 Chrome')}
             </button>
             <button className="btn" onClick={() => void refresh()}>
-              检测
+              {t('检测')}
             </button>
-            <span className="chip">{status?.running ? '已连通' : '未连通'}</span>
+            <span className="chip">{status?.running ? t('已连通') : t('未连通')}</span>
           </div>
 
           {msg ? (
@@ -237,21 +238,21 @@ function ChromeSection(props: { port: number; onPort: (p: number) => void }) {
           <div className="hint" style={{ marginTop: 8 }}>
             {status?.browserPath ? (
               <>
-                找到的浏览器：<code>{status.browserPath}</code>
+                {t('找到的浏览器：')}<code>{status.browserPath}</code>
                 <br />
               </>
             ) : (
-              <>没在常见位置找到 Chrome 或 Edge。<br /></>
+              <>{t('没在常见位置找到 Chrome 或 Edge。')}<br /></>
             )}
             {status?.profileDir ? (
               <>
-                专属配置目录：<code>{status.profileDir}</code>
+                {t('专属配置目录：')}<code>{status.profileDir}</code>
               </>
             ) : null}
           </div>
         </>
       ) : (
-        <div className="hint">Chrome 只能从桌面端启动。手机端配好遥控后，操作会转发到电脑执行。</div>
+        <div className="hint">{t('Chrome 只能从桌面端启动。手机端配好遥控后，操作会转发到电脑执行。')}</div>
       )}
     </div>
   );
@@ -266,6 +267,7 @@ function RemoteTab(props: {
   settings: AppSettings;
   onChange: (patch: Partial<AppSettings>) => void;
 }) {
+  const t = useT();
   const bridge = desktop();
   const s = props.settings;
   const [status, setStatus] = React.useState<RemoteStatus | null>(null);
@@ -285,13 +287,12 @@ function RemoteTab(props: {
     return (
       <div>
         <div className="hint" style={{ marginBottom: 14, lineHeight: 1.8 }}>
-          手机上没有文件系统权限、控不了 Chrome、也没有 claude CLI，所以手机端的这些工具调用会转发到这台电脑执行。
-          打开下面的服务，然后把地址和令牌抄到手机端的「遥控」设置里。
+          {t('手机上没有文件系统权限、控不了 Chrome、也没有 claude CLI，所以手机端的这些工具调用会转发到这台电脑执行。打开下面的服务，然后把地址和令牌抄到手机端的「遥控」设置里。')}
           <br />
-          <strong>只在内网用。</strong>别把这个端口做端口转发暴露到公网 —— 它背后就是你电脑的命令行。
+          <strong>{t('只在内网用。')}</strong>{t('别把这个端口做端口转发暴露到公网。它背后就是你电脑的命令行。')}
         </div>
 
-        <Field label="监听端口">
+        <Field label={t('监听端口')}>
           <input
             type="number"
             value={port}
@@ -317,15 +318,15 @@ function RemoteTab(props: {
               }
             }}
           >
-            {status?.running ? '停止服务' : '启动服务'}
+            {status?.running ? t('停止服务') : t('启动服务')}
           </button>
-          <span className="chip">{status?.running ? '运行中' : '已停止'}</span>
+          <span className="chip">{status?.running ? t('运行中') : t('已停止')}</span>
           {ping ? <span className="hint" style={{ color: 'var(--danger)' }}>{ping}</span> : null}
         </div>
 
         {status?.running ? (
           <>
-            <Field label="手机端填这个地址" hint="同一个 Wi-Fi 下，挑能通的那条。">
+            <Field label={t('手机端填这个地址')} hint={t('同一个 Wi-Fi 下，挑能通的那条。')}>
               <textarea
                 className="mono"
                 rows={Math.max(2, status.addresses.length)}
@@ -333,7 +334,7 @@ function RemoteTab(props: {
                 value={status.addresses.join('\n')}
               />
             </Field>
-            <Field label="配对令牌" hint="抄到手机端。换端口重启会保留同一个令牌。">
+            <Field label={t('配对令牌')} hint={t('抄到手机端。换端口重启会保留同一个令牌。')}>
               <input
                 type="text"
                 readOnly
@@ -353,15 +354,14 @@ function RemoteTab(props: {
   return (
     <div>
       <div className="hint" style={{ marginBottom: 14, lineHeight: 1.8 }}>
-        在电脑上打开 设置 → 遥控 里的服务，把那边显示的地址和令牌填到这里。
-        填好之后，手机上也能让模型读你电脑的文件、控 Chrome、调 Claude Code。
+        {t('在电脑上打开 设置 → 遥控 里的服务，把那边显示的地址和令牌填到这里。填好之后，手机上也能让模型读你电脑的文件、控 Chrome、调 Claude Code。')}
       </div>
 
       <div className="field">
-        <Switch checked={r.enabled} onChange={(v) => patch({ enabled: v })} label="启用遥控" />
+        <Switch checked={r.enabled} onChange={(v) => patch({ enabled: v })} label={t('启用遥控')} />
       </div>
 
-      <Field label="电脑地址">
+      <Field label={t('电脑地址')}>
         <input
           type="text"
           value={r.url}
@@ -370,24 +370,24 @@ function RemoteTab(props: {
         />
       </Field>
 
-      <Field label="配对令牌">
+      <Field label={t('配对令牌')}>
         <input type="text" value={r.token} onChange={(e) => patch({ token: e.target.value })} />
       </Field>
 
       <button
         className="btn block"
         onClick={async () => {
-          setPing('连接中…');
+          setPing(t('连接中…'));
           try {
             const res = await fetch(`${r.url.replace(/\/+$/, '')}/ping`);
             const j = await res.json();
-            setPing(j.ok ? `连通了：${j.host}` : '对面返回了意外内容');
+            setPing(j.ok ? t('连通了：{host}', { host: j.host }) : t('对面返回了意外内容'));
           } catch (e) {
-            setPing(`连不上：${e instanceof Error ? e.message : String(e)}`);
+            setPing(t('连不上：{reason}', { reason: e instanceof Error ? e.message : String(e) }));
           }
         }}
       >
-        测试连通
+        {t('测试连通')}
       </button>
       {ping ? <div className="hint" style={{ marginTop: 8 }}>{ping}</div> : null}
     </div>
@@ -406,6 +406,7 @@ export default function SettingsDialog(props: {
   encryptionAvailable: boolean | null;
   storePath: string;
 }) {
+  const t = useT();
   const tab = (['keys', 'tools', 'effort', 'remote', 'look'] as Tab[]).includes(props.tab as Tab)
     ? (props.tab as Tab)
     : 'keys';
@@ -424,7 +425,7 @@ export default function SettingsDialog(props: {
   function addProfile() {
     const p: KeyProfile = {
       id: uid('k'),
-      name: `凭据 ${s.keyProfiles.length + 1}`,
+      name: t('凭据 {n}', { n: s.keyProfiles.length + 1 }),
       baseUrl: BASE_URL_PRESETS[0].url,
       hasSecret: false,
       extraHeaders: {},
@@ -444,16 +445,15 @@ export default function SettingsDialog(props: {
       <div>
         {props.encryptionAvailable === false ? (
           <div className="card" style={{ borderColor: 'var(--warn)', color: 'var(--warn)' }}>
-            这台机器上系统级加密不可用，密钥会以明文存在 {props.storePath}。
-            注意别把这个文件同步到云盘或共享出去。
+            {t('这台机器上系统级加密不可用，密钥会以明文存在 {path}。别把这个文件同步到云盘或共享出去。', { path: props.storePath })}
           </div>
         ) : null}
 
         {s.keyProfiles.length === 0 ? (
           <div className="empty">
-            还没有登记任何凭据。
+            {t('还没有登记任何凭据。')}
             <br />
-            去 platform.sensenova.cn 控制台复制一个 API Key 回来。
+            {t('去 platform.sensenova.cn 控制台复制一个 API Key 回来。')}
           </div>
         ) : null}
 
@@ -466,7 +466,7 @@ export default function SettingsDialog(props: {
                 onChange={(e) => updateProfile(p.id, { name: e.target.value })}
                 style={{ fontWeight: 600 }}
               />
-              <label className="switch" title="设为当前使用的凭据">
+              <label className="switch" title={t('设为当前使用的凭据')}>
                 <input
                   type="radio"
                   name="activeProfile"
@@ -474,7 +474,7 @@ export default function SettingsDialog(props: {
                   onChange={() => props.onChange({ activeKeyProfileId: p.id })}
                   style={{ appearance: 'auto', width: 16, height: 16 }}
                 />
-                <span style={{ fontSize: 12 }}>当前</span>
+                <span style={{ fontSize: 12 }}>{t('当前')}</span>
               </label>
               <button
                 className="btn sm danger"
@@ -488,13 +488,13 @@ export default function SettingsDialog(props: {
                   });
                 }}
               >
-                删除
+                {t('删除')}
               </button>
             </div>
 
             <Field
               label="API Base URL"
-              hint="免费额度走 token 端点；企业账号或自建网关填自己的地址。末尾不用加斜杠。"
+              hint={t('免费额度走 token 端点；企业账号或自建网关填自己的地址。末尾不用加斜杠。')}
             >
               <input
                 type="text"
@@ -512,10 +512,16 @@ export default function SettingsDialog(props: {
               </datalist>
             </Field>
 
-            <Field label="API Key" hint="保存后就只留在本机的安全存储里，界面上不再回显。">
+            <p className="hint" style={{ marginTop: -6, lineHeight: 1.8 }}>
+              {t('找免费额度：社区清单 github.com/raullenchai/free-llm-api-resources 列了各家的免费档位和限流，它 fork 自 cheahjs/free-llm-api-resources。')}
+              <br />
+              {t('wickrunAI 与该清单的作者、以及清单内任何 API 供应商之间均无关联关系；本应用不对其作出任何认可或推荐，亦未获其认可或赞助。额度与条款由各供应商自行订立并可随时变更。')}
+            </p>
+
+            <Field label="API Key" hint={t('保存后就只留在本机的安全存储里，界面上不再回显。')}>
               <SecretInput
                 secretId={p.id}
-                placeholder="粘贴 API Key"
+                placeholder={t('粘贴 API Key')}
                 onSaved={() => updateProfile(p.id, { hasSecret: true })}
               />
             </Field>
@@ -531,7 +537,7 @@ export default function SettingsDialog(props: {
                   setTesting(null);
                 }}
               >
-                {testing === p.id ? '测试中…' : '测试连接'}
+                {testing === p.id ? t('测试中…') : t('测试连接')}
               </button>
               {testResult[p.id] ? (
                 <span className="hint" style={{ flex: 1 }}>
@@ -543,7 +549,7 @@ export default function SettingsDialog(props: {
         ))}
 
         <button className="btn block" onClick={addProfile}>
-          ＋ 添加一份凭据
+          {t('＋ 添加一份凭据')}
         </button>
 
       </div>
@@ -553,26 +559,26 @@ export default function SettingsDialog(props: {
   /* ---------------- 工具 ---------------- */
 
   function ToolsTab() {
-    const t = s.tools;
-    const patch = (p: Partial<typeof t>) => props.onChange({ tools: { ...t, ...p } });
+    const tools = s.tools;
+    const patch = (p: Partial<typeof tools>) => props.onChange({ tools: { ...tools, ...p } });
 
     return (
       <div>
         <div className="section">
-          <div className="section-title">工作目录</div>
+          <div className="section-title">{t('工作目录')}</div>
           <div className="hint" style={{ marginBottom: 8 }}>
-            文件和命令行工具只能在这些目录里动手。<strong>一个都不加的话，这类工具会全部拒绝执行</strong>
-            —— 这是故意的，默认不给整块磁盘的权限。
+            {t('文件和命令行工具只能在这些目录里动手。')}<strong>{t('一个都不加的话，这类工具会全部拒绝执行')}</strong>
+            {t('。这是故意的，默认不给整块磁盘的权限。')}
           </div>
 
-          {t.workspaceRoots.map((root, i) => (
+          {tools.workspaceRoots.map((root, i) => (
             <div className="row" key={`${root}-${i}`} style={{ marginBottom: 6 }}>
               <input type="text" value={root} readOnly style={{ fontFamily: 'var(--mono)', fontSize: 12 }} />
               <button
                 className="btn sm danger"
-                onClick={() => patch({ workspaceRoots: t.workspaceRoots.filter((_, j) => j !== i) })}
+                onClick={() => patch({ workspaceRoots: tools.workspaceRoots.filter((_, j) => j !== i) })}
               >
-                移除
+                {t('移除')}
               </button>
             </div>
           ))}
@@ -582,33 +588,32 @@ export default function SettingsDialog(props: {
               className="btn block"
               onClick={async () => {
                 const dir = await bridge.pickFolder();
-                if (dir && !t.workspaceRoots.includes(dir)) {
-                  patch({ workspaceRoots: [...t.workspaceRoots, dir] });
+                if (dir && !tools.workspaceRoots.includes(dir)) {
+                  patch({ workspaceRoots: [...tools.workspaceRoots, dir] });
                 }
               }}
             >
-              ＋ 选一个目录
+              {t('＋ 选一个目录')}
             </button>
           ) : (
-            <div className="hint">工作目录只能在桌面端添加。</div>
+            <div className="hint">{t('工作目录只能在桌面端添加。')}</div>
           )}
         </div>
 
         <div className="section">
-          <div className="section-title">操作放行</div>
+          <div className="section-title">{t('操作放行')}</div>
           <div className="hint" style={{ lineHeight: 1.85 }}>
-            危险操作问不问，已经挪到输入框左下角那个按钮上了 —— 逐步确认 / 自动批准编辑 / 全部放行，
-            每个会话各自记住自己的档位，随时能在对话中途切。
+            {t('危险操作问不问，已经挪到输入框左下角那个按钮上了：逐步确认 / 自动批准编辑 / 全部放行。每个会话各自记住自己的档位，随时能在对话中途切。')}
             <br />
-            放这儿不合适：这是个会话级、需要频繁切换的决定，藏在设置里等于逼你每次都翻两层。
+            {t('放这儿不合适：这是个会话级、需要频繁切换的决定，藏在设置里等于逼你每次都翻两层。')}
           </div>
         </div>
 
         <div className="section">
-          <div className="section-title">搜索</div>
-          <Field label="搜索源">
+          <div className="section-title">{t('搜索')}</div>
+          <Field label={t('搜索源')}>
             <Segmented<SearchProvider>
-              value={t.searchProvider}
+              value={tools.searchProvider}
               options={[
                 { value: 'tavily', label: 'Tavily' },
                 { value: 'brave', label: 'Brave' },
@@ -618,29 +623,29 @@ export default function SettingsDialog(props: {
             />
           </Field>
 
-          {t.searchProvider === 'tavily' ? (
-            <Field label="Tavily API Key" hint="app.tavily.com 注册后拿，免费额度每月 1000 次。">
+          {tools.searchProvider === 'tavily' ? (
+            <Field label="Tavily API Key" hint={t('app.tavily.com 注册后拿，免费额度每月 1000 次。')}>
               <SecretInput secretId="tool:tavily" placeholder="tvly-..." />
             </Field>
           ) : null}
 
-          {t.searchProvider === 'brave' ? (
+          {tools.searchProvider === 'brave' ? (
             <Field
               label="Brave Search API Key"
-              hint="brave.com/search/api 申请，免费档每月 2000 次。注意 Brave 只给标题和摘要，需要正文时让模型再 fetch_url。"
+              hint={t('brave.com/search/api 申请，免费档每月 2000 次。注意 Brave 只给标题和摘要，需要正文时让模型再 fetch_url。')}
             >
               <SecretInput secretId="tool:brave" placeholder="BSA..." />
             </Field>
           ) : null}
 
-          {t.searchProvider === 'searxng' ? (
+          {tools.searchProvider === 'searxng' ? (
             <Field
-              label="SearXNG 地址"
-              hint="自建实例的地址。要在它的 settings.yml 里打开 json 格式输出，否则会返回 403。"
+              label={t('SearXNG 地址')}
+              hint={t('自建实例的地址。要在它的 settings.yml 里打开 json 格式输出，否则会返回 403。')}
             >
               <input
                 type="text"
-                value={t.searxngUrl}
+                value={tools.searxngUrl}
                 placeholder="http://127.0.0.1:8080"
                 onChange={(e) => patch({ searxngUrl: e.target.value })}
               />
@@ -648,57 +653,54 @@ export default function SettingsDialog(props: {
           ) : null}
         </div>
 
-        <ChromeSection port={t.chromePort} onPort={(v) => patch({ chromePort: v })} />
+        <ChromeSection port={tools.chromePort} onPort={(v) => patch({ chromePort: v })} />
 
         <div className="section">
           <div className="section-title">GitHub</div>
           <Field
             label="Personal Access Token"
-            hint="不填也能用，但只能读公开内容，而且限额是按 IP 每小时 60 次。填了变成 5000 次。代码搜索必须要 token。"
+            hint={t('不填也能用，但只能读公开内容，而且限额是按 IP 每小时 60 次。填了变成 5000 次。代码搜索必须要 token。')}
           >
-            <SecretInput secretId="tool:github" placeholder="ghp_... 或 github_pat_..." />
+            <SecretInput secretId="tool:github" placeholder={t('ghp_... 或 github_pat_...')} />
           </Field>
           <RateLimitRow />
           <div className="hint" style={{ marginTop: 6, lineHeight: 1.8 }}>
-            到哪拿：github.com → Settings → Developer settings → Personal access tokens →
-            <b> Fine-grained tokens</b> → Generate new token。Repository access 选
-            「Public Repositories (read-only)」就够装技能了，什么权限都不用勾。
+            {t('到哪拿：github.com → Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token。Repository access 选「Public Repositories (read-only)」就够装技能了，什么权限都不用勾。')}
             <br />
-            已经装了 GitHub CLI 的话更快：命令行跑 <code>gh auth login</code>，然后
-            <code>gh auth token</code> 会把 token 打印出来，复制粘贴进上面那个框。
+            {t('已经装了 GitHub CLI 的话更快：命令行跑 gh auth login，然后 gh auth token 会把 token 打印出来，复制粘贴进上面那个框。')}
             <br />
-            <b>限额不能重置</b> —— 它是 GitHub 服务端按 IP 算的滚动窗口，客户端没有任何手段清零，
+            <b>{t('限额不能重置')}</b> —— 它是 GitHub 服务端按 IP 算的滚动窗口，客户端没有任何手段清零，
             只能等窗口滚过去，或者换成 token 额度。
           </div>
         </div>
 
         <div className="section">
           <div className="section-title">Claude Code</div>
-          <Field label="claude 可执行文件" hint="留空就用 PATH 里的 claude。装了但找不到就填绝对路径。">
+          <Field label={t('claude 可执行文件')} hint={t('留空就用 PATH 里的 claude。装了但找不到就填绝对路径。')}>
             <input
               type="text"
-              value={t.claudeBin}
+              value={tools.claudeBin}
               placeholder="claude"
               onChange={(e) => patch({ claudeBin: e.target.value })}
             />
           </Field>
           <Field
-            label="附加命令行参数"
-            hint="默认给了 --permission-mode acceptEdits，否则 headless 模式下它遇到要授权的操作会直接卡住。想让它更放得开可以调，但那意味着它改什么都不问你。"
+            label={t('附加命令行参数')}
+            hint={t('默认给了 --permission-mode acceptEdits，否则 headless 模式下它遇到要授权的操作会直接卡住。想让它更放得开可以调，但那意味着它改什么都不问你。')}
           >
             <input
               type="text"
-              value={t.claudeExtraArgs}
+              value={tools.claudeExtraArgs}
               onChange={(e) => patch({ claudeExtraArgs: e.target.value })}
             />
           </Field>
-          <Field label={`超时：${Math.round(t.claudeTimeoutMs / 1000)} 秒`}>
+          <Field label={t('超时：{seconds} 秒', { seconds: Math.round(tools.claudeTimeoutMs / 1000) })}>
             <input
               type="range"
               min={30000}
               max={3600000}
               step={30000}
-              value={t.claudeTimeoutMs}
+              value={tools.claudeTimeoutMs}
               onChange={(e) => patch({ claudeTimeoutMs: Number(e.target.value) })}
             />
           </Field>
@@ -722,14 +724,12 @@ export default function SettingsDialog(props: {
     return (
       <div>
         <div className="hint" style={{ marginBottom: 14, lineHeight: 1.85 }}>
-          同一件事（「多想一会儿」）各家 API 长得完全不一样：OpenAI 是
-          <code>reasoning_effort</code> 字符串，Anthropic 是 <code>thinking</code> 对象带 token
-          预算，通义智谱是 <code>enable_thinking</code> 加预算，DeepSeek 的 reasoner 干脆没有开关。
+          {t('同一件事（「多想一会儿」）各家 API 长得完全不一样：OpenAI 用 reasoning_effort 字符串，Anthropic 用 thinking 对象带 token 预算，通义智谱用 enable_thinking 加预算，DeepSeek 的 reasoner 干脆没有开关。')}
           <br />
-          所以输入框右下角只给一档五级刻度，切模型不用重学。这张表负责翻译：
-          <strong>按顺序匹配模型 ID，第一条命中的生效</strong>。
+          {t('所以输入框右下角只给一档五级刻度，切模型不用重学。这张表负责翻译：')}
+          <strong>{t('按顺序匹配模型 ID，第一条命中的生效')}</strong>。
           <br />
-          标了「推测」的几条是按厂商惯例填的，没有逐个实测 —— 报 400 就改这里，不用改代码。
+          {t('标了「推测」的几条是按厂商惯例填的，没有逐个实测。报 400 就改这里，不用改代码。')}
         </div>
 
         {mappings.map((m, i) => (
@@ -745,29 +745,29 @@ export default function SettingsDialog(props: {
                 type="text"
                 value={m.pattern}
                 onChange={(e) => patchAt(i, { pattern: e.target.value })}
-                placeholder="匹配模型 ID 的正则"
+                placeholder={t('匹配模型 ID 的正则')}
                 style={{ fontFamily: 'var(--mono)', fontSize: 12 }}
               />
-              {m.unverified ? <span className="badge-danger">推测</span> : null}
-              <button className="icon-btn" title="上移" onClick={() => {
+              {m.unverified ? <span className="badge-danger">{t('推测')}</span> : null}
+              <button className="icon-btn" title={t('上移')} onClick={() => {
                 if (i === 0) return;
                 const next = [...mappings];
                 [next[i - 1], next[i]] = [next[i], next[i - 1]];
                 setMappings(next);
               }}>↑</button>
               <button className="btn sm danger" onClick={() => setMappings(mappings.filter((_, j) => j !== i))}>
-                删除
+                {t('删除')}
               </button>
             </div>
 
-            <Field label="下发方式">
+            <Field label={t('下发方式')}>
               <select
                 value={m.style}
                 onChange={(e) => patchAt(i, { style: e.target.value as EffortStyle })}
               >
                 {(Object.keys(STYLE_LABEL) as EffortStyle[]).map((k) => (
                   <option key={k} value={k}>
-                    {STYLE_LABEL[k]}
+                    {t(STYLE_LABEL[k])}
                   </option>
                 ))}
               </select>
@@ -776,13 +776,13 @@ export default function SettingsDialog(props: {
             {m.style !== 'none' ? (
               <div>
                 <div className="field-label" style={{ marginBottom: 4 }}>
-                  每一级发什么
+                  {t('每一级发什么')}
                   <span style={{ fontWeight: 400, color: 'var(--fg-faint)' }}>
                     {m.style === 'openai'
-                      ? '（填字符串，例如 low / medium / high）'
+                      ? t('（填字符串，例如 low / medium / high）')
                       : m.style === 'custom'
-                        ? '（填 JSON 片段）'
-                        : '（填 token 预算数字）'}
+                        ? t('（填 JSON 片段）')
+                        : t('（填 token 预算数字）')}
                   </span>
                 </div>
                 {levels.map((l) => (
@@ -792,7 +792,7 @@ export default function SettingsDialog(props: {
                     <input
                       type="text"
                       value={(m.levels ?? EMPTY_LEVELS)[l.value as keyof typeof EMPTY_LEVELS] ?? ''}
-                      placeholder="留空 = 这一级不下发"
+                      placeholder={t('留空 = 这一级不下发')}
                       onChange={(e) =>
                         patchAt(i, {
                           levels: { ...EMPTY_LEVELS, ...m.levels, [l.value]: e.target.value },
@@ -815,7 +815,7 @@ export default function SettingsDialog(props: {
                 {
                   id: `m-${Date.now()}`,
                   pattern: '',
-                  label: '新规则',
+                  label: '新规则',  // 用户可改的规则名，存进设置，不随语言变
                   style: 'openai',
                   levels: { low: 'low', medium: 'medium', high: 'high', xhigh: 'high', max: 'high' },
                 },
@@ -823,10 +823,10 @@ export default function SettingsDialog(props: {
               ])
             }
           >
-            ＋ 加一条（插到最前面）
+            {t('＋ 加一条（插到最前面）')}
           </button>
           <button className="btn" onClick={() => setMappings(defaultEffortMappings())}>
-            恢复默认
+            {t('恢复默认')}
           </button>
         </div>
       </div>
@@ -838,32 +838,44 @@ export default function SettingsDialog(props: {
   function LookTab() {
     return (
       <div>
-        <Field label="主题">
+        <Field label={t('主题')}>
           <Segmented
             value={s.theme}
             options={[
-              { value: 'system' as const, label: '跟随系统' },
-              { value: 'light' as const, label: '浅色' },
-              { value: 'dark' as const, label: '深色' },
+              { value: 'system' as const, label: t('跟随系统') },
+              { value: 'light' as const, label: t('浅色') },
+              { value: 'dark' as const, label: t('深色') },
             ]}
             onChange={(v) => props.onChange({ theme: v })}
           />
         </Field>
 
-        <div className="field"><Switch checked={s.notifications?.enabled!==false} onChange={enabled=>props.onChange({notifications:{...s.notifications,enabled}})} label="后台任务通知（提问、暂停、完成）" /></div>
-        <div className="field"><Switch checked={s.notifications?.sound!==false} onChange={sound=>props.onChange({notifications:{...s.notifications,sound}})} label="通知提示音（遵循系统声音与勿扰设置）" /></div>
-        <Field label="发送快捷键">
+        <Field label={t('控件密度')}>
+          <Segmented
+            value={s.uiDensity ?? 'default'}
+            options={[
+              { value: 'compact' as const, label: t('紧凑') },
+              { value: 'default' as const, label: t('默认') },
+              { value: 'roomy' as const, label: t('宽松') },
+            ]}
+            onChange={(v) => props.onChange({ uiDensity: v })}
+          />
+        </Field>
+
+        <div className="field"><Switch checked={s.notifications?.enabled!==false} onChange={enabled=>props.onChange({notifications:{...s.notifications,enabled}})} label={t('后台任务通知（提问、暂停、完成）')} /></div>
+        <div className="field"><Switch checked={s.notifications?.sound!==false} onChange={sound=>props.onChange({notifications:{...s.notifications,sound}})} label={t('通知提示音（遵循系统声音与勿扰设置）')} /></div>
+        <Field label={t('发送快捷键')}>
           <Segmented
             value={s.sendKey}
             options={[
-              { value: 'enter' as const, label: 'Enter 发送' },
-              { value: 'mod-enter' as const, label: 'Ctrl/⌘+Enter 发送' },
+              { value: 'enter' as const, label: t('Enter 发送') },
+              { value: 'mod-enter' as const, label: t('Ctrl/⌘+Enter 发送') },
             ]}
             onChange={(v) => props.onChange({ sendKey: v })}
           />
         </Field>
 
-        <Field label={`字号：${Math.round(s.fontScale * 100)}%`}>
+        <Field label={t('字号：{percent}%', { percent: Math.round(s.fontScale * 100) })}>
           <input
             type="range"
             min={0.85}
@@ -878,11 +890,11 @@ export default function SettingsDialog(props: {
           <Switch
             checked={s.showReasoningByDefault}
             onChange={(v) => props.onChange({ showReasoningByDefault: v })}
-            label="生成时自动展开思考过程"
+            label={t('生成时自动展开思考过程')}
           />
         </div>
 
-        <Field label={`请求超时：${Math.round(s.requestTimeoutMs / 1000)} 秒`}>
+        <Field label={t('请求超时：{seconds} 秒', { seconds: Math.round(s.requestTimeoutMs / 1000) })}>
           <input
             type="range"
             min={30000}
@@ -896,24 +908,24 @@ export default function SettingsDialog(props: {
         <div className="hint" style={{ marginTop: 16, lineHeight: 1.9 }}>
           {props.storePath ? (
             <>
-              数据文件：<code>{props.storePath}</code>
+              {t('数据文件：')}<code>{props.storePath}</code>
               <br />
             </>
           ) : null}
-          构建于：<code>{buildTime()}</code>
+          {t('构建于：')}<code>{t(buildTime())}</code>
           <br />
-          改了代码之后要重新跑一次打包，这里的时间才会变 —— 遇到「明明改了却没生效」先看这个。
+          {t('改了代码之后要重新跑一次打包，这里的时间才会变。遇到「明明改了却没生效」先看这个。')}
         </div>
       </div>
     );
   }
 
   return (
-    <Modal title="设置" onClose={props.onClose} wide>
+    <Modal title={t('设置')} onClose={props.onClose} wide>
       <div className="tabs">
-        {(Object.keys(TAB_LABEL) as Tab[]).map((t) => (
-          <button key={t} className={t === tab ? 'on' : ''} onClick={() => setTab(t)}>
-            {TAB_LABEL[t]}
+        {(Object.keys(TAB_LABEL) as Tab[]).map((name) => (
+          <button key={name} className={name === tab ? 'on' : ''} onClick={() => setTab(name)}>
+            {t(TAB_LABEL[name])}
           </button>
         ))}
       </div>

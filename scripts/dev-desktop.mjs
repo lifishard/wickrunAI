@@ -12,8 +12,16 @@ const root = path.resolve(path.dirname(url.fileURLToPath(import.meta.url)), '..'
 const isWin = process.platform === 'win32';
 const line = (s = '') => process.stdout.write(`${s}\n`);
 
-if (!fs.existsSync(path.join(root, 'node_modules'))) {
-  line('首次运行，先装依赖…');
+/** package.json 里声明了、node_modules 里却没有的包。加了新依赖就是靠这个发现的。 */
+function missingDeps() {
+  const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+  const declared = [...Object.keys(pkg.dependencies ?? {}), ...Object.keys(pkg.devDependencies ?? {})];
+  return declared.filter((name) => !fs.existsSync(path.join(root, 'node_modules', ...name.split('/'), 'package.json')));
+}
+
+const missing = fs.existsSync(path.join(root, 'node_modules')) ? missingDeps() : null;
+if (missing === null || missing.length) {
+  line(missing === null ? '首次运行，先装依赖…' : `有新依赖要装：${missing.join('、')}`);
   line();
   const r = spawnSync('npm', ['install'], { cwd: root, stdio: 'inherit', shell: isWin });
   if (r.status !== 0) {

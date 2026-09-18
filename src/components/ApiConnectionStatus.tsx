@@ -1,4 +1,5 @@
 import React from 'react';
+import { useT } from '../lib/i18n';
 import type { KeyProfile } from '../types';
 import GatewayRecovery from './GatewayRecovery';
 import './ApiConnectionStatus.css';
@@ -13,6 +14,7 @@ export default function ApiConnectionStatus({ profile, cachedCount, loading, err
   error: string | null;
   onCheck: () => void;
 }) {
+  const t = useT();
   const profileKey = profile ? `${profile.id}:${profile.baseUrl}` : '';
   const recent = profileKey ? recentChecks.get(profileKey) : undefined;
   const [state, setState] = React.useState<ConnectionState>(() => recent && Date.now() - recent.at < 30_000 ? recent.state : 'idle');
@@ -61,8 +63,8 @@ export default function ApiConnectionStatus({ profile, cachedCount, loading, err
     if (profileKey) recentChecks.set(profileKey, { state: next, at: Date.now() });
   }, [profile, profileKey, loading, error]);
 
-  const label = !profile ? '未选择凭据' : state === 'checking' ? '正在检测' : state === 'ready' ? '已连接' : state === 'offline' ? '连接失败' : '尚未确认';
-  const detail = cachedCount > 0 ? `当前列表有 ${cachedCount} 个模型；列表缓存不代表服务在线。` : '当前模型列表为空。';
+  const label = t(!profile ? '未选择凭据' : state === 'checking' ? '正在检测' : state === 'ready' ? '已连接' : state === 'offline' ? '连接失败' : '尚未确认');
+  const detail = cachedCount > 0 ? t('当前列表有 {n} 个模型；列表缓存不代表服务在线。', { n: cachedCount }) : t('当前模型列表为空。');
 
   return (
     <div className="api-connection-status">
@@ -72,7 +74,7 @@ export default function ApiConnectionStatus({ profile, cachedCount, loading, err
           {label}
         </span>
         <button className="btn sm ghost" disabled={!profile || state === 'checking'} onClick={check}>
-          {state === 'checking' ? '检测中…' : state === 'ready' ? '重新检测' : '检测连接'}
+          {t(state === 'checking' ? '检测中…' : state === 'ready' ? '重新检测' : '检测连接')}
         </button>
       </div>
       <p>{detail}</p>

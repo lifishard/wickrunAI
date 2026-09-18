@@ -5,6 +5,7 @@ import { typeOfPath } from '../lib/artifacts';
 import { ArtifactStrip } from './ArtifactPanel';
 import { TOOL_BY_NAME } from '../lib/tools/registry';
 import { classifyError, isCleanStop } from '../lib/errors';
+import { useT, type Translate } from '../lib/i18n';
 import Markdown from './Markdown';
 import MessageNotes from './MessageNotes';
 import DeliveryPanel from './DeliveryPanel';
@@ -40,10 +41,11 @@ function hostOf(url?: string): string {
 }
 
 export function SourcesRow({ sources }: { sources: SourceRef[] }) {
+  const t = useT();
   if (!sources.length) return null;
   return (
     <div className="sources">
-      <div className="sources-label">来源 · {sources.length}</div>
+      <div className="sources-label">{t('来源 · {n}', { n: sources.length })}</div>
       <div className="sources-scroll">
         {sources.map((s) => (
           <a
@@ -60,7 +62,7 @@ export function SourcesRow({ sources }: { sources: SourceRef[] }) {
           >
             <div className="source-head">
               <span className="source-n">{s.n}</span>
-              <span className="source-host">{hostOf(s.url) || s.path || '本地'}</span>
+              <span className="source-host">{hostOf(s.url) || s.path || t('本地')}</span>
             </div>
             <div className="source-title">{s.title}</div>
           </a>
@@ -103,6 +105,7 @@ function ErrorCard(props: {
   /** 400 时的「自动排查」；不传就不显示那个按钮 */
   onProbe?: () => void;
 }) {
+  const t = useT();
   const info = props.info?.status === 404 && props.info.kind === 'model_missing'
     ? (() => { const updated = classifyError(props.info.detail, 404); return updated.kind === 'model_missing' ? props.info : updated; })()
     : /STREAM_EARLY_EOF|stream ended before producing/i.test(props.info?.detail || props.raw)
@@ -111,23 +114,27 @@ function ErrorCard(props: {
   if (!info) {
     return (
       <div className="answer-error">
-        <strong>请求失败：</strong>
+        <strong>{t('请求失败：')}</strong>
         {props.raw}
       </div>
     );
   }
+  // 文案里的 {name} 由 info.vars 填。值本身也翻一道：'当前模型' 要翻，模型 ID 查不到就原样出。
+  const tr = (text: string) =>
+    t(text, Object.fromEntries(Object.entries(info.vars ?? {}).map(([k, v]) => [k, t(String(v))])));
+
   return (
     <div className="answer-error card">
       <div className="err-head">
         <span className="err-icon">{KIND_ICON[info.kind] ?? '⚠'}</span>
-        <span className="err-title">{info.title}</span>
+        <span className="err-title">{tr(info.title)}</span>
         {info.status ? <span className="err-code">HTTP {info.status}</span> : null}
       </div>
 
       {info.fixes.length ? (
         <ul className="err-fixes">
           {info.fixes.map((f, i) => (
-            <li key={i}>{f}</li>
+            <li key={i}>{tr(f)}</li>
           ))}
         </ul>
       ) : null}
@@ -136,7 +143,7 @@ function ErrorCard(props: {
         {props.claudeConnection ? <ClaudeRepair/> : info.kind==='network' || info.kind==='timeout' ? <GatewayRecovery profile={props.gatewayProfile} onReady={props.onGatewayReady}/> : null}
         {props.onRetry ? (
           <button className="btn sm primary" onClick={props.onRetry}>
-            重新发送
+            {t('重新发送')}
           </button>
         ) : null}
         {/* 只有「请求体被拒」这一类才值得排查：401/429/5xx 排查不出东西来 */}
@@ -144,13 +151,13 @@ function ErrorCard(props: {
           <button
             className="btn sm"
             onClick={props.onProbe}
-            title="从最小请求体开始，一组一组把字段加回去，第一个失败的那组就是原因。工具会用二分法定位到具体是哪几个"
+            title={t('从最小请求体开始，一组一组把字段加回去，第一个失败的那组就是原因。工具会用二分法定位到具体是哪几个')}
           >
-            自动排查
+            {t('自动排查')}
           </button>
         ) : null}
         <details className="err-raw">
-          <summary>上游原文</summary>
+          <summary>{t('上游原文')}</summary>
           <pre>{info.detail || props.raw}</pre>
         </details>
       </div>
@@ -170,12 +177,13 @@ const STATUS_ICON: Record<ToolStep['status'], string> = {
 };
 
 export function StepTrace({ steps, live }: { steps: ToolStep[]; live: boolean }) {
+  const t = useT();
   const [open, setOpen] = React.useState(false);
   const [expanded, setExpanded] = React.useState<string | null>(null);
   if (!steps.length) return null;
 
   const running = steps.filter((s) => s.status === 'running').length;
-  const label = live && running ? steps[steps.length - 1].summary : `研究过程 · ${steps.length} 步`;
+  const label = live && running ? steps[steps.length - 1].summary : t('研究过程 · {n} 步', { n: steps.length });
 
   return (
     <div className="trace">
@@ -184,7 +192,7 @@ export function StepTrace({ steps, live }: { steps: ToolStep[]; live: boolean })
           {live && running ? '◌' : '≡'}
         </span>
         <span className="trace-label">{label}</span>
-        <span className="trace-toggle">{open ? '收起' : '展开'}</span>
+        <span className="trace-toggle">{open ? t('收起') : t('展开')}</span>
       </button>
 
       {open ? (
@@ -202,10 +210,10 @@ export function StepTrace({ steps, live }: { steps: ToolStep[]; live: boolean })
                 </button>
                 {isOpen ? (
                   <div className="trace-detail">
-                    <div className="trace-detail-label">参数</div>
+                    <div className="trace-detail-label">{t('参数')}</div>
                     <pre>{JSON.stringify(s.args, null, 2)}</pre>
-                    <div className="trace-detail-label">{s.error ? '错误' : '返回'}</div>
-                    <pre>{s.error ?? (s.output || '（无输出）').slice(0, 4000)}</pre>
+                    <div className="trace-detail-label">{s.error ? t('错误') : t('返回')}</div>
+                    <pre>{s.error ?? (s.output || t('（无输出）')).slice(0, 4000)}</pre>
                   </div>
                 ) : null}
               </div>
@@ -249,6 +257,7 @@ export default function AnswerBlock(props: {
   onFork?: () => void;
   onDelete?: () => void;
 }) {
+  const t = useT();
   const { question, answer } = props;
   const [editing, setEditing] = React.useState(false);
   const [draft, setDraft] = React.useState(question?.content ?? '');
@@ -275,7 +284,7 @@ export default function AnswerBlock(props: {
             <blockquote key={q.id}>
               <button className="quote-source" onClick={() => {
                 document.getElementById(`msg-${q.messageId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-              }}>引用{q.role === 'assistant' ? '助手' : '用户'}的原文 ↗</button>
+              }}>{t(q.role === 'assistant' ? '引用助手的原文 ↗' : '引用用户的原文 ↗')}</button>
               <div>{q.text}</div>
             </blockquote>
           ))}
@@ -292,7 +301,7 @@ export default function AnswerBlock(props: {
             />
             <div className="row" style={{ justifyContent: 'flex-end', marginTop: 8 }}>
               <button className="btn sm" onClick={() => setEditing(false)}>
-                取消
+                {t('取消')}
               </button>
               <button
                 className="btn sm primary"
@@ -301,7 +310,7 @@ export default function AnswerBlock(props: {
                   props.onEditQuestion?.(draft);
                 }}
               >
-                重新提问
+                {t('重新提问')}
               </button>
             </div>
           </div>
@@ -310,7 +319,7 @@ export default function AnswerBlock(props: {
             {question.skillNames?.length ? (
               <span className="q-attach">
                 {question.skillNames.map((n) => (
-                  <span key={n} className="skill-chip" title={`这一轮注入了技能 /${n}`}>
+                  <span key={n} className="skill-chip" title={t('这一轮注入了技能 /{name}', { name: n })}>
                     <span className="skill-slash">/</span>
                     {n}
                   </span>
@@ -332,7 +341,7 @@ export default function AnswerBlock(props: {
             ) : null}
             {question.content}
             {props.onEditQuestion ? (
-              <button className="icon-btn q-edit-btn" title="改问题重问" onClick={() => setEditing(true)}>
+              <button className="icon-btn q-edit-btn" title={t('改问题重问')} onClick={() => setEditing(true)}>
                 ✎
               </button>
             ) : null}
@@ -348,8 +357,8 @@ export default function AnswerBlock(props: {
       {answer?.reasoning && answer.reasoning.trim() ? (
         <details className="reasoning" open={props.showReasoning && live && !answer.content}>
           <summary>
-            思考过程
-            <span style={{ fontWeight: 400, opacity: 0.7 }}>{answer.reasoning.length} 字</span>
+            {t('思考过程')}
+            <span style={{ fontWeight: 400, opacity: 0.7 }}>{t('{n} 字', { n: answer.reasoning.length })}</span>
           </summary>
           <div className="reasoning-body">{answer.reasoning}</div>
         </details>
@@ -357,8 +366,8 @@ export default function AnswerBlock(props: {
 
       {answer?.notice ? <div className="answer-notice">{answer.notice}</div> : null}
       {answer?.subagents?.length ? <SubagentProgress jobs={answer.subagents}/> : null}
-      {answer?.harness?.review ? <details className="task-review"><summary>完成自查 · 模型复核</summary><p>{answer.harness.review.summary}</p><p>{answer.harness.review.checks}</p>{answer.harness.review.nextAction?<p>可选下一步：{answer.harness.review.nextAction}</p>:null}</details>:null}
-      {answer?.supplementalInputs?.length ? <details className="delivery-panel"><summary>已补充的信息 · {answer.supplementalInputs.length} 条</summary>{answer.supplementalInputs.map(m=><blockquote key={m.id}>{m.content}</blockquote>)}</details>:null}
+      {answer?.harness?.review ? <details className="task-review"><summary>{t('完成自查 · 模型复核')}</summary><p>{answer.harness.review.summary}</p><p>{answer.harness.review.checks}</p>{answer.harness.review.nextAction?<p>可选下一步：{answer.harness.review.nextAction}</p>:null}</details>:null}
+      {answer?.supplementalInputs?.length ? <details className="delivery-panel"><summary>{t('已补充的信息 · {n} 条', { n: answer.supplementalInputs.length })}</summary>{answer.supplementalInputs.map(m=><blockquote key={m.id}>{m.content}</blockquote>)}</details>:null}
 
       {answer?.userQuestionHistory?.map((item) => (
         <UserQuestionCard
@@ -371,7 +380,7 @@ export default function AnswerBlock(props: {
       ))}
       {answer?.runState?.userQuestion ? (
         <details className="pending-question" id={`question-${answer.runState.userQuestion.request.id}`} open>
-        <summary>Answer Question · 回答问题{answer.pending?' · 任务仍在继续':''}</summary>
+        <summary>{t('Answer Question · 回答问题')}{answer.pending?` · ${t('任务仍在继续')}`:''}</summary>
         <UserQuestionCard
           request={answer.runState.userQuestion.request}
           answers={answer.runState.userQuestion.answers}
@@ -387,26 +396,26 @@ export default function AnswerBlock(props: {
         断线保护的入口。放在错误卡**上面**：先告诉人「东西还在」，
         再让他看出了什么事 —— 顺序反过来的话，人已经准备重问了
       */}
-      {answer?.pending && answer.contextSnapshot?.advisory ? <section className="recovery-card" aria-label="上下文建议">
-        <strong>上下文整理建议 · 任务仍在继续</strong>
+      {answer?.pending && answer.contextSnapshot?.advisory ? <section className="recovery-card" aria-label={t('上下文建议')}>
+        <strong>{t('上下文整理建议 · 任务仍在继续')}</strong>
         <p>{answer.contextSnapshot.advisory}</p>
         <div className="recovery-actions">
-          {props.onPauseForContext ? <button className="btn sm" onClick={props.onPauseForContext}>暂停，选择压缩后继续</button> : null}
-          {props.onHandoff ? <button className="btn sm" onClick={props.onHandoff}>新窗口交接</button> : null}
+          {props.onPauseForContext ? <button className="btn sm" onClick={props.onPauseForContext}>{t('暂停，选择压缩后继续')}</button> : null}
+          {props.onHandoff ? <button className="btn sm" onClick={props.onHandoff}>{t('新窗口交接')}</button> : null}
         </div>
-        <p className="hint">也可以保持当前任务运行。新窗口只预填交接草稿，由你决定何时发送。</p>
+        <p className="hint">{t('也可以保持当前任务运行。新窗口只预填交接草稿，由你决定何时发送。')}</p>
       </section> : null}
-      {!answer?.pending && !answer?.runState && props.onHandoff ? <button className="btn sm" onClick={props.onHandoff}>新窗口交接</button> : null}
+      {!answer?.pending && !answer?.runState && props.onHandoff ? <button className="btn sm" onClick={props.onHandoff}>{t('新窗口交接')}</button> : null}
       {answer?.runState && (!answer.runState.userQuestion || answer.runState.userQuestion.answers) && !answer.pending && props.onResume ? (
         <RecoveryCard state={answer.runState} onResume={props.onResume} onCompact={props.onCompact} onHandoff={props.onHandoff} onAddInput={props.onResumeWithInput} onResolve={props.onResolveUncertain}/>
       ) : null}
 
       {answer?.handoff ? <details className="reasoning">
-        <summary>接力上下文 · {answer.handoff.status === 'sent' ? '已发送' : '已准备'}</summary>
+        <summary>{t('接力上下文 · ')}{answer.handoff.status === 'sent' ? t('已发送') : t('已准备')}</summary>
         <div className="reasoning-body">
-          <p>{answer.handoff.fromModel ?? '此前模型'} → {answer.handoff.toModel} · {answer.handoff.mode === 'resume' ? '从原任务继续' : '承接同窗口历史'}</p>
-          <p>保留 {answer.handoff.sourceMessages} 条来源记录、{answer.handoff.savedSteps} 步执行证据，{answer.handoff.summaryAvailable ? '包含已有总结或交接记录' : '尚无语义总结，保留原始上下文'}。完整原文按需检索，未全部重复发送。</p>
-          <p>此处记录上下文交付状态；模型是否理解准确仍需看后续行动和验收结果。</p>
+          <p>{answer.handoff.fromModel ?? t('此前模型')} → {answer.handoff.toModel} · {answer.handoff.mode === 'resume' ? t('从原任务继续') : t('承接同窗口历史')}</p>
+          <p>{t('保留 {sources} 条来源记录、{steps} 步执行证据，', { sources: answer.handoff.sourceMessages, steps: answer.handoff.savedSteps })}{answer.handoff.summaryAvailable ? t('包含已有总结或交接记录') : t('尚无语义总结，保留原始上下文')}{t('。完整原文按需检索，未全部重复发送。')}</p>
+          <p>{t('此处记录上下文交付状态；模型是否理解准确仍需看后续行动和验收结果。')}</p>
         </div>
       </details> : null}
       <DeliveryPanel report={answer?.delivery ?? answer?.runState?.delivery} visible={Boolean(answer && !answer.pending && (answer.milestones?.length || answer.delivery?.requirements.length || answer.steps?.length))}/>
@@ -457,35 +466,35 @@ export default function AnswerBlock(props: {
             </span>
           ) : null}
           {answer.usage?.cached_tokens ? (
-            <span title="提示词里命中上下文缓存的部分，这部分通常按更低的价格计费">
-              缓存命中 {answer.usage.cached_tokens} tok
+            <span title={t('提示词里命中上下文缓存的部分，这部分通常按更低的价格计费')}>
+              {t('缓存命中 {n} tok', { n: answer.usage.cached_tokens })}
             </span>
           ) : null}
           {answer.stopReason && !isCleanStop(answer.stopReason) ? (
-            <span className="stop-reason" title={STOP_HINT[answer.stopReason] ?? '上游给出的结束原因'}>
-              结束原因：{answer.stopReason}
+            <span className="stop-reason" title={t(STOP_HINT[answer.stopReason] ?? '上游给出的结束原因')}>
+              {t('结束原因：')}{answer.stopReason}
             </span>
           ) : null}
           <span className="spacer" />
-          <button className="icon-btn" title="复制回答" onClick={() => props.onCopy(answer.content)}>
+          <button className="icon-btn" title={t('复制回答')} onClick={() => props.onCopy(answer.content)}>
             ⧉
           </button>
           {props.onRetry ? (
-            <button className="icon-btn" title="重新生成" onClick={props.onRetry}>
+            <button className="icon-btn" title={t('重新生成')} onClick={props.onRetry}>
               ↻
             </button>
           ) : null}
           {props.onFork ? (
             <button
               className="icon-btn"
-              title="从这里分叉出一条新对话，只带到这一步为止的上下文"
+              title={t('从这里分叉出一条新对话，只带到这一步为止的上下文')}
               onClick={props.onFork}
             >
               ⑂
             </button>
           ) : null}
           {props.onDelete ? (
-            <button className="icon-btn" title="删除这一轮" onClick={props.onDelete}>
+            <button className="icon-btn" title={t('删除这一轮')} onClick={props.onDelete}>
               ✕
             </button>
           ) : null}

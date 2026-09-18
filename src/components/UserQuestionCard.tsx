@@ -1,4 +1,5 @@
 import React from 'react';
+import { useT } from '../lib/i18n';
 import {
   USER_QUESTION_LIMITS,
   type UserQuestion,
@@ -77,6 +78,7 @@ function displayAnswer(
 }
 
 function QuestionPrompt({ question }: { question: UserQuestion }) {
+  const t = useT();
   return (
     <>
       {question.header ? <span className="user-question-card__header-line">{question.header}</span> : null}
@@ -86,14 +88,15 @@ function QuestionPrompt({ question }: { question: UserQuestion }) {
 }
 
 function AnsweredCard({ request, answers }: { request: UserQuestionRequest; answers: UserQuestionAnswers }) {
+  const t = useT();
   return (
-    <section className="user-question-card user-question-card--answered" aria-label="问题回答">
+    <section className="user-question-card user-question-card--answered" aria-label={t('问题回答')}>
       <div className="user-question-card__topline">
         <div>
-          <h2 className="user-question-card__title">问题回答</h2>
-          <p className="user-question-card__hint">以下内容已保存到当前会话。</p>
+          <h2 className="user-question-card__title">{t('问题回答')}</h2>
+          <p className="user-question-card__hint">{t('以下内容已保存到当前会话。')}</p>
         </div>
-        <span className="user-question-card__count">{request.questions.length} 个问题</span>
+        <span className="user-question-card__count">{t('{n} 个问题', { n: request.questions.length })}</span>
       </div>
       <ol className="user-question-card__answered-list">
         {request.questions.map((question) => {
@@ -105,18 +108,18 @@ function AnsweredCard({ request, answers }: { request: UserQuestionRequest; answ
               </div>
               {answer.selected.length ? (
                 <p className="user-question-card__answer-line">
-                  <span className="user-question-card__answer-label">选择：</span>
+                  <span className="user-question-card__answer-label">{t('选择：')}</span>
                   {answer.selected.join('、')}
                 </p>
               ) : null}
               {answer.text ? (
                 <p className="user-question-card__answer-line user-question-card__answer-line--text">
-                  <span className="user-question-card__answer-label">补充回答：</span>
+                  <span className="user-question-card__answer-label">{t('补充回答：')}</span>
                   <span className="user-question-card__answer-text">{answer.text}</span>
                 </p>
               ) : null}
               {!answer.selected.length && !answer.text ? (
-                <p className="user-question-card__empty-answer">未提供回答</p>
+                <p className="user-question-card__empty-answer">{t('未提供回答')}</p>
               ) : null}
             </li>
           );
@@ -134,6 +137,7 @@ export default function UserQuestionCard({
   onSubmit,
   onDraft,
 }: UserQuestionCardProps) {
+  const t = useT();
   const [localAnswers, setLocalAnswers] = React.useState<UserQuestionAnswers>(() => normalizedDraft(request, draft));
   const [error, setError] = React.useState('');
   const requestSignature = React.useMemo(
@@ -171,18 +175,18 @@ export default function UserQuestionCard({
       setError('');
       onSubmit(valid);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : '回答无效，请检查后重试');
+      setError(reason instanceof Error ? reason.message : t('回答无效，请检查后重试'));
     }
   };
 
   return (
-    <section className="user-question-card" aria-label="待回答问题">
+    <section className="user-question-card" aria-label={t('待回答问题')}>
       <div className="user-question-card__topline">
         <div>
-          <h2 className="user-question-card__title">请回答以下问题</h2>
-          <p className="user-question-card__hint">选择一项或多项，也可以填写补充回答。</p>
+          <h2 className="user-question-card__title">{t('请回答以下问题')}</h2>
+          <p className="user-question-card__hint">{t('选择一项或多项，也可以填写补充回答。')}</p>
         </div>
-        <span className="user-question-card__count">{request.questions.length} 个问题</span>
+        <span className="user-question-card__count">{t('{n} 个问题', { n: request.questions.length })}</span>
       </div>
 
       <form className="user-question-card__form" noValidate onSubmit={handleSubmit}>
@@ -242,7 +246,7 @@ export default function UserQuestionCard({
 
               <div className="user-question-card__text-field">
                 <label className="user-question-card__text-label" htmlFor={textId}>
-                  补充回答{question.options.length ? '（可选）' : ''}
+                  {t('补充回答')}{question.options.length ? t('（可选）') : ''}
                 </label>
                 <textarea
                   id={textId}
@@ -252,7 +256,7 @@ export default function UserQuestionCard({
                   disabled={disabled}
                   maxLength={USER_QUESTION_LIMITS.answerText}
                   rows={3}
-                  placeholder={textRequired ? '请填写回答' : '可以补充说明'}
+                  placeholder={textRequired ? t('请填写回答') : t('可以补充说明')}
                   onChange={(event) => updateAnswer(question, { selected: answer.selected, text: event.target.value })}
                 />
               </div>
@@ -262,10 +266,10 @@ export default function UserQuestionCard({
 
         <div className="user-question-card__footer">
           <p className="user-question-card__status" aria-live="polite">
-            {error || '每个问题都需要选择或填写回答。'}
+            {error || t('每个问题都需要选择或填写回答。')}
           </p>
           <button className="btn sm primary" type="submit" disabled={disabled}>
-            提交回答
+            {t('提交回答')}
           </button>
         </div>
       </form>

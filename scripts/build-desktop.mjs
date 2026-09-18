@@ -98,13 +98,22 @@ line();
 
 /* ---------------- 1. 依赖 ---------------- */
 
-if (!fs.existsSync(path.join(root, 'node_modules'))) {
+/** package.json 里声明了、node_modules 里却没有的包。加了新依赖就是靠这个发现的。 */
+function missingDeps() {
+  const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+  const declared = [...Object.keys(pkg.dependencies ?? {}), ...Object.keys(pkg.devDependencies ?? {})];
+  return declared.filter((name) => !fs.existsSync(path.join(root, 'node_modules', ...name.split('/'), 'package.json')));
+}
+
+const missing = fs.existsSync(path.join(root, 'node_modules')) ? missingDeps() : null;
+if (missing === null || missing.length) {
   if (checkOnly) {
     line('[1/5] 检查模式需要现有依赖；未执行安装。');
-    line('      请先运行 npm install，再重试 --check-only。');
+    line(missing === null ? '      请先运行 npm install，再重试 --check-only。'
+      : `      这些依赖还没装：${missing.join('、')}。请先运行 npm install。`);
     process.exit(1);
   }
-  line('[1/5] 安装依赖，第一次会慢一点…');
+  line(missing === null ? '[1/5] 安装依赖，第一次会慢一点…' : `[1/5] 有新依赖要装：${missing.join('、')}`);
   line();
   const r = await runTee('npm', ['install']);
   if (!r.ok) {
@@ -112,8 +121,14 @@ if (!fs.existsSync(path.join(root, 'node_modules'))) {
     line('✗ npm install 失败。往上翻看报错。');
     process.exit(1);
   }
+  const still = missingDeps();
+  if (still.length) {
+    line();
+    line(`✗ 装完还是缺：${still.join('、')}。检查网络或 registry 设置。`);
+    process.exit(1);
+  }
 } else {
-  line('[1/5] 依赖已经装过，跳过。');
+  line('[1/5] 依赖齐了，跳过安装。');
 }
 line();
 

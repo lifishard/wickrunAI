@@ -1,4 +1,5 @@
 import React from 'react';
+import { useT } from '../lib/i18n';
 
 /**
  * 错误边界。
@@ -32,42 +33,56 @@ export default class ErrorBoundary extends React.Component<
   render() {
     const { error, info } = this.state;
     if (!error) return this.props.children;
-
     return (
-      <div className="crash">
-        <div className="crash-title">
-          {this.props.label ? `${this.props.label}崩了` : '这块界面崩了'}
-        </div>
-        <div className="crash-msg">{error.message || String(error)}</div>
-        <details>
-          <summary>技术细节（贴给我就能定位）</summary>
-          <pre>
-            {error.stack ?? ''}
-            {info ? `\n--- 组件栈 ---${info}` : ''}
-          </pre>
-        </details>
-        <div className="row" style={{ marginTop: 12 }}>
-          <button
-            className="btn primary"
-            onClick={() => {
-              this.setState({ error: null, info: '' });
-              this.props.onReset?.();
-            }}
-          >
-            重试
-          </button>
-          <button
-            className="btn"
-            onClick={() => {
-              void navigator.clipboard.writeText(
-                `${error.message}\n\n${error.stack ?? ''}\n\n${info}`,
-              );
-            }}
-          >
-            复制错误
-          </button>
-        </div>
-      </div>
+      <CrashCard
+        error={error}
+        info={info}
+        label={this.props.label}
+        onRetry={() => {
+          this.setState({ error: null, info: '' });
+          this.props.onReset?.();
+        }}
+      />
     );
   }
+}
+
+/** 类组件用不了 hooks，界面拆出来当函数组件，翻译才拿得到当前语言。 */
+function CrashCard({ error, info, label, onRetry }: {
+  error: Error;
+  info: string;
+  label?: string;
+  onRetry: () => void;
+}) {
+  const t = useT();
+  return (
+    <div className="crash">
+      <div className="crash-title">
+        {label ? t('{label}崩了', { label }) : t('这块界面崩了')}
+      </div>
+      <div className="crash-msg">{error.message || String(error)}</div>
+      <details>
+        <summary>{t('技术细节（贴给我就能定位）')}</summary>
+        <pre>
+          {error.stack ?? ''}
+          {info ? `\n--- ${t('组件栈')} ---${info}` : ''}
+        </pre>
+      </details>
+      <div className="row" style={{ marginTop: 12 }}>
+        <button className="btn primary" onClick={onRetry}>
+          {t('重试')}
+        </button>
+        <button
+          className="btn"
+          onClick={() => {
+            void navigator.clipboard.writeText(
+              `${error.message}\n\n${error.stack ?? ''}\n\n${info}`,
+            );
+          }}
+        >
+          {t('复制错误')}
+        </button>
+      </div>
+    </div>
+  );
 }

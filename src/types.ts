@@ -543,6 +543,10 @@ export interface AppSettings {
   cachedModels: Record<string, ModelInfo[]>;
   defaultConfig: GenerationConfig;
   theme: 'system' | 'light' | 'dark';
+  /** 界面语言：简体是源文案，繁体由 OpenCC 转换，英文查词典 */
+  locale?: import('./lib/i18n').Locale;
+  /** 控件密度：只影响按钮等小控件的尺寸，默认 default */
+  uiDensity?: 'compact' | 'default' | 'roomy';
   notifications?: { enabled?: boolean; sound?: boolean };
   sendKey: 'enter' | 'mod-enter';
   fontScale: number;
@@ -785,6 +789,8 @@ export interface ErrorInfo {
   /** 这个锅该不该算在当前模型头上（算了就进「有问题的模型」区） */
   blameModel: boolean;
   status?: number;
+  /** title 和 fixes 里 {name} 占位符的取值。文案本身是翻译 key，值在渲染时填进去 */
+  vars?: Record<string, string | number>;
 }
 
 export type ModelHealthStatus = 'ok' | 'broken' | 'missing' | 'ratelimited' | 'timeout' | 'unknown';

@@ -1,4 +1,5 @@
 import React from 'react';
+import { useT } from '../lib/i18n';
 import AnchoredPopover from './AnchoredPopover';
 import type { KeyProfile, ModelHealth, ModelHealthMap, ModelHealthStatus, ModelInfo } from '../types';
 import { healthOf, partitionModels } from '../lib/health';
@@ -21,8 +22,8 @@ const PAGE = 150;
 
 /** 坏模型的分组：按「为什么坏」而不是按名字 */
 const BAD_GROUPS: { key: ModelHealthStatus | 'muted'; label: string; hint: string }[] = [
-  { key: 'broken', label: '服务端报错', hint: '5xx —— 那条路由在上游自己就起不来，客户端改什么都没用' },
-  { key: 'missing', label: '模型不存在', hint: '404 —— ID 下线了或写法不对' },
+  { key: 'broken', label: '服务端报错', hint: '5xx：那条路由在上游自己就起不来，客户端改什么都没用' },
+  { key: 'missing', label: '模型不存在', hint: '404：ID 下线了或写法不对' },
   { key: 'unknown', label: '其他失败', hint: '返回了非 2xx，但归不进上面两类' },
   { key: 'muted', label: '手动隐藏', hint: '你自己压下去的，体检不会推翻' },
 ];
@@ -56,6 +57,7 @@ export default function ModelPicker(props: {
   onMute: (id: string, muted: boolean) => void;
   onClearHealth: () => void;
 }) {
+  const t = useT();
   const [open, setOpen] = React.useState(false);
   const [source,setSource]=React.useState<'api'|'local'>(props.displayModel?'local':'api');
   React.useEffect(()=>setSource(props.displayModel?'local':'api'),[props.displayModel]);
@@ -154,25 +156,25 @@ export default function ModelPicker(props: {
           }}
           title={
             h
-              ? `${m.id}\n${h.reason ?? ''}${h.code ? `\nHTTP ${h.code}` : ''}\n最后一次判定：${new Date(h.at).toLocaleString()}`
+              ? `${m.id}\n${h.reason ?? ''}${h.code ? `\nHTTP ${h.code}` : ''}\n${t('最后一次判定：')}${new Date(h.at).toLocaleString()}`
               : m.id
           }
         >
           <span className="picker-item-id">{m.label ?? m.id}</span>
-          {m.custom ? <span className="badge-off">手动</span> : null}
+          {m.custom ? <span className="badge-off">{t('手动')}</span> : null}
           {!broken && nonChatReason(m) ? (
-            <span className="badge-off" title="打不通 /chat/completions">
+            <span className="badge-off" title={t('打不通 /chat/completions')}>
               {nonChatReason(m)}
             </span>
           ) : null}
           {verified ? (
-            <span className="badge-ok" title="体检通过">
+            <span className="badge-ok" title={t('体检通过')}>
               ✓
             </span>
           ) : null}
           {hollow ? (
             <span className="badge-off" title={h!.reason}>
-              空响应
+              {t('空响应')}
             </span>
           ) : null}
           {broken && h?.code ? <span className="badge-bad">{h.code}</span> : null}
@@ -180,7 +182,7 @@ export default function ModelPicker(props: {
         </button>
         <button
           className="icon-btn sm"
-          title={broken ? '放回正常列表' : '手动隐藏：不想在列表里看到它'}
+          title={broken ? t('放回正常列表') : t('手动隐藏：不想在列表里看到它')}
           onClick={(e) => {
             e.stopPropagation();
             props.onMute(m.id, !broken);
@@ -198,25 +200,25 @@ export default function ModelPicker(props: {
         className="btn sm ghost model-btn"
         aria-expanded={open}
         aria-haspopup="dialog"
-        title={`当前模型：${props.model || '未选择'}\n凭据：${activeProfile?.name ?? '未选择'}`}
+        title={t('当前模型：{model}\n凭据：{profile}', { model: props.model || t('未选择'), profile: activeProfile?.name ?? t('未选择') })}
         onClick={() => setOpen((v) => !v)}
       >
-        <span className="model-btn-name">{props.displayModel || props.model || '选模型'}</span>
+        <span className="model-btn-name">{props.displayModel || props.model || t('选模型')}</span>
         <span className="model-btn-caret">▾</span>
       </button>
 
       {open ? (
-        <AnchoredPopover anchorRef={anchorRef} onClose={() => setOpen(false)} className="popup picker" label="选择模型与凭据">
-          {props.clientSlot && <div className="connection-tabs" role="group" aria-label="模型连接方式"><button className={`btn sm ${source==='api'?'':'ghost'}`} onClick={()=>setSource('api')}>API 模型</button><button className={`btn sm ${source==='local'?'':'ghost'}`} onClick={()=>setSource('local')}>本机 AI</button></div>}
+        <AnchoredPopover anchorRef={anchorRef} onClose={() => setOpen(false)} className="popup picker" label={t('选择模型与凭据')}>
+          {props.clientSlot && <div className="connection-tabs" role="group" aria-label={t('模型连接方式')}><button className={`btn sm ${source==='api'?'':'ghost'}`} onClick={()=>setSource('api')}>{t('API 模型')}</button><button className={`btn sm ${source==='local'?'':'ghost'}`} onClick={()=>setSource('local')}>{t('本机 AI')}</button></div>}
           {source==='local' && props.clientSlot ? props.clientSlot : <>
           {/* 凭据 */}
           <div className="picker-section">
             <div className="picker-label">
-              凭据
+              {t('凭据')}
               <span style={{ flex: 1 }} />
               <button
                 className="icon-btn"
-                title="重新拉取这份凭据下的模型列表"
+                title={t('重新拉取这份凭据下的模型列表')}
                 onClick={props.onRefresh}
                 disabled={props.loading}
               >
@@ -225,7 +227,7 @@ export default function ModelPicker(props: {
             </div>
             <div className="picker-profiles">
               {props.profiles.length === 0 ? (
-                <div className="picker-empty">还没登记凭据，去设置里加一份</div>
+                <div className="picker-empty">{t('还没登记凭据，去设置里加一份')}</div>
               ) : (
                 props.profiles.map((p) => (
                   <button
@@ -251,10 +253,10 @@ export default function ModelPicker(props: {
           {/* 模型 */}
           <div className="picker-section">
             <div className="picker-label">
-              模型
+              {t('模型')}
               <span style={{ flex: 1 }} />
               <span style={{ fontWeight: 400, color: 'var(--fg-faint)' }}>
-                {q.trim() ? `匹配 ${filtered.length} / ${good.length}` : `${good.length} 个模型`}
+                {q.trim() ? t('匹配 {n} / {total}', { n: filtered.length, total: good.length }) : t('{n} 个模型', { n: good.length })}
               </span>
             </div>
 
@@ -264,13 +266,13 @@ export default function ModelPicker(props: {
                 onClick={() => setChatOnly((v) => !v)}
                 title={
                   chatOnly
-                    ? `已隐藏 ${nonChat.length} 个非聊天模型（图像生成、向量、语音），点一下显示出来`
-                    : '点一下只看聊天模型'
+                    ? t('已隐藏 {n} 个非聊天模型（图像生成、向量、语音），点一下显示出来', { n: nonChat.length })
+                    : t('点一下只看聊天模型')
                 }
               >
-                <span>{chatOnly ? '☑' : '☐'}</span> 只看聊天模型
+                <span>{chatOnly ? '☑' : '☐'}</span> {t('只看聊天模型')}
                 <span className="hint">
-                  {chatOnly ? `已隐藏 ${nonChat.length} 个` : `含 ${nonChat.length} 个非聊天模型`}
+                  {chatOnly ? t('已隐藏 {n} 个', { n: nonChat.length }) : t('含 {n} 个非聊天模型', { n: nonChat.length })}
                 </span>
               </button>
             ) : null}
@@ -279,7 +281,7 @@ export default function ModelPicker(props: {
               ref={inputRef}
               type="text"
               className="picker-search"
-              placeholder="搜索模型，或直接粘贴一个 ID"
+              placeholder={t('搜索模型，或直接粘贴一个 ID')}
               value={q}
               onChange={(e) => setQ(e.target.value)}
               onKeyDown={(e) => {
@@ -297,16 +299,16 @@ export default function ModelPicker(props: {
 
             {props.error ? (
               <div className="picker-error">
-                拉取失败：{props.error}
+                {t('拉取失败：')}{props.error}
                 <br />
-                可以直接在上面输入 ID 然后回车，手动加一个。
+                {t('可以直接在上面输入 ID 然后回车，手动加一个。')}
               </div>
             ) : null}
 
             <div className="picker-list" onScroll={onListScroll}>
               {shown.length === 0 ? (
                 <div className="picker-empty">
-                  没有匹配的模型
+                  {t('没有匹配的模型')}
                   {q.trim() ? (
                     <>
                       <br />
@@ -319,7 +321,7 @@ export default function ModelPicker(props: {
                           setOpen(false);
                         }}
                       >
-                        把「{q.trim()}」当成模型 ID 加进来
+                        {t('把「{id}」当成模型 ID 加进来', { id: q.trim() })}
                       </button>
                     </>
                   ) : null}
@@ -332,8 +334,7 @@ export default function ModelPicker(props: {
                       className="picker-more"
                       onClick={() => setLimit((n) => n + PAGE)}
                     >
-                      继续往下滚，或点这里再加载 {Math.min(PAGE, filtered.length - shown.length)} 个
-                      （已显示 {shown.length} / {filtered.length}）
+                      {t('继续往下滚，或点这里再加载 {n} 个（已显示 {shown} / {total}）', { n: Math.min(PAGE, filtered.length - shown.length), shown: shown.length, total: filtered.length })}
                     </button>
                   ) : null}
                 </>
@@ -341,7 +342,7 @@ export default function ModelPicker(props: {
             </div>
 
             {q.trim() && !exact && shown.length > 0 ? (
-              <div className="picker-foot">回车选中第一条</div>
+              <div className="picker-foot">{t('回车选中第一条')}</div>
             ) : null}
 
             {/* 有问题的模型：按原因分组 */}
@@ -350,14 +351,14 @@ export default function ModelPicker(props: {
                 <div className="picker-bad-row">
                   <button className="picker-bad-head" onClick={() => setShowBad((v) => !v)}>
                   <span>{showBad ? '▾' : '▸'}</span>
-                  有问题的模型 {bad.length} 个
+                  {t('有问题的模型 {n} 个', { n: bad.length })}
                   <span className="hint" style={{ marginLeft: 6 }}>
                     {BAD_GROUPS.map((g) => {
                       const n = bad.filter((m) => {
                         const h = healthOf(props.health, props.profileId, m.id);
                         return h && groupOf(h) === g.key;
                       }).length;
-                      return n ? `${g.label} ${n}` : null;
+                      return n ? `${t(g.label)} ${n}` : null;
                     })
                       .filter(Boolean)
                       .join(' · ')}
@@ -365,7 +366,7 @@ export default function ModelPicker(props: {
                 </button>
                 <button
                   className="icon-btn sm"
-                  title="把这些模型 ID 连同失败原因复制出来"
+                  title={t('把这些模型 ID 连同失败原因复制出来')}
                   onClick={() => {
                     const text = bad
                       .map((m) => {
@@ -383,18 +384,18 @@ export default function ModelPicker(props: {
                 {showBad ? (
                   <div className="picker-list short">
                     {badGroups.length === 0 ? (
-                      <div className="picker-empty">这里没有匹配的</div>
+                      <div className="picker-empty">{t('这里没有匹配的')}</div>
                     ) : (
                       badGroups.map((g) => (
                         <div key={g.key} className="bad-group">
-                          <div className="bad-group-head" title={g.hint}>
-                            {g.label} · {g.items.length}
-                            <span className="hint">{g.hint}</span>
+                          <div className="bad-group-head" title={t(g.hint)}>
+                            {t(g.label)} · {g.items.length}
+                            <span className="hint">{t(g.hint)}</span>
                           </div>
                           {g.items.slice(0, 80).map((m) => renderItem(m, true))}
                           {g.items.length > 80 ? (
                             <div className="picker-foot">
-                              这一组还有 {g.items.length - 80} 个，用上面的搜索框筛
+                              {t('这一组还有 {n} 个，用上面的搜索框筛', { n: g.items.length - 80 })}
                             </div>
                           ) : null}
                         </div>
@@ -418,11 +419,11 @@ export default function ModelPicker(props: {
                     />
                   </div>
                   <div className="probe-text">
-                    体检中 {props.probe!.done}/{props.probe!.total}
+                    {t('体检中 {done}/{total}', { done: props.probe!.done, total: props.probe!.total })}
                     <span className="hint"> · {props.probe!.current}</span>
                   </div>
                   <button className="btn sm" onClick={props.onStopProbe}>
-                    停下
+                    {t('停下')}
                   </button>
                 </>
               ) : (
@@ -431,20 +432,20 @@ export default function ModelPicker(props: {
                     className="btn sm"
                     onClick={props.onProbe}
                     disabled={props.models.length === 0}
-                    title="给每个模型发一个最小请求，把服务端坏掉的路由挑出来。并发压到 2，不会把额度打爆"
+                    title={t('给每个模型发一个最小请求，把服务端坏掉的路由挑出来。并发压到 2，不会把额度打爆')}
                   >
-                    批量体检 {props.models.length} 个模型
+                    {t('批量体检 {n} 个模型', { n: props.models.length })}
                   </button>
                   {bad.length > 0 ? (
                     <button
                       className="btn sm ghost"
                       onClick={props.onClearHealth}
-                      title="清空这份凭据下的全部体检记录，所有模型回到未判定状态"
+                      title={t('清空这份凭据下的全部体检记录，所有模型回到未判定状态')}
                     >
-                      清空记录
+                      {t('清空记录')}
                     </button>
                   ) : null}
-                  <span className="hint">只测通不通，不测能力</span>
+                  <span className="hint">{t('只测通不通，不测能力')}</span>
                 </>
               )}
             </div>

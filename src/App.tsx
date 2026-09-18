@@ -59,6 +59,10 @@ import { collectArtifacts } from './lib/artifacts';
 import { applyPlan, describeSync, planSync } from './lib/skillsync';
 import { loadProjects, makeProject, projectSystemBlock, saveProjects, type Project } from './lib/projects';
 import { teamRuntime } from './lib/team-runtime';
+import { conversationQueue, nextQueuedIndex, type QueuedInput } from './lib/run-queue';
+import { teamNotifications } from './lib/team-notify';
+import { I18nProvider, LOCALES, type Locale } from './lib/i18n';
+import { claimRoots, holdersOf, releaseRoots } from './lib/workspace-guard';
 import DataBackupPanel from './components/collaboration/DataBackupPanel';
 import {
   dueTasks,
@@ -94,8 +98,6 @@ const EXAMPLES = [
   '把当前 Chrome 标签页的内容总结成三点',
 ];
 
-interface QueuedInput { toolsEnabled?:boolean; text: string; attachments: Attachment[]; quotes: MessageQuote[]; quoteOnly: boolean; conversationId: string | null }
-
 const saveConversationsNow=(list:Conversation[])=>saveConversationsRaw(conversationsForStorage(list));
 export default function App() {
   const [bootError, setBootError] = React.useState<string | null>(null);
@@ -118,7 +120,8 @@ export default function App() {
   );
   const probeStopRef = React.useRef(false);
 
-  const [busy, setBusy] = React.useState<{ requestId: string; handle: AgentHandle } | null>(null);
+  /** 运行态按会话分桶：不同会话各自跑各自的路由，互不占用输入框，额度只受各自路由限制。 */
+  const [runs, setRuns] = React.useState<Record<string, { requestId: string; handle: AgentHandle }>>({});
   const [settingsOpen, setSettingsOpen] = React.useState(false);
   const [observationsOpen,setObservationsOpen] = React.useState(false);
   const [settingsTab, setSettingsTab] = React.useState<string>('keys');
@@ -177,11 +180,11 @@ export default function App() {
   const queueSaveChain=React.useRef(Promise.resolve());
   const [quotes, setQuotes] = React.useState<MessageQuote[]>([]);
   const [quoteOnly, setQuoteOnly] = React.useState(true);
-  const [queuePaused, setQueuePaused] = React.useState(false);
-  const startingRef = React.useRef(false);
-  const interruptingRef = React.useRef<{requestId:string;input:ChatMessage} | null>(null);
+  const [pausedQueues, setPausedQueues] = React.useState<string[]>([]);
+  const startingRef = React.useRef(new Set<string>());
+  const interruptingRef = React.useRef(new Map<string, {requestId:string;input:ChatMessage}>());
   const [resumeInput,setResumeInput]=React.useState<{convId:string;state:RunState}|null>(null);
-  const runningRef = React.useRef<{ requestId: string; convId: string; handle: AgentHandle } | null>(null);
+  const runningRef = React.useRef(new Map<string, { requestId: string; handle: AgentHandle }>());
   const questionDraftSaveRef = React.useRef(Promise.resolve());
   const questionSubmitRef = React.useRef(new Set<string>());
 
@@ -198,7 +201,46 @@ export default function App() {
     if(settingsRef.current?.notifications?.enabled===false)return;
     void desktop()?.notifyTask?.({kind,id,conversationId,title,body:body.slice(0,500),silent:settingsRef.current?.notifications?.sound===false}).catch(()=>{});
   }
-  React.useEffect(()=>desktop()?.onTaskNotificationClick?.(event=>{setActiveId(event.conversationId);setTeamVisible(false);}),[]);
+  React.useEffect(()=>desktop()?.onTaskNotificationClick?.(event=>{
+    // 协作空间的通知带的是 team:<projectId>，点开回到那个项目而不是某个会话
+    if(event.conversationId.startsWith('team:')){
+      const projectId=event.conversationId.slice(5);
+      setSettings(s=>s?{...s,collaborationView:{visible:true,projectId}}:s);
+      return;
+    }
+    setActiveId(event.conversationId);setTeamVisible(false);
+  }),[]);
+
+  React.useEffect(() => {
+    if (!pausedQueues.length) return;
+    const freed = pausedQueues.filter((id) => {
+      const waiting = blockedOnRoots.current.get(id);
+      return waiting !== undefined && holdersOf(id, waiting).length === 0;
+    });
+    if (!freed.length) return;
+    for (const id of freed) blockedOnRoots.current.delete(id);
+    setPausedQueues((list) => list.filter((id) => !freed.includes(id)));
+  }, [runs, pausedQueues]);
+
+  /* ---------------- 协作空间通知 ---------------- */
+
+  const blockedOnRoots = React.useRef(new Map<string, string[]>());
+  const teamNotified = React.useRef(new Map<string, string>());
+  const teamSeeded = React.useRef(false);
+  React.useEffect(() => {
+    const sync = () => {
+      const data = teamRuntime.data;
+      if (!data) return;
+      // 第一次拿到数据只记下现状：应用刚开就为历史运行补一堆通知没有意义
+      const seeding = !teamSeeded.current;
+      teamSeeded.current = true;
+      for (const item of teamNotifications(teamNotified.current, data, seeding)) {
+        notifyTask(item.kind, `team:${item.runId}:${item.status}`, `team:${item.projectId}`, item.title, item.body);
+      }
+    };
+    sync();
+    return teamRuntime.subscribe(sync);
+  }, [bootReady]);
 
   /* ---------------- 启动加载 ---------------- */
 
@@ -219,8 +261,10 @@ export default function App() {
       if (cancelled) return;
       try {
         const savedQueue=JSON.parse(await getTransport().kvGet('wickrun:input-queue:v1')||'[]');
-        if(Array.isArray(savedQueue))setQueue(savedQueue.filter(q=>q&&typeof q.text==='string'&&Array.isArray(q.attachments)&&Array.isArray(q.quotes)&&(q.conversationId===null||typeof q.conversationId==='string')));
-        if(Array.isArray(savedQueue)&&savedQueue.length)setQueuePaused(true);
+        const restored=Array.isArray(savedQueue)?savedQueue.filter(q=>q&&typeof q.text==='string'&&Array.isArray(q.attachments)&&Array.isArray(q.quotes)&&(q.conversationId===null||typeof q.conversationId==='string')):[];
+        setQueue(restored);
+        // 恢复出来的队列先按会话挂起，等用户自己点「继续队列」
+        setPausedQueues([...new Set(restored.map(q=>q.conversationId).filter((id):id is string=>typeof id==='string'))]);
       }catch(error){toast.show('排队输入恢复失败：'+String(error));}
       queueLoaded.current=true;
       setSettings(s);
@@ -318,6 +362,8 @@ export default function App() {
     };
     apply();
     root.style.setProperty('--font-scale', String(settings.fontScale));
+    root.setAttribute('data-density', settings.uiDensity ?? 'default');
+    root.setAttribute('lang', LOCALES.find((l) => l.value === settings.locale)?.lang ?? 'zh-Hans');
     if (settings.theme !== 'system') return;
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
     mq.addEventListener('change', apply);
@@ -330,6 +376,13 @@ export default function App() {
     () => conversations.find((c) => c.id === activeId) ?? null,
     [conversations, activeId],
   );
+  /** 界面只关心当前会话：别的会话在后台跑不该锁住这里的输入和按钮。 */
+  const busy = activeId ? runs[activeId] ?? null : null;
+  const queuePaused = activeId ? pausedQueues.includes(activeId) : false;
+  const pauseQueue = (id: string) => setPausedQueues((list) => (list.includes(id) ? list : [...list, id]));
+  const resumeQueue = (id: string) => setPausedQueues((list) => list.filter((x) => x !== id));
+  /** 输入框只显示本会话排的队；别的会话的队列跟这里无关。 */
+  const activeQueue = React.useMemo(() => conversationQueue(queue, activeId), [queue, activeId]);
 
   /**
    * 当前会话用哪份凭据。
@@ -887,21 +940,26 @@ export default function App() {
       if (!settings) return;
       const nativeClient=(active?.config ?? settings.defaultConfig).client;
       const profile:KeyProfile|null=nativeClient ? {id:`client:${nativeClient.kind}`,name:nativeClient.kind,baseUrl:'',hasSecret:false,extraHeaders:{},createdAt:0} : settings.keyProfiles.find(p=>p.id===active?.keyProfileId) ?? settings.keyProfiles.find(p=>p.id===settings.activeKeyProfileId) ?? settings.keyProfiles[0] ?? null;
-      if (startingRef.current || busy || runningRef.current) {
-        setQueue((q) => [...q, queuedInput ?? { toolsEnabled:config?.toolsEnabled, text, attachments: [...attachments], quotes: [...quotes], quoteOnly, conversationId: active?.id ?? null }]);
+      // 目标会话由排队条目指定，否则就是当前可见的会话；只有同一个会话在跑才排队。
+      const targetId = queuedInput?.conversationId ?? active?.id ?? null;
+      const startKey = targetId ?? '__new__';
+      if (startingRef.current.has(startKey) || (targetId && runningRef.current.has(targetId))) {
+        setQueue((q) => [...q, queuedInput ?? { toolsEnabled:config?.toolsEnabled, text, attachments: [...attachments], quotes: [...quotes], quoteOnly, conversationId: targetId }]);
         setAttachments([]); setQuotes([]);
         return;
       }
       if (!profile) {
         toast.show('先去设置里登记一份 API 凭据'); setSettingsOpen(true); return;
       }
-      startingRef.current = true;
+      startingRef.current.add(startKey);
       let apiKey: string | null;
       try { apiKey = nativeClient ? 'official-client' : await secretGet(profile.id); }
-      catch (e) { startingRef.current = false; toast.show(String(e)); return; }
-      if (!apiKey) { startingRef.current = false; toast.show('这份凭据还没填 API Key'); setSettingsOpen(true); return; }
-      // 没有会话就现开一个
-      let conv = active;
+      catch (e) { startingRef.current.delete(startKey); toast.show(String(e)); return; }
+      if (!apiKey) { startingRef.current.delete(startKey); toast.show('这份凭据还没填 API Key'); setSettingsOpen(true); return; }
+      // 没有会话就现开一个；排队条目带着会话 id，指向哪个会话就在哪个会话里跑
+      let conv = queuedInput?.conversationId
+        ? conversations.find((c) => c.id === queuedInput.conversationId) ?? active
+        : active;
       let baseList = conversations;
       if (!conv) {
         conv = newConversation(settings.defaultConfig, profile.id);
@@ -910,7 +968,7 @@ export default function App() {
       const cfg = queuedInput?.toolsEnabled===undefined?conv.config:{...conv.config,toolsEnabled:queuedInput.toolsEnabled};
 
       if (!cfg.model) {
-        startingRef.current = false;
+        startingRef.current.delete(startKey);
         toast.show('先选一个模型');
         setConfigOpen(true);
         return;
@@ -924,7 +982,7 @@ export default function App() {
         : replaceFromIndex === undefined ? conv.messages : conv.messages.slice(0, replaceFromIndex);
       if (!resumeFrom && replaceFromIndex !== undefined) {
         try { await forgetRuns(conv.id, new Set(conv.messages.slice(replaceFromIndex).map((m) => m.id))); }
-        catch (e) { startingRef.current = false; toast.show(`无法更新执行记录：${String(e)}`); return; }
+        catch (e) { startingRef.current.delete(startKey); toast.show(`无法更新执行记录：${String(e)}`); return; }
       }
 
       // 本轮唤起的技能：固定一份快照，并记一次使用次数。
@@ -961,6 +1019,25 @@ export default function App() {
       };
 
       const convId = conv.id;
+      if (convId !== startKey) { startingRef.current.delete(startKey); startingRef.current.add(convId); }
+
+      // 会话之间并行没问题，同时往一个目录里写有问题：先登记，占着就等对方放手
+      const wantedRoots = cfg.toolsEnabled
+        ? toolContextOf(settings, conv.projectId ?? null, grantsRef.current).workspaceRoots
+        : [];
+      const holders = holdersOf(convId, wantedRoots);
+      if (holders.length) {
+        startingRef.current.delete(convId);
+        blockedOnRoots.current.set(convId, wantedRoots);
+        setQueue((q) => [...q, queuedInput ?? { toolsEnabled: cfg.toolsEnabled, text, attachments: [...attachments], quotes: [...quotes], quoteOnly, conversationId: convId }]);
+        setAttachments([]); setQuotes([]);
+        pauseQueue(convId);
+        const holderTitle = conversations.find((c) => c.id === holders[0])?.title ?? '另一个会话';
+        toast.show(`「${holderTitle}」正在这个工作目录里执行。这条排着，等它结束再发。`, 6000);
+        return;
+      }
+      claimRoots(convId, wantedRoots);
+
       const history = [...kept, userMsg];
       const nextConv: Conversation = {
         ...conv,
@@ -971,9 +1048,10 @@ export default function App() {
       };
 
       setConversations(baseList.map((c) => (c.id === convId ? nextConv : c)));
-      setActiveId(convId);
+      // 后台会话的排队/恢复不抢焦点：只有从当前可见会话发出的才切过去
+      if (!queuedInput?.conversationId || queuedInput.conversationId === active?.id) setActiveId(convId);
       if (!resumeFrom) { setAttachments([]); setQuotes([]); }
-      setQueuePaused(false);
+      resumeQueue(convId);
 
       /* --- 流式缓冲：按 60ms 节流刷进 state，不然一个 token 一次 setState --- */
       const buf = { content: answerMsg.content, reasoning: answerMsg.reasoning ?? '', dirty: false };
@@ -1007,22 +1085,26 @@ export default function App() {
         for(const resolve of pendingApprovals)resolve(false);
         setConfirmReq(null);
         clearInterval(timer); flush();
-        if (runningRef.current?.requestId === requestId) { runningRef.current = null; setBusy(null); }
-        startingRef.current = false;
+        if (runningRef.current.get(convId)?.requestId === requestId) {
+          runningRef.current.delete(convId);
+          setRuns((prev) => { if (prev[convId]?.requestId !== requestId) return prev; const next = { ...prev }; delete next[convId]; return next; });
+        }
+        startingRef.current.delete(convId);
+        if (!runningRef.current.has(convId)) releaseRoots(convId);
       };
       const finishInterruption=()=>{
-        const steering=interruptingRef.current;
+        const steering=interruptingRef.current.get(convId);
         if(steering?.requestId!==requestId||!latestState)return false;
-        interruptingRef.current=null;startingRef.current=true;setQueuePaused(true);
+        interruptingRef.current.delete(convId);startingRef.current.add(convId);pauseQueue(convId);
         const state=latestState.supplementalInputs?.some(m=>m.id===steering.input.id)?structuredClone(latestState):addRunInput(latestState,steering.input);
         if(state.status==='completed'){state.phase='request';state.pendingCalls=[];state.toolCursor=0;}
         state.at=Date.now();state.status='paused';state.reason='新输入和执行现场已保存，正在继续';
         void saveRun({id:state.runId??requestId,conversationId:convId,answerId:answerMsg.id,question:userMsg,config:cfg,keyProfileId:profile.id,projectId:conv!.projectId,title:nextConv.title,state}).then(()=>{
           patchMessage(convId,answerMsg.id,{runState:state,supplementalInputs:state.supplementalInputs});
-          startingRef.current=false;
+          startingRef.current.delete(convId);
           if(!state.uncertainCallId)setResumeInput({convId,state});
           else notifyTask('paused',`${requestId}:uncertain`,convId,'新要求已保存，需要核实上一项操作','上一项操作的结果尚未确认，请回来核实后继续，避免重复执行。');
-        }).catch(error=>{startingRef.current=false;reportSaveError(error);});
+        }).catch(error=>{startingRef.current.delete(convId);reportSaveError(error);});
         return true;
       };
       const handle = runConnectedAgent({
@@ -1135,7 +1217,7 @@ export default function App() {
               ...(state ? { harness:state.harness,subagents:state.subagents,milestones: state.milestones, contextSnapshot: state.contextSnapshot, delivery: state.delivery, taskId:state.runId, supplementalInputs:state.supplementalInputs, handoff:state.handoff, userQuestionHistory: state.userQuestionHistory } : {}) });
           },
           onPaused(reason) {
-            finishUi(); setQueuePaused(true);
+            finishUi(); pauseQueue(convId);
             const interrupted=finishInterruption();
             const answeredWhileSaving=!latestState?.userQuestion&&!latestState?.uncertainCallId&&latestState?.pendingInputMessages?.some(m=>m.id.startsWith('answer-'));
             if(!interrupted&&answeredWhileSaving&&latestState)setResumeInput({convId,state:latestState});
@@ -1172,7 +1254,7 @@ export default function App() {
             if (arts.length === 1) setOpenArtifact(arts[0]);
           },
           onError(msg, info) {
-            finishUi(); setQueuePaused(true);
+            finishUi(); pauseQueue(convId);
             if(!finishInterruption())notifyTask('error',`${requestId}:error`,convId,'任务遇到问题',msg);
             patchMessage(convId, answerMsg.id, {
               pending: false,
@@ -1200,39 +1282,55 @@ export default function App() {
         },
       });
 
-      startingRef.current = false;
-      runningRef.current = { requestId, convId, handle };
-      setBusy({ requestId, handle });
+      startingRef.current.delete(convId);
+      runningRef.current.set(convId, { requestId, handle });
+      setRuns((prev) => ({ ...prev, [convId]: { requestId, handle } }));
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [settings, conversations, active, profile, busy, canRunHostTools, attachments, activeSkills, projects, quotes, quoteOnly],
+    [settings, conversations, active, profile, runs, canRunHostTools, attachments, activeSkills, projects, quotes, quoteOnly],
   );
 
   React.useEffect(()=>{
-    if(!resumeInput||busy||runningRef.current)return;
-    if(activeId!==resumeInput.convId){setActiveId(resumeInput.convId);return;}
+    if(!resumeInput)return;
+    const {convId,state}=resumeInput;
+    if(runningRef.current.has(convId)||startingRef.current.has(convId))return;
     setResumeInput(null);
-    void send('继续处理新输入',undefined,resumeInput.state);
-  },[resumeInput,busy,activeId,send]);
+    void send('继续处理新输入',undefined,state,{text:'',attachments:[],quotes:[],quoteOnly:false,conversationId:convId});
+  },[resumeInput,runs,send]);
 
   function sendNow(input:QueuedInput):boolean {
-    const running=runningRef.current;
-    if(!running||interruptingRef.current)return false;
-    if(input.conversationId&&input.conversationId!==running.convId){toast.show('这条输入属于另一会话，请在对应会话发送');return false;}
+    const convId=input.conversationId??activeId;
+    if(!convId)return false;
+    const running=runningRef.current.get(convId);
+    if(!running||interruptingRef.current.has(convId))return false;
     const message:ChatMessage={id:uid('input'),role:'user',content:input.text,createdAt:Date.now(),attachments:input.attachments,quotes:input.quotes,quoteOnly:input.quotes.length>0&&input.quoteOnly};
-    setQueuePaused(true);
+    pauseQueue(convId);
     try{
-      interruptingRef.current={requestId:running.requestId,input:message};
+      interruptingRef.current.set(convId,{requestId:running.requestId,input:message});
       if(running.handle.interrupt)running.handle.interrupt(message);else running.handle.abort();
       setConfirmReq(request=>{request?.resolve(false);return null;});setGrantReq(request=>{request?.resolve(false);return null;});
       toast.show('正在保存当前输出和执行现场，然后处理新要求');return true;
-    }catch(error){interruptingRef.current=null;toast.show(String(error));return false;}
+    }catch(error){interruptingRef.current.delete(convId);toast.show(String(error));return false;}
   }
 
-  function stop() {
-    interruptingRef.current=null;setResumeInput(null);
-    setQueuePaused(true);
-    runningRef.current?.handle.abort();
+  function abortRun(id:string){
+    interruptingRef.current.delete(id);
+    pauseQueue(id);
+    runningRef.current.get(id)?.handle.abort();
+  }
+
+  /** 停当前会话（或指定会话）；别的会话的任务继续跑。 */
+  function stop(target?:string) {
+    const id=target??activeId;
+    if(id)abortRun(id);
+    if(!target)setResumeInput(null);
+    setConfirmReq((request) => { request?.resolve(false); return null; });
+    setGrantReq((request) => { request?.resolve(false); return null; });
+  }
+
+  function stopAll() {
+    for(const id of [...runningRef.current.keys()])abortRun(id);
+    setResumeInput(null);
     setConfirmReq((request) => { request?.resolve(false); return null; });
     setGrantReq((request) => { request?.resolve(false); return null; });
   }
@@ -1255,8 +1353,8 @@ export default function App() {
   /** Save a pending question draft in both the visible conversation and run journal. */
   const saveQuestionDraft = React.useCallback((msg: ChatMessage, draft: UserQuestionAnswers) => {
     if (!active || !msg.runState?.userQuestion) return;
-    const live=runningRef.current;
-    if(live?.convId===active.id&&msg.pending&&live.handle.questionDraft){
+    const live=runningRef.current.get(active.id);
+    if(live&&msg.pending&&live.handle.questionDraft){
       void live.handle.questionDraft(msg.runState.userQuestion.request.id,draft).catch(reportSaveError);return;
     }
     const state = structuredClone(msg.runState);
@@ -1289,8 +1387,8 @@ export default function App() {
       return;
     }
     if(busy){
-      const live=runningRef.current;
-      if(!msg.pending||live?.convId!==active.id||!live.handle.answerQuestion){toast.show('请等待当前任务保存后提交回答');return;}
+      const live=runningRef.current.get(active.id);
+      if(!msg.pending||!live?.handle.answerQuestion){toast.show('请等待当前任务保存后提交回答');return;}
       questionSubmitRef.current.add(key);
       void live.handle.answerQuestion(pending.request.id,normalized).catch(error=>{questionSubmitRef.current.delete(key);toast.show(String(error));});return;
     }
@@ -1321,12 +1419,17 @@ export default function App() {
 
   // 上一轮结束后自动发下一条排队的
   React.useEffect(() => {
-    if (busy || runningRef.current || queuePaused || queue.length === 0) return;
-    const [next, ...rest] = queue;
-    if (next.conversationId && next.conversationId !== activeId) { setActiveId(next.conversationId); return; }
-    setQueue(rest);
-    void send(next.text, undefined, undefined, next);
-  }, [busy, queue, send, queuePaused, activeId]);
+    if (queue.length === 0) return;
+    const index = nextQueuedIndex(queue, {
+      activeId,
+      busyIds: [...runningRef.current.keys(), ...startingRef.current],
+      pausedIds: pausedQueues,
+    });
+    if (index < 0) return;
+    const next = queue[index];
+    setQueue((all) => all.filter((_, i) => i !== index));
+    void send(next.text, undefined, undefined, { ...next, conversationId: next.conversationId ?? activeId });
+  }, [runs, queue, send, pausedQueues, activeId]);
 
   /* ---------------- 定时任务调度 ---------------- */
 
@@ -1482,7 +1585,8 @@ export default function App() {
 
   const composer = (
     <Composer
-      controls={<><ConversationControls config={config} profiles={settings.keyProfiles} modelsByProfile={Object.fromEntries(settings.keyProfiles.map(p=>[p.id,[...(settings.cachedModels[p.id]||[]),...(settings.customModels[p.id]||[])]]))} onChange={setConfig}/>{active?.messages.filter(m=>m.runState?.userQuestion&&!m.runState.userQuestion.answers).map(m=><button className="btn sm" key={m.id} onClick={()=>document.getElementById(`question-${m.runState!.userQuestion!.request.id}`)?.scrollIntoView({block:'center',behavior:'smooth'})}>Answer Question · 回答问题</button>)}</>}
+      barControls={<ConversationControls config={config} profiles={settings.keyProfiles} modelsByProfile={Object.fromEntries(settings.keyProfiles.map(p=>[p.id,[...(settings.cachedModels[p.id]||[]),...(settings.customModels[p.id]||[])]]))} onChange={setConfig}/>}
+      controls={active?.messages.filter(m=>m.runState?.userQuestion&&!m.runState.userQuestion.answers).map(m=><button className="btn sm" key={m.id} onClick={()=>document.getElementById(`question-${m.runState!.userQuestion!.request.id}`)?.scrollIntoView({block:'center',behavior:'smooth'})}>Answer Question · 回答问题</button>)}
       key={active?.id ?? 'new'}
       initialDraft={active?.draft}
       onDraftChange={text => { if (active) updateConv(active.id, c => c.draft === text ? c : { ...c, draft: text }); }}
@@ -1510,7 +1614,7 @@ export default function App() {
       }}
       onSend={(t, mode) => void send(t, undefined, undefined, {toolsEnabled: mode === 'work', text: t, attachments: [...attachments], quotes: [...quotes], quoteOnly, conversationId: active?.id ?? null})}
       onSendNow={t=>{const accepted=sendNow({text:t,attachments:[...attachments],quotes:[...quotes],quoteOnly,conversationId:active?.id??null});if(accepted){setAttachments([]);setQuotes([]);}return accepted;}}
-      onSendQueuedNow={i=>{const input=queue[i];if(input&&sendNow(input))setQueue(all=>all.filter((_,j)=>j!==i));}}
+      onSendQueuedNow={i=>{const entry=activeQueue[i];if(entry&&sendNow(entry.item))setQueue(all=>all.filter((_,j)=>j!==entry.index));}}
       onStop={stop}
       stream={config.stream}
       toolCount={toolNames.length}
@@ -1562,14 +1666,15 @@ export default function App() {
       }
       onDropSkill={(id) => setActiveSkills((prev) => prev.filter((x) => x.id !== id))}
       projectPrompts={activeProject?.prompts ?? []}
-      queued={queue.map((q) => q.text || `${q.attachments.length} 个附件`)}
+      queued={activeQueue.map(({ item }) => item.text || `${item.attachments.length} 个附件`)}
       queuePaused={queuePaused}
-      onResumeQueue={() => setQueuePaused(false)}
-      onDropQueued={(i) => setQueue((q) => q.filter((_, j) => j !== i))}
+      onResumeQueue={() => { if (activeId) resumeQueue(activeId); }}
+      onDropQueued={(i) => { const entry = activeQueue[i]; if (entry) setQueue((q) => q.filter((_, j) => j !== entry.index)); }}
     />
   );
 
   return (
+    <I18nProvider locale={settings.locale ?? 'zh-Hans'}>
     <div className="app">
       {!sidebarHidden ? (
       <aside
@@ -1595,7 +1700,9 @@ export default function App() {
           }}
           onNew={() => newChat(null)}
           onDelete={(id) => {
-            if (runningRef.current?.convId === id) stop();
+            if (runningRef.current.has(id)) stop(id);
+            releaseRoots(id);
+            blockedOnRoots.current.delete(id);
             void forgetRuns(id);
             setConversations((prev) => prev.filter((c) => c.id !== id));
             if (activeId === id) setActiveId(null);
@@ -1614,6 +1721,7 @@ export default function App() {
             setSettingsOpen(true);
             setSidebarOpen(false);
           }}
+          onLocale={(locale: Locale) => setSettings((prev) => (prev ? { ...prev, locale } : prev))}
           onOpenObservations={()=>{setObservationsOpen(true);setSidebarOpen(false);}}
         />
         </div>
@@ -1642,7 +1750,7 @@ export default function App() {
         />
       )}
 
-      {teamVisible ? <div className="team-workspace-container"><React.Suspense fallback={<div className="empty">正在打开协作空间…</div>}><TeamWorkspace sidebarTarget={teamSidebar} sidebarHidden={sidebarHidden} onOpenSidebar={()=>{setSidebarHidden(false);setSidebarOpen(true);}} onNavigate={()=>setSidebarOpen(false)} projects={projects} settings={settings} sourceConversation={active} beforeRestore={async()=>{stop();await teamRuntime.pauseAll();await saveConversationsNow(conversations);}} onProject={projectId=>setSettings(s=>s?{...s,collaborationView:{visible:true,projectId}}:s)} initialProjectId={settings.collaborationView?.projectId??activeProject?.id} onSingle={()=>setTeamVisible(false)} onSettings={()=>{setSettingsTab('keys');setSettingsOpen(true);}} onCreateProject={name=>{const p=makeProject(name);setProjects(all=>[...all,p]);return p.id;}} onHandoff={(text,projectId)=>{const conv=newConversation(settings.defaultConfig,settings.activeKeyProfileId);conv.projectId=projectId;conv.title=titleFrom(text);conv.messages=[{id:uid(),role:'user',content:text,createdAt:Date.now()}];setConversations(all=>[...all,conv]);setActiveId(conv.id);setTeamVisible(false);}}/></React.Suspense></div> : null}
+      {teamVisible ? <div className="team-workspace-container"><React.Suspense fallback={<div className="empty">正在打开协作空间…</div>}><TeamWorkspace sidebarTarget={teamSidebar} sidebarHidden={sidebarHidden} onOpenSidebar={()=>{setSidebarHidden(false);setSidebarOpen(true);}} onNavigate={()=>setSidebarOpen(false)} projects={projects} settings={settings} sourceConversation={active} beforeRestore={async()=>{stopAll();await teamRuntime.pauseAll();await saveConversationsNow(conversations);}} onProject={projectId=>setSettings(s=>s?{...s,collaborationView:{visible:true,projectId}}:s)} initialProjectId={settings.collaborationView?.projectId??activeProject?.id} onSingle={()=>setTeamVisible(false)} onSettings={()=>{setSettingsTab('keys');setSettingsOpen(true);}} onCreateProject={name=>{const p=makeProject(name);setProjects(all=>[...all,p]);return p.id;}} onHandoff={(text,projectId)=>{const conv=newConversation(settings.defaultConfig,settings.activeKeyProfileId);conv.projectId=projectId;conv.title=titleFrom(text);conv.messages=[{id:uid(),role:'user',content:text,createdAt:Date.now()}];setConversations(all=>[...all,conv]);setActiveId(conv.id);setTeamVisible(false);}}/></React.Suspense></div> : null}
       <main className="main" style={teamVisible?{display:'none'}:undefined}>
         {saveError ? <div className="grant-banner" role="alert">{saveError}<button className="btn sm" onClick={() => { void Promise.all([saveSettings(settings), saveConversationsNow(conversations),saveProjects(projects),saveSkills(skills),saveTasks(tasks)]).then(() => setSaveError(null)).catch(reportSaveError); }}>重试保存</button></div> : null}
         <div className="topbar">
@@ -1918,5 +2026,6 @@ export default function App() {
         onAnnotate={saveAnnotation} /> : null}
       <Toast message={toast.message} />
     </div>
+    </I18nProvider>
   );
 }

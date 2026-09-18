@@ -1,6 +1,8 @@
 import React from 'react';
 import type { Conversation } from '../types';
 import type { Project } from '../lib/projects';
+import { useT, type Locale } from '../lib/i18n';
+import LocaleSwitch from './LocaleSwitch';
 
 export default function Sidebar(props: {
   conversations: Conversation[];
@@ -13,12 +15,15 @@ export default function Sidebar(props: {
   onFork: (id: string) => void;
   onOpenSettings: () => void;
   onOpenObservations: () => void;
+  onLocale: (locale: Locale) => void;
 
   projects: Project[];
   onNewInProject: (projectId: string | null) => void;
   onOpenWorkspace: (tab: string) => void;
 }) {
+  const t = useT();
   const [renaming, setRenaming] = React.useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = React.useState<Conversation | null>(null);
   const [draft, setDraft] = React.useState('');
   const [q, setQ] = React.useState('');
   const [folded, setFolded] = React.useState<Set<string>>(new Set());
@@ -39,7 +44,8 @@ export default function Sidebar(props: {
       c.messages.some((m) => m.content.toLowerCase().includes(needle));
 
     const list = props.conversations.filter(match).sort((a, b) => b.updatedAt - a.updatedAt);
-    const rest = list.filter((c) => !c.pinned);
+    // 钉选只是多一个置顶入口，不代表把会话从它所属的项目里摘出去
+    const rest = list;
 
     const grouped = new Map<string, Conversation[]>();
     for (const p of props.projects) grouped.set(p.id, []);
@@ -57,10 +63,10 @@ export default function Sidebar(props: {
     };
   }, [props.conversations, props.projects, q]);
 
-  function renderItem(c: Conversation) {
+  function renderItem(c: Conversation, where = 'g') {
     return (
       <div
-        key={c.id}
+        key={`${where}-${c.id}`}
         className={`conv-item${c.id === props.activeId ? ' active' : ''}`}
         onClick={() => props.onSelect(c.id)}
         onDoubleClick={() => {
@@ -90,14 +96,14 @@ export default function Sidebar(props: {
           />
         ) : (
           <>
-            {c.pinned ? <span className="pin-dot" title="已钉选">📌</span> : null}
+            {c.pinned ? <span className="pin-dot" title={t('已钉选')}>📌</span> : null}
             <span className="conv-title" title={c.title}>
-              {c.forkedFrom ? <span className="fork-mark" title="从别的对话分叉来的">⑂</span> : null}
+              {c.forkedFrom ? <span className="fork-mark" title={t('从别的对话分叉来的')}>⑂</span> : null}
               {c.title}
             </span>
             <button
               className="icon-btn"
-              title={c.pinned ? '取消钉选' : '钉到顶部'}
+              title={c.pinned ? t('取消钉选') : t('钉到顶部')}
               onClick={(e) => {
                 e.stopPropagation();
                 props.onTogglePin(c.id);
@@ -107,7 +113,7 @@ export default function Sidebar(props: {
             </button>
             <button
               className="icon-btn"
-              title="复制一份，带上全部上下文，接着聊"
+              title={t('复制一份，带上全部上下文，接着聊')}
               onClick={(e) => {
                 e.stopPropagation();
                 props.onFork(c.id);
@@ -117,10 +123,10 @@ export default function Sidebar(props: {
             </button>
             <button
               className="icon-btn"
-              title="删除"
+              title={t('删除')}
               onClick={(e) => {
                 e.stopPropagation();
-                props.onDelete(c.id);
+                setPendingDelete(c);
               }}
             >
               ✕
@@ -133,14 +139,40 @@ export default function Sidebar(props: {
 
   return (
     <>
+      {pendingDelete ? (
+        <div className="overlay" onClick={() => setPendingDelete(null)}>
+          <div className="modal" style={{ maxWidth: 420 }} role="dialog" aria-label={t('删除这个对话？')} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head">{t('删除这个对话？')}</div>
+            <div className="modal-body">
+              <p style={{ margin: 0, lineHeight: 1.7 }}>
+                {t('「{title}」的全部消息和执行记录会被一起删掉，删了就找不回来了。', { title: pendingDelete.title })}
+              </p>
+            </div>
+            <div className="modal-foot">
+              <button className="btn" onClick={() => setPendingDelete(null)}>{t('取消')}</button>
+              <button
+                className="btn danger"
+                autoFocus
+                onClick={() => {
+                  props.onDelete(pendingDelete.id);
+                  setPendingDelete(null);
+                }}
+              >
+                {t('删除')}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <div className="sidebar-head">
         <button className="btn primary block" onClick={props.onNew}>
-          ＋ 新对话
+          {t('＋ 新对话')}
         </button>
         {props.conversations.length > 4 ? (
           <input
             type="text"
-            placeholder="搜索对话…"
+            placeholder={t('搜索对话…')}
             value={q}
             onChange={(e) => setQ(e.target.value)}
             style={{ fontSize: 12, padding: '5px 8px' }}
@@ -151,14 +183,14 @@ export default function Sidebar(props: {
       <div className="conv-list">
         {pinned.length === 0 && loose.length === 0 && props.projects.length === 0 ? (
           <div className="empty" style={{ padding: '24px 10px' }}>
-            {q.trim() ? '没有匹配的对话' : '还没有对话'}
+            {q.trim() ? t('没有匹配的对话') : t('还没有对话')}
           </div>
         ) : null}
 
         {pinned.length ? (
           <>
-            <div className="conv-group">📌 已钉选</div>
-            {pinned.map(renderItem)}
+            <div className="conv-group">📌 {t('已钉选')}</div>
+            {pinned.map((c) => renderItem(c, 'pin'))}
           </>
         ) : null}
 
@@ -174,15 +206,15 @@ export default function Sidebar(props: {
                 </button>
                 <button
                   className="icon-btn"
-                  title={`在「${p.name}」里新开一个对话`}
+                  title={t('在「{name}」里新开一个对话', { name: p.name })}
                   onClick={() => props.onNewInProject(p.id)}
                 >
                   ＋
                 </button>
               </div>
-              {!collapsed ? list.map(renderItem) : null}
+              {!collapsed ? list.map((c) => renderItem(c, p.id)) : null}
               {!collapsed && list.length === 0 ? (
-                <div className="project-empty">这个项目下还没有对话</div>
+                <div className="project-empty">{t('这个项目下还没有对话')}</div>
               ) : null}
             </div>
           );
@@ -190,8 +222,8 @@ export default function Sidebar(props: {
 
         {loose.length ? (
           <>
-            {props.projects.length ? <div className="conv-group">未分组</div> : null}
-            {loose.map(renderItem)}
+            {props.projects.length ? <div className="conv-group">{t('未分组')}</div> : null}
+            {loose.map((c) => renderItem(c, 'loose'))}
           </>
         ) : null}
       </div>
@@ -199,19 +231,20 @@ export default function Sidebar(props: {
       <div className="sidebar-foot">
         <div className="row" style={{ gap: 4 }}>
           <button className="btn sm ghost" style={{ flex: 1 }} onClick={() => props.onOpenWorkspace('projects')}>
-            📁 项目
+            {t('📁 项目')}
           </button>
           <button className="btn sm ghost" style={{ flex: 1 }} onClick={() => props.onOpenWorkspace('skills')}>
-            ⚡ 技能
+            {t('⚡ 技能')}
           </button>
           <button className="btn sm ghost" style={{ flex: 1 }} onClick={() => props.onOpenWorkspace('tasks')}>
-            ⏰ 定时
+            {t('⏰ 定时')}
           </button>
         </div>
         <button className="btn block ghost" onClick={props.onOpenSettings}>
-          ⚙ 设置
+          {t('⚙ 设置')}
         </button>
-        <button className="btn block ghost" onClick={props.onOpenObservations}>任务记录与分析</button>
+        <button className="btn block ghost" onClick={props.onOpenObservations}>{t('任务记录与分析')}</button>
+        <LocaleSwitch onChange={props.onLocale} />
       </div>
     </>
   );

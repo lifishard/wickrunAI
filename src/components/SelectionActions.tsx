@@ -1,4 +1,5 @@
 import React from 'react';
+import { useT } from '../lib/i18n';
 import { createPortal } from 'react-dom';
 import type { ChatMessage, MessageAnnotation, MessageQuote } from '../types';
 import { Modal } from './ui';
@@ -11,6 +12,7 @@ export default function SelectionActions(props: {
   onReply: (quote: MessageQuote) => void;
   onAnnotate: (note: MessageAnnotation) => Promise<void>;
 }) {
+  const t = useT();
   const [selected, setSelected] = React.useState<SelectionState | null>(null);
   const [draft, setDraft] = React.useState<MessageQuote | null>(null);
   const [text, setText] = React.useState('');
@@ -73,25 +75,25 @@ export default function SelectionActions(props: {
 
   const clear = () => { setSelected(null); window.getSelection()?.removeAllRanges(); };
   return <>
-    {selected ? createPortal(<div className="selection-actions" role="toolbar" aria-label="选中文字的操作"
+    {selected ? createPortal(<div className="selection-actions" role="toolbar" aria-label={t('选中文字的操作')}
       style={{ left: selected.x, top: selected.y, transform: `translate(-50%, ${selected.above ? '-100%' : '0'})` }}
       onPointerDown={(e) => e.preventDefault()} onMouseDown={(e) => e.preventDefault()}>
-      <button type="button" title="引用所选文字回复" onClick={() => { props.onReply(selected.quote); clear(); }}>↩ 回复</button>
-      <button type="button" title="为所选文字添加个人注释" onClick={() => { setDraft(selected.quote); setText(''); setError(''); clear(); }}>✎ 注释</button>
+      <button type="button" title={t('引用所选文字回复')} onClick={() => { props.onReply(selected.quote); clear(); }}>{t('↩ 回复')}</button>
+      <button type="button" title={t('为所选文字添加个人注释')} onClick={() => { setDraft(selected.quote); setText(''); setError(''); clear(); }}>{t('✎ 注释')}</button>
     </div>, document.body) : null}
-    {draft ? <Modal title="添加注释" onClose={() => { if (!saving) setDraft(null); }}>
+    {draft ? <Modal title={t('添加注释')} onClose={() => { if (!saving) setDraft(null); }}>
       <div className="modal-body annotation-editor">
         <blockquote>{draft.text}</blockquote>
-        <label>你的注释<textarea autoFocus aria-label="你的注释" rows={4} value={text} onChange={(e) => setText(e.target.value)} /></label>
-        <div className="hint">保存在这条消息旁，不会自动发送给模型。</div>
+        <label>{t('你的注释')}<textarea autoFocus aria-label={t('你的注释')} rows={4} value={text} onChange={(e) => setText(e.target.value)} /></label>
+        <div className="hint">{t('保存在这条消息旁，不会自动发送给模型。')}</div>
         {error ? <div role="alert" className="file-card-error">{error}</div> : null}
         <div className="row" style={{ justifyContent: 'flex-end' }}>
-          <button className="btn" disabled={saving} onClick={() => setDraft(null)}>取消</button>
+          <button className="btn" disabled={saving} onClick={() => setDraft(null)}>{t('取消')}</button>
           <button className="btn primary" disabled={saving || !text.trim()} onClick={() => {
             setSaving(true); setError('');
             void props.onAnnotate({ id: draft.id, quote: draft, text: text.trim(), createdAt: Date.now() })
               .then(() => setDraft(null)).catch((e) => setError(String(e))).finally(() => setSaving(false));
-          }}>{saving ? '保存中…' : '保存注释'}</button>
+          }}>{t(saving ? '保存中…' : '保存注释')}</button>
         </div>
       </div>
     </Modal> : null}

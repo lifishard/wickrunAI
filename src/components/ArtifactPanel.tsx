@@ -1,4 +1,5 @@
 import React from 'react';
+import { useT } from '../lib/i18n';
 import type { Artifact } from '../types';
 import { previewable, toPreviewHtml } from '../lib/artifacts';
 import { desktop } from '../lib/transport';
@@ -33,6 +34,7 @@ function artifactStatus(a: Artifact): { compact: string; full: string } {
 }
 
 function FileCard({ artifact: a, onOpen, onSaved }: { artifact: Artifact; onOpen: (a: Artifact) => void; onSaved?: (a: Artifact) => void }) {
+  const t = useT();
   const bridge = desktop();
   const [error, setError] = React.useState('');
   const [working, setWorking] = React.useState(false);
@@ -50,14 +52,14 @@ function FileCard({ artifact: a, onOpen, onSaved }: { artifact: Artifact; onOpen
       const url = URL.createObjectURL(new Blob([a.text], { type: a.type === 'ics' ? 'text/calendar;charset=utf-8' : 'text/plain;charset=utf-8' }));
       const link = document.createElement('a'); link.href = url; link.download = a.name; link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
-    } else throw new Error('请在保存该文件的桌面端打开');
+    } else throw new Error(t('请在保存该文件的桌面端打开'));
   };
   const status = artifactStatus(a);
-  const direction = a.direction === 'input' ? '输入文件' : '输出文件';
+  const direction = t(a.direction === 'input' ? '输入文件' : '输出文件');
   const size = formatArtifactSize(a.size);
 
   return <details className="artifact-file-row">
-    <summary className="artifact-file-summary" aria-label={`展开 ${a.name} 的路径及操作`}>
+    <summary className="artifact-file-summary" aria-label={t('展开 {name} 的路径及操作', { name: a.name })}>
       <span className="artifact-file-chevron" aria-hidden="true" />
       <span className="artifact-icon" aria-hidden="true">{ICON[a.type] ?? '📄'}</span>
       <span className="artifact-file-name" title={a.path ?? a.name}>{a.name}</span>
@@ -72,10 +74,10 @@ function FileCard({ artifact: a, onOpen, onSaved }: { artifact: Artifact; onOpen
       <div className="artifact-file-status">{status.full}</div>
       {a.path ? <code className="artifact-file-path" title={a.path}>{a.path}</code> : null}
       <div className="artifact-file-actions">
-        <button type="button" className="btn sm" onClick={() => onOpen(a)}>查看预览</button>
+        <button type="button" className="btn sm" onClick={() => onOpen(a)}>{t('查看预览')}</button>
         {a.path && bridge ? <>
-          <button type="button" className="btn sm" disabled={working} onClick={() => void action(async () => { const err = await bridge.openPath(a.path!); if (err) throw new Error(err); })}>打开</button>
-          <button type="button" className="btn sm" disabled={working} onClick={() => void action(() => bridge.revealPath(a.path!))}>在文件夹中显示</button>
+          <button type="button" className="btn sm" disabled={working} onClick={() => void action(async () => { const err = await bridge.openPath(a.path!); if (err) throw new Error(err); })}>{t('打开')}</button>
+          <button type="button" className="btn sm" disabled={working} onClick={() => void action(() => bridge.revealPath(a.path!))}>{t('在文件夹中显示')}</button>
         </> : null}
         {(bridge?.saveArtifact || a.text !== undefined) ? <button type="button" className="btn sm" disabled={working} onClick={() => void action(save)}>{a.path ? '另存为' : '保存文件'}</button> : null}
       </div>
@@ -86,11 +88,12 @@ function FileCard({ artifact: a, onOpen, onSaved }: { artifact: Artifact; onOpen
 
 /** Input and output records are visible without opening the side panel. */
 export function ArtifactStrip(props: { artifacts: Artifact[]; onOpen: (a: Artifact) => void; onSaved?: (a: Artifact) => void }) {
+  const t = useT();
   if (!props.artifacts.length) return null;
   return <details className="artifact-strip artifact-strip--compact">
     <summary className="artifact-strip-summary">
       <span className="artifact-strip-chevron" aria-hidden="true" />
-      <span className="artifact-strip-title">本轮文件与产物</span>
+      <span className="artifact-strip-title">{t('本轮文件与产物')}</span>
       <span className="artifact-strip-count">{props.artifacts.length}</span>
     </summary>
     <div className="artifact-strip-list">
@@ -104,6 +107,7 @@ export function ArtifactStrip(props: { artifacts: Artifact[]; onOpen: (a: Artifa
  * ------------------------------------------------------------------ */
 
 export default function ArtifactPanel(props: { artifact: Artifact; onClose: () => void }) {
+  const t = useT();
   const a = props.artifact;
   const bridge = desktop();
   const [text, setText] = React.useState<string | null>(a.text ?? null);
@@ -120,14 +124,14 @@ export default function ArtifactPanel(props: { artifact: Artifact; onClose: () =
 
     if (a.kind !== 'file' || !a.path) return;
     if (!bridge) {
-      setErr('这台设备读不了本地文件');
+      setErr(t('这台设备读不了本地文件'));
       return;
     }
     if (!previewable(a.type)) return; // pdf/docx/xlsx 不在应用里预览，交给系统程序
 
     void bridge.readArtifact(a.path).then((r) => {
       if (r.ok) setText(r.text ?? '');
-      else setErr(r.error ?? '读不出来');
+      else setErr(r.error ?? t('读不出来'));
     });
   }, [a.id, a.kind, a.path, a.type, a.text, bridge]);
 
@@ -150,14 +154,14 @@ export default function ArtifactPanel(props: { artifact: Artifact; onClose: () =
         {canPreviewHere && (a.type === 'html' || a.type === 'svg' || a.type === 'markdown') ? (
           <div className="seg">
             <button className={mode === 'preview' ? 'on' : ''} onClick={() => setMode('preview')}>
-              预览
+              {t('预览')}
             </button>
             <button className={mode === 'source' ? 'on' : ''} onClick={() => setMode('source')}>
-              源码
+              {t('源码')}
             </button>
           </div>
         ) : null}
-        <button className="icon-btn" onClick={props.onClose} title="关掉">
+        <button className="icon-btn" onClick={props.onClose} title={t('关掉')}>
           ✕
         </button>
       </div>
@@ -167,9 +171,9 @@ export default function ArtifactPanel(props: { artifact: Artifact; onClose: () =
 
         {binaryLike ? (
           <div className="empty" style={{ lineHeight: 1.9 }}>
-            {a.type} 不在应用里预览。
+            {a.type} {t('不在应用里预览。')}
             <br />
-            用下面的「用默认程序打开」，系统会拿 Word / Excel / PDF 阅读器开。
+            {t('用下面的「用默认程序打开」，系统会拿 Word / Excel / PDF 阅读器开。')}
           </div>
         ) : mode === 'preview' && (a.type === 'html' || a.type === 'svg') ? (
           // sandbox 不给 allow-same-origin：产物是模型生成的，不该能碰应用自身
@@ -181,7 +185,7 @@ export default function ArtifactPanel(props: { artifact: Artifact; onClose: () =
         ) : text !== null ? (
           <pre className="artifact-source">{text}</pre>
         ) : (
-          <div className="empty">读取中…</div>
+          <div className="empty">{t('读取中…')}</div>
         )}
       </div>
 
@@ -199,15 +203,15 @@ export default function ArtifactPanel(props: { artifact: Artifact; onClose: () =
                 setTimeout(() => setCopied(false), 1400);
               }}
             >
-              {copied ? '已复制' : '复制路径'}
+              {t(copied ? '已复制' : '复制路径')}
             </button>
             {bridge ? (
               <>
                 <button className="btn sm" onClick={() => void bridge.revealPath(a.path!).catch((e) => setErr(String(e)))}>
-                  在文件夹中显示
+                  {t('在文件夹中显示')}
                 </button>
                 <button className="btn sm primary" onClick={() => void bridge.openPath(a.path!).then((e) => { if (e) setErr(e); }).catch((e) => setErr(String(e)))}>
-                  用默认程序打开
+                  {t('用默认程序打开')}
                 </button>
               </>
             ) : null}
@@ -215,7 +219,7 @@ export default function ArtifactPanel(props: { artifact: Artifact; onClose: () =
         ) : (
           <>
             <span className="hint" style={{ flex: 1 }}>
-              这个产物只在答案里，没落盘。想留下来就让模型用 write_file 写出去。
+              {t('这个产物只在答案里，没落盘。想留下来就让模型用 write_file 写出去。')}
             </span>
             <button
               className="btn sm"
@@ -225,7 +229,7 @@ export default function ArtifactPanel(props: { artifact: Artifact; onClose: () =
                 setTimeout(() => setCopied(false), 1400);
               }}
             >
-              {copied ? '已复制' : '复制内容'}
+              {t(copied ? '已复制' : '复制内容')}
             </button>
           </>
         )}

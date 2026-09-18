@@ -1,4 +1,5 @@
 import React from 'react';
+import { useT, type Translate } from '../lib/i18n';
 import { desktop } from '../lib/transport';
 import { CLIENT_LABELS, type ClientKind, type ClientSelection, type ClientStatus } from '../lib/connections';
 import type { AppSettings } from '../types';
@@ -34,34 +35,35 @@ let sessionStatuses: Partial<Record<ClientKind, ClientStatus>> = {};
 let sessionInspections: Partial<Record<ClientKind, LocalClientInspection>> = {};
 let lastAutoCheckAt = 0;
 
-function windowLabel(window: RateWindow) {
+function windowLabel(window: RateWindow, t: Translate) {
   if (!Number.isFinite(window.usedPercent)) return null;
   const remaining = Math.max(0, Math.min(100, 100 - Number(window.usedPercent)));
   const duration = Number(window.windowDurationMins);
   const durationLabel = Number.isFinite(duration)
     ? duration % 1440 === 0
-      ? `${duration / 1440} 天窗口`
+      ? t('{n} 天窗口', { n: duration / 1440 })
       : duration % 60 === 0
-        ? `${duration / 60} 小时窗口`
-        : `${duration} 分钟窗口`
-    : '当前窗口';
-  return `${durationLabel}剩余 ${remaining}%`;
+        ? t('{n} 小时窗口', { n: duration / 60 })
+        : t('{n} 分钟窗口', { n: duration })
+    : t('当前窗口');
+  return t('{window}剩余 {percent}%', { window: durationLabel, percent: remaining });
 }
 
 function QuotaSummary({ inspection }: { inspection?: LocalClientInspection }) {
-  if (!inspection) return <p className="quota-note">额度：尚未检测。</p>;
+  const t = useT();
+  if (!inspection) return <p className="quota-note">{t('额度：尚未检测。')}</p>;
   const groups = inspection.rateLimits?.rateLimitsByLimitId ?? {};
-  const limits = Object.keys(groups).length > 0 ? groups : inspection.rateLimits?.rateLimits ? { 订阅额度: inspection.rateLimits.rateLimits } : {};
+  const limits = Object.keys(groups).length > 0 ? groups : inspection.rateLimits?.rateLimits ? { [t('订阅额度')]: inspection.rateLimits.rateLimits } : {};
   const rows = Object.entries(limits).flatMap(([name, limit]) =>
     [limit?.primary, limit?.secondary]
-      .map((window) => window && windowLabel(window))
+      .map((window) => window && windowLabel(window, t))
       .filter((label): label is string => Boolean(label))
       .map((label) => ({ name, label })),
   );
   const plan = inspection.account?.account?.planType;
-  if (rows.length === 0) return <p className="quota-note">额度：官方客户端未提供可读取的剩余额度{plan ? `（${plan}）` : ''}。</p>;
+  if (rows.length === 0) return <p className="quota-note">{t('额度：官方客户端未提供可读取的剩余额度')}{plan ? `（${plan}）` : ''}。</p>;
   return (
-    <div className="quota-summary" aria-label="Codex 订阅额度">
+    <div className="quota-summary" aria-label={t('Codex 订阅额度')}>
       {plan ? <span className="quota-plan">{plan}</span> : null}
       {rows.map((row, index) => <span key={`${row.name}-${index}`}>{Object.keys(limits).length > 1 ? `${row.name} · ` : ''}{row.label}</span>)}
     </div>
@@ -74,6 +76,7 @@ export default function ClientConnections({ selection, onSelect, settings, onSet
   settings: AppSettings;
   onSettings: (patch: Partial<AppSettings>) => void;
 }) {
+  const t = useT();
   const [statuses, setStatusState] = React.useState<Partial<Record<ClientKind, ClientStatus>>>(() => sessionStatuses);
   const [inspections, setInspectionState] = React.useState<Partial<Record<ClientKind, LocalClientInspection>>>(() => sessionInspections);
   const [busy, setBusy] = React.useState<ClientKind | 'all' | 'quota' | null>('all');
@@ -116,7 +119,7 @@ export default function ClientConnections({ selection, onSelect, settings, onSet
             kind,
             status: 'error',
             models: [],
-            message: '未能完成连接检测，请稍后重试。',
+            message: t('未能完成连接检测，请稍后重试。'),
           };
         });
         return next;
@@ -176,14 +179,14 @@ export default function ClientConnections({ selection, onSelect, settings, onSet
   };
 
   if (!desktop()) {
-    return <section className="client-connections" aria-label="本机 AI"><p className="picker-empty">本机 AI 连接需要桌面版。</p></section>;
+    return <section className="client-connections" aria-label={t('本机 AI')}><p className="picker-empty">{t('本机 AI 连接需要桌面版。')}</p></section>;
   }
 
   return (
-    <section className="client-connections" aria-label="本机 AI">
+    <section className="client-connections" aria-label={t('本机 AI')}>
       <div className="local-ai-intro">
-        <strong>本机 AI</strong>
-        <span>{busy === 'all' ? '正在检测连接…' : '连接官方客户端后，在这里选择模型与思考强度。'}</span>
+        <strong>{t('本机 AI')}</strong>
+        <span>{t(busy === 'all' ? '正在检测连接…' : '连接官方客户端后，在这里选择模型与思考强度。')}</span>
       </div>
 
       {CLIENTS.map((kind) => {
@@ -198,27 +201,27 @@ export default function ClientConnections({ selection, onSelect, settings, onSet
               <strong>{CLIENT_LABELS[kind]}</strong>
               <span className={`connection-state ${state}`}>
                 <span aria-hidden="true" />
-                {status ? STATUS_LABEL[status.status] : '检测中'}
+                {t(status ? STATUS_LABEL[status.status] : '检测中')}
               </span>
             </div>
-            <p>{status?.message || (kind === 'codex' ? '使用官方 ChatGPT 登录与 Codex 订阅模型。' : kind === 'claude' ? '使用 Claude Code 的现有账号或 API 配置。' : '通过 Kimi 官方 ACP 接口连接。')}</p>
+            <p>{status?.message || t(kind === 'codex' ? '使用官方 ChatGPT 登录与 Codex 订阅模型。' : kind === 'claude' ? '使用 Claude Code 的现有账号或 API 配置。' : '通过 Kimi 官方 ACP 接口连接。')}</p>
 
             {selected ? (
               <div className="client-model-fields">
                 <label>
-                  <span>模型</span>
-                  <select aria-label={`${CLIENT_LABELS[kind]} 模型`} value={selection.model} onChange={(event) => {
+                  <span>{t('模型')}</span>
+                  <select aria-label={t('{client} 模型', { client: CLIENT_LABELS[kind] })} value={selection.model} onChange={(event) => {
                     const next = status?.models.find((item) => item.id === event.target.value);
                     onSelect({ ...selection, model: event.target.value, effort: next?.defaultEffort });
                   }}>
-                    {!status?.models.some((item) => item.id === selection.model) ? <option value={selection.model}>{selection.model === 'default' ? '官方客户端默认模型' : selection.model}</option> : null}
+                    {!status?.models.some((item) => item.id === selection.model) ? <option value={selection.model}>{selection.model === 'default' ? t('官方客户端默认模型') : selection.model}</option> : null}
                     {status?.models.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
                   </select>
                 </label>
                 <label>
-                  <span>思考强度</span>
-                  <select aria-label={`${CLIENT_LABELS[kind]} 思考强度`} value={selection.effort || ''} onChange={(event) => onSelect({ ...selection, effort: event.target.value || undefined })}>
-                    <option value="">官方默认</option>
+                  <span>{t('思考强度')}</span>
+                  <select aria-label={t('{client} 思考强度', { client: CLIENT_LABELS[kind] })} value={selection.effort || ''} onChange={(event) => onSelect({ ...selection, effort: event.target.value || undefined })}>
+                    <option value="">{t('官方默认')}</option>
                     {efforts.map((effort) => <option key={effort} value={effort}>{effort}</option>)}
                   </select>
                 </label>
@@ -227,18 +230,18 @@ export default function ClientConnections({ selection, onSelect, settings, onSet
 
             <div className="client-actions">
               {status?.status === 'login_required' && kind === 'codex' ? (
-                <button className="btn sm" disabled={busy !== null} onClick={() => void act(kind, true)}>{busy === kind ? '正在打开…' : '登录 ChatGPT'}</button>
+                <button className="btn sm" disabled={busy !== null} onClick={() => void act(kind, true)}>{t(busy === kind ? '正在打开…' : '登录 ChatGPT')}</button>
               ) : status?.status === 'ready' ? (
                 <button className="btn sm" disabled={selected} onClick={() => onSelect({ kind, model: status.models[0]?.id || 'default', effort: status.models[0]?.defaultEffort })}>{selected ? '正在使用' : '使用此连接'}</button>
               ) : (
-                <button className="btn sm" disabled={busy !== null} onClick={() => void act(kind, true)}>{busy === kind ? '连接中…' : '一键连接'}</button>
+                <button className="btn sm" disabled={busy !== null} onClick={() => void act(kind, true)}>{t(busy === kind ? '连接中…' : '一键连接')}</button>
               )}
-              <button className="btn sm ghost" disabled={busy !== null} onClick={() => void act(kind)}>{busy === kind ? '检测中…' : '重新检测'}</button>
-              {status?.status === 'missing' ? <button className="btn sm ghost" disabled={busy !== null} onClick={() => void pick(kind)}>选择程序</button> : null}
-              {kind === 'codex' ? <button className="btn sm ghost" disabled={busy !== null} onClick={() => void inspectQuota()}>{busy === 'quota' ? '检测额度中…' : '检测额度'}</button> : null}
+              <button className="btn sm ghost" disabled={busy !== null} onClick={() => void act(kind)}>{t(busy === kind ? '检测中…' : '重新检测')}</button>
+              {status?.status === 'missing' ? <button className="btn sm ghost" disabled={busy !== null} onClick={() => void pick(kind)}>{t('选择程序')}</button> : null}
+              {kind === 'codex' ? <button className="btn sm ghost" disabled={busy !== null} onClick={() => void inspectQuota()}>{t(busy === 'quota' ? '检测额度中…' : '检测额度')}</button> : null}
             </div>
 
-            {kind === 'codex' ? <QuotaSummary inspection={inspections.codex} /> : <p className="quota-note">额度：{CLIENT_LABELS[kind]} 未提供可读取的剩余额度。</p>}
+            {kind === 'codex' ? <QuotaSummary inspection={inspections.codex} /> : <p className="quota-note">{t('额度：{client} 未提供可读取的剩余额度。', { client: CLIENT_LABELS[kind] })}</p>}
             {kind === 'claude' && status?.status === 'error' ? <ClaudeRepair disabled={busy !== null} onResult={(result) => setStatuses((previous) => ({ ...previous, claude: result }))} /> : null}
           </div>
         );

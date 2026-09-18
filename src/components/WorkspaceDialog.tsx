@@ -1,4 +1,5 @@
 import React from 'react';
+import { useT } from '../lib/i18n';
 import type { KeyProfile, ModelInfo, ToolContext } from '../types';
 import {
   describeMerge,
@@ -41,6 +42,7 @@ function ProjectsTab(props: {
   profiles: KeyProfile[];
   models: ModelInfo[];
 }) {
+  const t = useT();
   const [sel, setSel] = React.useState<string | null>(props.projects[0]?.id ?? null);
   const p = props.projects.find((x) => x.id === sel) ?? null;
 
@@ -57,10 +59,9 @@ function ProjectsTab(props: {
   return (
     <div>
       <div className="hint" style={{ marginBottom: 12, lineHeight: 1.85 }}>
-        项目 = 一组对话 + 一份共享上下文。同一个项目里新开的对话自动继承规范、记忆、文档清单和常用提示词。
+        {t('项目 = 一组对话 + 一份共享上下文。同一个项目里新开的对话自动继承规范、记忆、文档清单和常用提示词。')}
         <br />
-        <strong>文档正文不会每轮都塞进去</strong> —— 只给模型一份目录，它需要时用 <code>project_doc_read</code>{' '}
-        按名字取。一个项目攒几万字很正常，全量注入等于每轮重付一次钱。
+        <strong>{t('文档正文不会每轮都塞进去')}</strong>{t('。只给模型一份目录，它需要时用 project_doc_read 按名字取。一个项目攒几万字很正常，全量注入等于每轮重付一次钱。')}
       </div>
 
       <div className="row" style={{ marginBottom: 12, flexWrap: 'wrap' }}>
@@ -81,12 +82,12 @@ function ProjectsTab(props: {
             setSel(np.id);
           }}
         >
-          ＋ 新建项目
+          {t('＋ 新建项目')}
         </button>
       </div>
 
       {!p ? (
-        <div className="empty">还没有项目。建一个，把相关的对话归到一起。</div>
+        <div className="empty">{t('还没有项目。建一个，把相关的对话归到一起。')}</div>
       ) : (
         <div>
           <div className="row" style={{ marginBottom: 10 }}>
@@ -105,34 +106,34 @@ function ProjectsTab(props: {
             <button
               className="btn sm danger"
               onClick={() => {
-                if (!confirm(`删除项目「${p.name}」？里面的对话会保留，只是不再归属任何项目。`)) return;
+                if (!confirm(t('删除项目「{name}」？里面的对话会保留，只是不再归属任何项目。', { name: p.name }))) return;
                 const rest = props.projects.filter((x) => x.id !== p.id);
                 props.onChange(rest);
                 setSel(rest[0]?.id ?? null);
               }}
             >
-              删除
+              {t('删除')}
             </button>
           </div>
 
           <Field
-            label="项目规范"
-            hint="拼进这个项目里每一轮的 system prompt。写约定、口径、禁忌 —— 别写具体任务。"
+            label={t('项目规范')}
+            hint={t('拼进这个项目里每一轮的 system prompt。写约定、口径、禁忌 —— 别写具体任务。')}
           >
             <textarea
               rows={5}
               value={p.instructions}
-              placeholder="例如：所有代码用 TypeScript strict；回答先给结论再给推导；金额一律标明币种。"
+              placeholder={t('例如：所有代码用 TypeScript strict；回答先给结论再给推导；金额一律标明币种。')}
               onChange={(e) => patch({ instructions: e.target.value })}
             />
           </Field>
 
-          <Field label="默认模型" hint="在这个项目里新开对话时套上。留空就用全局默认。">
+          <Field label={t('默认模型')} hint={t('在这个项目里新开对话时套上。留空就用全局默认。')}>
             <input
               type="text"
               list="ws-models"
               value={p.defaultModel ?? ''}
-              placeholder="留空 = 跟随全局"
+              placeholder={t('留空 = 跟随全局')}
               onChange={(e) => patch({ defaultModel: e.target.value })}
             />
             <datalist id="ws-models">
@@ -142,12 +143,12 @@ function ProjectsTab(props: {
             </datalist>
           </Field>
 
-          <Field label="默认凭据">
+          <Field label={t('默认凭据')}>
             <select
               value={p.defaultKeyProfileId ?? ''}
               onChange={(e) => patch({ defaultKeyProfileId: e.target.value || null })}
             >
-              <option value="">跟随全局</option>
+              <option value="">{t('跟随全局')}</option>
               {props.profiles.map((x) => (
                 <option key={x.id} value={x.id}>
                   {x.name}
@@ -157,22 +158,21 @@ function ProjectsTab(props: {
           </Field>
 
           <div className="section">
-            <div className="section-title">项目记忆</div>
+            <div className="section-title">{t('项目记忆')}</div>
             <div className="hint" style={{ marginBottom: 6 }}>
-              模型用 <code>project_memory_write</code> 往里追加跨对话的结论。这里可以直接改或清空。
-              太长会挤占每轮的上下文，超过两万字会自动截断最早的部分。
+              {t('模型用 project_memory_write 往里追加跨对话的结论。这里可以直接改或清空。太长会挤占每轮的上下文，超过两万字会自动截断最早的部分。')}
             </div>
             <textarea
               rows={6}
               className="mono"
               value={p.memory}
-              placeholder="（空）"
+              placeholder={t('（空）')}
               onChange={(e) => patch({ memory: e.target.value })}
             />
           </div>
 
           <div className="section">
-            <div className="section-title">文档</div>
+            <div className="section-title">{t('文档')}</div>
             {(p.docs ?? []).map((d) => (
               <div className="card" key={d.id}>
                 <div className="row" style={{ marginBottom: 6 }}>
@@ -182,12 +182,12 @@ function ProjectsTab(props: {
                     onChange={(e) => setDoc(d.id, { name: e.target.value })}
                     style={{ fontWeight: 600 }}
                   />
-                  <span className="chip">{d.text.length} 字</span>
+                  <span className="chip">{t('{n} 字', { n: d.text.length })}</span>
                   <button
                     className="btn sm danger"
                     onClick={() => patch({ docs: p.docs.filter((x) => x.id !== d.id) })}
                   >
-                    删除
+                    {t('删除')}
                   </button>
                 </div>
                 <textarea
@@ -204,26 +204,26 @@ function ProjectsTab(props: {
                 patch({
                   docs: [
                     ...(p.docs ?? []),
-                    { id: uid('d'), name: `文档 ${(p.docs?.length ?? 0) + 1}`, text: '', updatedAt: Date.now() },
+                    { id: uid('d'), name: t('文档 {n}', { n: (p.docs?.length ?? 0) + 1 }), text: '', updatedAt: Date.now() },
                   ],
                 })
               }
             >
-              ＋ 加一篇文档
+              {t('＋ 加一篇文档')}
             </button>
           </div>
 
           <div className="section">
-            <div className="section-title">常用提示词</div>
+            <div className="section-title">{t('常用提示词')}</div>
             <div className="hint" style={{ marginBottom: 6 }}>
-              在这个项目里、输入框还空着的时候，会以小胶囊的形式出现在输入框上方，点一下填进去。
+              {t('在这个项目里、输入框还空着的时候，会以小胶囊的形式出现在输入框上方，点一下填进去。')}
             </div>
             {(p.prompts ?? []).map((pp) => (
               <div className="row" key={pp.id} style={{ marginBottom: 6 }}>
                 <input
                   type="text"
                   value={pp.label}
-                  placeholder="按钮上显示的短名"
+                  placeholder={t('按钮上显示的短名')}
                   onChange={(e) =>
                     patch({
                       prompts: p.prompts.map((x) =>
@@ -236,7 +236,7 @@ function ProjectsTab(props: {
                 <input
                   type="text"
                   value={pp.text}
-                  placeholder="点了之后填进输入框的内容"
+                  placeholder={t('点了之后填进输入框的内容')}
                   onChange={(e) =>
                     patch({
                       prompts: p.prompts.map((x) =>
@@ -256,10 +256,10 @@ function ProjectsTab(props: {
             <button
               className="btn block"
               onClick={() =>
-                patch({ prompts: [...(p.prompts ?? []), { id: uid('pp'), label: '新提示词', text: '' }] })
+                patch({ prompts: [...(p.prompts ?? []), { id: uid('pp'), label: t('新提示词'), text: '' }] })
               }
             >
-              ＋ 加一条
+              {t('＋ 加一条')}
             </button>
           </div>
         </div>
@@ -286,6 +286,7 @@ function FolderSync(props: {
   cfg: SkillSyncConfig;
   onCfg: (c: SkillSyncConfig) => void;
 }) {
+  const t = useT();
   const bridge = desktop();
   const [busy, setBusy] = React.useState(false);
   const [msg, setMsg] = React.useState<string | null>(null);
@@ -293,7 +294,7 @@ function FolderSync(props: {
   if (!bridge) {
     return (
       <div className="hint" style={{ marginTop: 8 }}>
-        文件夹同步只在桌面端可用（手机端没有本地文件系统）。
+        {t('文件夹同步只在桌面端可用（手机端没有本地文件系统）。')}
       </div>
     );
   }
@@ -301,39 +302,38 @@ function FolderSync(props: {
   const useDefault = async () => {
     const d = await bridge.skillsDefaultDir();
     props.onCfg({ ...props.cfg, dir: d });
-    setMsg(`已填入 ${d}`);
+    setMsg(t('已填入 {path}', { path: d }));
   };
 
   const run = async () => {
     const dir = props.cfg.dir.trim();
     if (!dir) {
-      setMsg('先填一个目录');
+      setMsg(t('先填一个目录'));
       return;
     }
     setBusy(true);
-    setMsg('扫描目录…');
+    setMsg(t('扫描目录…'));
     try {
       const r = await bridge.skillsRead(dir);
       if (!r.ok) {
-        setMsg(`✗ 读取失败：${r.error ?? '未知原因'}`);
+        setMsg(t('✗ 读取失败：{reason}', { reason: r.error ?? t('未知原因') }));
         return;
       }
 
       const plan = planSync(props.skills, r.items);
 
       if (plan.push.length) {
-        setMsg(`写出 ${plan.push.length} 个…`);
+        setMsg(t('写出 {n} 个…', { n: plan.push.length }));
         const w = await bridge.skillsWrite(dir, plan.push);
         if (!w.ok) {
-          setMsg(`✗ 写入失败：${w.error ?? '未知原因'}`);
+          setMsg(t('✗ 写入失败：{reason}', { reason: w.error ?? t('未知原因') }));
           return;
         }
         if (w.failed.length) {
           setMsg(
-            `部分写入失败：${w.failed
-              .slice(0, 3)
-              .map((f) => `${f.name}（${f.error}）`)
-              .join('、')}`,
+            t('部分写入失败：{list}', {
+              list: w.failed.slice(0, 3).map((f) => `${f.name}（${f.error}）`).join('、'),
+            }),
           );
         }
       }
@@ -349,24 +349,24 @@ function FolderSync(props: {
 
   return (
     <div className="field" style={{ marginTop: 14 }}>
-      <div className="field-label">与本地文件夹双向同步</div>
+      <div className="field-label">{t('与本地文件夹双向同步')}</div>
       <div className="row" style={{ gap: 6 }}>
         <input
           type="text"
           style={{ flex: 1 }}
-          placeholder="例如 C:\Users\你\.claude\skills"
+          placeholder={t('例如 C:\\Users\\你\\.claude\\skills')}
           value={props.cfg.dir}
           onChange={(e) => props.onCfg({ ...props.cfg, dir: e.target.value })}
         />
         <button className="btn sm" onClick={() => void useDefault()}>
-          用默认
+          {t('用默认')}
         </button>
         <button className="btn sm primary" onClick={() => void run()} disabled={busy}>
-          {busy ? '同步中…' : '同步'}
+          {busy ? t('同步中…') : t('同步')}
         </button>
         {props.cfg.dir ? (
           <button className="btn sm" onClick={() => void bridge.revealPath(props.cfg.dir)}>
-            打开
+            {t('打开')}
           </button>
         ) : null}
       </div>
@@ -375,7 +375,7 @@ function FolderSync(props: {
         <Switch
           checked={props.cfg.auto}
           onChange={(v) => props.onCfg({ ...props.cfg, auto: v })}
-          label="启动时自动同步一次"
+          label={t('启动时自动同步一次')}
         />
       </div>
 
@@ -389,12 +389,9 @@ function FolderSync(props: {
       ) : null}
 
       <div className="hint" style={{ marginTop: 6, lineHeight: 1.85 }}>
-        Claude Code 和 Claude Desktop 读的就是 <code>~/.claude/skills/&lt;名字&gt;/SKILL.md</code>，
-        指到那里就能跟它们共用同一批技能。
+        {t('Claude Code 和 Claude Desktop 读的就是 ~/.claude/skills/<名字>/SKILL.md，指到那里就能跟它们共用同一批技能。')}
         <br />
-        <b>只新增和更新，永不删除任何一边。</b> 两边都改过的会各留一份
-        （进来的那份叫 <code>&lt;名字&gt;-来自文件夹</code>），不猜谁更该保留 ——
-        按时间戳挑新的那种做法，迟早会悄悄吃掉你半小时的修改。
+        <b>{t('只新增和更新，永不删除任何一边。')}</b>{t('两边都改过的会各留一份，进来的那份叫「<名字>-来自文件夹」。这里不猜谁更该保留：按时间戳挑新的那种做法，迟早会悄悄吃掉你半小时的修改。')}
       </div>
     </div>
   );
@@ -407,6 +404,7 @@ function SkillsTab(props: {
   sync: SkillSyncConfig;
   onSync: (c: SkillSyncConfig) => void;
 }) {
+  const t = useT();
   const [ghInput, setGhInput] = React.useState('');
   const [installing, setInstalling] = React.useState(false);
   const [msg, setMsg] = React.useState<string | null>(null);
@@ -419,7 +417,7 @@ function SkillsTab(props: {
     const input = ghInput.trim();
     if (!input) return;
     setInstalling(true);
-    setMsg('连接 GitHub…');
+    setMsg(t('连接 GitHub…'));
     try {
       let lastTrace = '';
       const found = await installFromGithub(input, props.toolCtx, (s) => {
@@ -432,7 +430,7 @@ function SkillsTab(props: {
       // 是仓库里就这么多，还是找的过程中断在哪儿
       setMsg(
         `${describeMerge(report)}\n` +
-          `找到 ${found.length} 个：${found.map((f) => `/${f.name}`).join(' ')}` +
+          t('找到 {n} 个：{names}', { n: found.length, names: found.map((f) => `/${f.name}`).join(' ') }) +
           (lastTrace ? `\n${lastTrace}` : ''),
       );
       setGhInput('');
@@ -446,26 +444,25 @@ function SkillsTab(props: {
   return (
     <div>
       <div className="hint" style={{ marginBottom: 12, lineHeight: 1.85 }}>
-        技能 = 一段写好的指令，在输入框打 <code>/名字</code> 唤起，唤起时作为额外的 system 消息注入这一轮。
+        {t('技能 = 一段写好的指令，在输入框打 /名字 唤起，唤起时作为额外的 system 消息注入这一轮。')}
         <br />
-        <strong>技能是提示词，不是可执行代码</strong> —— 装一个技能不会在你机器上跑任何东西，所以不需要沙箱。
-        格式跟 Anthropic 的 SKILL.md 一致，GitHub 上现成的技能仓库能直接装。
+        <strong>{t('技能是提示词，不是可执行代码')}</strong>{t('。装一个技能不会在你机器上跑任何东西，所以不需要沙箱。格式跟 Anthropic 的 SKILL.md 一致，GitHub 上现成的技能仓库能直接装。')}
         <br />
-        也可以直接跟模型说「把刚才那套流程存成技能」，它会用 <code>skill_write</code> 自己写一个。
+        {t('也可以直接跟模型说「把刚才那套流程存成技能」，它会用 skill_write 自己写一个。')}
       </div>
 
       <div className="card">
-        <div className="field-label">从 GitHub 安装</div>
+        <div className="field-label">{t('从 GitHub 安装')}</div>
         <div className="row">
           <input
             type="text"
             value={ghInput}
-            placeholder="owner/repo 或 https://github.com/owner/repo/tree/main/skills"
+            placeholder={t('owner/repo 或 https://github.com/owner/repo/tree/main/skills')}
             onChange={(e) => setGhInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && !installing && void install()}
           />
           <button className="btn primary" disabled={installing || !ghInput.trim()} onClick={() => void install()}>
-            {installing ? '装…' : '安装'}
+            {installing ? t('装…') : t('安装')}
           </button>
         </div>
         {msg ? (
@@ -481,10 +478,7 @@ function SkillsTab(props: {
           </div>
         ) : (
           <div className="hint" style={{ marginTop: 6 }}>
-            会找这几个位置：给定路径本身、路径下的 md 文件、下一层每个目录、仓库根的 skills/ 和
-            .claude/skills/。**文件名不限于 SKILL.md** —— 只要开头的 --- 块里有 name 或 description
-            就认，README.md 排在最后。也可以把地址直接指到某个具体的 .md 文件。
-            私有仓库需要在 设置 → 工具 → GitHub 里填 token。
+            {t('会找这几个位置：给定路径本身、路径下的 md 文件、下一层每个目录、仓库根的 skills/ 和 .claude/skills/。文件名不限于 SKILL.md：只要开头的 --- 块里有 name 或 description 就认，README.md 排在最后。也可以把地址直接指到某个具体的 .md 文件。私有仓库需要在 设置 → 工具 → GitHub 里填 token。')}
           </div>
         )}
       </div>
@@ -506,15 +500,15 @@ function SkillsTab(props: {
             ])
           }
         >
-          ＋ 手写一个
+          {t('＋ 手写一个')}
         </button>
         <span className="hint" style={{ flex: 1 }}>
-          共 {props.skills.length} 个
+          {t('共 {n} 个', { n: props.skills.length })}
         </span>
       </div>
 
       {props.skills.length === 0 ? (
-        <div className="empty">还没有技能。从 GitHub 装一个，或者手写一个。</div>
+        <div className="empty">{t('还没有技能。从 GitHub 装一个，或者手写一个。')}</div>
       ) : null}
 
       {props.skills.map((sk) => (
@@ -530,18 +524,18 @@ function SkillsTab(props: {
             <input
               type="text"
               value={sk.description}
-              placeholder="一句话说明什么时候用"
+              placeholder={t('一句话说明什么时候用')}
               onChange={(e) => patch(sk.id, { description: e.target.value })}
             />
             <Switch checked={sk.enabled} onChange={(v) => patch(sk.id, { enabled: v })} label="" />
             <button className="btn sm" onClick={() => setEditing(editing === sk.id ? null : sk.id)}>
-              {editing === sk.id ? '收起' : '正文'}
+              {editing === sk.id ? t('收起') : t('正文')}
             </button>
             <button
               className="btn sm danger"
               onClick={() => props.onChange(props.skills.filter((x) => x.id !== sk.id))}
             >
-              删除
+              {t('删除')}
             </button>
           </div>
 
@@ -551,21 +545,21 @@ function SkillsTab(props: {
                 rows={12}
                 className="mono"
                 value={sk.body}
-                placeholder="技能的指令正文，Markdown。写成自包含的操作说明，别依赖某次对话的上下文。"
+                placeholder={t('技能的指令正文，Markdown。写成自包含的操作说明，别依赖某次对话的上下文。')}
                 onChange={(e) => patch(sk.id, { body: e.target.value })}
               />
               <div className="row" style={{ marginTop: 6 }}>
                 <span className="hint" style={{ flex: 1 }}>
-                  来源：{sk.source} · 用过 {sk.uses} 次 · 正文 {Math.round(sk.body.length / 1024)} KB
+                  {t('来源：{source} · 用过 {uses} 次 · 正文 {kb} KB', { source: sk.source, uses: sk.uses, kb: Math.round(sk.body.length / 1024) })}
                   {sk.body.length > 16000
-                    ? ' ⚠ 这个技能很大，每次唤起都会整段进上下文，注意 token 消耗'
+                    ? t(' ⚠ 这个技能很大，每次唤起都会整段进上下文，注意 token 消耗')
                     : ''}
                 </span>
                 <button
                   className="btn sm"
                   onClick={() => void navigator.clipboard.writeText(toSkillMd(sk))}
                 >
-                  复制成 SKILL.md
+                  {t('复制成 SKILL.md')}
                 </button>
                 <button
                   className="btn sm"
@@ -576,7 +570,7 @@ function SkillsTab(props: {
                     patch(sk.id, parsed);
                   }}
                 >
-                  从剪贴板粘 SKILL.md
+                  {t('从剪贴板粘 SKILL.md')}
                 </button>
               </div>
             </>
@@ -598,11 +592,12 @@ function TasksTab(props: {
   profiles: KeyProfile[];
   models: ModelInfo[];
 }) {
+  const t = useT();
   const patch = (id: string, v: Partial<ScheduledTask>) =>
     props.onChange(
-      props.tasks.map((t) => {
-        if (t.id !== id) return t;
-        const next = { ...t, ...v };
+      props.tasks.map((task) => {
+        if (task.id !== id) return task;
+        const next = { ...task, ...v };
         // 改了排程或重新启用，下一次触发时间要跟着重算
         if (v.schedule || v.enabled !== undefined) {
           next.nextRunAt = next.enabled ? (nextRun(next.schedule) ?? undefined) : undefined;
@@ -611,14 +606,14 @@ function TasksTab(props: {
       }),
     );
 
-  const DAY = ['日', '一', '二', '三', '四', '五', '六'];
+  const DAY = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'].map((d) => t(d));
 
   return (
     <div>
       <div className="hint" style={{ marginBottom: 12, lineHeight: 1.85 }}>
-        到点自动发一条消息给模型，工具照常能用。
+        {t('到点自动发一条消息给模型，工具照常能用。')}
         <br />
-        <strong>说清楚边界：调度器跑在应用里，应用关着就不会触发。</strong>要做到关掉窗口也能跑，
+        <strong>{t('说清楚边界：调度器跑在应用里，应用关着就不会触发。')}</strong>要做到关掉窗口也能跑，
         得把整个 Agent 循环搬进主进程再实现一遍，而且工具确认弹窗没人点照样卡住 —— 不值。
         补偿是「错过补跑」：下次打开应用时会把漏掉的补上一次。
         <br />
@@ -628,105 +623,105 @@ function TasksTab(props: {
       <button
         className="btn"
         style={{ marginBottom: 12 }}
-        onClick={() => props.onChange([...props.tasks, makeTask(`任务 ${props.tasks.length + 1}`)])}
+        onClick={() => props.onChange([...props.tasks, makeTask(t('任务 {n}', { n: props.tasks.length + 1 }))])}
       >
-        ＋ 新建任务
+        {t('＋ 新建任务')}
       </button>
 
-      {props.tasks.length === 0 ? <div className="empty">还没有定时任务。</div> : null}
+      {props.tasks.length === 0 ? <div className="empty">{t('还没有定时任务。')}</div> : null}
 
-      {props.tasks.map((t) => {
-        const cronBad = t.schedule.kind === 'cron' && !parseCron(t.schedule.cron ?? '');
+      {props.tasks.map((task) => {
+        const cronBad = task.schedule.kind === 'cron' && !parseCron(task.schedule.cron ?? '');
         return (
-          <div className="card" key={t.id}>
+          <div className="card" key={task.id}>
             <div className="row" style={{ marginBottom: 8 }}>
               <input
                 type="text"
-                value={t.name}
-                onChange={(e) => patch(t.id, { name: e.target.value })}
+                value={task.name}
+                onChange={(e) => patch(task.id, { name: e.target.value })}
                 style={{ fontWeight: 600 }}
               />
-              <Switch checked={t.enabled} onChange={(v) => patch(t.id, { enabled: v })} label="启用" />
+              <Switch checked={task.enabled} onChange={(v) => patch(task.id, { enabled: v })} label={t('启用')} />
               <button
                 className="btn sm danger"
-                onClick={() => props.onChange(props.tasks.filter((x) => x.id !== t.id))}
+                onClick={() => props.onChange(props.tasks.filter((x) => x.id !== task.id))}
               >
-                删除
+                {t('删除')}
               </button>
             </div>
 
-            <Field label="要它做什么" hint="每次触发就把这段话当成一条新消息发出去。写清楚，它看不到之前的对话。">
+            <Field label={t('要它做什么')} hint={t('每次触发就把这段话当成一条新消息发出去。写清楚，它看不到之前的对话。')}>
               <textarea
                 rows={3}
-                value={t.prompt}
-                placeholder="例如：搜一下昨天美股收盘后有哪些和半导体相关的重要新闻，按重要性给我三条，带来源。"
-                onChange={(e) => patch(t.id, { prompt: e.target.value })}
+                value={task.prompt}
+                placeholder={t('例如：搜一下昨天美股收盘后有哪些和半导体相关的重要新闻，按重要性给我三条，带来源。')}
+                onChange={(e) => patch(task.id, { prompt: e.target.value })}
               />
             </Field>
 
-            <Field label="什么时候跑">
+            <Field label={t('什么时候跑')}>
               <Segmented
-                value={t.schedule.kind}
+                value={task.schedule.kind}
                 options={[
-                  { value: 'interval' as const, label: '每隔' },
-                  { value: 'daily' as const, label: '每天' },
-                  { value: 'weekly' as const, label: '每周' },
+                  { value: 'interval' as const, label: t('每隔') },
+                  { value: 'daily' as const, label: t('每天') },
+                  { value: 'weekly' as const, label: t('每周') },
                   { value: 'cron' as const, label: 'cron' },
                 ]}
-                onChange={(k) => patch(t.id, { schedule: { ...t.schedule, kind: k } })}
+                onChange={(k) => patch(task.id, { schedule: { ...task.schedule, kind: k } })}
               />
             </Field>
 
-            {t.schedule.kind === 'interval' ? (
+            {task.schedule.kind === 'interval' ? (
               <div className="row" style={{ marginBottom: 12 }}>
-                <span className="hint">每</span>
+                <span className="hint">{t('每')}</span>
                 <input
                   type="number"
                   min={1}
-                  value={t.schedule.everyMinutes ?? 60}
+                  value={task.schedule.everyMinutes ?? 60}
                   onChange={(e) =>
-                    patch(t.id, {
-                      schedule: { ...t.schedule, everyMinutes: Math.max(1, Number(e.target.value) || 60) },
+                    patch(task.id, {
+                      schedule: { ...task.schedule, everyMinutes: Math.max(1, Number(e.target.value) || 60) },
                     })
                   }
                   style={{ width: 100 }}
                 />
-                <span className="hint">分钟</span>
+                <span className="hint">{t('分钟')}</span>
               </div>
             ) : null}
 
-            {t.schedule.kind === 'daily' || t.schedule.kind === 'weekly' ? (
+            {task.schedule.kind === 'daily' || task.schedule.kind === 'weekly' ? (
               <div className="row" style={{ marginBottom: 12, flexWrap: 'wrap' }}>
                 <input
                   type="number"
                   min={0}
                   max={23}
-                  value={t.schedule.hour ?? 9}
-                  onChange={(e) => patch(t.id, { schedule: { ...t.schedule, hour: Number(e.target.value) } })}
+                  value={task.schedule.hour ?? 9}
+                  onChange={(e) => patch(task.id, { schedule: { ...task.schedule, hour: Number(e.target.value) } })}
                   style={{ width: 70 }}
                 />
-                <span className="hint">时</span>
+                <span className="hint">{t('时')}</span>
                 <input
                   type="number"
                   min={0}
                   max={59}
-                  value={t.schedule.minute ?? 0}
-                  onChange={(e) => patch(t.id, { schedule: { ...t.schedule, minute: Number(e.target.value) } })}
+                  value={task.schedule.minute ?? 0}
+                  onChange={(e) => patch(task.id, { schedule: { ...task.schedule, minute: Number(e.target.value) } })}
                   style={{ width: 70 }}
                 />
-                <span className="hint">分</span>
-                {t.schedule.kind === 'weekly'
+                <span className="hint">{t('分')}</span>
+                {task.schedule.kind === 'weekly'
                   ? DAY.map((d, i) => {
-                      const on = (t.schedule.weekdays ?? [1]).includes(i);
+                      const on = (task.schedule.weekdays ?? [1]).includes(i);
                       return (
                         <button
                           key={i}
                           className={`picker-profile${on ? ' on' : ''}`}
                           onClick={() => {
-                            const cur = new Set(t.schedule.weekdays ?? [1]);
+                            const cur = new Set(task.schedule.weekdays ?? [1]);
                             if (on) cur.delete(i);
                             else cur.add(i);
-                            patch(t.id, { schedule: { ...t.schedule, weekdays: [...cur].sort() } });
+                            patch(task.id, { schedule: { ...task.schedule, weekdays: [...cur].sort() } });
                           }}
                         >
                           {d}
@@ -737,22 +732,22 @@ function TasksTab(props: {
               </div>
             ) : null}
 
-            {t.schedule.kind === 'cron' ? (
+            {task.schedule.kind === 'cron' ? (
               <Field
-                label="cron 表达式"
+                label={t('cron 表达式')}
                 hint={
                   cronBad ? (
-                    <span style={{ color: 'var(--danger)' }}>解析不了。标准 5 段：分 时 日 月 周</span>
+                    <span style={{ color: 'var(--danger)' }}>{t('解析不了。标准 5 段：分 时 日 月 周')}</span>
                   ) : (
-                    '标准 5 段：分 时 日 月 周。支持 * , - / 。例如 0 9 * * 1-5 = 工作日早上九点。'
+                    t('标准 5 段：分 时 日 月 周。支持 * , - / 。例如 0 9 * * 1-5 = 工作日早上九点。')
                   )
                 }
               >
                 <input
                   type="text"
-                  value={t.schedule.cron ?? ''}
+                  value={task.schedule.cron ?? ''}
                   placeholder="0 9 * * 1-5"
-                  onChange={(e) => patch(t.id, { schedule: { ...t.schedule, cron: e.target.value } })}
+                  onChange={(e) => patch(task.id, { schedule: { ...task.schedule, cron: e.target.value } })}
                   style={{ fontFamily: 'var(--mono)' }}
                 />
               </Field>
@@ -760,11 +755,11 @@ function TasksTab(props: {
 
             <div className="row" style={{ marginBottom: 10, flexWrap: 'wrap' }}>
               <select
-                value={t.projectId ?? ''}
-                onChange={(e) => patch(t.id, { projectId: e.target.value || null })}
+                value={task.projectId ?? ''}
+                onChange={(e) => patch(task.id, { projectId: e.target.value || null })}
                 style={{ flex: '0 0 150px' }}
               >
-                <option value="">不属于项目</option>
+                <option value="">{t('不属于项目')}</option>
                 {props.projects.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.emoji} {p.name}
@@ -772,11 +767,11 @@ function TasksTab(props: {
                 ))}
               </select>
               <select
-                value={t.keyProfileId ?? ''}
-                onChange={(e) => patch(t.id, { keyProfileId: e.target.value || null })}
+                value={task.keyProfileId ?? ''}
+                onChange={(e) => patch(task.id, { keyProfileId: e.target.value || null })}
                 style={{ flex: '0 0 140px' }}
               >
-                <option value="">跟随全局凭据</option>
+                <option value="">{t('跟随全局凭据')}</option>
                 {props.profiles.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}
@@ -786,36 +781,36 @@ function TasksTab(props: {
               <input
                 type="text"
                 list="ws-models"
-                value={t.model}
-                placeholder="模型（留空跟随全局）"
-                onChange={(e) => patch(t.id, { model: e.target.value })}
+                value={task.model}
+                placeholder={t('模型（留空跟随全局）')}
+                onChange={(e) => patch(task.id, { model: e.target.value })}
               />
             </div>
 
             <div className="row" style={{ flexWrap: 'wrap' }}>
               <Segmented
-                value={t.target}
+                value={task.target}
                 options={[
-                  { value: 'new' as const, label: '每次开新对话' },
-                  { value: 'same' as const, label: '都追加到同一个' },
+                  { value: 'new' as const, label: t('每次开新对话') },
+                  { value: 'same' as const, label: t('都追加到同一个') },
                 ]}
-                onChange={(v) => patch(t.id, { target: v })}
+                onChange={(v) => patch(task.id, { target: v })}
               />
               <Switch
-                checked={t.catchUp}
-                onChange={(v) => patch(t.id, { catchUp: v })}
-                label="错过了补跑"
+                checked={task.catchUp}
+                onChange={(v) => patch(task.id, { catchUp: v })}
+                label={t('错过了补跑')}
               />
             </div>
 
             <div className="hint" style={{ marginTop: 8 }}>
-              {describeSchedule(t.schedule)}
-              {t.enabled && t.nextRunAt
-                ? ` · 下次 ${new Date(t.nextRunAt).toLocaleString('zh-CN', { hour12: false })}`
-                : ' · 未启用'}
-              {t.lastRunAt
-                ? ` · 上次 ${new Date(t.lastRunAt).toLocaleString('zh-CN', { hour12: false })}${
-                    t.lastResult ? `（${t.lastResult}）` : ''
+              {describeSchedule(task.schedule)}
+              {task.enabled && task.nextRunAt
+                ? ` · ${t('下次 {time}', { time: new Date(task.nextRunAt).toLocaleString(undefined, { hour12: false }) })}`
+                : ` · ${t('未启用')}`}
+              {task.lastRunAt
+                ? ` · ${t('上次 {time}', { time: new Date(task.lastRunAt).toLocaleString(undefined, { hour12: false }) })}${
+                    task.lastResult ? `（${task.lastResult}）` : ''
                   }`
                 : ''}
             </div>
@@ -846,16 +841,17 @@ export default function WorkspaceDialog(props: {
   skillSync: SkillSyncConfig;
   onSkillSync: (c: SkillSyncConfig) => void;
 }) {
+  const t = useT();
   const tab = (['projects', 'skills', 'tasks'] as Tab[]).includes(props.tab as Tab)
     ? (props.tab as Tab)
     : 'projects';
 
   return (
-    <Modal title="工作区" onClose={props.onClose} wide>
+    <Modal title={t('工作区')} onClose={props.onClose} wide>
       <div className="tabs">
-        {(Object.keys(TAB_LABEL) as Tab[]).map((t) => (
-          <button key={t} className={t === tab ? 'on' : ''} onClick={() => props.onTab(t)}>
-            {TAB_LABEL[t]}
+        {(Object.keys(TAB_LABEL) as Tab[]).map((name) => (
+          <button key={name} className={name === tab ? 'on' : ''} onClick={() => props.onTab(name)}>
+            {t(TAB_LABEL[name])}
           </button>
         ))}
       </div>

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useT } from '../../lib/i18n';
 import './WorkflowCanvas.css';
 
 export interface CanvasNode {
@@ -84,6 +85,7 @@ export default function WorkflowCanvas({
   canRedo,
   readOnly = false,
 }: WorkflowCanvasProps) {
+  const t = useT();
   const containerRef = useRef<HTMLDivElement>(null);
   const [focused, setFocused] = useState(false);
   const [dragging, setDragging] = useState<DragState>(null);
@@ -460,7 +462,7 @@ export default function WorkflowCanvas({
       onKeyDown={handleKeyDown}
     >
       <div className="workflow-canvas-main" onClick={() => onSelect(null)}>
-        <div className="workflow-canvas-view-controls" onPointerDown={e=>e.stopPropagation()} onClick={e=>e.stopPropagation()}><button type="button" onClick={()=>onViewportChange({...viewport,zoom:clampZoom(viewport.zoom/1.2)})} aria-label="缩小画布">−</button><span>{Math.round(viewport.zoom*100)}%</span><button type="button" onClick={()=>onViewportChange({...viewport,zoom:clampZoom(viewport.zoom*1.2)})} aria-label="放大画布">+</button><button type="button" onClick={()=>{const main=containerRef.current?.querySelector('.workflow-canvas-main');if(!main||!nodes.length)return;const box=main.getBoundingClientRect(),minX=Math.min(...nodes.map(n=>n.x)),minY=Math.min(...nodes.map(n=>n.y)),maxX=Math.max(...nodes.map(n=>n.x+NODE_WIDTH)),maxY=Math.max(...nodes.map(n=>n.y+getNodeHeight(n)));const zoom=clampZoom(Math.min((box.width-80)/(maxX-minX),(box.height-100)/(maxY-minY),1.5));onViewportChange({x:(box.width-(maxX-minX)*zoom)/2-minX*zoom,y:(box.height-(maxY-minY)*zoom)/2-minY*zoom,zoom});}}>适应画布</button></div>
+        <div className="workflow-canvas-view-controls" onPointerDown={e=>e.stopPropagation()} onClick={e=>e.stopPropagation()}><button type="button" onClick={()=>onViewportChange({...viewport,zoom:clampZoom(viewport.zoom/1.2)})} aria-label={t('缩小画布')}>−</button><span>{Math.round(viewport.zoom*100)}%</span><button type="button" onClick={()=>onViewportChange({...viewport,zoom:clampZoom(viewport.zoom*1.2)})} aria-label={t('放大画布')}>+</button><button type="button" onClick={()=>{const main=containerRef.current?.querySelector('.workflow-canvas-main');if(!main||!nodes.length)return;const box=main.getBoundingClientRect(),minX=Math.min(...nodes.map(n=>n.x)),minY=Math.min(...nodes.map(n=>n.y)),maxX=Math.max(...nodes.map(n=>n.x+NODE_WIDTH)),maxY=Math.max(...nodes.map(n=>n.y+getNodeHeight(n)));const zoom=clampZoom(Math.min((box.width-80)/(maxX-minX),(box.height-100)/(maxY-minY),1.5));onViewportChange({x:(box.width-(maxX-minX)*zoom)/2-minX*zoom,y:(box.height-(maxY-minY)*zoom)/2-minY*zoom,zoom});}}>{t('适应画布')}</button></div>
         <svg className="workflow-canvas-svg" aria-hidden="true">
           <g transform={`translate(${viewport.x} ${viewport.y}) scale(${viewport.zoom})`}>
             <defs>
@@ -516,7 +518,7 @@ export default function WorkflowCanvas({
                         ry={9}
                       />
                       <text className="workflow-canvas-edge-label" x={0} y={6} textAnchor="middle">
-                        {edge.label}
+                        {t(edge.label)}
                       </text>
                     </g>
                   </g>
@@ -568,7 +570,7 @@ export default function WorkflowCanvas({
                 {node.subtitle ? <p className="workflow-canvas-node-subtitle">{node.subtitle}</p> : null}
 
                 <div className="workflow-canvas-node-ports">
-                  {ports.length === 0 ? <span className="workflow-canvas-port-empty">无端口</span> : null}
+                  {ports.length === 0 ? <span className="workflow-canvas-port-empty">{t('无端口')}</span> : null}
                   {ports.map((port, index) => (
                     <button
                       key={port.id}
@@ -579,7 +581,7 @@ export default function WorkflowCanvas({
                       onClick={(event) => event.stopPropagation()}
                     >
                       <span className="workflow-canvas-port-dot" />
-                      <span className="workflow-canvas-port-label">{port.label}</span>
+                      <span className="workflow-canvas-port-label">{t(port.label)}</span>
                     </button>
                   ))}
                 </div>
@@ -591,7 +593,7 @@ export default function WorkflowCanvas({
 
       <aside className="workflow-canvas-node-list">
         <header className="workflow-canvas-toolbar">
-          <h2 className="workflow-canvas-toolbar-title">节点列表</h2>
+          <h2 className="workflow-canvas-toolbar-title">{t('节点列表')}</h2>
           {!readOnly ? (
             <div className="workflow-canvas-toolbar-actions">
               <button
@@ -605,13 +607,13 @@ export default function WorkflowCanvas({
                   onAddNode((rect.width / 2 - viewport.x) / viewport.zoom, (rect.height / 2 - viewport.y) / viewport.zoom);
                 }}
               >
-                新建 N
+                {t('新建 N')}
               </button>
               <button type="button" className="workflow-canvas-toolbar-btn" onClick={onUndo} disabled={!canUndo}>
-                撤销
+                {t('撤销')}
               </button>
               <button type="button" className="workflow-canvas-toolbar-btn" onClick={onRedo} disabled={!canRedo}>
-                重做
+                {t('重做')}
               </button>
             </div>
           ) : null}

@@ -1,4 +1,5 @@
 import React from 'react';
+import { useT } from '../lib/i18n';
 
 /**
  * 两栏之间的拖拽把手。
@@ -15,6 +16,7 @@ export default function Resizer(props: {
   onWidth: (w: number) => void;
   onDoubleClick?: () => void;
 }) {
+  const t = useT();
   const startRef = React.useRef<{ x: number; w: number } | null>(null);
   const [dragging, setDragging] = React.useState(false);
 
@@ -44,7 +46,7 @@ export default function Resizer(props: {
           /* 已经放开了就算了 */
         }
       }}
-      title="拖动调宽度，双击恢复默认"
+      title={t('拖动调宽度，双击恢复默认')}
     />
   );
 }

@@ -1,4 +1,5 @@
 import React from 'react';
+import { useT } from '../lib/i18n';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import hljs from 'highlight.js/lib/common';
@@ -49,6 +50,7 @@ export default function Markdown(props: {
   sources?: SourceRef[];
   onCiteClick?: (n: number) => void;
 }) {
+  const t = useT();
   const ref = React.useRef<HTMLDivElement>(null);
   const sources = props.sources ?? EMPTY_SOURCES;
   const html = React.useMemo(() => render(props.text, sources), [props.text, sources]);
@@ -77,17 +79,17 @@ export default function Markdown(props: {
       if (pre.querySelector('.copy-code')) return;
       const btn = document.createElement('button');
       btn.className = 'copy-code';
-      btn.textContent = '复制';
+      btn.textContent = t('复制');
       btn.addEventListener('click', () => {
         const code = pre.querySelector('code')?.textContent ?? '';
         void navigator.clipboard.writeText(code).then(
           () => {
-            btn.textContent = '已复制';
-            setTimeout(() => (btn.textContent = '复制'), 1400);
+            btn.textContent = t('已复制');
+            setTimeout(() => (btn.textContent = t('复制')), 1400);
           },
           () => {
-            btn.textContent = '复制失败';
-            setTimeout(() => (btn.textContent = '复制'), 1400);
+            btn.textContent = t('复制失败');
+            setTimeout(() => (btn.textContent = t('复制')), 1400);
           },
         );
       });
