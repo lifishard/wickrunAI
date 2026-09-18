@@ -24,6 +24,7 @@ const repo = repoArg || 'wickrunAI';
 const FILES = [
   'package.json',
   'README.md',
+  'README.zh-CN.md',
   'SECURITY.md',
   'CONTRIBUTING.md',
   'docs/CONFIGURATION.md',

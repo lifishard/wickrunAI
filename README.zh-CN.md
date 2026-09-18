@@ -1,0 +1,123 @@
+<div align="center">
+
+<img src="build/icon.png" width="96" alt="灯芯AI">
+
+# wickrunAI · 灯芯AI
+
+用自己的 API Key，在同一个任务里切换模型、继续工作。
+
+[![CI](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml/badge.svg)](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
+[下载](https://github.com/lifishard/wickrunAI/releases) · [配置说明](docs/CONFIGURATION.md) · [构建方法](docs/BUILD.md) · [安全说明](SECURITY.md)
+
+[English](README.md) · **简体中文**
+
+</div>
+
+灯芯AI 是一个开源 AI 客户端，支持 Windows、macOS 和 Linux。你可以连接采用 OpenAI 兼容接口的模型，用它查资料、处理文档、读写文件，也可以授权它操作 Chrome 或调用本机的 Claude Code。
+
+做长任务时，你可以先让一个模型搜集资料，暂停后换另一个模型整理或检查。灯芯AI 会保存你的要求、执行记录和原始资料；点击“接着跑”，新模型就能从保存的位置继续。你仍需要检查结果，特别是引用、计算和生成的文件。接力方式见 [模型接力说明](docs/MODEL_HANDOFF.md)。
+
+可使用模型服务商的 API Key，也可在桌面版模型选择器中连接本机官方客户端。账号、订阅和 API 费用由对应服务商管理。项目另有 Android 客户端，可通过局域网连接电脑；目前尚未完成真机验证。
+
+界面支持简体中文、繁體中文和 English，在右上角切换；`docs/` 下的文档目前是中文。
+
+## 2.1 本机连接与提问卡片
+
+模型选择器增加“本机 AI”入口：检测 Codex、Claude Code 与 Kimi Code，展示连接状态、模型和思考强度。Codex 支持官方 ChatGPT 登录；Claude 与 Kimi 复用官方客户端已有授权。Grok 和其他兼容服务继续使用 API 接入。能力差异、原生客户端要求和开源连接器接口见 [本机连接说明](docs/LOCAL_CONNECTIONS.md)。
+
+Chat 与 Work 都支持 AI 提问卡片，可选择选项或填写自己的回答。草稿、回答和待续操作会保存在本机；回答后接着当前任务继续。切换本机连接与 API 时保留同一段对话和文本附件。功能说明见 [2.1.0 说明](docs/releases/v2.1.0.md)。
+
+## 2.0 协作空间
+
+从顶部“单一 Agent ⇄ 协作空间”进入项目团队：配置成员、任务目标、工作流、隔离文件与交付验收。工作流支持拖动节点、连接分支、有限循环、版本保存和中断恢复；项目记录、草稿和检查点保存在本机。项目设置提供数据备份与恢复。
+
+本机 Codex / Claude Code 适配器已接入，实际调用需要官方客户端及有效登录；原生权限与 API 工具白名单存在差异。项目经验目前由用户提供验证证据并决定采用，自动 RSI 实验尚未实现。协作功能说明见 [2.0.0 说明](docs/releases/v2.0.0.md)，界面统一与模式交接修复见 [2.0.1 说明](docs/releases/v2.0.1.md)。
+
+## 可以做什么
+
+| 用途 | 使用方式 |
+|---|---|
+| 查资料 | 配置 Tavily、Brave 或 SearXNG，在回答中查看来源链接 |
+| 处理文件 | 添加工作目录后，让模型读取资料、生成文档或表格；在文件卡片中打开成品或查看保存位置 |
+| 继续长任务 | 暂停、重启应用或切换模型后，从保留的任务记录继续 |
+| 浏览器操作 | 启动专用的 Chrome 实例，登录需要使用的网站，再授权模型操作 |
+| 编码与仓库工作 | 读取 GitHub 仓库、搜索代码，或调用已安装的 Claude Code；按权限设置执行命令 |
+| 整理项目 | 为一组对话保存共用的说明、参考文档和常用提示词 |
+| 使用技能 | 导入 `SKILL.md` 技能，在对话中用 `/名字` 调用 |
+| 定时运行 | 设置间隔、每日、每周或 cron 任务；执行时需要相应设备和服务可用 |
+| 检查调用情况 | 查看模型连接、用量和失败记录；遇到限流时，按恢复策略等待并重试 |
+
+不同模型对工具调用、图片和思考参数的支持有差异。首次使用一个端点时，建议先测试连接，再试一个小任务。
+
+## 安装
+
+从 [Releases](https://github.com/lifishard/wickrunAI/releases) 下载对应平台的文件。新版文件使用 `wickrunAI` 前缀；历史版本仍保留发布时的名称。
+
+| 平台 | 文件 |
+|---|---|
+| Windows 64 位 | `wickrunAI-x.y.z-win-x64-setup.exe`；免安装版为 `-portable.exe` |
+| macOS Apple Silicon | `wickrunAI-x.y.z-mac-arm64.dmg` |
+| macOS Intel | `wickrunAI-x.y.z-mac-x64.dmg` |
+| Linux 64 位 | `wickrunAI-x.y.z-linux-x64.AppImage` 或 `.deb` |
+
+当前安装包没有代码签名，Windows 或 macOS 可能显示发布者提示。下载后可使用 Release 中的 `SHA256SUMS.txt` 核对文件；也可以按下面的方法从源码构建。
+
+### 首次使用
+
+1. 打开“设置 → API 凭据”，添加 Base URL 和 API Key，点击“测试连接”。
+2. 在输入框旁选择模型，发送一个问题确认能收到回复。
+3. 需要处理本地文件时，在工具设置里添加工作目录。
+4. 需要联网搜索时，配置一个搜索服务。需要操作网站时，启动工具中的 Chrome 并登录网站。
+
+模型选择按会话保存。思考强度、工具权限和任务预算等选项见 [配置说明](docs/CONFIGURATION.md)。
+
+### 找免费额度
+
+社区清单 [github.com/raullenchai/free-llm-api-resources](https://github.com/raullenchai/free-llm-api-resources) 记录了各家的免费档位和限流，它 fork 自 [cheahjs/free-llm-api-resources](https://github.com/cheahjs/free-llm-api-resources)。
+
+wickrunAI 与该清单的作者、以及清单内任何 API 供应商之间均无关联关系；本应用不对其作出任何认可或推荐，亦未获其认可或赞助。额度与条款由各供应商自行订立并可随时变更。
+
+### 从旧版升级
+
+项目曾使用 SenseNova Chat 和 AnyAI 两个名称。从 AnyAI 升级时，灯芯AI 继续使用原来的数据目录，保留配置、会话、任务记录和工具浏览器的登录资料。目录仍叫 `anyai`，属于兼容安排。
+
+安装新版前请退出旧版。应用目前没有自动更新功能，请从 Releases 下载新版本。
+
+## 从源码构建
+
+需要 Node.js 20 或更新版本。
+
+```bash
+git clone https://github.com/lifishard/wickrunAI.git
+cd wickrunAI
+npm install
+npm run dist:win
+```
+
+在 macOS 或 Linux 上，最后一步分别使用 `npm run dist:mac` 或 `npm run dist:linux`。Windows 用户也可以双击 `打包桌面版.bat`。
+
+维护者可用 `同步到github.bat` 提交源码，用 `发布三平台版本.bat` 触发 GitHub Actions 构建并发布安装包。发版流程和 Android 构建方法见 [构建说明](docs/BUILD.md)。
+
+## 权限与数据
+
+你可以按会话设置工具权限，并指定允许读写的工作目录。命令行和浏览器工具会对电脑或网站执行操作，授权前请核对任务和目标。
+
+桌面端会在系统支持时使用操作系统的加密存储保护 API Key。配置、会话和任务资料保存在本机；调用模型或工具时，相关内容会发送到你配置的服务。密钥存储、远程连接和权限限制见 [安全说明](SECURITY.md)。
+
+## 开发与反馈
+
+桌面端使用 Electron 34，界面使用 React 19、Vite 和 TypeScript；Android 端使用 Capacitor 7。开发资料见 [架构说明](docs/ARCHITECTURE.md) 和 [贡献指南](CONTRIBUTING.md)。
+
+已发布版本以 [Releases](https://github.com/lifishard/wickrunAI/releases) 为准。目前 Android 真机运行、部分服务商的思考参数映射仍需验证。图片附件需要支持图片输入的模型。
+
+遇到问题，请在 [Issues](https://github.com/lifishard/wickrunAI/issues) 中提供应用版本、系统、端点、模型 ID 和复现步骤。附上日志或请求预览前，请删除 API Key 和私人内容。
+
+## English
+
+A full English version of this page is at [README.md](README.md).
+
+## License
+
+[Apache License 2.0](LICENSE). 分发时请保留 [NOTICE](NOTICE)。

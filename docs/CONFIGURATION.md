@@ -43,6 +43,15 @@
 
 地址会自动补 `https://` 并去掉结尾的 `/`，所以填 `api.example.com/v1` 也行。
 
+### 找免费额度
+
+社区清单 [github.com/raullenchai/free-llm-api-resources](https://github.com/raullenchai/free-llm-api-resources)
+记录了各家的免费档位和限流，它 fork 自 [cheahjs/free-llm-api-resources](https://github.com/cheahjs/free-llm-api-resources)。
+设置 → API 凭据页里也放了这个链接。
+
+wickrunAI 与该清单的作者、以及清单内任何 API 供应商之间均无关联关系；本应用不对其作出任何认可或推荐，
+亦未获其认可或赞助。额度与条款由各供应商自行订立并可随时变更。
+
 ### 测试连接 = 拉模型列表
 
 点「测试连接」会打一次 `GET {base}/models`，把模型列表拉回来缓存住。
