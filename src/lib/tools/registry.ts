@@ -8,6 +8,8 @@
  * 加一个新工具 = 在 TOOLS 里加一条 + 在 electron/tools/index.cjs 里加一个执行器。
  * ------------------------------------------------------------------ */
 
+import { tr } from '../i18n';
+
 export type ToolGroup =
   | 'web'
   | 'files'
@@ -51,10 +53,10 @@ const clip = (v: unknown, n = 48): string => {
 };
 
 export const TOOLS: ToolDef[] = [
-  {name:'complete_task',label:'完成自查',group:'agent',description:'交付前记录已完成事项、自查与测试结果；evidence 必须是实际成功工具的 callId。不能使用计划当证据，未通过的验收条件要先处理。next_action 是供用户选择的下一步建议，不会执行。',parameters:{type:'object',properties:{summary:{type:'string'},checks:{type:'string'},evidence:{type:'array',items:{type:'string'}},next_action:{type:'string'}},required:['summary','checks','evidence']},summarize:()=> '核对完成情况与证据'},
-  {name:'spawn_subagent',label:'派发临时子代理',group:'agent',description:'把独立且范围明确的子任务交给用户授权的工作模型。先用 list_subagents 查看可选 worker_id。仅传必要目标、材料与验收条件，不复制整段历史。request_key 必须稳定，重试同一请求返回已有任务。最多两个并行；子代理结果需要主模型复核。',parameters:{type:'object',properties:{worker_id:{type:'string'},request_key:{type:'string'},task:{type:'string'}},required:['worker_id','request_key','task']},summarize:a=>`子代理：${clip(a.task)}`},
-  {name:'list_subagents',label:'查看临时子代理',group:'agent',description:'查看本轮允许的工作模型与已派发子代理状态。不会启动任务或调用模型。',parameters:{type:'object',properties:{}},summarize:()=> '查看临时协作状态'},
-  {name:'wait_subagents',label:'收取子代理结果',group:'agent',description:'收取本轮子代理的状态和结果。ids 可省略表示全部；最多等待 8 秒。未完成时先做其他独立工作，再查询；不得把运行中当成完成。',parameters:{type:'object',properties:{ids:{type:'array',items:{type:'string'}},wait_ms:{type:'integer',minimum:0,maximum:8000}}},summarize:()=> '收取子代理结果'},
+  {name:'complete_task',label:'完成自查',group:'agent',description:'交付前记录已完成事项、自查与测试结果；evidence 必须是实际成功工具的 callId。不能使用计划当证据，未通过的验收条件要先处理。next_action 是供用户选择的下一步建议，不会执行。',parameters:{type:'object',properties:{summary:{type:'string'},checks:{type:'string'},evidence:{type:'array',items:{type:'string'}},next_action:{type:'string'}},required:['summary','checks','evidence']},summarize:()=> tr('核对完成情况与证据')},
+  {name:'spawn_subagent',label:'派发临时子代理',group:'agent',description:'把独立且范围明确的子任务交给用户授权的工作模型。先用 list_subagents 查看可选 worker_id。仅传必要目标、材料与验收条件，不复制整段历史。request_key 必须稳定，重试同一请求返回已有任务。最多两个并行；子代理结果需要主模型复核。',parameters:{type:'object',properties:{worker_id:{type:'string'},request_key:{type:'string'},task:{type:'string'}},required:['worker_id','request_key','task']},summarize:a=>tr('子代理：{task}',{task:clip(a.task)})},
+  {name:'list_subagents',label:'查看临时子代理',group:'agent',description:'查看本轮允许的工作模型与已派发子代理状态。不会启动任务或调用模型。',parameters:{type:'object',properties:{}},summarize:()=> tr('查看临时协作状态')},
+  {name:'wait_subagents',label:'收取子代理结果',group:'agent',description:'收取本轮子代理的状态和结果。ids 可省略表示全部；最多等待 8 秒。未完成时先做其他独立工作，再查询；不得把运行中当成完成。',parameters:{type:'object',properties:{ids:{type:'array',items:{type:'string'}},wait_ms:{type:'integer',minimum:0,maximum:8000}}},summarize:()=> tr('收取子代理结果')},
   {
     name: 'request_user_input',
     label: '询问用户',
@@ -97,7 +99,7 @@ export const TOOLS: ToolDef[] = [
       },
       required: ['questions'],
     },
-    summarize: () => '等待用户回答',
+    summarize: () => tr('等待用户回答'),
   },
   {
     name:'update_requirements',label:'记录交付要求',group:'agent',
@@ -105,12 +107,12 @@ export const TOOLS: ToolDef[] = [
     parameters:{type:'object',properties:{requirements:{type:'array',maxItems:20,items:{type:'object',properties:{
       id:{type:'string'},title:{type:'string'},sourceId:{type:'string'},sourceQuote:{type:'string'},milestoneId:{type:'string'},
       check:{type:'object',properties:{kind:{type:'string',enum:['file_exists','json','ics','answer_contains','review']},path:{type:'string'},contains:{type:'array',items:{type:'string'}},requiredKeys:{type:'array',items:{type:'string'}},count:{type:'integer',minimum:0}},required:['kind']},
-    },required:['id','title','sourceId','sourceQuote','check']}}},required:['requirements']},summarize:()=> '记录用户要求与验收条件',
+    },required:['id','title','sourceId','sourceQuote','check']}}},required:['requirements']},summarize:()=> tr('记录用户要求与验收条件'),
   },
   {
     name:'verify_requirements',label:'核验交付要求',group:'agent',
     description:'核验已有要求。程序检查由客户端只读执行，模型不能指定其通过状态。review 类型必须附 reviews：status、逐项覆盖说明 detail、已成功工具 callId 或 text:已输出答案原文 evidence。无法核实时用 unverifiable；模型复核会明确标注，不能声称独立验证。失败后修复再核验，不能放宽条件。',
-    parameters:{type:'object',properties:{ids:{type:'array',items:{type:'string'}},reviews:{type:'array',items:{type:'object',properties:{id:{type:'string'},status:{type:'string',enum:['passed','failed','unverifiable']},detail:{type:'string'},evidence:{type:'array',items:{type:'string'}}},required:['id','status','detail']}}},required:['ids']},summarize:()=> '逐项核验交付结果',
+    parameters:{type:'object',properties:{ids:{type:'array',items:{type:'string'}},reviews:{type:'array',items:{type:'object',properties:{id:{type:'string'},status:{type:'string',enum:['passed','failed','unverifiable']},detail:{type:'string'},evidence:{type:'array',items:{type:'string'}}},required:['id','status','detail']}}},required:['ids']},summarize:()=> tr('逐项核验交付结果'),
   },
   {
     name: 'update_plan', label: '更新里程碑', group: 'agent',
@@ -118,13 +120,13 @@ export const TOOLS: ToolDef[] = [
     parameters: { type: 'object', properties: { milestones: { type: 'array', items: { type: 'object', properties: {
       id: { type: 'string' }, title: { type: 'string' }, status: { type: 'string', enum: ['pending','in_progress','verifying','completed','blocked'] },
       reason: { type: 'string', description: '已完成项返工或改动的具体原因，至少8字' }, acceptance: { type: 'string' }, evidence: { type: 'array', items: { type: 'string' } }, note: { type: 'string' },
-    }, required: ['id','title','status'] } } }, required: ['milestones'] }, summarize: () => '更新任务里程碑',
+    }, required: ['id','title','status'] } } }, required: ['milestones'] }, summarize: () => tr('更新任务里程碑'),
   },
   {
     name: 'read_context', label: '查阅历史原文', group: 'agent',
     description: '分页查阅本任务原始记录（摘要之外的原文）。省略 id 可搜索/列出消息索引；提供 id 读取内容和文本附件。query 过滤正文，offset 为字符偏移，limit 最多 12000。可另传 image_index（从 0 开始）取回该消息的原始图片。',
     parameters: { type: 'object', properties: { section: {type:'string',enum:['progress'],description:'读取持久计划、验收条件与失败历史'}, id: { type: 'string' }, query: { type: 'string' }, offset: { type: 'integer' }, limit: { type: 'integer' }, image_index: { type: 'integer' } } },
-    summarize: () => '查阅保存的原文',
+    summarize: () => tr('查阅保存的原文'),
   },
   {
     name: 'chrome_fetch_json', label: '读取已登录 API', group: 'chrome', needsHost: true,
@@ -132,19 +134,19 @@ export const TOOLS: ToolDef[] = [
     parameters: { type: 'object', properties: { tab_id: { type: 'string' }, path: { type: 'string' },
       fields: { type: 'array', items: { type: 'string' } }, items_path: { type: 'string' },
       offset: { type: 'integer' }, limit: { type: 'integer', maximum: 100 } }, required: ['path'] },
-    summarize: (a) => `读取 API ${clip(a.path)}`,
+    summarize: (a) => tr('读取 API {path}', { path: clip(a.path) }),
   },
   {
     name: 'read_tool_result', label: '读取已存结果', group: 'agent', needsHost: true,
     description: '分页读取之前保存的完整工具结果。使用结果里的 id，不要重复发起原查询。offset 是字符偏移，最多返回 16000 字符。',
     parameters: { type: 'object', properties: { id: { type: 'string' }, offset: { type: 'integer' }, limit: { type: 'integer' } }, required: ['id'] },
-    summarize: () => '读取已保存的证据',
+    summarize: () => tr('读取已保存的证据'),
   },
   {
     name: 'register_outputs', label: '核实交付文件', group: 'files', needsHost: true,
     description: '核实已生成文件的真实路径并显示在对话底部。通过命令行、浏览器下载等生成文件后必须调用；支持 ICS 等任意文件。必须是已获准目录中的实际文件，不会创建不存在的文件。',
     parameters: { type: 'object', properties: { paths: { type: 'array', items: { type: 'string' }, description: '文件绝对路径' } }, required: ['paths'] },
-    summarize: () => '核实并交付文件',
+    summarize: () => tr('核实并交付文件'),
   },
   /* ---------------- 联网 ---------------- */
   {
@@ -161,7 +163,7 @@ export const TOOLS: ToolDef[] = [
       },
       required: ['query'],
     },
-    summarize: (a) => `搜索「${clip(a.query)}」`,
+    summarize: (a) => tr('搜索「{query}」', { query: clip(a.query) }),
   },
   {
     name: 'fetch_url',
@@ -177,7 +179,7 @@ export const TOOLS: ToolDef[] = [
       },
       required: ['url'],
     },
-    summarize: (a) => `读取 ${clip(a.url, 60)}`,
+    summarize: (a) => tr('读取 {target}', { target: clip(a.url, 60) }),
   },
 
   /* ---------------- 本地文件 ---------------- */
@@ -195,7 +197,7 @@ export const TOOLS: ToolDef[] = [
       },
       required: ['path'],
     },
-    summarize: (a) => `列出 ${clip(a.path, 60)}`,
+    summarize: (a) => tr('列出 {path}', { path: clip(a.path, 60) }),
   },
   {
     name: 'read_file',
@@ -212,7 +214,7 @@ export const TOOLS: ToolDef[] = [
       },
       required: ['path'],
     },
-    summarize: (a) => `读取 ${clip(a.path, 60)}`,
+    summarize: (a) => tr('读取 {target}', { target: clip(a.path, 60) }),
   },
   {
     name: 'read_document',
@@ -232,7 +234,7 @@ export const TOOLS: ToolDef[] = [
       },
       required: ['path'],
     },
-    summarize: (a) => `读文档 ${clip(a.path, 50)}`,
+    summarize: (a) => tr('读文档 {path}', { path: clip(a.path, 50) }),
   },
   {
     name: 'write_document',
@@ -253,7 +255,7 @@ export const TOOLS: ToolDef[] = [
       },
       required: ['path'],
     },
-    summarize: (a) => `生成 ${clip(a.path, 50)}`,
+    summarize: (a) => tr('生成 {path}', { path: clip(a.path, 50) }),
   },
   {
     name: 'write_file',
@@ -270,7 +272,7 @@ export const TOOLS: ToolDef[] = [
       },
       required: ['path', 'content'],
     },
-    summarize: (a) => `写入 ${clip(a.path, 60)}`,
+    summarize: (a) => tr('写入 {path}', { path: clip(a.path, 60) }),
   },
   {
     name: 'edit_file',
@@ -289,7 +291,7 @@ export const TOOLS: ToolDef[] = [
       },
       required: ['path', 'old_str', 'new_str'],
     },
-    summarize: (a) => `修改 ${clip(a.path, 60)}`,
+    summarize: (a) => tr('修改 {path}', { path: clip(a.path, 60) }),
   },
   {
     name: 'search_files',
@@ -307,7 +309,7 @@ export const TOOLS: ToolDef[] = [
       },
       required: ['pattern'],
     },
-    summarize: (a) => `搜索代码 /${clip(a.pattern, 40)}/`,
+    summarize: (a) => tr('搜索代码 /{pattern}/', { pattern: clip(a.pattern, 40) }),
   },
 
   /* ---------------- 命令行 ---------------- */
@@ -336,7 +338,7 @@ export const TOOLS: ToolDef[] = [
       },
       required: ['command'],
     },
-    summarize: (a) => `${a.elevated ? '【管理员】' : ''}执行 ${clip(a.command, 60)}`,
+    summarize: (a) => (a.elevated ? tr('【管理员】执行 {command}', { command: clip(a.command, 60) }) : tr('执行 {command}', { command: clip(a.command, 60) })),
   },
 
 
@@ -380,7 +382,7 @@ export const TOOLS: ToolDef[] = [
       '截取主屏幕，图片会作为下一条消息发给你。先截图看清楚再动手，不要凭记忆点击。' +
       '返回里会说明图片和真实屏幕的坐标换算比例。需要 screen 授权。',
     parameters: { type: 'object', properties: {} },
-    summarize: () => '截屏',
+    summarize: () => tr('截屏'),
   },
   {
     name: 'computer_click',
@@ -401,7 +403,7 @@ export const TOOLS: ToolDef[] = [
       },
       required: ['x', 'y'],
     },
-    summarize: (a) => `点击 (${a.x}, ${a.y})`,
+    summarize: (a) => tr('点击 ({x}, {y})', { x: Number(a.x), y: Number(a.y) }),
   },
   {
     name: 'computer_move',
@@ -417,7 +419,7 @@ export const TOOLS: ToolDef[] = [
       },
       required: ['x', 'y'],
     },
-    summarize: (a) => `移动到 (${a.x}, ${a.y})`,
+    summarize: (a) => tr('移动到 ({x}, {y})', { x: Number(a.x), y: Number(a.y) }),
   },
   {
     name: 'computer_scroll',
@@ -433,7 +435,7 @@ export const TOOLS: ToolDef[] = [
         y: { type: 'integer' },
       },
     },
-    summarize: (a) => `滚动 ${a.amount ?? -3} 格`,
+    summarize: (a) => tr('滚动 {amount} 格', { amount: Number(a.amount ?? -3) }),
   },
   {
     name: 'computer_type',
@@ -452,7 +454,7 @@ export const TOOLS: ToolDef[] = [
       },
       required: ['text'],
     },
-    summarize: (a) => `输入「${clip(a.text, 30)}」`,
+    summarize: (a) => tr('输入「{text}」', { text: clip(a.text, 30) }),
   },
   {
     name: 'computer_key',
@@ -467,7 +469,7 @@ export const TOOLS: ToolDef[] = [
       properties: { key: { type: 'string', description: '例如 ctrl+s' } },
       required: ['key'],
     },
-    summarize: (a) => `按键 ${clip(a.key, 24)}`,
+    summarize: (a) => tr('按键 {key}', { key: clip(a.key, 24) }),
   },
 
   /* ---------------- Chrome ---------------- */
@@ -478,7 +480,7 @@ export const TOOLS: ToolDef[] = [
     needsHost: true,
     description: '列出 Chrome 当前打开的标签页（id、标题、网址）。操作某个标签页前先用它拿 id。',
     parameters: { type: 'object', properties: {} },
-    summarize: () => '列出 Chrome 标签页',
+    summarize: () => tr('列出 Chrome 标签页'),
   },
   {
     name: 'chrome_navigate',
@@ -494,7 +496,7 @@ export const TOOLS: ToolDef[] = [
       },
       required: ['url'],
     },
-    summarize: (a) => `Chrome 打开 ${clip(a.url, 50)}`,
+    summarize: (a) => tr('Chrome 打开 {url}', { url: clip(a.url, 50) }),
   },
   {
     name: 'chrome_read_page',
@@ -510,7 +512,7 @@ export const TOOLS: ToolDef[] = [
         max_chars: { type: 'integer', description: '最多返回多少字符，默认 20000' },
       },
     },
-    summarize: () => '读取 Chrome 当前页面',
+    summarize: () => tr('读取 Chrome 当前页面'),
   },
   {
     name: 'chrome_click',
@@ -527,7 +529,7 @@ export const TOOLS: ToolDef[] = [
       },
       required: ['selector'],
     },
-    summarize: (a) => `Chrome 点击 ${clip(a.selector, 40)}`,
+    summarize: (a) => tr('Chrome 点击 {selector}', { selector: clip(a.selector, 40) }),
   },
   {
     name: 'chrome_eval',
@@ -545,7 +547,7 @@ export const TOOLS: ToolDef[] = [
       },
       required: ['expression'],
     },
-    summarize: (a) => `Chrome 执行脚本 ${clip(a.expression, 40)}`,
+    summarize: (a) => tr('Chrome 执行脚本 {expression}', { expression: clip(a.expression, 40) }),
   },
 
   /* ---------------- GitHub ---------------- */
@@ -571,7 +573,7 @@ export const TOOLS: ToolDef[] = [
       required: ['method', 'path'],
     },
     dangerous: true,
-    summarize: (a) => `GitHub ${s(a.method) || 'GET'} ${clip(a.path, 50)}`,
+    summarize: (a) => tr('GitHub {method} {path}', { method: s(a.method) || 'GET', path: clip(a.path, 50) }),
   },
   {
     name: 'github_search',
@@ -587,7 +589,7 @@ export const TOOLS: ToolDef[] = [
       },
       required: ['kind', 'q'],
     },
-    summarize: (a) => `GitHub 搜索 ${clip(a.q, 45)}`,
+    summarize: (a) => tr('GitHub 搜索 {query}', { query: clip(a.q, 45) }),
   },
 
   /* ---------------- Claude Code ---------------- */
@@ -607,7 +609,7 @@ export const TOOLS: ToolDef[] = [
       },
       required: ['prompt'],
     },
-    summarize: (a) => `Claude Code：${clip(a.prompt, 50)}`,
+    summarize: (a) => tr('Claude Code：{prompt}', { prompt: clip(a.prompt, 50) }),
   },
 
   /* ---------------- 项目与技能 ---------------- */
@@ -618,7 +620,7 @@ export const TOOLS: ToolDef[] = [
     description:
       '读当前项目的记忆 —— 之前几轮对话里攒下来的结论和约定。开始一件跟这个项目有关的事之前，值得先看一眼。',
     parameters: { type: 'object', properties: {} },
-    summarize: () => '读项目记忆',
+    summarize: () => tr('读项目记忆'),
   },
   {
     name: 'project_memory_write',
@@ -634,7 +636,7 @@ export const TOOLS: ToolDef[] = [
       },
       required: ['text'],
     },
-    summarize: (a) => `记到项目记忆：${clip(a.text, 40)}`,
+    summarize: (a) => tr('记到项目记忆：{text}', { text: clip(a.text, 40) }),
   },
   {
     name: 'project_doc_read',
@@ -649,7 +651,7 @@ export const TOOLS: ToolDef[] = [
         max_chars: { type: 'integer', description: '最多返回多少字符，默认 20000' },
       },
     },
-    summarize: (a) => (a.name ? `读文档《${clip(a.name, 30)}》` : '列出项目文档'),
+    summarize: (a) => (a.name ? tr('读文档《{name}》', { name: clip(a.name, 30) }) : tr('列出项目文档')),
   },
   {
     name: 'project_doc_write',
@@ -665,7 +667,7 @@ export const TOOLS: ToolDef[] = [
       },
       required: ['name', 'text'],
     },
-    summarize: (a) => `写文档《${clip(a.name, 30)}》`,
+    summarize: (a) => tr('写文档《{name}》', { name: clip(a.name, 30) }),
   },
   {
     name: 'skill_list',
@@ -673,7 +675,7 @@ export const TOOLS: ToolDef[] = [
     group: 'project',
     description: '列出用户已经装了哪些技能，以及每个是干什么的。',
     parameters: { type: 'object', properties: {} },
-    summarize: () => '列出技能',
+    summarize: () => tr('列出技能'),
   },
   {
     name: 'skill_write',
@@ -691,7 +693,7 @@ export const TOOLS: ToolDef[] = [
       },
       required: ['name', 'body'],
     },
-    summarize: (a) => `创建技能 /${clip(a.name, 30)}`,
+    summarize: (a) => tr('创建技能 /{name}', { name: clip(a.name, 30) }),
   },
 ];
 

@@ -810,7 +810,7 @@ function TasksTab(props: {
                 : ` · ${t('未启用')}`}
               {task.lastRunAt
                 ? ` · ${t('上次 {time}', { time: new Date(task.lastRunAt).toLocaleString(undefined, { hour12: false }) })}${
-                    task.lastResult ? `（${task.lastResult}）` : ''
+                    task.lastResult ? `（${t(task.lastResult)}）` : ''
                   }`
                 : ''}
             </div>

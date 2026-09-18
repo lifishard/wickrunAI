@@ -204,7 +204,7 @@ export function StepTrace({ steps, live }: { steps: ToolStep[]; live: boolean })
               <div key={s.id} className={`trace-step ${s.status}`}>
                 <button className="trace-step-head" onClick={() => setExpanded(isOpen ? null : s.id)}>
                   <span className="trace-status">{STATUS_ICON[s.status]}</span>
-                  <span className="trace-tool">{def?.label ?? s.name}</span>
+                  <span className="trace-tool">{def?.label ? t(def.label) : s.name}</span>
                   <span className="trace-summary">{s.summary}</span>
                   {s.elapsedMs ? <span className="trace-time">{(s.elapsedMs / 1000).toFixed(1)}s</span> : null}
                 </button>

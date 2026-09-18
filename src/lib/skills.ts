@@ -1,5 +1,6 @@
 import { getTransport } from './transport';
 import { uid } from './store';
+import { tr } from './i18n';
 
 /* ------------------------------------------------------------------ *
  * 技能（Skill）
@@ -117,7 +118,7 @@ export async function loadSkills(): Promise<Skill[]> {
     if (!Array.isArray(list)) throw new Error("记录格式无效");
     return list as Skill[];
   } catch (error) {
-    throw new Error(`Skill 数据读取失败：${String(error)}`);
+    throw new Error(tr('Skill 数据读取失败：{error}', { error: String(error) }));
   }
 }
 
@@ -241,11 +242,11 @@ async function ghJson(
     { method: 'GET', path: pathAndQuery, ...(maxChars ? { max_chars: maxChars } : {}) },
     ctxLike as never,
   );
-  if (!res.ok) throw new Error(res.error ?? 'GitHub 请求失败');
+  if (!res.ok) throw new Error(res.error ?? tr('GitHub 请求失败'));
   try {
     return JSON.parse(res.content);
   } catch {
-    throw new Error('GitHub 返回的不是 JSON');
+    throw new Error(tr('GitHub 返回的不是 JSON'));
   }
 }
 
@@ -304,12 +305,12 @@ export async function installFromGithub(
   onProgress?: (s: string) => void,
 ): Promise<Skill[]> {
   const t = parseGithubTarget(input);
-  if (!t) throw new Error('看不懂这个地址。写成 owner/repo 或者完整的 GitHub 链接。');
+  if (!t) throw new Error(tr('看不懂这个地址。写成 owner/repo 或者完整的 GitHub 链接。'));
 
   const refQ = t.ref ? `?ref=${encodeURIComponent(t.ref)}` : '';
   const base = `/repos/${t.owner}/${t.repo}/contents`;
 
-  onProgress?.(`在 ${t.owner}/${t.repo} 里找技能…`);
+  onProgress?.(tr('在 {repo} 里找技能…', { repo: `${t.owner}/${t.repo}` }));
 
   /**
    * 一次最多装多少个。
@@ -349,7 +350,7 @@ export async function installFromGithub(
           installedHash: bodyHash(parsed.body), // parsed.body 已经归一化过
         }),
       );
-      onProgress?.(`找到 ${parsed.name}（${Math.round(md.length / 1024)} KB）`);
+      onProgress?.(tr('找到 {name}（{kb} KB）', { name: parsed.name, kb: Math.round(md.length / 1024) }));
     } catch (e) {
       if (!isNotFound(e)) {
         hardErrors.push(`${p}：${e instanceof Error ? e.message : String(e)}`);
@@ -362,7 +363,7 @@ export async function installFromGithub(
       const r = await ghJson(`${base}${p ? `/${p}` : ''}${refQ}`, toolCtx);
       return Array.isArray(r) ? (r as GhEntry[]) : [];
     } catch (e) {
-      if (!isNotFound(e)) hardErrors.push(`列目录 ${p || '/'}：${e instanceof Error ? e.message : String(e)}`);
+      if (!isNotFound(e)) hardErrors.push(tr('列目录 {path}：{error}', { path: p || '/', error: e instanceof Error ? e.message : String(e) }));
       return [];
     }
   };
@@ -404,10 +405,7 @@ export async function installFromGithub(
       const items = Array.isArray(r?.tree) ? r.tree : [];
 
       if (r?.truncated || r?._truncated) {
-        hardErrors.push(
-          `${dirPath} 的目录树太大被截断了，可能漏掉一部分技能 —— ` +
-            '把地址直接指到某个子目录再装一次',
-        );
+        hardErrors.push(tr('{path} 的目录树太大被截断了，可能漏掉一部分技能 —— 把地址直接指到某个子目录再装一次', { path: dirPath }));
       }
 
       return items
@@ -418,7 +416,7 @@ export async function installFromGithub(
         .map((e) => `${dirPath}/${e.path}`);
     } catch (e) {
       if (!isNotFound(e)) {
-        hardErrors.push(`读取 ${dirPath} 的目录树：${e instanceof Error ? e.message : String(e)}`);
+        hardErrors.push(tr('读取 {path} 的目录树：{error}', { path: dirPath, error: e instanceof Error ? e.message : String(e) }));
       }
       return [];
     }
@@ -493,37 +491,35 @@ export async function installFromGithub(
   }
 
   onProgress?.(
-    `扫描完成：${trace.dirs} 个子目录、${trace.trees} 棵目录树、试了 ${trace.filesTried} 个文件，` +
-      `找到 ${found.length} 个技能` +
-      (hardErrors.length ? `\n⚠ 过程中有 ${hardErrors.length} 处出错：${hardErrors[0]}` : ''),
+    tr('扫描完成：{dirs} 个子目录、{trees} 棵目录树、试了 {files} 个文件，找到 {found} 个技能',
+      { dirs: trace.dirs, trees: trace.trees, files: trace.filesTried, found: found.length }) +
+      (hardErrors.length ? '\n' + tr('⚠ 过程中有 {n} 处出错：{first}', { n: hardErrors.length, first: hardErrors[0] }) : ''),
   );
   if (found.length >= MAX_SKILLS) {
-    onProgress?.(`已达单次安装上限 ${MAX_SKILLS} 个，仓库里可能还有更多 —— 指到具体子目录再装一次`);
+    onProgress?.(tr('已达单次安装上限 {max} 个，仓库里可能还有更多 —— 指到具体子目录再装一次', { max: MAX_SKILLS }));
   }
 
   if (!found.length) {
     if (hardErrors.length) {
       // 请求失败和「没有这个文件」是两回事，混着报会让人往错的方向查
       throw new Error(
-        `访问 ${t.owner}/${t.repo} 时出错了，不是「没有技能」：\n${hardErrors.slice(0, 3).join('\n')}` +
+        tr('访问 {repo} 时出错了，不是「没有技能」：', { repo: `${t.owner}/${t.repo}` }) + '\n' + hardErrors.slice(0, 3).join('\n') +
           (/403|rate limit/i.test(hardErrors.join(' '))
-            ? '\n\n看起来是 GitHub API 限额（不带 token 每小时只有 60 次）。设置 → 工具 → GitHub 填一个 token。'
+            ? '\n\n' + tr('看起来是 GitHub API 限额（不带 token 每小时只有 60 次）。设置 → 工具 → GitHub 填一个 token。')
             : ''),
       );
     }
     const mdNames = mdFilesIn(entries).map((f) => f.name);
     const dirNames = dirs.map((d) => d.name);
     throw new Error(
-      `在 ${t.owner}/${t.repo}${t.path ? `/${t.path}` : ''} 里没找到技能文件。\n` +
+      tr('在 {where} 里没找到技能文件。', { where: `${t.owner}/${t.repo}${t.path ? `/${t.path}` : ''}` }) + '\n' +
         (mdNames.length
-          ? `根目录的这些 md 没有 YAML frontmatter（开头的 --- 块里要有 name 或 description），` +
-            `所以不当成技能：${mdNames.slice(0, 8).join('、')}。\n`
+          ? tr('根目录的这些 md 没有 YAML frontmatter（开头的 --- 块里要有 name 或 description），所以不当成技能：{names}。', { names: mdNames.slice(0, 8).join('、') }) + '\n'
           : '') +
         (dirNames.length
-          ? `扫过的子目录：${dirNames.slice(0, 8).join('、')}。如果技能藏得更深，` +
-            '把地址直接指到那一层，例如 owner/repo/tree/main/skills/engineering。\n'
+          ? tr('扫过的子目录：{names}。如果技能藏得更深，把地址直接指到那一层，例如 owner/repo/tree/main/skills/engineering。', { names: dirNames.slice(0, 8).join('、') }) + '\n'
           : '') +
-        '也可以把地址指到某个具体的 .md 文件 —— 那种情况不检查 frontmatter，直接装。',
+        tr('也可以把地址指到某个具体的 .md 文件 —— 那种情况不检查 frontmatter，直接装。'),
     );
   }
   return found;
@@ -612,21 +608,23 @@ export function mergeSkills(
 /** 把合并结果讲成人话 */
 export function describeMerge(r: MergeReport): string {
   const parts: string[] = [];
-  if (r.added.length) parts.push(`新增 ${r.added.length} 个`);
-  if (r.updated.length) parts.push(`更新 ${r.updated.length} 个`);
+  if (r.added.length) parts.push(tr('新增 {n} 个', { n: r.added.length }));
+  if (r.updated.length) parts.push(tr('更新 {n} 个', { n: r.updated.length }));
   if (r.renamed.length) {
     parts.push(
-      `${r.renamed.length} 个同名但来自别的仓库，已改名保留（${r.renamed
-        .slice(0, 3)
-        .map((x) => `${x.from}→${x.to}`)
-        .join('、')}）`,
+      tr('{n} 个同名但来自别的仓库，已改名保留（{names}）', {
+        n: r.renamed.length,
+        names: r.renamed.slice(0, 3).map((x) => `${x.from}→${x.to}`).join('、'),
+      }),
     );
   }
   if (r.skipped.length) {
     parts.push(
-      `${r.skipped.length} 个你改过正文，没有覆盖（${r.skipped.slice(0, 3).join('、')}）—— ` +
-        '想要上游版本就先删掉本地那个再装',
+      tr('{n} 个你改过正文，没有覆盖（{names}）—— 想要上游版本就先删掉本地那个再装', {
+        n: r.skipped.length,
+        names: r.skipped.slice(0, 3).join('、'),
+      }),
     );
   }
-  return parts.join('；') || '没有变化';
+  return parts.join('；') || tr('没有变化');
 }

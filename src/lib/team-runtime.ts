@@ -4,6 +4,7 @@ import { uid, secretGet, toolContextOf } from './store';
 import { TOOL_BY_NAME } from './tools/registry';
 import { runtimePolicy } from './task-context';
 import { emptyTeamProject, loadCollaboration, teamBridge, validateGraph, type CollaborationData, type TeamProject, type TeamRun, type Member, type FlowNode, type FlowVersion } from './collaboration';
+import { tr } from './i18n';
 
 type Listener = () => void;
 export class TeamRuntime {
@@ -37,7 +38,7 @@ export class TeamRuntime {
       const runId=run.id;
       await this.update(original.id,p=>{const t=p.schedules.find(x=>x.id===s.id)!.triggers.find(t=>t.key===trigger.key)!;t.runId=runId;t.reason=undefined;});
       if(run.status==='ready')void this.start(original.id,runId).catch(error=>{this.error=String(error);this.emit();});
-     }catch(error){await this.update(original.id,p=>{const t=p.schedules.find(x=>x.id===s.id)!.triggers.find(t=>t.key===trigger.key)!;t.reason='需要处理：'+String(error);});}
+     }catch(error){await this.update(original.id,p=>{const t=p.schedules.find(x=>x.id===s.id)!.triggers.find(t=>t.key===trigger.key)!;t.reason=tr('需要处理：{error}',{error:String(error)});});}
     }
    }
   }}catch(error){this.error=String(error);this.emit();}finally{this.ticking=false;}
@@ -51,7 +52,7 @@ export class TeamRuntime {
  update(id:string,fn:(project:TeamProject)=>void):Promise<void>{
   this.saving++;this.emit();
   const work=this.serial.then(async()=>{
-   if(!this.data)throw Error('协作数据尚未读取');
+   if(!this.data)throw Error(tr('协作数据尚未读取'));
    for(let attempt=0;attempt<2;attempt++){
     const p=structuredClone(this.project(id));fn(p);
     try{this.data=await teamBridge().collaborationUpdate(this.data.revision,p);this.error=null;return;}
@@ -60,24 +61,24 @@ export class TeamRuntime {
   }).catch(error=>{this.error=String(error);throw error;}).finally(()=>{this.saving--;this.emit();});
   this.serial=work.catch(()=>{});return work;
  }
- async runUpdate(projectId:string,runId:string,fn:(run:TeamRun,project:TeamProject)=>void){await this.update(projectId,p=>{const r=p.runs.find(x=>x.id===runId);if(!r)throw Error('运行不存在');fn(r,p);r.updatedAt=Date.now();const task=p.tasks.find(t=>t.id===r.taskId);if(task)task.status=({ready:"待开始",running:"运行中",pausing:"正在暂停",paused:"已暂停",waiting_user:"等待用户",uncertain:"待核实",failed:"失败",cancelled:"已取消",completed:"已完成"})[r.status];});}
+ async runUpdate(projectId:string,runId:string,fn:(run:TeamRun,project:TeamProject)=>void){await this.update(projectId,p=>{const r=p.runs.find(x=>x.id===runId);if(!r)throw Error(tr('运行不存在'));fn(r,p);r.updatedAt=Date.now();const task=p.tasks.find(t=>t.id===r.taskId);if(task)task.status=({ready:"待开始",running:"运行中",pausing:"正在暂停",paused:"已暂停",waiting_user:"等待用户",uncertain:"待核实",failed:"失败",cancelled:"已取消",completed:"已完成"})[r.status];});}
  async createRun(projectId:string,taskId:string,workflowId:string,versionId:string,config:GenerationConfig,scheduleKey?:string){
   const id=uid('teamrun');
   await this.update(projectId,p=>{
-   if(scheduleKey&&p.runs.some(r=>r.scheduleKey===scheduleKey))throw Error('此触发已创建运行');
+   if(scheduleKey&&p.runs.some(r=>r.scheduleKey===scheduleKey))throw Error(tr('此触发已创建运行'));
    const task=p.tasks.find(t=>t.id===taskId),flow=p.workflows.find(f=>f.id===workflowId),version=flow?.versions.find(v=>v.id===versionId);
-   if(!task?.goal.trim()||!task.acceptance.trim()||!version||flow?.archived)throw Error('需要任务目标、验收标准和可用流程版本');
+   if(!task?.goal.trim()||!task.acceptance.trim()||!version||flow?.archived)throw Error(tr('需要任务目标、验收标准和可用流程版本'));
    const errors=validateGraph(version.graph,p.members,p.settings.allowedConnections).filter(x=>x.severity==='error');if(errors.length)throw Error(errors[0].message);
    const usedIds=new Set(version.graph.nodes.flatMap(n=>[n.memberId,...(n.participants??[])].filter(Boolean)));
    const members=p.members.filter(m=>usedIds.has(m.id));
-   if(version.graph.maxTokens>p.settings.maxTokens||version.graph.maxMinutes>p.settings.maxMinutes)throw Error('流程预算超过项目上限');
+   if(version.graph.maxTokens>p.settings.maxTokens||version.graph.maxMinutes>p.settings.maxMinutes)throw Error(tr('流程预算超过项目上限'));
    const now=Date.now();
    p.runs.push({projectSettings:structuredClone(p.settings),memorySnapshot:structuredClone(p.memories.filter(m=>m.status==='adopted')),reservations:{},id,taskId,workflowId,version:structuredClone(version),members:structuredClone(members),config:structuredClone(config),goal:task.goal,acceptance:task.acceptance,status:'ready',queue:version.graph.nodes.filter(n=>n.type==='start').map(n=>n.id),arrivals:{},visits:{},traversals:{},attempts:[],events:[{id:uid(),at:now,kind:'created',text:`已固定版本 ${version.number}、成员及输入快照`}],tokens:0,createdAt:now,updatedAt:now,scheduleKey,memoryIds:p.memories.filter(m=>m.status==='adopted').map(m=>`${m.id}@${m.revision}`)});
    task.status='待开始';
   });return id;
  }
  async start(projectId:string,runId:string){
-  if(this.running.has(runId))throw Error('此运行已在执行');
+  if(this.running.has(runId))throw Error(tr('此运行已在执行'));
   await this.serial;
   this.data=await teamBridge().collaborationClaim(projectId,runId);this.emit();
   const control={stop:false,handles:new Set<AgentHandle>()};this.running.set(runId,control);

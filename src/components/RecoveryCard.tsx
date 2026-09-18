@@ -9,12 +9,12 @@ export default function RecoveryCard({state,onResume,onCompact,onHandoff,onAddIn
   const info = recoveryInfo(state);
   return <section className="recovery-card" aria-label={t('任务恢复')}>
     <strong>{t('进度已保存 · ')}{t(info.kind === 'uncertain' ? '需要核实操作结果':'可以从这里继续')}</strong>
-    <p>{info.reason}</p>
+    <p>{t(info.reason)}{info.blocked ? t('。具体阻塞：{notes}', { notes: info.blocked }) : ''}</p>
     {info.completed.length ? <p>{t('已完成步骤：')}{info.completed.join('；')}{t('（交付检查见下方）')}</p>:null}
     {info.outputPaths.length ? <details><summary>{t('已保存 {n} 个成果文件', { n: info.outputPaths.length })}</summary>{info.outputPaths.map(p=><p className="delivery-path" key={p}>{p}</p>)}<small>{t('可从本条回答的文件卡片打开。')}</small></details>:null}
     {info.target ? <p className="delivery-path">{t('当前操作：')}{info.target}</p>:null}
     {info.remaining.length ? <p>{t('待处理：')}{info.remaining.join('；')}</p>:null}
-    <p><strong>{t('下一步：')}</strong>{info.next}</p>
+    <p><strong>{t('下一步：')}</strong>{t(info.next)}</p>
     {info.kind === 'uncertain' ? <div className="recovery-actions">
       <button className="btn sm" disabled={!onResolve} onClick={()=>onResolve?.('skip')}>{t('我已核实，跳过此步')}</button>
       <button className="btn sm" disabled={!onResolve} onClick={()=>onResolve?.('retry')}>{t('允许重试此步')}</button>

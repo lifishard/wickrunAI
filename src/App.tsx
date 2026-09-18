@@ -61,7 +61,8 @@ import { loadProjects, makeProject, projectSystemBlock, saveProjects, type Proje
 import { teamRuntime } from './lib/team-runtime';
 import { conversationQueue, nextQueuedIndex, type QueuedInput } from './lib/run-queue';
 import { teamNotifications } from './lib/team-notify';
-import { I18nProvider, LOCALES, type Locale } from './lib/i18n';
+import { I18nProvider, LOCALES, setActiveLocale, translate, type Locale } from './lib/i18n';
+import LocaleSwitch from './components/LocaleSwitch';
 import { claimRoots, holdersOf, releaseRoots } from './lib/workspace-guard';
 import DataBackupPanel from './components/collaboration/DataBackupPanel';
 import {
@@ -104,7 +105,7 @@ export default function App() {
   const [bootReady, setBootReady] = React.useState(false);
   const [bootAttempt, setBootAttempt] = React.useState(0);
   const [saveError, setSaveError] = React.useState<string | null>(null);
-  const reportSaveError = (error: unknown) => setSaveError(`尚未保存：${String(error)}`);
+  const reportSaveError = (error: unknown) => setSaveError(t('尚未保存：{error}', { error: String(error) }));
   const [settings, setSettings] = React.useState<AppSettings | null>(null);
   const teamVisible = Boolean(settings?.collaborationView?.visible);
   const setTeamVisible = (visible:boolean) => setSettings(s=>s?{...s,collaborationView:{...s.collaborationView,visible}}:s);
@@ -257,7 +258,7 @@ export default function App() {
       ]);
       let recovered = c;
       try { recovered = recoverConversations(c, await loadRuns()); }
-      catch (err) { toast.show(`执行记录读取失败：${String(err)}`, 6000); }
+      catch (err) { toast.show(t('执行记录读取失败：{error}', { error: String(err) }), 6000); }
       if (cancelled) return;
       try {
         const savedQueue=JSON.parse(await getTransport().kvGet('wickrun:input-queue:v1')||'[]');
@@ -265,7 +266,7 @@ export default function App() {
         setQueue(restored);
         // 恢复出来的队列先按会话挂起，等用户自己点「继续队列」
         setPausedQueues([...new Set(restored.map(q=>q.conversationId).filter((id):id is string=>typeof id==='string'))]);
-      }catch(error){toast.show('排队输入恢复失败：'+String(error));}
+      }catch(error){toast.show(t('排队输入恢复失败：{error}', { error: String(error) }));}
       queueLoaded.current=true;
       setSettings(s);
       setConversations(recovered);
@@ -376,6 +377,14 @@ export default function App() {
     () => conversations.find((c) => c.id === activeId) ?? null,
     [conversations, activeId],
   );
+  // App 自己就是 I18nProvider，useT 会读到上一层的默认值，所以这里直接按设置取词
+  const locale = settings?.locale ?? 'zh-Hans';
+  // 让不在 React 树里的模块（工具摘要、诊断结论）也拿到当前语言
+  setActiveLocale(locale);
+  const t = React.useCallback(
+    (text: string, vars?: Record<string, string | number>) => translate(locale, text, vars),
+    [locale],
+  );
   /** 界面只关心当前会话：别的会话在后台跑不该锁住这里的输入和按钮。 */
   const busy = activeId ? runs[activeId] ?? null : null;
   const queuePaused = activeId ? pausedQueues.includes(activeId) : false;
@@ -417,7 +426,7 @@ export default function App() {
       if (!settings || !profile) return;
       const key = await secretGet(profile.id);
       if (!key) {
-        if (!silent) setModelsError('这份凭据还没填 API Key');
+        if (!silent) setModelsError(t('这份凭据还没填 API Key'));
         return;
       }
       setModelsLoading(true);
@@ -455,12 +464,12 @@ export default function App() {
   function openContextHandoff(msg: ChatMessage) {
     if (!active) return;
     const state = msg.runState ?? runRecord(msg.taskId ?? '')?.state;
-    if (!state) { toast.show('没有可交接的执行记录'); return; }
+    if (!state) { toast.show(t('没有可交接的执行记录')); return; }
     const next = createContextHandoff(active, state, uid('handoff'));
     setConversations(all => [next, ...all]);
     setActiveId(next.id);
     setAttachments([]); setQuotes([]);
-    toast.show('已打开交接草稿。请审阅后决定是否发送；原任务进度保留。');
+    toast.show(t('已打开交接草稿。请审阅后决定是否发送；原任务进度保留。'));
   }
 
   React.useEffect(() => {
@@ -477,7 +486,7 @@ export default function App() {
       });
       // Do not replace text or discard attachments the user is composing.
       if (!active?.draft?.trim() && !attachments.length && !quotes.length) setActiveId(next.id);
-      toast.show('已按设置创建交接草稿，可从侧栏打开。尚未发送，原任务仍可继续。');
+      toast.show(t('已按设置创建交接草稿，可从侧栏打开。尚未发送，原任务仍可继续。'));
       break;
     }
   }, [conversations, bootReady]);
@@ -522,7 +531,7 @@ export default function App() {
     const copy: Conversation = {
       ...src,
       id: uid('c'),
-      title: `${src.title}（分叉）`,
+      title: t('{title}（分叉）', { title: src.title }),
       config: JSON.parse(JSON.stringify(src.config)) as GenerationConfig,
       messages: (JSON.parse(JSON.stringify(slice)) as ChatMessage[]).map((m) => ({
         ...m,
@@ -536,7 +545,7 @@ export default function App() {
     };
     setConversations((prev) => [copy, ...prev]);
     setActiveId(copy.id);
-    toast.show(uptoIndex === undefined ? '已分叉，上下文都带过来了' : '已从这一步分叉');
+    toast.show(t(uptoIndex === undefined ? '已分叉，上下文都带过来了' : '已从这一步分叉'));
   }
 
   function addCustomModel(id: string) {
@@ -604,7 +613,7 @@ export default function App() {
   async function addAttachments(mode: 'file' | 'image') {
     const bridge = desktop();
     if (!bridge) {
-      toast.show('这台设备读不了本地文件');
+      toast.show(t('这台设备读不了本地文件'));
       return;
     }
     const picked = await bridge.pickFiles(mode);
@@ -612,13 +621,13 @@ export default function App() {
     const errors: string[] = [];
     for (const f of picked) {
       if (f.error || !f.kind) {
-        errors.push(f.error ?? '读取失败');
+        errors.push(f.error ?? t('读取失败'));
         continue;
       }
       added.push({
         id: uid('a'),
         kind: f.kind,
-        name: f.name ?? '未命名',
+        name: f.name ?? t('未命名'),
         mime: f.mime ?? '',
         size: f.size ?? 0,
         text: f.text,
@@ -635,7 +644,7 @@ export default function App() {
   async function pickWorkspace() {
     const bridge = desktop();
     if (!bridge) {
-      toast.show('工作目录只能在桌面端添加');
+      toast.show(t('工作目录只能在桌面端添加'));
       return;
     }
     const dir = await bridge.pickFolder();
@@ -645,7 +654,7 @@ export default function App() {
       if (st.tools.workspaceRoots.includes(dir)) return st;
       return { ...st, tools: { ...st.tools, workspaceRoots: [...st.tools.workspaceRoots, dir] } };
     });
-    toast.show(`已加入工作目录：${dir}`);
+    toast.show(t('已加入工作目录：{dir}', { dir }));
   }
 
   /** 新建对话。带项目时套上项目的默认模型和凭据 */
@@ -677,16 +686,16 @@ export default function App() {
    */
   const runProbe = React.useCallback(async () => {
     if (!settings || !profile) {
-      toast.show('先选一份凭据');
+      toast.show(t('先选一份凭据'));
       return;
     }
     if (!models.length) {
-      toast.show('先拉一次模型列表');
+      toast.show(t('先拉一次模型列表'));
       return;
     }
     const key = await secretGet(profile.id);
     if (!key) {
-      toast.show('这份凭据还没填 API Key');
+      toast.show(t('这份凭据还没填 API Key'));
       return;
     }
 
@@ -726,7 +735,7 @@ export default function App() {
     setProbe(null);
 
     if (out.fatal) {
-      toast.show(`体检中断：${out.fatal.title}`, 5000);
+      toast.show(t('体检中断：{title}', { title: out.fatal.title }), 5000);
       return;
     }
     const tested = Object.keys(out.health).length;
@@ -735,11 +744,11 @@ export default function App() {
     ).length;
     toast.show(
       out.stopped
-        ? `体检已停止，测了 ${tested} 个，其中 ${bad} 个不可用`
-        : `体检完成：${tested} 个里有 ${bad} 个不可用，已从默认列表移出`,
+        ? t('体检已停止，测了 {tested} 个，其中 {bad} 个不可用', { tested, bad })
+        : t('体检完成：{tested} 个里有 {bad} 个不可用，已从默认列表移出', { tested, bad }),
       5000,
     );
-  }, [settings, profile, models, toast]);
+  }, [settings, profile, models, toast, t]);
 
   /**
    * 模型申请会话级权限。同意之后只写进 React state —— 不落盘、不跨会话。
@@ -747,6 +756,8 @@ export default function App() {
    * 三种 scope 的共同点：它们都扩大了「模型能碰到什么」的边界，所以每一次
    * 都要用户亲自点。已经有的授权直接回「已有」，不重复打扰。
    */
+  // 这个工具返回给模型的文字不跟界面语言走：它们是提示词的一部分，
+  // 跟着 UI 切语言会改变模型行为。
   const grantAccess = React.useCallback((req: AccessRequest): Promise<ToolResult> => {
     const scope = req.scope;
     if (scope !== 'path' && scope !== 'admin' && scope !== 'screen') {
@@ -870,7 +881,7 @@ export default function App() {
     const bridge = desktop();
     if (bridge?.exchanges) importExchanges(await bridge.exchanges(runId));
     const captured = exchangeOf(message?.runState?.failedRequestId) ?? failedExchange(runId);
-    if (!captured) { setPreview('没有找到对应的失败请求，无法根据普通聊天记录替它下结论。'); return; }
+    if (!captured) { setPreview(t('没有找到对应的失败请求，无法根据普通聊天记录替它下结论。')); return; }
     setPreview(formatExchange(captured));
     const apiKey = await secretGet(profile.id);
     if (!apiKey) return;
@@ -881,11 +892,12 @@ export default function App() {
     const tpm = cap.tpm;
     const output = outputReserve(original,cfg,cap);
     if ((tpm && tokens+output > tpm) || tokens > workingBudget(cfg,cap,output)) {
-      setPreview(formatExchange(captured)+'\n\n本地检查：原请求超出当前发送预算，已保留原文，不再重复发送大请求。'); return;
+      setPreview(formatExchange(captured)+'\n\n'+t('本地检查：原请求超出当前发送预算，已保留原文，不再重复发送大请求。')); return;
     }
     const attempts: string[] = [];
     // Compare an explicit baseline with the exact original body, not reconstructed chat history.
     for (const [label, body] of [
+      // 这两个标签是翻译 key，拼进预览时才过 t()
       ['最小基线', { model: original.model, messages: [{ role: 'user', content: 'Reply OK' }], stream: false, max_tokens: 1 }],
       ['原始失败请求', original],
     ] as const) {
@@ -898,30 +910,30 @@ export default function App() {
         paceMinMs: Math.max(PROBE_SPACING_MS, cfg.runtime?.rpm ? 60000/cfg.runtime.rpm : 0),
       }, { onContent() {}, onReasoning() {}, onToolCalls() {}, onUsage() {}, onDone() {},
         onError(text, status) { failure = `${status ?? ''} ${text}`; },
-        onPaceWait(ms) { setPreview(formatExchange(captured)+`\n\n${label}正在排队，约 ${Math.ceil(ms/1000)} 秒后发送。`); },
+        onPaceWait(ms) { setPreview(formatExchange(captured)+'\n\n'+t('{label}正在排队，约 {sec} 秒后发送。', { label: t(label), sec: Math.ceil(ms/1000) })); },
       });
-      attempts.push(`${label}：${failure || '请求成功'}`);
+      attempts.push(t('{label}：{result}', { label: t(label), result: failure || t('请求成功') }));
       if (failure && /429|tpm|rpm|限流|401|403/i.test(failure)) break;
     }
-    setPreview(formatExchange(captured)+'\n\n—— 对照结果 ——\n'+attempts.join('\n')+
-      '\n单次成功不证明故障不存在；以上只说明本次对照结果，原失败证据仍保留。');
-  }, [active, settings, profile]);
+    setPreview(formatExchange(captured)+'\n\n—— '+t('对照结果')+' ——\n'+attempts.join('\n')+
+      '\n'+t('单次成功不证明故障不存在；以上只说明本次对照结果，原失败证据仍保留。'));
+  }, [active, settings, profile, t]);
 
   const revokeGrants = React.useCallback(() => {
     setGrants({ extraRoots: [], admin: false, screen: false });
     // 记住的那份也一起清掉 —— 「全部撤销」按下去之后还能被重启复活，
     // 那这个按钮就是在骗人
     setSettings((prev) => (prev ? { ...prev, rememberedGrants: undefined } : prev));
-    toast.show('已撤销全部额外授权，包括记住的那些');
-  }, [toast]);
+    toast.show(t('已撤销全部额外授权，包括记住的那些'));
+  }, [toast, t]);
 
   const clearProfileHealth = React.useCallback(() => {
     if (!profile) return;
     setSettings((prev) =>
       prev ? { ...prev, modelHealth: clearHealth(prev.modelHealth ?? {}, profile.id) } : prev,
     );
-    toast.show('已清空这份凭据的体检记录');
-  }, [profile, toast]);
+    toast.show(t('已清空这份凭据的体检记录'));
+  }, [profile, toast, t]);
 
   const muteModel = React.useCallback(
     (modelId: string, muted: boolean) => {
@@ -949,13 +961,13 @@ export default function App() {
         return;
       }
       if (!profile) {
-        toast.show('先去设置里登记一份 API 凭据'); setSettingsOpen(true); return;
+        toast.show(t('先去设置里登记一份 API 凭据')); setSettingsOpen(true); return;
       }
       startingRef.current.add(startKey);
       let apiKey: string | null;
       try { apiKey = nativeClient ? 'official-client' : await secretGet(profile.id); }
       catch (e) { startingRef.current.delete(startKey); toast.show(String(e)); return; }
-      if (!apiKey) { startingRef.current.delete(startKey); toast.show('这份凭据还没填 API Key'); setSettingsOpen(true); return; }
+      if (!apiKey) { startingRef.current.delete(startKey); toast.show(t('这份凭据还没填 API Key')); setSettingsOpen(true); return; }
       // 没有会话就现开一个；排队条目带着会话 id，指向哪个会话就在哪个会话里跑
       let conv = queuedInput?.conversationId
         ? conversations.find((c) => c.id === queuedInput.conversationId) ?? active
@@ -969,7 +981,7 @@ export default function App() {
 
       if (!cfg.model) {
         startingRef.current.delete(startKey);
-        toast.show('先选一个模型');
+        toast.show(t('先选一个模型'));
         setConfigOpen(true);
         return;
       }
@@ -982,7 +994,7 @@ export default function App() {
         : replaceFromIndex === undefined ? conv.messages : conv.messages.slice(0, replaceFromIndex);
       if (!resumeFrom && replaceFromIndex !== undefined) {
         try { await forgetRuns(conv.id, new Set(conv.messages.slice(replaceFromIndex).map((m) => m.id))); }
-        catch (e) { startingRef.current.delete(startKey); toast.show(`无法更新执行记录：${String(e)}`); return; }
+        catch (e) { startingRef.current.delete(startKey); toast.show(t('无法更新执行记录：{error}', { error: String(e) })); return; }
       }
 
       // 本轮唤起的技能：固定一份快照，并记一次使用次数。
@@ -1032,8 +1044,8 @@ export default function App() {
         setQueue((q) => [...q, queuedInput ?? { toolsEnabled: cfg.toolsEnabled, text, attachments: [...attachments], quotes: [...quotes], quoteOnly, conversationId: convId }]);
         setAttachments([]); setQuotes([]);
         pauseQueue(convId);
-        const holderTitle = conversations.find((c) => c.id === holders[0])?.title ?? '另一个会话';
-        toast.show(`「${holderTitle}」正在这个工作目录里执行。这条排着，等它结束再发。`, 6000);
+        const holderTitle = conversations.find((c) => c.id === holders[0])?.title ?? t('另一个会话');
+        toast.show(t('「{title}」正在这个工作目录里执行。这条排着，等它结束再发。', { title: holderTitle }), 6000);
         return;
       }
       claimRoots(convId, wantedRoots);
@@ -1075,7 +1087,7 @@ export default function App() {
         const result=approvalChain.then(()=>new Promise<boolean>(resolve=>{
           if(approvalsClosed){resolve(false);return;}
           const finish=(ok:boolean)=>{pendingApprovals.delete(finish);resolve(ok);};
-          pendingApprovals.add(finish);notifyTask('question',`${requestId}:approval:${step.id}`,convId,'操作需要你的确认',step.summary);setConfirmReq({step,resolve:finish});
+          pendingApprovals.add(finish);notifyTask('question',`${requestId}:approval:${step.id}`,convId,t('操作需要你的确认'),step.summary);setConfirmReq({step,resolve:finish});
         }));
         approvalChain=result.then(()=>{});return result;
       };
@@ -1098,12 +1110,12 @@ export default function App() {
         interruptingRef.current.delete(convId);startingRef.current.add(convId);pauseQueue(convId);
         const state=latestState.supplementalInputs?.some(m=>m.id===steering.input.id)?structuredClone(latestState):addRunInput(latestState,steering.input);
         if(state.status==='completed'){state.phase='request';state.pendingCalls=[];state.toolCursor=0;}
-        state.at=Date.now();state.status='paused';state.reason='新输入和执行现场已保存，正在继续';
+        state.at=Date.now();state.status='paused';state.reason='新输入和执行现场已保存，正在继续';/* 翻译 key，RecoveryCard 渲染时过 t() */
         void saveRun({id:state.runId??requestId,conversationId:convId,answerId:answerMsg.id,question:userMsg,config:cfg,keyProfileId:profile.id,projectId:conv!.projectId,title:nextConv.title,state}).then(()=>{
           patchMessage(convId,answerMsg.id,{runState:state,supplementalInputs:state.supplementalInputs});
           startingRef.current.delete(convId);
           if(!state.uncertainCallId)setResumeInput({convId,state});
-          else notifyTask('paused',`${requestId}:uncertain`,convId,'新要求已保存，需要核实上一项操作','上一项操作的结果尚未确认，请回来核实后继续，避免重复执行。');
+          else notifyTask('paused',`${requestId}:uncertain`,convId,t('新要求已保存，需要核实上一项操作'),t('上一项操作的结果尚未确认，请回来核实后继续，避免重复执行。'));
         }).catch(error=>{startingRef.current.delete(convId);reportSaveError(error);});
         return true;
       };
@@ -1114,7 +1126,7 @@ export default function App() {
         config: cfg,
         resolveWorker: async profileId => {
           const workerProfile=settings.keyProfiles.find(p=>p.id===profileId);
-          if(!workerProfile)throw new Error('子代理所选凭据已不存在，请重新选择。');
+          if(!workerProfile)throw new Error(t('子代理所选凭据已不存在，请重新选择。'));
           const workerKey=await getTransport().secretGet(profileId);
           return {profile:structuredClone(workerProfile),apiKey:workerKey || '',models:[...(settings.cachedModels[profileId] || []),...(settings.customModels[profileId] || [])]};
         },
@@ -1212,7 +1224,7 @@ export default function App() {
                 question: userMsg, config: cfg, keyProfileId: profile.id, projectId: conv!.projectId,
                 title: nextConv.title, state });
             }
-            if(state?.userQuestion&&!state.userQuestion.answers)notifyTask('question',`${state.runId}:${state.userQuestion.request.id}`,convId,'任务需要你的回答',state.userQuestion.request.questions.map(q=>q.question).join('；'));
+            if(state?.userQuestion&&!state.userQuestion.answers)notifyTask('question',`${state.runId}:${state.userQuestion.request.id}`,convId,t('任务需要你的回答'),state.userQuestion.request.questions.map(q=>q.question).join('；'));
             patchMessage(convId, answerMsg.id, { runState: state ?? undefined,
               ...(state ? { harness:state.harness,subagents:state.subagents,milestones: state.milestones, contextSnapshot: state.contextSnapshot, delivery: state.delivery, taskId:state.runId, supplementalInputs:state.supplementalInputs, handoff:state.handoff, userQuestionHistory: state.userQuestionHistory } : {}) });
           },
@@ -1221,7 +1233,7 @@ export default function App() {
             const interrupted=finishInterruption();
             const answeredWhileSaving=!latestState?.userQuestion&&!latestState?.uncertainCallId&&latestState?.pendingInputMessages?.some(m=>m.id.startsWith('answer-'));
             if(!interrupted&&answeredWhileSaving&&latestState)setResumeInput({convId,state:latestState});
-            else if(!interrupted&&!latestState?.userQuestion)notifyTask('paused',`${requestId}:paused`,convId,'任务已暂停',reason);
+            else if(!interrupted&&!latestState?.userQuestion)notifyTask('paused',`${requestId}:paused`,convId,t('任务已暂停'),reason);
             patchMessage(convId, answerMsg.id, { pending: false, notice: undefined,
               content: buf.content, reasoning: buf.reasoning, progress: localProgress(steps, reason),
               artifacts: collectArtifacts(buf.content, steps), elapsedMs: Date.now()-started });
@@ -1240,7 +1252,7 @@ export default function App() {
               artifacts: arts.length ? arts : undefined,
             });
             if(finishInterruption())return;
-            notifyTask('completed',`${requestId}:completed`,convId,'任务已完成',buf.content.slice(-240)||nextConv.title);
+            notifyTask('completed',`${requestId}:completed`,convId,t('任务已完成'),buf.content.slice(-240)||nextConv.title);
             // 只有完整响应成功才清除失败记录。
             if (latestState?.status === 'completed') setSettings((prev) =>
               prev
@@ -1255,7 +1267,7 @@ export default function App() {
           },
           onError(msg, info) {
             finishUi(); pauseQueue(convId);
-            if(!finishInterruption())notifyTask('error',`${requestId}:error`,convId,'任务遇到问题',msg);
+            if(!finishInterruption())notifyTask('error',`${requestId}:error`,convId,t('任务遇到问题'),msg);
             patchMessage(convId, answerMsg.id, {
               pending: false,
               notice: undefined,
@@ -1295,6 +1307,7 @@ export default function App() {
     const {convId,state}=resumeInput;
     if(runningRef.current.has(convId)||startingRef.current.has(convId))return;
     setResumeInput(null);
+    // '继续处理新输入' 是发给模型的续跑指令，不跟界面语言走
     void send('继续处理新输入',undefined,state,{text:'',attachments:[],quotes:[],quoteOnly:false,conversationId:convId});
   },[resumeInput,runs,send]);
 
@@ -1309,7 +1322,7 @@ export default function App() {
       interruptingRef.current.set(convId,{requestId:running.requestId,input:message});
       if(running.handle.interrupt)running.handle.interrupt(message);else running.handle.abort();
       setConfirmReq(request=>{request?.resolve(false);return null;});setGrantReq(request=>{request?.resolve(false);return null;});
-      toast.show('正在保存当前输出和执行现场，然后处理新要求');return true;
+      toast.show(t('正在保存当前输出和执行现场，然后处理新要求'));return true;
     }catch(error){interruptingRef.current.delete(convId);toast.show(String(error));return false;}
   }
 
@@ -1339,12 +1352,12 @@ export default function App() {
     (msg: ChatMessage, resolution?: 'skip' | 'retry', additionalInput?: string, compactBeforeRun = false) => {
       if (busy || !msg.runState || !active) return;
       const index = active.messages.findIndex((m) => m.id === msg.id);
-      const question = active.messages[index-1]?.content ?? '继续';
+      const question = active.messages[index-1]?.content ?? '继续'; // 发给模型的续跑问题，不翻译
       let state = structuredClone(msg.runState);
       if (additionalInput?.trim()) {
         const message: ChatMessage = {id:uid('m'),role:'user',content:additionalInput.trim(),createdAt:Date.now()};
         state=addRunInput(state,message);
-        state.reason = '用户已补充信息，正在继续';
+        state.reason = '用户已补充信息，正在继续'; // 翻译 key，渲染时过 t()
       }
       void send(question, undefined, state, undefined, resolution, compactBeforeRun);
     }, [busy, active, send],
@@ -1383,12 +1396,12 @@ export default function App() {
     try {
       normalized = validateUserAnswers(pending.request, answers);
     } catch (error) {
-      toast.show(error instanceof Error ? error.message : '回答无效，请检查后重试', 5000);
+      toast.show(error instanceof Error ? error.message : t('回答无效，请检查后重试'), 5000);
       return;
     }
     if(busy){
       const live=runningRef.current.get(active.id);
-      if(!msg.pending||!live?.handle.answerQuestion){toast.show('请等待当前任务保存后提交回答');return;}
+      if(!msg.pending||!live?.handle.answerQuestion){toast.show(t('请等待当前任务保存后提交回答'));return;}
       questionSubmitRef.current.add(key);
       void live.handle.answerQuestion(pending.request.id,normalized).catch(error=>{questionSubmitRef.current.delete(key);toast.show(String(error));});return;
     }
@@ -1397,13 +1410,13 @@ export default function App() {
     if (!state.userQuestion) return;
     state.userQuestion.answers = structuredClone(normalized);
     state.userQuestion.draft = structuredClone(normalized);
-    state.reason = '已收到回答，正在继续';
+    state.reason = '已收到回答，正在继续'; // 翻译 key，渲染时过 t()
     patchMessage(active.id, msg.id, {
       runState: state,
       userQuestionHistory: state.userQuestionHistory,
     });
     const index = active.messages.findIndex((item) => item.id === msg.id);
-    const question = index > 0 ? active.messages[index - 1]?.content ?? '继续' : '继续';
+    const question = index > 0 ? active.messages[index - 1]?.content ?? '继续' : '继续'; // 同上，模型侧文本
     const saved = runRecord(state.runId ?? '');
     questionDraftSaveRef.current = questionDraftSaveRef.current
       .catch(() => {})
@@ -1471,6 +1484,7 @@ export default function App() {
       setTasks((prev) =>
         prev.map((x) =>
           x.id === t.id
+            // lastResult 是翻译 key，WorkspaceDialog 渲染时过 t()
             ? { ...x, lastRunAt: now, lastResult: '已触发', nextRunAt: nextRun(x.schedule, new Date(now)) ?? undefined }
             : x,
         ),
@@ -1530,9 +1544,9 @@ export default function App() {
 
   /* ---------------- 渲染 ---------------- */
 
-  if (bootError) return <div className="empty" role="alert" style={{padding: 48}}><h2>本地数据未能读取</h2><p>{bootError}</p><p>原记录已保留。修复文件或恢复备份后重试。</p><button className="btn" onClick={() => setBootAttempt(n => n + 1)}>重新读取</button><button className="btn" onClick={() => void desktop()?.info().then(i => desktop()?.revealPath(i.storePath))}>打开数据位置</button><DataBackupPanel/></div>;
+  if (bootError) return <div className="empty" role="alert" style={{padding: 48}}><h2>{t('本地数据未能读取')}</h2><p>{bootError}</p><p>{t('原记录已保留。修复文件或恢复备份后重试。')}</p><button className="btn" onClick={() => setBootAttempt(n => n + 1)}>{t('重新读取')}</button><button className="btn" onClick={() => void desktop()?.info().then(i => desktop()?.revealPath(i.storePath))}>{t('打开数据位置')}</button><DataBackupPanel/></div>;
   if (!bootReady || !settings || !config) {
-    return <div className="empty" style={{ paddingTop: 80 }}>加载中…</div>;
+    return <div className="empty" style={{ paddingTop: 80 }}>{t('加载中…')}</div>;
   }
 
   // 把消息配成「一问一答」
@@ -1564,13 +1578,13 @@ export default function App() {
     grants.admin || grants.screen || grants.extraRoots.length ? (
       <div className="grant-banner">
         <span className="grant-banner-label">
-          已授权
+          {t('已授权')}
           {settings?.rememberedGrants
-            ? `（记到 ${new Date(settings.rememberedGrants.expiresAt).toLocaleDateString()}）`
-            : '（仅本次会话）'}
+            ? t('（记到 {date}）', { date: new Date(settings.rememberedGrants.expiresAt).toLocaleDateString() })
+            : t('（仅本次会话）')}
         </span>
-        {grants.screen ? <span className="grant-chip">🖥 屏幕控制</span> : null}
-        {grants.admin ? <span className="grant-chip">🛡 管理员执行</span> : null}
+        {grants.screen ? <span className="grant-chip">🖥 {t('屏幕控制')}</span> : null}
+        {grants.admin ? <span className="grant-chip">🛡 {t('管理员执行')}</span> : null}
         {grants.extraRoots.map((r) => (
           <span key={r} className="grant-chip" title={r}>
             📂 {r.split(/[\\/]/).filter(Boolean).slice(-1)[0] || r}
@@ -1578,7 +1592,7 @@ export default function App() {
         ))}
         <span style={{ flex: 1 }} />
         <button className="btn sm" onClick={revokeGrants}>
-          全部撤销
+          {t('全部撤销')}
         </button>
       </div>
     ) : null;
@@ -1586,7 +1600,7 @@ export default function App() {
   const composer = (
     <Composer
       barControls={<ConversationControls config={config} profiles={settings.keyProfiles} modelsByProfile={Object.fromEntries(settings.keyProfiles.map(p=>[p.id,[...(settings.cachedModels[p.id]||[]),...(settings.customModels[p.id]||[])]]))} onChange={setConfig}/>}
-      controls={active?.messages.filter(m=>m.runState?.userQuestion&&!m.runState.userQuestion.answers).map(m=><button className="btn sm" key={m.id} onClick={()=>document.getElementById(`question-${m.runState!.userQuestion!.request.id}`)?.scrollIntoView({block:'center',behavior:'smooth'})}>Answer Question · 回答问题</button>)}
+      controls={active?.messages.filter(m=>m.runState?.userQuestion&&!m.runState.userQuestion.answers).map(m=><button className="btn sm" key={m.id} onClick={()=>document.getElementById(`question-${m.runState!.userQuestion!.request.id}`)?.scrollIntoView({block:'center',behavior:'smooth'})}>{t('Answer Question · 回答问题')}</button>)}
       key={active?.id ?? 'new'}
       initialDraft={active?.draft}
       onDraftChange={text => { if (active) updateConv(active.id, c => c.draft === text ? c : { ...c, draft: text }); }}
@@ -1607,9 +1621,9 @@ export default function App() {
         setConfig({ toolsEnabled: mode === 'work' });
         if (mode === 'chat' && busy) {
           busy.handle.abort();
-          toast.show('已停止后续工具调度，正在保存当前检查点', 5000);
+          toast.show(t('已停止后续工具调度，正在保存当前检查点'), 5000);
         } else if (mode === 'work' && active?.messages.length) {
-          toast.show(busy ? '当前回复会继续完成；下一条消息将带上已有对话，由 Work 接着处理' : '已切换为 Work，已有对话和附件会继续作为上下文');
+          toast.show(t(busy ? '当前回复会继续完成；下一条消息将带上已有对话，由 Work 接着处理' : '已切换为 Work，已有对话和附件会继续作为上下文'));
         }
       }}
       onSend={(t, mode) => void send(t, undefined, undefined, {toolsEnabled: mode === 'work', text: t, attachments: [...attachments], quotes: [...quotes], quoteOnly, conversationId: active?.id ?? null})}
@@ -1666,7 +1680,7 @@ export default function App() {
       }
       onDropSkill={(id) => setActiveSkills((prev) => prev.filter((x) => x.id !== id))}
       projectPrompts={activeProject?.prompts ?? []}
-      queued={activeQueue.map(({ item }) => item.text || `${item.attachments.length} 个附件`)}
+      queued={activeQueue.map(({ item }) => item.text || t('{n} 个附件', { n: item.attachments.length }))}
       queuePaused={queuePaused}
       onResumeQueue={() => { if (activeId) resumeQueue(activeId); }}
       onDropQueued={(i) => { const entry = activeQueue[i]; if (entry) setQueue((q) => q.filter((_, j) => j !== entry.index)); }}
@@ -1721,7 +1735,6 @@ export default function App() {
             setSettingsOpen(true);
             setSidebarOpen(false);
           }}
-          onLocale={(locale: Locale) => setSettings((prev) => (prev ? { ...prev, locale } : prev))}
           onOpenObservations={()=>{setObservationsOpen(true);setSidebarOpen(false);}}
         />
         </div>
@@ -1750,53 +1763,54 @@ export default function App() {
         />
       )}
 
-      {teamVisible ? <div className="team-workspace-container"><React.Suspense fallback={<div className="empty">正在打开协作空间…</div>}><TeamWorkspace sidebarTarget={teamSidebar} sidebarHidden={sidebarHidden} onOpenSidebar={()=>{setSidebarHidden(false);setSidebarOpen(true);}} onNavigate={()=>setSidebarOpen(false)} projects={projects} settings={settings} sourceConversation={active} beforeRestore={async()=>{stopAll();await teamRuntime.pauseAll();await saveConversationsNow(conversations);}} onProject={projectId=>setSettings(s=>s?{...s,collaborationView:{visible:true,projectId}}:s)} initialProjectId={settings.collaborationView?.projectId??activeProject?.id} onSingle={()=>setTeamVisible(false)} onSettings={()=>{setSettingsTab('keys');setSettingsOpen(true);}} onCreateProject={name=>{const p=makeProject(name);setProjects(all=>[...all,p]);return p.id;}} onHandoff={(text,projectId)=>{const conv=newConversation(settings.defaultConfig,settings.activeKeyProfileId);conv.projectId=projectId;conv.title=titleFrom(text);conv.messages=[{id:uid(),role:'user',content:text,createdAt:Date.now()}];setConversations(all=>[...all,conv]);setActiveId(conv.id);setTeamVisible(false);}}/></React.Suspense></div> : null}
+      {teamVisible ? <div className="team-workspace-container"><React.Suspense fallback={<div className="empty">{t('正在打开协作空间…')}</div>}><TeamWorkspace sidebarTarget={teamSidebar} sidebarHidden={sidebarHidden} onOpenSidebar={()=>{setSidebarHidden(false);setSidebarOpen(true);}} onNavigate={()=>setSidebarOpen(false)} projects={projects} settings={settings} sourceConversation={active} beforeRestore={async()=>{stopAll();await teamRuntime.pauseAll();await saveConversationsNow(conversations);}} onProject={projectId=>setSettings(s=>s?{...s,collaborationView:{visible:true,projectId}}:s)} initialProjectId={settings.collaborationView?.projectId??activeProject?.id} onSingle={()=>setTeamVisible(false)} onSettings={()=>{setSettingsTab('keys');setSettingsOpen(true);}} onCreateProject={name=>{const p=makeProject(name);setProjects(all=>[...all,p]);return p.id;}} onHandoff={(text,projectId)=>{const conv=newConversation(settings.defaultConfig,settings.activeKeyProfileId);conv.projectId=projectId;conv.title=titleFrom(text);conv.messages=[{id:uid(),role:'user',content:text,createdAt:Date.now()}];setConversations(all=>[...all,conv]);setActiveId(conv.id);setTeamVisible(false);}}/></React.Suspense></div> : null}
       <main className="main" style={teamVisible?{display:'none'}:undefined}>
-        {saveError ? <div className="grant-banner" role="alert">{saveError}<button className="btn sm" onClick={() => { void Promise.all([saveSettings(settings), saveConversationsNow(conversations),saveProjects(projects),saveSkills(skills),saveTasks(tasks)]).then(() => setSaveError(null)).catch(reportSaveError); }}>重试保存</button></div> : null}
+        {saveError ? <div className="grant-banner" role="alert">{saveError}<button className="btn sm" onClick={() => { void Promise.all([saveSettings(settings), saveConversationsNow(conversations),saveProjects(projects),saveSkills(skills),saveTasks(tasks)]).then(() => setSaveError(null)).catch(reportSaveError); }}>{t('重试保存')}</button></div> : null}
         <div className="topbar">
-          <button className="btn sm ghost only-narrow" title="展开侧栏" onClick={() => { setSidebarHidden(false); setSidebarOpen(true); }}>
+          <button className="btn sm ghost only-narrow" title={t('展开侧栏')} onClick={() => { setSidebarHidden(false); setSidebarOpen(true); }}>
             ☰
           </button>
           {sidebarHidden ? (
             <button
               className="btn sm ghost wide-only"
-              title="展开侧栏（Ctrl+B）"
+              title={t('展开侧栏（Ctrl+B）')}
               onClick={() => setSidebarHidden(false)}
             >
               ⇥
             </button>
           ) : null}
-          <span className="page-title" title={active?.title}>{active?.title ?? '新对话'}</span>
+          <span className="page-title" title={active?.title}>{active?.title ?? t('新对话')}</span>
           <span className="spacer" />
-          {!profile ? <span className="chip warn">未配置凭据</span> : null}
-          <span className="chip">{config.model || '未选模型'}</span>
+          {!profile ? <span className="chip warn">{t('未配置凭据')}</span> : null}
+          <span className="chip">{config.model || t('未选模型')}</span>
+          <LocaleSwitch onChange={(locale) => setSettings((prev) => (prev ? { ...prev, locale } : prev))} />
 
-          {msgs.some(hasActivity) ? <button className="btn sm" aria-pressed={activityOpen && !configOpen && !openArtifact} onClick={() => { setActivityOpen(!(activityOpen && !configOpen && !openArtifact)); setConfigOpen(false); setOpenArtifact(null); }}>任务动态</button> : null}
+          {msgs.some(hasActivity) ? <button className="btn sm" aria-pressed={activityOpen && !configOpen && !openArtifact} onClick={() => { setActivityOpen(!(activityOpen && !configOpen && !openArtifact)); setConfigOpen(false); setOpenArtifact(null); }}>{t('任务动态')}</button> : null}
 
           <button className="btn sm" onClick={() => setConfigOpen((v) => !v)}>
-            ⚙ 配置
+            {t('⚙ 配置')}
           </button>
         </div>
 
         {turns.length === 0 ? (
           <div className="hero">
-            <h1 className="hero-title">{active?.handoffKey ? '审阅交接内容' : '问点什么'}</h1>
+            <h1 className="hero-title">{t(active?.handoffKey ? '审阅交接内容' : '问点什么')}</h1>
             <p className="hero-sub">
-              {active?.handoffKey ? '新对话已准备好，由你决定下一步。' : '会自己联网查证、读你本地的文件、翻 Chrome 里的页面，答案里带可点的来源编号。'}
+              {t(active?.handoffKey ? '新对话已准备好，由你决定下一步。' : '会自己联网查证、读你本地的文件、翻 Chrome 里的页面，答案里带可点的来源编号。')}
             </p>
             <div className="hero-box">
-              {active?.handoffKey ? <section className="recovery-card" aria-label="交接草稿">
-                <strong>交接草稿 · 尚未发送</strong>
-                <p>上下文已填入下方输入框，可以编辑、保留或发送。原任务没有被交接动作停止；请先查看其最新进度，避免同时重复执行。</p>
-                <button className="btn sm" onClick={() => { if (active.forkedFrom) setActiveId(active.forkedFrom); }}>查看原任务</button>
+              {active?.handoffKey ? <section className="recovery-card" aria-label={t('交接草稿')}>
+                <strong>{t('交接草稿 · 尚未发送')}</strong>
+                <p>{t('上下文已填入下方输入框，可以编辑、保留或发送。原任务没有被交接动作停止；请先查看其最新进度，避免同时重复执行。')}</p>
+                <button className="btn sm" onClick={() => { if (active.forkedFrom) setActiveId(active.forkedFrom); }}>{t('查看原任务')}</button>
               </section> : null}
               {grantBanner}
               {composer}
             </div>
             {!active?.handoffKey ? <div className="hero-examples">
               {EXAMPLES.map((e) => (
-                <button key={e} className="example-chip" onClick={() => void send(e)}>
-                  {e}
+                <button key={e} className="example-chip" onClick={() => void send(t(e))}>
+                  {t(e)}
                 </button>
               ))}
             </div> : null}
@@ -1805,52 +1819,52 @@ export default function App() {
           <>
             <div className="messages" ref={scrollRef}>
               <div className="messages-inner">
-                {turns.map((t, i) => (
+                {turns.map((turn, i) => (
                   <AnswerBlock
-                    key={(t.a ?? t.q)!.id}
-                    question={t.q}
-                    answer={t.a}
+                    key={(turn.a ?? turn.q)!.id}
+                    question={turn.q}
+                    answer={turn.a}
                     gatewayProfile={profile}
                     claudeConnection={config.client?.kind==='claude'}
                     onGatewayReady={r=>{if(r.baseUrl && profile)setSettings(s=>s?{...s,keyProfiles:s.keyProfiles.map(p=>p.id===profile.id && p.baseUrl===profile.baseUrl?{...p,baseUrl:r.baseUrl!}:p)}:s);}}
                     showReasoning={settings.showReasoningByDefault}
                     onOpenArtifact={setOpenArtifact}
                     onArtifactSaved={(artifact) => {
-                      if (active && t.a) updateConv(active.id, (c) => ({ ...c, messages: c.messages.map((m) => m.id === t.a!.id
+                      if (active && turn.a) updateConv(active.id, (c) => ({ ...c, messages: c.messages.map((m) => m.id === turn.a!.id
                         ? { ...m, artifacts: [...(m.artifacts ?? []).filter((a) => a.path !== artifact.path), artifact] } : m) }));
                     }}
                     onCopy={(text) => {
                       void navigator.clipboard.writeText(text);
-                      toast.show('已复制');
+                      toast.show(t('已复制'));
                     }}
                     onRetry={
-                      busy || !t.q
+                      busy || !turn.q
                         ? undefined
-                        : () => void send(t.q!.content, t.qIndex)
+                        : () => void send(turn.q!.content, turn.qIndex)
                     }
-                    onProbe={busy ? undefined : () => void runRequestProbe(t.a ?? undefined)}
-                    onResume={busy || !t.a?.runState ? undefined : () => resumeRun(t.a!)}
-                    onCompact={busy || config.client || !t.a?.runState ? undefined : () => resumeRun(t.a!, undefined, undefined, true)}
-                    onHandoff={!t.a ? undefined : () => openContextHandoff(t.a!)}
-                    onPauseForContext={t.a?.pending ? stop : undefined}
-                    onResumeWithInput={busy || !t.a?.runState ? undefined : (text) => resumeRun(t.a!,undefined,text)}
-                    onResolveUncertain={busy || !t.a?.runState ? undefined : (choice) => resumeRun(t.a!, choice)}
-                    onQuestionSubmit={!t.a?.runState?.userQuestion ? undefined : (answers) => submitQuestion(t.a!, answers)}
-                    onQuestionDraft={!t.a?.runState?.userQuestion ? undefined : (draft) => saveQuestionDraft(t.a!, draft)}
+                    onProbe={busy ? undefined : () => void runRequestProbe(turn.a ?? undefined)}
+                    onResume={busy || !turn.a?.runState ? undefined : () => resumeRun(turn.a!)}
+                    onCompact={busy || config.client || !turn.a?.runState ? undefined : () => resumeRun(turn.a!, undefined, undefined, true)}
+                    onHandoff={!turn.a ? undefined : () => openContextHandoff(turn.a!)}
+                    onPauseForContext={turn.a?.pending ? stop : undefined}
+                    onResumeWithInput={busy || !turn.a?.runState ? undefined : (text) => resumeRun(turn.a!,undefined,text)}
+                    onResolveUncertain={busy || !turn.a?.runState ? undefined : (choice) => resumeRun(turn.a!, choice)}
+                    onQuestionSubmit={!turn.a?.runState?.userQuestion ? undefined : (answers) => submitQuestion(turn.a!, answers)}
+                    onQuestionDraft={!turn.a?.runState?.userQuestion ? undefined : (draft) => saveQuestionDraft(turn.a!, draft)}
                     onSaveAnnotation={saveAnnotation}
                     onDeleteAnnotation={(messageId, noteId) => changeAnnotation(messageId, noteId)}
                     onEditQuestion={
-                      busy || !t.q ? undefined : (text) => void send(text, t.qIndex)
+                      busy || !turn.q ? undefined : (text) => void send(text, turn.qIndex)
                     }
-                    onFork={busy ? undefined : () => forkConversation(active!.id, t.qIndex + (t.a ? 1 : 0))}
+                    onFork={busy ? undefined : () => forkConversation(active!.id, turn.qIndex + (turn.a ? 1 : 0))}
                     onDelete={
                       busy
                         ? undefined
                         : () => {
                             if (!active) return;
                             const drop = new Set<string>();
-                            if (t.q) drop.add(t.q.id);
-                            if (t.a) drop.add(t.a.id);
+                            if (turn.q) drop.add(turn.q.id);
+                            if (turn.a) drop.add(turn.a.id);
                             void forgetRuns(active.id, drop);
                             updateConv(active.id, (c) => ({
                               ...c,
@@ -1881,7 +1895,7 @@ export default function App() {
             onDoubleClick={() => setPanelW(420)}
           />
           <div style={{ width: panelW, flex: `0 0 ${panelW}px`, display: 'flex', minWidth: 0 }}>
-            <ErrorBoundary label="产物预览" onReset={() => setOpenArtifact(null)}>
+            <ErrorBoundary label={t('产物预览')} onReset={() => setOpenArtifact(null)}>
               <ArtifactPanel artifact={openArtifact} onClose={() => setOpenArtifact(null)} />
             </ErrorBoundary>
           </div>
@@ -1909,7 +1923,7 @@ export default function App() {
             setPreview(
               previewBody(
                 config,
-                '这里是你输入的问题',
+                t('这里是你输入的问题'),
                 toolNames,
                 // 跟真正发出去的那份用同一个表达式拼，预览才有意义
                 [projectSystemBlock(activeProject), skillSystemBlock(activeSkills)]
@@ -1926,14 +1940,14 @@ export default function App() {
           })(); }}
           onSaveAsDefault={() => {
             setSettings((s) => (s ? { ...s, defaultConfig: config } : s));
-            toast.show('已存为新会话的默认配置');
+            toast.show(t('已存为新会话的默认配置'));
           }}
         />
       </aside>
       ) : null}
 
       {workspaceOpen ? (
-        <ErrorBoundary label="工作区" onReset={() => setWorkspaceOpen(false)}>
+        <ErrorBoundary label={t('工作区')} onReset={() => setWorkspaceOpen(false)}>
         <WorkspaceDialog
           tab={workspaceTab}
           onTab={setWorkspaceTab}
@@ -1953,11 +1967,11 @@ export default function App() {
         </ErrorBoundary>
       ) : null}
 
-      {observationsOpen ? <React.Suspense fallback={<Modal title="任务记录与分析" onClose={()=>setObservationsOpen(false)}><div className="modal-body">正在读取记录…</div></Modal>}>
+      {observationsOpen ? <React.Suspense fallback={<Modal title={t('任务记录与分析')} onClose={()=>setObservationsOpen(false)}><div className="modal-body">{t('正在读取记录…')}</div></Modal>}>
         <ObservationPanel onClose={()=>setObservationsOpen(false)} onOpenTask={(conversationId,answerId)=>{setActiveId(conversationId);setObservationsOpen(false);setTimeout(()=>document.getElementById(`msg-${answerId}`)?.scrollIntoView({block:'center'}),150);}}/>
       </React.Suspense>:null}
       {settingsOpen ? (
-        <ErrorBoundary label="设置" onReset={() => setSettingsTab('keys')}>
+        <ErrorBoundary label={t('设置')} onReset={() => setSettingsTab('keys')}>
         <SettingsDialog
           tab={settingsTab}
           onTab={setSettingsTab}
@@ -1968,15 +1982,15 @@ export default function App() {
           storePath={info?.storePath ?? ''}
           onTestProfile={async (p) => {
             const key = await secretGet(p.id);
-            if (!key) return '还没填 API Key';
+            if (!key) return t('还没填 API Key');
             try {
               const list = await fetchModels(p, key, 30000);
               setSettings((s) =>
                 s ? { ...s, cachedModels: { ...s.cachedModels, [p.id]: list } } : s,
               );
-              return `连上了，拿到 ${list.length} 个模型`;
+              return t('连上了，拿到 {n} 个模型', { n: list.length });
             } catch (e) {
-              return `失败：${e instanceof Error ? e.message : String(e)}`;
+              return t('失败：{error}', { error: e instanceof Error ? e.message : String(e) });
             }
           }}
         />
@@ -1984,7 +1998,7 @@ export default function App() {
       ) : null}
 
       {preview !== null ? (
-        <Modal title="请求详情" onClose={() => setPreview(null)} wide>
+        <Modal title={t('请求详情')} onClose={() => setPreview(null)} wide>
           <div className="modal-body">
             <pre
               style={{

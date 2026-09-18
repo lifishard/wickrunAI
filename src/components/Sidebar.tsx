@@ -1,8 +1,7 @@
 import React from 'react';
 import type { Conversation } from '../types';
 import type { Project } from '../lib/projects';
-import { useT, type Locale } from '../lib/i18n';
-import LocaleSwitch from './LocaleSwitch';
+import { useT } from '../lib/i18n';
 
 export default function Sidebar(props: {
   conversations: Conversation[];
@@ -15,7 +14,6 @@ export default function Sidebar(props: {
   onFork: (id: string) => void;
   onOpenSettings: () => void;
   onOpenObservations: () => void;
-  onLocale: (locale: Locale) => void;
 
   projects: Project[];
   onNewInProject: (projectId: string | null) => void;
@@ -244,7 +242,6 @@ export default function Sidebar(props: {
           {t('⚙ 设置')}
         </button>
         <button className="btn block ghost" onClick={props.onOpenObservations}>{t('任务记录与分析')}</button>
-        <LocaleSwitch onChange={props.onLocale} />
       </div>
     </>
   );

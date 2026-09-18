@@ -5,6 +5,7 @@ import { isRateLimited, isTokenLimit, spacingForTokens } from './pacer';
 import { checkWire } from './wirecheck';
 import { estimateRequestTokens } from './limits';
 import type { WireMessage } from './paramSchema';
+import { tr } from './i18n';
 
 /* ------------------------------------------------------------------ *
  * 400 自动排查
@@ -89,8 +90,10 @@ function guarded(send: Sender, onNote?: (s: string) => void): Sender {
     // TPM 和 RPM 是两条线。撞 TPM 要等满一分钟窗口，按 20 秒等回去只会再撞一次
     const wait = isTokenLimit(r.error ?? '') ? TOKEN_WINDOW_MS : CONFIRM_WAIT_MS;
     onNote?.(
-      `收到限流（${isTokenLimit(r.error ?? '') ? '每分钟 token 上限' : '每分钟请求数上限'}），` +
-        `${Math.round(wait / 1000)} 秒后再确认一次…`,
+      tr('收到限流（{kind}），{sec} 秒后再确认一次…', {
+        kind: isTokenLimit(r.error ?? '') ? tr('每分钟 token 上限') : tr('每分钟请求数上限'),
+        sec: Math.round(wait / 1000),
+      }),
     );
     await new Promise((res) => setTimeout(res, wait));
 
@@ -126,7 +129,7 @@ async function bisectTools(
   // stream:true。带流去探测既慢又可能把错误藏进流里
   const body = { ...base, ...buildToolsOnly(names), stream: false };
   const r = await send(body);
-  steps.push({ label: `工具 ×${names.length}：${names.slice(0, 3).join(', ')}${names.length > 3 ? '…' : ''}`, ok: r.ok, error: r.error });
+  steps.push({ label: tr('工具 ×{n}：{names}', { n: names.length, names: `${names.slice(0, 3).join(', ')}${names.length > 3 ? '…' : ''}` }), ok: r.ok, error: r.error });
   if (r.ok) return [];
   if (names.length === 1) return names;
 
@@ -178,19 +181,17 @@ export async function probe400(
     if (e instanceof QuotaExhausted) {
       const misreported =
         e.status !== undefined && e.status !== 429
-          ? `另外：这条线路把限流报成了 HTTP ${e.status} 而不是 429 —— 那是它的协议问题。` +
-            '客户端能自动退避的前提是错误码说实话，报成 400 会让所有客户端把它当成参数错误去查。'
+          ? tr('另外：这条线路把限流报成了 HTTP {status} 而不是 429 —— 那是它的协议问题。客户端能自动退避的前提是错误码说实话，报成 400 会让所有客户端把它当成参数错误去查。', { status: e.status })
           : '';
       return {
         steps,
         verdict:
           [
-            '**结论就是限流本身**：配额用尽了，不是任何一个参数的问题。',
-            `排查全程每 ${PROBE_SPACING_MS / 1000} 秒才发一次、只发一条 hi —— 这个节奏不可能把配额打爆，` +
-              `所以收到限流只能说明额度本来就已经见底。等 ${CONFIRM_WAIT_MS / 1000} 秒后又确认了一次，还是限流。`,
+            tr('**结论就是限流本身**：配额用尽了，不是任何一个参数的问题。'),
+            tr('排查全程每 {spacing} 秒才发一次、只发一条 hi —— 这个节奏不可能把配额打爆，所以收到限流只能说明额度本来就已经见底。等 {confirm} 秒后又确认了一次，还是限流。', { spacing: PROBE_SPACING_MS / 1000, confirm: CONFIRM_WAIT_MS / 1000 }),
             misreported,
-            `上游原话：${e.message}`,
-            '能做的：等额度回来；换一份凭据；或者看看同一把 key 是不是在别处也在跑（配额是共享的）。',
+            tr('上游原话：{message}', { message: e.message }),
+            tr('能做的：等额度回来；换一份凭据；或者看看同一把 key 是不是在别处也在跑（配额是共享的）。'),
           ]
             .filter(Boolean)
             .join('\n\n'),
@@ -212,13 +213,11 @@ async function runProbe(
   // ① 最小请求体。它要是也过不了，问题根本不在字段上
   const base = minimal(model);
   const r0 = await send(base);
-  steps.push({ label: '最小请求体（只有 model + messages）', ok: r0.ok, error: r0.error });
+  steps.push({ label: tr('最小请求体（只有 model + messages）'), ok: r0.ok, error: r0.error });
   if (!r0.ok) {
     return {
       steps,
-      verdict:
-        '连最小请求体都被拒了 —— 问题不在任何一个参数上，而在模型名、密钥或地址。' +
-        `先确认「${model}」这个 ID 在这条线路上真的存在。`,
+      verdict: tr('连最小请求体都被拒了 —— 问题不在任何一个参数上，而在模型名、密钥或地址。先确认「{model}」这个 ID 在这条线路上真的存在。', { model }),
     };
   }
 
@@ -268,11 +267,12 @@ async function runProbe(
     Object.assign(acc, patch);
     // 探测一律不开流，省钱也省事；stream 那一层只验证 stream_options 认不认
     const r = await send({ ...acc, stream: false });
-    steps.push({ label: `＋ ${layer.label}`, ok: r.ok, error: r.error });
+    // layer.label 是翻译 key：describeFix 按它匹配，显示时才过 tr()
+    steps.push({ label: tr('＋ {layer}', { layer: tr(layer.label) }), ok: r.ok, error: r.error });
     if (!r.ok) {
       return {
         steps,
-        verdict: `加上「${layer.label}」就 400 了 —— 凶手是这一组。${describeFix(layer.label)}`,
+        verdict: tr('加上「{layer}」就 400 了 —— 凶手是这一组。{fix}', { layer: tr(layer.label), fix: describeFix(layer.label) }),
       };
     }
   }
@@ -289,33 +289,30 @@ async function runProbe(
       return {
         steps,
         badTools: bad,
-        verdict:
-          `单独拆开每个工具都能过，全部一起下发就 400 —— 这条线路扛不住 ${probeNames.length} 个工具` +
-          '（多半是 tools 字段总长度或数量上限）。少勾一些工具就能用。',
+        verdict: tr('单独拆开每个工具都能过，全部一起下发就 400 —— 这条线路扛不住 {n} 个工具（多半是 tools 字段总长度或数量上限）。少勾一些工具就能用。', { n: probeNames.length }),
       };
     }
     if (bad.length) {
       return {
         steps,
         badTools: bad,
-        verdict: `这几个工具的 schema 这条线路不认：${bad.join('、')}。在右侧配置面板把它们取消勾选即可。`,
+        verdict: tr('这几个工具的 schema 这条线路不认：{tools}。在右侧配置面板把它们取消勾选即可。', { tools: bad.join('、') }),
       };
     }
   }
 
   return {
     steps,
-    verdict:
-      '把所有字段都加回去之后反而都通过了 —— 说明刚才那次 400 不是稳定复现的，' +
-      '更可能是当时的历史消息里有上游不接受的内容（比如图片、超长的工具输出、或者空的 assistant 消息）。',
+    verdict: tr('把所有字段都加回去之后反而都通过了 —— 说明刚才那次 400 不是稳定复现的，更可能是当时的历史消息里有上游不接受的内容（比如图片、超长的工具输出、或者空的 assistant 消息）。'),
   };
 }
 
+/** label 是未翻译的 key，匹配用；返回的建议已经过 tr() */
 function describeFix(label: string): string {
-  if (label.includes('流式')) return '把配置面板里的「流式」关掉就能用。';
-  if (label.includes('生成参数')) return '把「长度 / 采样 / 惩罚」里刚勾上的那几个逐个取消，就能定位到具体哪一个。';
-  if (label.includes('思考强度')) return '把输入框右下角的思考强度调成「不下发」。';
-  if (label.includes('customBody')) return '清空配置面板最下面的「附加请求字段」。';
+  if (label.includes('流式')) return tr('把配置面板里的「流式」关掉就能用。');
+  if (label.includes('生成参数')) return tr('把「长度 / 采样 / 惩罚」里刚勾上的那几个逐个取消，就能定位到具体哪一个。');
+  if (label.includes('思考强度')) return tr('把输入框右下角的思考强度调成「不下发」。');
+  if (label.includes('customBody')) return tr('清空配置面板最下面的「附加请求字段」。');
   return '';
 }
 
@@ -368,12 +365,12 @@ export async function probeHistory(
     const slice = checkWire(messages.slice(0, k)).messages;
     const gap = perCall - (Date.now() - last);
     if (last && gap > 0) {
-      onProgress?.(steps, `为避开每分钟 token 上限，${Math.ceil(gap / 1000)} 秒后发下一次…`);
+      onProgress?.(steps, tr('为避开每分钟 token 上限，{sec} 秒后发下一次…', { sec: Math.ceil(gap / 1000) }));
       await new Promise((res) => setTimeout(res, gap));
     }
     last = Date.now();
     const r = await guard({ model, messages: slice, max_tokens: 1 });
-    steps.push({ label: `前 ${k} 条消息`, ok: r.ok, error: r.error });
+    steps.push({ label: tr('前 {k} 条消息', { k }), ok: r.ok, error: r.error });
     onProgress?.(steps);
     return r.ok;
   };
@@ -383,9 +380,7 @@ export async function probeHistory(
       return {
         steps,
         badIndex: null,
-        verdict:
-          '把整段历史原样发过去反而通过了 —— 说明那次 400 不在消息内容上，' +
-          '更可能是当时的结构问题（孤儿工具结果之类），而这个现在已经会自动修掉了。',
+        verdict: tr('把整段历史原样发过去反而通过了 —— 说明那次 400 不在消息内容上，更可能是当时的结构问题（孤儿工具结果之类），而这个现在已经会自动修掉了。'),
       };
     }
 
@@ -402,9 +397,7 @@ export async function probeHistory(
     return {
       steps,
       badIndex: lo - 1,
-      verdict:
-        `第 ${lo} 条消息（role=${role}，正文 ${size} 字符）加进去就 400。` +
-        '常见原因：这条带了图片而模型是纯文本的、正文超长、或者它是一条上游不接受的空 assistant。',
+      verdict: tr('第 {index} 条消息（role={role}，正文 {size} 字符）加进去就 400。常见原因：这条带了图片而模型是纯文本的、正文超长、或者它是一条上游不接受的空 assistant。', { index: lo, role, size }),
     };
   } catch (e) {
     if (e instanceof QuotaExhausted) {
@@ -413,12 +406,10 @@ export async function probeHistory(
         steps,
         badIndex: null,
         verdict: tokenSide
-          ? '查到一半撞上了**每分钟 token 上限**，这次不下结论。\n' +
-            '这一阶段每次都要把大半段历史原样发出去（一次上万 token），' +
-            '所以它比字段阶段吃 token 得多。等一两分钟额度回来再点一次；' +
-            '或者先从这条对话分叉出一条短的再查 —— 历史短了，这一步也就轻了。\n' +
-            `上游原话：${e.message}`
-          : `查到一半配额用尽了，这次不下结论。上游原话：${e.message}`,
+          ? tr('查到一半撞上了**每分钟 token 上限**，这次不下结论。') + '\n' +
+            tr('这一阶段每次都要把大半段历史原样发出去（一次上万 token），所以它比字段阶段吃 token 得多。等一两分钟额度回来再点一次；或者先从这条对话分叉出一条短的再查 —— 历史短了，这一步也就轻了。') + '\n' +
+            tr('上游原话：{message}', { message: e.message })
+          : tr('查到一半配额用尽了，这次不下结论。上游原话：{message}', { message: e.message }),
       };
     }
     throw e;

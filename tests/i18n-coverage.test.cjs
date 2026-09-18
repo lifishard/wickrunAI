@@ -6,6 +6,13 @@ const path=require('node:path');
 const root=path.join(__dirname,'..','src');
 /** 已经改造成 t() 的文件。每完成一批就往这里加一个，覆盖率才不会往回掉。 */
 const TRANSLATED=[
+  'App.tsx',
+  'lib/tools/registry.ts',
+  'lib/probe400.ts',
+  'lib/skills.ts',
+  'lib/skillsync.ts',
+  'lib/transport.ts',
+  'lib/wirecheck.ts',
   'components/Sidebar.tsx',
   'components/Composer.tsx',
   'components/ConversationControls.tsx',

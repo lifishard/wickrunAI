@@ -29,7 +29,7 @@ export default function EffortPicker(props: {
   const routed = props.route?.effortStyle && props.route.effortStyle !== 'mapping';
   const supported = routed ? props.route?.effortStyle !== 'none' : Boolean(mapping && mapping.style !== 'none');
   const describe = (level: EffortLevel) => {
-    if (!routed) return describeEffort(props.model,level,props.mappings);
+    if (!routed) return describeEffort(props.model,level,props.mappings,t);
     if (level === 'off' || props.route?.effortStyle === 'none') return t('当前路由不下发思考字段');
     const value = props.route?.effortValues?.[level];
     return value ? t('当前路由：{style} → {value}', { style: props.route!.effortStyle ?? '', value }) : t('这一档尚未配置，发送前需要补充');
@@ -69,7 +69,7 @@ export default function EffortPicker(props: {
             >
               <span className="popup-icon">{l.short}</span>
               <span>
-                <strong>{l.label}</strong>
+                <strong>{t(l.label)}</strong>
                 <small>{describe(l.value)}</small>
               </span>
             </button>

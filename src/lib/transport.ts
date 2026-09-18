@@ -16,6 +16,7 @@ import {
   extractErrorMessage,
   type ToolCallDelta,
 } from './sse';
+import { tr } from './i18n';
 import { beginExchange, recordRaw, recordResponse, endExchange, type Exchange } from './wiretap';
 import {
   isRateLimited,
@@ -250,7 +251,7 @@ async function callRemoteTool(
     return {
       ok: false,
       content: '',
-      error: '这台设备不能本地执行工具。请在设置里配好「遥控桌面端」，或者在电脑上操作。',
+      error: tr('这台设备不能本地执行工具。请在设置里配好「遥控桌面端」，或者在电脑上操作。'),
     };
   }
   const base = remoteConfig.url.replace(/\/+$/, '');
@@ -273,7 +274,7 @@ async function callRemoteTool(
     return {
       ok: false,
       content: '',
-      error: extractErrorMessage(parsed, `遥控端返回 HTTP ${res.status}`),
+      error: extractErrorMessage(parsed, tr('遥控端返回 HTTP {status}', { status: res.status })),
     };
   }
   return parsed as ToolResult;
@@ -660,7 +661,7 @@ class WebTransport implements Transport {
       finish();
     } catch (err) {
       if ((err as Error)?.name === 'AbortError') {
-        h.onError('请求已停止或响应等待超时');
+        h.onError(tr('请求已停止或响应等待超时'));
       } else {
         h.onError(err instanceof Error ? err.message : String(err));
       }
@@ -839,7 +840,7 @@ export function desktop(): ElectronBridge | null {
 
 export function platformLabel(): string {
   const t = getTransport();
-  if (t.kind === 'electron') return '桌面版';
+  if (t.kind === 'electron') return tr('桌面版');
   if (t.kind === 'capacitor') return Capacitor.getPlatform() === 'ios' ? 'iOS' : 'Android';
-  return '浏览器（开发态）';
+  return tr('浏览器（开发态）');
 }

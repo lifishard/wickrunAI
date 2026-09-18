@@ -105,15 +105,17 @@ export function deliveryReport(state: RunState): DeliveryReport {
 
 export function recoveryInfo(state: RunState): RecoveryInfo {
   const blockedNotes=(state.milestones??[]).filter(m=>m.status==='blocked'&&m.note).map(m=>m.note).join('；');
-  const reason = (state.reason || '执行记录已保存，可以从中断处继续')+(blockedNotes?`。具体阻塞：${blockedNotes}`:'');
+  // reason 保持简体原文（翻译 key），阻塞说明单独带出去，界面再各自过 t()
+  const reason = state.reason || '执行记录已保存，可以从中断处继续';
+  const probe = reason+(blockedNotes?`。${blockedNotes}`:'');
   const current = state.pendingCalls?.[state.toolCursor ?? 0];
   let target: string | undefined;
   try { const a = JSON.parse(current?.arguments ?? '{}'); target = typeof a.path === 'string' ? a.path : typeof a.url === 'string' ? a.url : undefined; } catch { /* show tool name */ }
   const kind: RecoveryInfo['kind'] = state.uncertainCallId ? 'uncertain' : state.stoppedBy === 'user' ? 'user'
     : /缺少|资料不足|需要补充/.test(blockedNotes) ? 'input'
-    : /验收|核实到实际|未完成里程碑/.test(reason) ? 'verification' : /预算|阶段轮次/.test(reason) ? 'budget'
-    : /额度|限流|429/.test(reason) ? 'quota' : /授权|权限|拒绝/.test(reason) ? 'permission'
-    : /缺少|资料|输入|没有可用工具/.test(reason) ? 'input' : /连接|网络|超时|中断|关闭/.test(reason) ? 'connection':'other';
+    : /验收|核实到实际|未完成里程碑/.test(probe) ? 'verification' : /预算|阶段轮次/.test(probe) ? 'budget'
+    : /额度|限流|429/.test(probe) ? 'quota' : /授权|权限|拒绝/.test(probe) ? 'permission'
+    : /缺少|资料|输入|没有可用工具/.test(probe) ? 'input' : /连接|网络|超时|中断|关闭/.test(probe) ? 'connection':'other';
   const remaining = [...(state.requirements ?? []).filter(r => r.verification?.status !== 'passed').map(r => r.title),
     ...(state.milestones ?? []).filter(m => m.status !== 'completed').map(m => m.title)];
   const hints: Record<RecoveryInfo['kind'],string> = {
@@ -122,6 +124,6 @@ export function recoveryInfo(state: RunState): RecoveryInfo {
     uncertain:'先核实下列操作是否生效；重试可能重复修改或提交。',verification:'查看未通过或未检查的要求，接着跑以修复，也可以补充信息。',
     connection:'连接恢复后接着跑；已确认完成的操作不会重新执行。',other:'查看具体原因，补充信息或调整配置后接着跑。',
   };
-  return {kind,reason,next:hints[kind],target:target ?? current?.name,completed:(state.milestones ?? []).filter(m => m.status === 'completed').map(m => m.title),
+  return {kind,reason,blocked:blockedNotes||undefined,next:hints[kind],target:target ?? current?.name,completed:(state.milestones ?? []).filter(m => m.status === 'completed').map(m => m.title),
     remaining:[...new Set(remaining)],outputPaths:[...new Set((state.steps ?? []).flatMap(s => s.files ?? []).filter(f => f.direction === 'output').map(f => f.path))],canAddInput:kind !== 'uncertain'};
 }

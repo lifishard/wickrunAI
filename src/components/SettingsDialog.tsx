@@ -1,5 +1,5 @@
 import React from 'react';
-import { useT } from '../lib/i18n';
+import { useT, LOCALES } from '../lib/i18n';
 import type { AppSettings, KeyProfile, SearchProvider } from '../types';
 import { BASE_URL_PRESETS, normalizeBaseUrl } from '../lib/api';
 import { secretDelete, secretGet, secretSet, uid } from '../lib/store';
@@ -847,6 +847,14 @@ export default function SettingsDialog(props: {
               { value: 'dark' as const, label: t('深色') },
             ]}
             onChange={(v) => props.onChange({ theme: v })}
+          />
+        </Field>
+
+        <Field label={t('界面语言')}>
+          <Segmented
+            value={s.locale ?? 'zh-Hans'}
+            options={LOCALES.map((item) => ({ value: item.value, label: item.label2 }))}
+            onChange={(v) => props.onChange({ locale: v })}
           />
         </Field>
 

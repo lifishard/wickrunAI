@@ -1,4 +1,5 @@
 import type { WireMessage } from './paramSchema';
+import { tr } from './i18n';
 
 /* ------------------------------------------------------------------ *
  * 发出去之前先把 messages 数组自检一遍
@@ -148,6 +149,6 @@ export function describeWire(problems: WireProblem[]): string {
     leading_tool: '开头的工具结果',
   };
   return [...byKind.entries()]
-    .map(([k, n]) => `${label[k as WireProblem['kind']] ?? k} ×${n}`)
+    .map(([k, n]) => tr('{kind} ×{n}', { kind: tr(label[k as WireProblem['kind']] ?? k), n }))
     .join('、');
 }

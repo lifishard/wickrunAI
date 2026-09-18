@@ -4,10 +4,11 @@ import * as OpenCC from 'opencc-js/cn2t';
 
 export type Locale = 'zh-Hans' | 'zh-Hant' | 'en';
 
-export const LOCALES: { value: Locale; label: string; lang: string }[] = [
-  { value: 'zh-Hans', label: '简', lang: 'zh-Hans' },
-  { value: 'zh-Hant', label: '繁', lang: 'zh-Hant' },
-  { value: 'en', label: 'EN', lang: 'en' },
+/** label 是顶栏胶囊上的一个字，label2 是设置里的完整名称。两处都不随语言变。 */
+export const LOCALES: { value: Locale; label: string; label2: string; lang: string }[] = [
+  { value: 'zh-Hans', label: '简', label2: '简体中文', lang: 'zh-Hans' },
+  { value: 'zh-Hant', label: '繁', label2: '繁體中文', lang: 'zh-Hant' },
+  { value: 'en', label: 'EN', label2: 'English', lang: 'en' },
 ];
 
 /**
@@ -120,6 +121,30 @@ const EN: Record<string, string> = {
   '没写描述': 'No description',
   '粘贴的图片': 'pasted-image',
   '默认': 'default',
+
+  /* 顶栏与空状态 */
+  '新对话':
+    'New chat',
+  '未配置凭据':
+    'No credential',
+  '⚙ 配置':
+    '⚙ Config',
+  '问点什么':
+    'Ask something',
+  '审阅交接内容':
+    'Review the handoff',
+  '会自己联网查证、读你本地的文件、翻 Chrome 里的页面，答案里带可点的来源编号。':
+    'It searches the web, reads your local files and looks through Chrome, and the answer carries numbered sources you can click.',
+  '新对话已准备好，由你决定下一步。':
+    'The new chat is ready. What happens next is your call.',
+  '交接草稿':
+    'Handoff draft',
+  '交接草稿 · 尚未发送':
+    'Handoff draft · not sent',
+  '上下文已填入下方输入框，可以编辑、保留或发送。原任务没有被交接动作停止；请先查看其最新进度，避免同时重复执行。':
+    'The context is in the composer below, to edit, keep or send. The handoff did not stop the original task, so check where it got to before you run the same work twice.',
+  '查看原任务':
+    'Open the original task',
 
   /* 产物、验收、恢复与官方客户端 */
   '{label}崩了':
@@ -2289,6 +2314,351 @@ const EN: Record<string, string> = {
   '当前会话未开启工具，临时协作保持只读。': 'Tools are off in this chat, so helpers stay read-only.',
   '编辑仍受本会话的目录范围和审批方式约束。':
     'Edits still obey this chat’s directory scope and approval mode.',
+  '尚未保存：{error}': 'Not saved yet: {error}',
+  '执行记录读取失败：{error}': 'Could not read the run journal: {error}',
+  '排队输入恢复失败：{error}': 'Could not restore the queued input: {error}',
+  '这份凭据还没填 API Key': 'This profile has no API key yet',
+  '没有可交接的执行记录': 'No run journal to hand off',
+  '已打开交接草稿。请审阅后决定是否发送；原任务进度保留。':
+    'Handoff draft opened. Review it, then decide whether to send. The original task keeps its progress.',
+  '已按设置创建交接草稿，可从侧栏打开。尚未发送，原任务仍可继续。':
+    'Handoff draft created as configured. Open it from the sidebar. Nothing is sent yet and the original task can still continue.',
+  '{title}（分叉）': '{title} (fork)',
+  '读取失败': 'Could not read the file',
+  '未命名': 'Untitled',
+  '工作目录只能在桌面端添加': 'Working directories can only be added on desktop',
+  '已加入工作目录：{dir}': 'Added working directory: {dir}',
+  '先选一份凭据': 'Pick a credential profile first',
+  '先拉一次模型列表': 'Fetch the model list first',
+  '体检中断：{title}': 'Health check stopped: {title}',
+  '体检已停止，测了 {tested} 个，其中 {bad} 个不可用': 'Health check stopped. Tested {tested}, {bad} are unusable',
+  '体检完成：{tested} 个里有 {bad} 个不可用，已从默认列表移出':
+    'Health check done. {bad} of {tested} are unusable and left the default list',
+  '没有找到对应的失败请求，无法根据普通聊天记录替它下结论。':
+    'No matching failed request found. Regular chat history cannot settle this one.',
+  '本地检查：原请求超出当前发送预算，已保留原文，不再重复发送大请求。':
+    'Local check: the original request exceeds the current send budget. The body is kept and no large request is resent.',
+  '{label}正在排队，约 {sec} 秒后发送。': '{label} is queued and sends in about {sec}s.',
+  '{label}：{result}': '{label}: {result}',
+  '请求成功': 'request succeeded',
+  '对照结果': 'Comparison',
+  '单次成功不证明故障不存在；以上只说明本次对照结果，原失败证据仍保留。':
+    'One success does not prove the fault is gone. This reports the comparison only; the original failure evidence stays.',
+  '已撤销全部额外授权，包括记住的那些': 'Revoked every extra grant, including the remembered ones',
+  '已清空这份凭据的体检记录': 'Cleared the health records for this profile',
+  '先去设置里登记一份 API 凭据': 'Add an API credential in settings first',
+  '先选一个模型': 'Pick a model first',
+  '无法更新执行记录：{error}': 'Could not update the run journal: {error}',
+  '另一个会话': 'another chat',
+  '「{title}」正在这个工作目录里执行。这条排着，等它结束再发。':
+    '“{title}” is working in this directory. This message waits and sends once that finishes.',
+  '操作需要你的确认': 'An action needs your confirmation',
+  '新要求已保存，需要核实上一项操作': 'New request saved. Verify the previous action',
+  '上一项操作的结果尚未确认，请回来核实后继续，避免重复执行。':
+    'The previous action has no confirmed result. Come back, verify it, then continue so nothing runs twice.',
+  '子代理所选凭据已不存在，请重新选择。': 'The credential this helper uses no longer exists. Pick another one.',
+  '任务需要你的回答': 'The task needs your answer',
+  '任务已暂停': 'Task paused',
+  '任务已完成': 'Task done',
+  '任务遇到问题': 'Task hit a problem',
+  '正在保存当前输出和执行现场，然后处理新要求': 'Saving the current output and run state, then handling the new request',
+  '请等待当前任务保存后提交回答': 'Wait for the current task to save, then submit your answer',
+  '本地数据未能读取': 'Local data could not be read',
+  '原记录已保留。修复文件或恢复备份后重试。': 'Your records are untouched. Fix the file or restore a backup, then retry.',
+  '打开数据位置': 'Open data folder',
+  '加载中…': 'Loading…',
+  '已授权': 'Granted',
+  '（记到 {date}）': '(kept until {date})',
+  '（仅本次会话）': '(this session only)',
+  '屏幕控制': 'Screen control',
+  '管理员执行': 'Admin execution',
+  '全部撤销': 'Revoke all',
+  '已停止后续工具调度，正在保存当前检查点': 'Stopped further tool calls and saving the current checkpoint',
+  '{n} 个附件': '{n} attachments',
+  '正在打开协作空间…': 'Opening the team workspace…',
+  '重试保存': 'Retry save',
+  '产物预览': 'Artifact preview',
+  '这里是你输入的问题': 'your question goes here',
+  '已存为新会话的默认配置': 'Saved as the default setup for new chats',
+  '正在读取记录…': 'Reading records…',
+  '还没填 API Key': 'No API key yet',
+  '连上了，拿到 {n} 个模型': 'Connected, got {n} models',
+  '失败：{error}': 'Failed: {error}',
+  '请求详情': 'Request details',
+  '日日新现在有哪些免费模型，各自的上下文长度是多少？': 'Which models are free right now, and what context length does each have?',
+  '读一下我工作目录里的 README，说说这个项目是干什么的':
+    'Read the README in my working directory and tell me what this project does',
+  '搜一下 2026 年 A 股量化私募的监管新规，给我一个时间线':
+    'Search the 2026 rules for quant funds in the A-share market and give me a timeline',
+  '把当前 Chrome 标签页的内容总结成三点': 'Summarize the current Chrome tab in three points',
+  '已分叉，上下文都带过来了': 'Forked with the full context',
+  '已从这一步分叉': 'Forked from this step',
+  '当前回复会继续完成；下一条消息将带上已有对话，由 Work 接着处理':
+    'The current reply finishes as is. Your next message carries the conversation into Work.',
+  '已切换为 Work，已有对话和附件会继续作为上下文': 'Switched to Work. The conversation and attachments stay as context.',
+  '最小基线': 'Minimal baseline',
+  '原始失败请求': 'Original failing request',
+  '新输入和执行现场已保存，正在继续': 'New input and run state saved, continuing',
+  '用户已补充信息，正在继续': 'You added information, continuing',
+  '已收到回答，正在继续': 'Answer received, continuing',
+  '已触发': 'triggered',
+  '执行记录已保存，可以从中断处继续': 'The run journal is saved and can continue from where it stopped',
+  '。具体阻塞：{notes}': '. Blocked on: {notes}',
+  '准备好后接着跑，也可以补充要求。': 'Continue when you are ready, or add to the request first.',
+  '额度恢复后接着跑；已有结果会继续使用。': 'Continue once quota returns. Existing results stay in use.',
+  '接着跑将开启新的执行阶段，仍使用现有结果。': 'Continuing starts a new run phase and keeps the existing results.',
+  '补充缺少的信息后接着跑；工具能力可在配置中调整。':
+    'Add the missing information, then continue. Tool access is adjustable in the config panel.',
+  '先检查所需权限，或补充一种已获准的执行方式。': 'Check the permissions it needs, or offer a route that is already allowed.',
+  '先核实下列操作是否生效；重试可能重复修改或提交。':
+    'Verify whether the actions below took effect. A retry may repeat an edit or a submission.',
+  '查看未通过或未检查的要求，接着跑以修复，也可以补充信息。':
+    'Look at the failed or unchecked requirements, then continue to fix them or add information.',
+  '连接恢复后接着跑；已确认完成的操作不会重新执行。': 'Continue once the connection is back. Confirmed actions do not run again.',
+  '查看具体原因，补充信息或调整配置后接着跑。': 'Read the reason, then add information or adjust the config and continue.',
+  '完成自查': 'Delivery self-check',
+  '派发临时子代理': 'Dispatch a helper agent',
+  '查看临时子代理': 'List helper agents',
+  '收取子代理结果': 'Collect helper results',
+  '询问用户': 'Ask the user',
+  '记录交付要求': 'Record delivery requirements',
+  '核验交付要求': 'Verify delivery requirements',
+  '更新里程碑': 'Update milestones',
+  '查阅历史原文': 'Read past messages',
+  '读取已登录 API': 'Read a signed-in API',
+  '读取已存结果': 'Read a stored result',
+  '核实交付文件': 'Check delivered files',
+  '联网搜索': 'Web search',
+  '抓取网页': 'Fetch a page',
+  '列目录': 'List a directory',
+  '读文件': 'Read a file',
+  '读文档': 'Read a document',
+  '生成文档': 'Write a document',
+  '写文件': 'Write a file',
+  '改文件': 'Edit a file',
+  '搜索代码': 'Search code',
+  '执行命令': 'Run a command',
+  '申请权限': 'Request permission',
+  '截屏': 'Screenshot',
+  '点击': 'Click',
+  '移动鼠标': 'Move the mouse',
+  '滚动': 'Scroll',
+  '键盘输入': 'Type',
+  '按键': 'Press a key',
+  'Chrome 标签页': 'Chrome tabs',
+  'Chrome 导航': 'Chrome navigation',
+  'Chrome 读页面': 'Read a Chrome page',
+  'Chrome 点击': 'Click in Chrome',
+  'Chrome 执行脚本': 'Run a script in Chrome',
+  'GitHub API': 'GitHub API',
+  'GitHub 搜索': 'GitHub search',
+  '调用 Claude Code': 'Call Claude Code',
+  '读项目记忆': 'Read project memory',
+  '写项目记忆': 'Write project memory',
+  '读项目文档': 'Read project docs',
+  '写项目文档': 'Write project docs',
+  '列出技能': 'List skills',
+  '创建技能': 'Create a skill',
+  '温度 temperature': 'Temperature (temperature)',
+  '核采样 top_p': 'Nucleus sampling (top_p)',
+  '最大输出 max_tokens': 'Max output (max_tokens)',
+  '生成条数 n': 'Candidates (n)',
+  '随机种子 seed': 'Seed (seed)',
+  '停止词 stop': 'Stop words (stop)',
+  '用户标识 user': 'Caller id (user)',
+  '越高越发散。日日新官方建议 0.6–1.0；代码/数学类任务取低值。':
+    'Higher is more varied. The vendor suggests 0.6 to 1.0; go lower for code and math.',
+  '只从累计概率前 p 的词里采样。官方建议 0.8–1.0。与 temperature 通常只调一个。':
+    'Samples only from the top p of cumulative probability. The vendor suggests 0.8 to 1.0. Tune this or temperature, not both.',
+  '只从概率最高的 k 个词里采样。官方建议 20–40。部分模型不支持，报 400 就关掉。':
+    'Samples only from the k most likely tokens. The vendor suggests 20 to 40. Some models reject it; turn it off on a 400.',
+  '低于「最高概率 × min_p」的词直接丢弃。官方示例给 0。':
+    'Drops any token below top probability times min_p. The vendor example uses 0.',
+  '单次回复最多生成多少 token。思考模型要留足，否则思考没结束就被截断。':
+    'How many tokens one reply may generate. Leave room for reasoning models or they get cut off mid-thought.',
+  'OpenAI 兼容模式 v2 用这个名字。和 max_tokens 二选一，别同时开。':
+    'The v2 OpenAI-compatible name for the same thing. Use it or max_tokens, never both.',
+  '一次返回几条候选。本客户端只展示第一条，一般保持关闭。':
+    'How many candidates come back. This client shows only the first, so keep it off.',
+  '出现过的 token 再出现时降权，鼓励换话题。官方建议 0–2。':
+    'Penalizes tokens that already appeared, which pushes it onto new ground. The vendor suggests 0 to 2.',
+  '按出现频次降权，抑制车轱辘话。': 'Penalizes by frequency, which curbs repetition.',
+  '1 = 不惩罚，>1 抑制重复。官方示例给 1.0。':
+    '1 applies no penalty, above 1 suppresses repeats. The vendor example uses 1.0.',
+  '固定种子可复现结果（服务端不保证）。做实验时有用。':
+    'A fixed seed makes results reproducible, though the server does not guarantee it. Useful for experiments.',
+  '命中即停止生成。多个用英文逗号分隔，会转成数组下发。':
+    'Generation stops on a match. Separate several with commas; they are sent as an array.',
+  '透传给服务端的调用方标识，用于风控/审计。不需要就关掉。':
+    'A caller id passed through to the server for risk control and auditing. Leave it off if you do not need it.',
+  '不下发': 'Off',
+  '低': 'Low',
+  '中': 'Medium',
+  '高': 'High',
+  '超高': 'Very high',
+  '拉满': 'Max',
+  '模型名自带强度': 'Effort baked into the model name',
+  'OpenAI GPT / o 系': 'OpenAI GPT / o series',
+  'Kimi / Moonshot': 'Kimi / Moonshot',
+  '通义千问': 'Qwen',
+  '智谱 GLM': 'Zhipu GLM',
+  'DeepSeek': 'DeepSeek',
+  '商汤日日新': 'SenseNova',
+  '兜底（未知模型）': 'Fallback (unknown model)',
+  'Claude': 'Claude',
+  '没有匹配的映射规则': 'No mapping rule matches',
+  '不下发任何思考字段（匹配到「{label}」）': 'Sends no reasoning field (matched “{label}”)',
+  '这个模型名里已经带了强度（网关把它烤进路由了），不下发任何字段':
+    'The model name already carries the effort, baked in by the gateway, so no field is sent',
+  '「{label}」这一档不支持强度调节，不下发': '“{label}” takes no effort setting, so nothing is sent',
+  '「{label}」的这一级留空了，不下发': '“{label}” leaves this level empty, so nothing is sent',
+  '匹配「{label}」→ {fields}': 'Matched “{label}” → {fields}',
+  '核对完成情况与证据': 'Check completion and evidence',
+  '子代理：{task}': 'Helper: {task}',
+  '查看临时协作状态': 'Check helper status',
+  '等待用户回答': 'Waiting for your answer',
+  '记录用户要求与验收条件': 'Record requirements and acceptance checks',
+  '逐项核验交付结果': 'Verify each delivered item',
+  '更新任务里程碑': 'Update milestones',
+  '查阅保存的原文': 'Read saved messages',
+  '读取 API {path}': 'Read API {path}',
+  '读取已保存的证据': 'Read saved evidence',
+  '核实并交付文件': 'Check and deliver files',
+  '搜索「{query}」': 'Search “{query}”',
+  '读取 {target}': 'Read {target}',
+  '列出 {path}': 'List {path}',
+  '读文档 {path}': 'Read document {path}',
+  '生成 {path}': 'Write {path}',
+  '写入 {path}': 'Write {path}',
+  '修改 {path}': 'Edit {path}',
+  '搜索代码 /{pattern}/': 'Search code /{pattern}/',
+  '【管理员】执行 {command}': '[Admin] Run {command}',
+  '执行 {command}': 'Run {command}',
+  '点击 ({x}, {y})': 'Click ({x}, {y})',
+  '移动到 ({x}, {y})': 'Move to ({x}, {y})',
+  '滚动 {amount} 格': 'Scroll {amount} notches',
+  '输入「{text}」': 'Type “{text}”',
+  '按键 {key}': 'Press {key}',
+  '列出 Chrome 标签页': 'List Chrome tabs',
+  'Chrome 打开 {url}': 'Open {url} in Chrome',
+  '读取 Chrome 当前页面': 'Read the current Chrome page',
+  'Chrome 点击 {selector}': 'Click {selector} in Chrome',
+  'Chrome 执行脚本 {expression}': 'Run {expression} in Chrome',
+  'GitHub {method} {path}': 'GitHub {method} {path}',
+  'GitHub 搜索 {query}': 'GitHub search {query}',
+  'Claude Code：{prompt}': 'Claude Code: {prompt}',
+  '记到项目记忆：{text}': 'Save to project memory: {text}',
+  '读文档《{name}》': 'Read document “{name}”',
+  '列出项目文档': 'List project docs',
+  '写文档《{name}》': 'Write document “{name}”',
+  '创建技能 /{name}': 'Create skill /{name}',
+  '收到限流（{kind}），{sec} 秒后再确认一次…': 'Rate limited ({kind}). Confirming again in {sec}s…',
+  '每分钟 token 上限': 'tokens per minute',
+  '每分钟请求数上限': 'requests per minute',
+  '工具 ×{n}：{names}': '{n} tools: {names}',
+  '另外：这条线路把限流报成了 HTTP {status} 而不是 429 —— 那是它的协议问题。客户端能自动退避的前提是错误码说实话，报成 400 会让所有客户端把它当成参数错误去查。':
+    'One more thing: this route reports rate limiting as HTTP {status} instead of 429, which is a protocol fault on its side. Backing off automatically depends on the status code telling the truth; a 400 sends every client hunting for a bad parameter.',
+  '**结论就是限流本身**：配额用尽了，不是任何一个参数的问题。':
+    '**Rate limiting is the finding**: the quota is spent, and no parameter is at fault.',
+  '排查全程每 {spacing} 秒才发一次、只发一条 hi —— 这个节奏不可能把配额打爆，所以收到限流只能说明额度本来就已经见底。等 {confirm} 秒后又确认了一次，还是限流。':
+    'The whole probe sends one "hi" every {spacing}s, a pace that cannot exhaust a quota, so a rate limit means the quota was already gone. A second check {confirm}s later came back rate limited too.',
+  '上游原话：{message}': 'Upstream said: {message}',
+  '能做的：等额度回来；换一份凭据；或者看看同一把 key 是不是在别处也在跑（配额是共享的）。':
+    'What you can do: wait for the quota to return, switch credentials, or check whether the same key is running somewhere else, since quota is shared.',
+  '最小请求体（只有 model + messages）': 'Minimal body (model and messages only)',
+  '连最小请求体都被拒了 —— 问题不在任何一个参数上，而在模型名、密钥或地址。先确认「{model}」这个 ID 在这条线路上真的存在。':
+    'Even the minimal body was refused, so no parameter is at fault. It is the model name, the key, or the address. Confirm that “{model}” really exists on this route.',
+  '＋ {layer}': '+ {layer}',
+  '流式 + stream_options': 'Streaming + stream_options',
+  '勾选的生成参数': 'The generation parameters you enabled',
+  '思考强度字段': 'Reasoning effort fields',
+  '附加请求字段（customBody）': 'Extra request fields (customBody)',
+  '加上「{layer}」就 400 了 —— 凶手是这一组。{fix}':
+    'Adding “{layer}” triggers the 400, so this group is the culprit. {fix}',
+  '单独拆开每个工具都能过，全部一起下发就 400 —— 这条线路扛不住 {n} 个工具（多半是 tools 字段总长度或数量上限）。少勾一些工具就能用。':
+    'Every tool passes on its own but all of them together give a 400, so this route cannot carry {n} tools, most likely a length or count cap on the tools field. Enable fewer and it works.',
+  '这几个工具的 schema 这条线路不认：{tools}。在右侧配置面板把它们取消勾选即可。':
+    'This route rejects the schema of these tools: {tools}. Clear them in the config panel on the right.',
+  '把所有字段都加回去之后反而都通过了 —— 说明刚才那次 400 不是稳定复现的，更可能是当时的历史消息里有上游不接受的内容（比如图片、超长的工具输出、或者空的 assistant 消息）。':
+    'Adding every field back made it pass, so that 400 does not reproduce reliably. More likely the history at the time held something upstream refuses, such as an image, an oversized tool result, or an empty assistant message.',
+  '把配置面板里的「流式」关掉就能用。': 'Turn off Streaming in the config panel and it works.',
+  '把「长度 / 采样 / 惩罚」里刚勾上的那几个逐个取消，就能定位到具体哪一个。':
+    'Clear the ones you just enabled under Length, Sampling and Penalty one at a time to find the exact field.',
+  '把输入框右下角的思考强度调成「不下发」。': 'Set the reasoning effort at the bottom right of the composer to Off.',
+  '清空配置面板最下面的「附加请求字段」。': 'Clear Extra request fields at the bottom of the config panel.',
+  '为避开每分钟 token 上限，{sec} 秒后发下一次…': 'Pacing under the per-minute token cap. Next call in {sec}s…',
+  '前 {k} 条消息': 'First {k} messages',
+  '把整段历史原样发过去反而通过了 —— 说明那次 400 不在消息内容上，更可能是当时的结构问题（孤儿工具结果之类），而这个现在已经会自动修掉了。':
+    'Sending the whole history as is passed, so that 400 was not about message content. More likely a structural problem at the time, such as an orphaned tool result, which is now repaired automatically.',
+  '第 {index} 条消息（role={role}，正文 {size} 字符）加进去就 400。常见原因：这条带了图片而模型是纯文本的、正文超长、或者它是一条上游不接受的空 assistant。':
+    'Message {index} (role={role}, {size} characters) triggers the 400. Common causes: it carries an image while the model is text-only, the body is too long, or it is an empty assistant message upstream refuses.',
+  '查到一半撞上了**每分钟 token 上限**，这次不下结论。':
+    'The probe hit the **per-minute token cap** partway through, so it draws no conclusion this time.',
+  '这一阶段每次都要把大半段历史原样发出去（一次上万 token），所以它比字段阶段吃 token 得多。等一两分钟额度回来再点一次；或者先从这条对话分叉出一条短的再查 —— 历史短了，这一步也就轻了。':
+    'This stage resends most of the history each time, tens of thousands of tokens per call, so it costs far more than the field stage. Wait a minute or two for the quota and run it again, or fork a shorter chat first, which makes this step much lighter.',
+  '查到一半配额用尽了，这次不下结论。上游原话：{message}':
+    'The quota ran out partway through, so no conclusion this time. Upstream said: {message}',
+  '{kind} ×{n}': '{kind} ×{n}',
+  '孤儿工具结果': 'orphaned tool result',
+  '缺失的工具结果': 'missing tool result',
+  'null 正文': 'null content',
+  '空的工具结果': 'empty tool result',
+  '开头的工具结果': 'tool result first',
+  '这台设备不能本地执行工具。请在设置里配好「遥控桌面端」，或者在电脑上操作。':
+    'This device cannot run tools locally. Set up the remote desktop in settings, or work from the computer.',
+  '遥控端返回 HTTP {status}': 'The remote end returned HTTP {status}',
+  '请求已停止或响应等待超时': 'The request stopped, or waiting for the response timed out',
+  '桌面版': 'Desktop',
+  '浏览器（开发态）': 'Browser (dev)',
+  'Skill 数据读取失败：{error}': 'Could not read the skill data: {error}',
+  'GitHub 请求失败': 'The GitHub request failed',
+  'GitHub 返回的不是 JSON': 'GitHub did not return JSON',
+  '看不懂这个地址。写成 owner/repo 或者完整的 GitHub 链接。':
+    'That address does not parse. Write it as owner/repo, or paste the full GitHub link.',
+  '在 {repo} 里找技能…': 'Looking for skills in {repo}…',
+  '找到 {name}（{kb} KB）': 'Found {name} ({kb} KB)',
+  '列目录 {path}：{error}': 'Listing {path}: {error}',
+  '{path} 的目录树太大被截断了，可能漏掉一部分技能 —— 把地址直接指到某个子目录再装一次':
+    'The tree for {path} was truncated because it is too large, so some skills may be missing. Point the address at a subdirectory and install again.',
+  '读取 {path} 的目录树：{error}': 'Reading the tree for {path}: {error}',
+  '扫描完成：{dirs} 个子目录、{trees} 棵目录树、试了 {files} 个文件，找到 {found} 个技能':
+    'Scan done: {dirs} subdirectories, {trees} trees, {files} files tried, {found} skills found',
+  '⚠ 过程中有 {n} 处出错：{first}': '⚠ {n} errors along the way: {first}',
+  '已达单次安装上限 {max} 个，仓库里可能还有更多 —— 指到具体子目录再装一次':
+    'Hit the per-install cap of {max}. The repo may hold more, so point the address at a subdirectory and install again.',
+  '访问 {repo} 时出错了，不是「没有技能」：': 'Reaching {repo} failed, which is not the same as finding no skills:',
+  '看起来是 GitHub API 限额（不带 token 每小时只有 60 次）。设置 → 工具 → GitHub 填一个 token。':
+    'This looks like the GitHub API rate limit, which is 60 requests an hour without a token. Add one under Settings → Tools → GitHub.',
+  '在 {where} 里没找到技能文件。': 'No skill files found in {where}.',
+  '根目录的这些 md 没有 YAML frontmatter（开头的 --- 块里要有 name 或 description），所以不当成技能：{names}。':
+    'These md files at the root have no YAML frontmatter, which needs a name or description in the opening --- block, so they do not count as skills: {names}.',
+  '扫过的子目录：{names}。如果技能藏得更深，把地址直接指到那一层，例如 owner/repo/tree/main/skills/engineering。':
+    'Subdirectories scanned: {names}. If the skills sit deeper, point the address at that level, for example owner/repo/tree/main/skills/engineering.',
+  '也可以把地址指到某个具体的 .md 文件 —— 那种情况不检查 frontmatter，直接装。':
+    'You can also point the address at one .md file, which installs without a frontmatter check.',
+  '新增 {n} 个': '{n} added',
+  '更新 {n} 个': '{n} updated',
+  '{n} 个同名但来自别的仓库，已改名保留（{names}）':
+    '{n} share a name but come from another repo, kept under new names ({names})',
+  '{n} 个你改过正文，没有覆盖（{names}）—— 想要上游版本就先删掉本地那个再装':
+    '{n} have local edits and were left alone ({names}). Delete the local copy first if you want the upstream version.',
+  '没有变化': 'No changes',
+  '导出 {n} 个': '{n} exported',
+  '导入 {n} 个': '{n} imported',
+  '{n} 个两边都改过，各留一份（{names}）—— 自己看完再决定留哪个':
+    '{n} changed on both sides, so both copies are kept ({names}). Read them and decide which to keep.',
+  '{n} 个已一致': '{n} already match',
+  '目录：{dir}': 'Folder: {dir}',
+  '准备运行': 'Ready to run',
+  '设备关闭期间错过，按规则跳过': 'Missed while the device was off, skipped by rule',
+  '前次运行未结束，按规则跳过': 'The previous run had not finished, skipped by rule',
+  '需要处理：{error}': 'Needs attention: {error}',
+  '协作数据尚未读取': 'Collaboration data has not loaded yet',
+  '运行不存在': 'That run does not exist',
+  '此触发已创建运行': 'This trigger already created a run',
+  '需要任务目标、验收标准和可用流程版本': 'This needs a task goal, acceptance criteria and a usable workflow version',
+  '流程预算超过项目上限': 'The workflow budget exceeds the project cap',
+  '此运行已在执行': 'That run is already going',
 };
 
 const hantCache = new Map<string, string>();
@@ -2317,6 +2687,21 @@ export function translate(locale: Locale, text: string, vars?: Record<string, st
 }
 
 export type Translate = (text: string, vars?: Record<string, string | number>) => string;
+
+/**
+ * 给不在 React 树里的模块用的当前语言。
+ *
+ * 工具摘要、诊断结论这类文字是在运行过程中生成并落盘的，生成时用当时的界面语言，
+ * 之后不再跟着切 —— 历史记录本来就该保留当时的样子。
+ */
+let activeLocale: Locale = 'zh-Hans';
+
+export function setActiveLocale(locale: Locale) {
+  activeLocale = locale;
+}
+
+/** 模块级翻译。React 组件里请用 useT()，它会跟着语言切换重渲染。 */
+export const tr: Translate = (text, vars) => translate(activeLocale, text, vars);
 
 const LocaleContext = React.createContext<Locale>('zh-Hans');
 

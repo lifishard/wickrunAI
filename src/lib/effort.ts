@@ -241,23 +241,25 @@ export function effortFields(
   }
 }
 
-/** 给 UI 用的一句话说明：当前模型这一级会发出去什么 */
+/** 给 UI 用的一句话说明：当前模型这一级会发出去什么。t 由调用方传进来，这里不挂 React。 */
 export function describeEffort(
   model: string,
   level: EffortLevel,
   mappings: EffortMapping[],
+  t: (text: string, vars?: Record<string, string | number>) => string,
 ): string {
-  if (!model) return '先选一个模型';
+  if (!model) return t('先选一个模型');
   const m = matchMapping(model, mappings);
-  if (!m) return '没有匹配的映射规则';
-  if (level === 'off') return `不下发任何思考字段（匹配到「${m.label}」）`;
+  if (!m) return t('没有匹配的映射规则');
+  const label = t(m.label);
+  if (level === 'off') return t('不下发任何思考字段（匹配到「{label}」）', { label });
   if (m.style === 'none') {
     return m.id === 'baked-in'
-      ? '这个模型名里已经带了强度（网关把它烤进路由了），不下发任何字段'
-      : `「${m.label}」这一档不支持强度调节，不下发`;
+      ? t('这个模型名里已经带了强度（网关把它烤进路由了），不下发任何字段')
+      : t('「{label}」这一档不支持强度调节，不下发', { label });
   }
 
   const fields = effortFields(model, level, mappings);
-  if (!Object.keys(fields).length) return `「${m.label}」的这一级留空了，不下发`;
-  return `匹配「${m.label}」→ ${JSON.stringify(fields)}`;
+  if (!Object.keys(fields).length) return t('「{label}」的这一级留空了，不下发', { label });
+  return t('匹配「{label}」→ {fields}', { label, fields: JSON.stringify(fields) });
 }

@@ -1,4 +1,5 @@
 import { bodyHash, makeSkill, normalizeBody, parseSkillMd, toSkillMd, type Skill } from './skills';
+import { tr } from './i18n';
 
 /* ------------------------------------------------------------------ *
  * 技能与本地文件夹的双向同步
@@ -171,16 +172,16 @@ export function applyPlan(appSkills: Skill[], plan: SyncPlan): Skill[] {
 /** 同步完之后，还要把冲突里「我方那份」也写出去吗？不写 —— 见文件头第 2 条 */
 export function describeSync(plan: SyncPlan, dir: string): string {
   const bits: string[] = [];
-  if (plan.push.length) bits.push(`导出 ${plan.push.length} 个`);
-  if (plan.pull.length) bits.push(`导入 ${plan.pull.length} 个`);
+  if (plan.push.length) bits.push(tr('导出 {n} 个', { n: plan.push.length }));
+  if (plan.pull.length) bits.push(tr('导入 {n} 个', { n: plan.pull.length }));
   if (plan.conflicts.length) {
     bits.push(
-      `${plan.conflicts.length} 个两边都改过，各留一份（${plan.conflicts
-        .slice(0, 3)
-        .map((c) => c.name)
-        .join('、')}）—— 自己看完再决定留哪个`,
+      tr('{n} 个两边都改过，各留一份（{names}）—— 自己看完再决定留哪个', {
+        n: plan.conflicts.length,
+        names: plan.conflicts.slice(0, 3).map((c) => c.name).join('、'),
+      }),
     );
   }
-  if (plan.unchanged.length) bits.push(`${plan.unchanged.length} 个已一致`);
-  return bits.length ? `${bits.join('；')}\n目录：${dir}` : `没有变化\n目录：${dir}`;
+  if (plan.unchanged.length) bits.push(tr('{n} 个已一致', { n: plan.unchanged.length }));
+  return (bits.length ? bits.join('；') : tr('没有变化')) + '\n' + tr('目录：{dir}', { dir });
 }

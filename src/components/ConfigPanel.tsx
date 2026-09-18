@@ -212,7 +212,7 @@ export default function ConfigPanel(props: {
                             }
                           />
                           <span className="tool-name">
-                            {d.label} <span className="tool-code">{d.name}</span>
+                            {t(d.label)} <span className="tool-code">{d.name}</span>
                           </span>
                           {d.dangerous ? <span className="badge-danger">{t('需确认')}</span> : null}
                           {!can ? <span className="badge-off">{t('本机不可用')}</span> : null}
@@ -318,14 +318,14 @@ export default function ConfigPanel(props: {
               {defs.map((d) => {
                 const st = cfg.params[d.key] ?? { enabled: false, value: d.default };
                 return (
-                  <div key={d.key} className="param-row" title={d.help}>
+                  <div key={d.key} className="param-row" title={t(d.help)}>
                     <input
                       type="checkbox"
                       checked={st.enabled}
                       onChange={(e) => setParam(d.key, { enabled: e.target.checked })}
                       aria-label={t('启用 {key}', { key: d.key })}
                     />
-                    <span className={`name${st.enabled ? '' : ' off'}`}>{d.label}</span>
+                    <span className={`name${st.enabled ? '' : ' off'}`}>{t(d.label)}</span>
                     {d.kind === 'string' ? (
                       <input
                         type="text"

@@ -103,7 +103,10 @@ export interface DeliveryReport {
 }
 export interface RecoveryInfo {
   kind: 'user' | 'quota' | 'budget' | 'input' | 'permission' | 'uncertain' | 'verification' | 'connection' | 'other';
+  /** 简体原文即翻译 key；渲染处过 t()。模型写来的原因没有词条，会原样回落。 */
   reason: string;
+  /** 里程碑上报的阻塞说明，模型写的自由文本，不翻译。 */
+  blocked?: string;
   next: string;
   target?: string;
   completed: string[];
