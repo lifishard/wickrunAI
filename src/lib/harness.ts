@@ -7,11 +7,11 @@ export interface HarnessCheckpoint {
   context?:{inputMessages:number;visibleMessages:number;foldedMessages:number};
 }
 const MANAGEMENT=new Set(['update_plan','update_requirements','verify_requirements','complete_task','request_user_input','read_context','read_tool_result','spawn_subagent','list_subagents','wait_subagents']);
-const ACTION=/(?:修复|修好|修改|编辑|实现|重构|安装|提交|推送|执行|运行|测试|导出|制作|生成.{0,15}(?:文件|文档|报告|表格)|创建.{0,15}(?:文件|应用|网站)|\b(?:fix|implement|refactor|edit|install|commit|push|execute|run tests|build|export)\b)/i;
+const ACTION=/(?:修复|修好|修改|编辑|替换|重命名|部署|发布|实现|重构|安装|提交|推送|执行|运行|测试|导出|制作|生成.{0,15}(?:文件|文档|报告|表格)|创建.{0,15}(?:文件|应用|网站)|\b(?:fix|implement|refactor|edit|install|commit|push|execute|run tests|build|export)\b)/i;
 const EXPLAIN=/^(?:请)?(?:解释|介绍|说明|什么是|如何|怎么|为什么|分析一下|帮我理解)|^(?:what|why|how|explain|describe)\b/i;
 const CONTINUE=/^(?:请|please\s*)?(?:继续|接着|continue|resume|go on)[\s。.!！]*$/i;
 const MUTATION=new Set(['write_document','write_file','edit_file','run_command','claude_code','project_memory_write','project_doc_write','skill_write','computer_click','computer_type','computer_key','chrome_click','chrome_eval']);
-const MODIFY=/(?:修复|修好|修改|编辑|实现|重构|安装|清理|删除|创建|制作|生成.{0,15}(?:文件|文档|报告|表格)|\b(?:fix|implement|refactor|edit|install|clean(?:up)?|delete|remove|create|build)\b)/i;
+const MODIFY=/(?:修复|修好|修改|编辑|替换|重命名|实现|重构|安装|清理|删除|创建|制作|生成.{0,15}(?:文件|文档|报告|表格)|\b(?:fix|implement|refactor|edit|install|clean(?:up)?|delete|remove|create|build)\b)/i;
 const TEST=/(?:测试|验证(?:改动|功能|修复)|\b(?:test|tests|testing|verify the (?:fix|change))\b)/i;
 const PUSH=/(?:推送(?:到|至)?(?:\s*github)?|提交并推送|\bgit\s+push\b|\bpush(?:ed|ing)?\s+(?:to\s+)?github\b)/i;
 const TEST_COMMAND=/(?:^|[\s;&|])(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?test\b|\b(?:pytest|vitest|jest|cargo\s+test|go\s+test|dotnet\s+test|gradle(?:w)?(?:\.bat)?\s+test|mvn\s+test|ctest|node\s+--test|python(?:3)?\s+-m\s+(?:pytest|unittest)|npx\s+playwright\s+test)\b/i;
@@ -24,8 +24,24 @@ export function taskSeed(history:ChatMessage[],cfg:GenerationConfig,old?:Harness
   const last=users.at(-1);const source=last&&CONTINUE.test(last.content.trim())?[...users].reverse().find(m=>!CONTINUE.test(m.content.trim()))??last:last;
   const goal=source?.content.trim() || '';
   const actionable=goal.replace(/(?:不要|无需|不必|禁止|请勿|不需要|\bdo not\b|\bdon't\b|\bno need to\b)[^，。；\n;.!?]*?(?=[，。；\n;.!?]|但是|但|改为|而是|\bbut\b|\binstead\b|$)/gi,'');
-  return {mode:harnessMode(cfg),goal:goal.slice(0,24000),sourceId:source?.id || '',action:cfg.toolsEnabled&&ACTION.test(actionable)&&!EXPLAIN.test(actionable),stage:'understand',continuations:0};
+  return {mode:harnessMode(cfg),goal:goal.slice(0,24000),sourceId:source?.id || '',action:cfg.toolsEnabled&&ACTION.test(actionable)&&!onlyExplains(actionable),stage:'understand',continuations:0};
 }
+/**
+ * 「疑问句开头」不等于「只要解释」。
+ *
+ * 原来的判据是 ACTION 命中且 EXPLAIN 不命中。EXPLAIN 锚在句首，于是
+ * 「如何修复这个错误？请直接改文件并跑测试。」被整句判成只要解释，后面整条
+ * 完成护栏全部失效 —— 模型说一句「已完成」就交付，没有人拦。
+ *
+ * 改成逐句看：只要有一句既是动作要求、又不是解释句起头，这就是动作任务。
+ * 这个改动只会让护栏更严，不会更松：原来判成动作的，现在仍然是动作。
+ */
+function onlyExplains(text:string):boolean {
+  const clauses=text.split(/[。！？!?\n；;]+/).map(s=>s.trim()).filter(Boolean);
+  if(!clauses.length)return EXPLAIN.test(text);
+  return clauses.every(c=>!ACTION.test(c)||EXPLAIN.test(c));
+}
+
 export function harnessInstructions(cfg:GenerationConfig,state?:RunState):string {
   if(harnessMode(cfg)==='off')return '';
   return `\n<wickrun_task_guidance>
@@ -70,6 +86,41 @@ function reviewedAsAlreadySatisfied(state:RunState):boolean {
   const alreadySatisfied=/(?:无需|不需要|没有必要)(?:修改|改动|编辑)|(?:已经|原本|现有)(?:存在|满足|正确)|\b(?:no changes? (?:are )?required|already (?:exists|satisfied|correct))\b/i;
   return alreadySatisfied.test(review.summary+'\n'+review.checks);
 }
+/**
+ * 目标本身要求做到什么。只解析目标文字，不碰证据 ——
+ * 证据从哪来是各条执行路径自己的事：API 主循环有 ToolStep，本机客户端没有。
+ * 两边共用同一套目标解析，各用各的证据，才不会一边判得严一边判不到。
+ */
+export function goalDemands(goal:string):{modify:boolean;test:boolean;push:boolean} {
+  const negative="(?:不要|无需|不必|禁止|请勿|不需要|do not|don't|no need to|without)";
+  return {
+    modify:MODIFY.test(goal)&&!new RegExp(negative+'.{0,12}(?:修改|编辑|改动|创建|制作|生成|安装|删除|清理|fix|edit|change|create|build|install|delete|remove)','i').test(goal),
+    test:TEST.test(goal)&&!new RegExp(negative+'.{0,12}(?:测试|验证|test|verify)','i').test(goal),
+    push:PUSH.test(goal)&&!new RegExp(negative+'.{0,12}(?:推送|git\\s+push|push)','i').test(goal),
+  };
+}
+
+/**
+ * 本机客户端路径的完成检查。
+ *
+ * completionIssue 的证据取自 state.steps，而本机客户端在它自己那边执行工具，
+ * wickrunAI 一条 ToolStep 都看不到 —— 把它直接接过来，每个本机操作类任务都会被
+ * 判成「没有成功操作的记录」，整条路径就废了。
+ *
+ * 所以这边只认另一种证据：已声明并且**程序**核验通过的验收条目。
+ * 模型自己复核通过不算 —— 下发给本机客户端的指令里就写着这一条。
+ */
+export function nativeCompletionIssue(state:RunState,cfg:GenerationConfig):string|undefined {
+  if(!cfg.toolsEnabled||!state.harness?.action)return;
+  const {modify,test,push}=goalDemands(state.harness.goal);
+  if(!modify&&!test&&!push)return;
+  const checked=(state.requirements??[]).filter(r=>r.check.kind!=='review'&&r.verification?.status==='passed'&&r.verification.revision===r.revision);
+  if(checked.length)return;
+  return (state.requirements??[]).some(r=>r.verification?.status==='passed')
+    ? '目标要求实际操作，但只有模型复核通过，没有任何经程序核验的验收条目。请补一条可程序核验的验收（文件存在、内容包含之类），通过后再交付。'
+    : '目标要求实际操作，但没有任何经程序核验的验收条目。请用 update_requirements 声明可核验的交付条件，核验通过后再交付。';
+}
+
 /** A model-reported blocker is a pause outcome, never successful completion. */
 export function completionBlocker(state:RunState,text:string,cfg:GenerationConfig):string|undefined {
   if(!cfg.toolsEnabled||!state.harness?.action)return;
@@ -79,16 +130,25 @@ export function completionBlocker(state:RunState,text:string,cfg:GenerationConfi
   const blocked=/(?:我|本次|该)?(?:任务|工作|修复|修改|测试|验证|提交|推送)?(?:仍|还|暂时|目前)?(?:无法|不能|没法)(?:完成|继续|执行|修改|修复|测试|验证|提交|推送|访问)|(?:任务|工作|修复|修改|测试|验证|提交|推送).{0,12}(?:未完成|尚未完成|被阻塞|卡住)|(?:缺少|需要(?:你|用户)?提供).{0,24}(?:权限|授权|凭据|资料|信息|文件|访问)|\b(?:cannot|unable to|blocked(?: by)?|missing (?:permission|credentials?|information|files?|access)|need (?:your|user) (?:permission|approval|credentials?|information|files?|access))\b/i.test(value);
   return blocked?'模型明确报告任务仍有阻塞或未完成；执行器已暂停并保留现场。':undefined;
 }
+/*
+ * 措辞判不出来的那一类，护栏由谁兜底
+ *
+ * harness.action 的措辞判断一定会漏，而往正则里继续加词是无底洞：加错一个就制造
+ * 假阳性（「改为」在中文里也是连接词，「不要执行旧写入，改为解释」并不是要改东西）。
+ *
+ * 试过让「模型声明了可程序核验的验收」也打开这条护栏，结果是重复开火 ——
+ * 验收没过本来就由 verifyRequirements 和 reconcileProgress 拦住，报的是
+ * 「验收尚未通过」，比这里的「没有成功操作的记录」准确得多。所以这里不动，
+ * 措辞漏判的那一类交给验收路径兜底：模型一旦声明可核验的交付条件，
+ * 没做到就过不了质检。措辞和验收各管一段，不互相顶替。
+ */
 export function completionIssue(state:RunState,text:string,cfg:GenerationConfig):string|undefined {
   if(state.subagents?.some(job=>job.status==='running'||job.status==='queued'))return '仍有临时子代理在运行，请读取结果并整合后交付。';
   if(!cfg.toolsEnabled||!state.harness?.action)return;
   if(planOnly(text))return '本轮只有下一步计划，还没有交付结果。请直接继续已授权的工作；需要用户信息时提问，无法继续时说明具体阻塞。';
-  const evidence=successfulEvidence(state),goal=state.harness.goal,alreadySatisfied=reviewedAsAlreadySatisfied(state);
+  const evidence=successfulEvidence(state),goal=state.harness?.goal??'',alreadySatisfied=reviewedAsAlreadySatisfied(state);
   if(!evidence.length&&!alreadySatisfied)return '本次要求实际操作，但没有成功操作的记录。请执行并核验，不能把口头承诺当成完成。';
-  const negative="(?:不要|无需|不必|禁止|请勿|不需要|do not|don't|no need to|without)";
-  const modify=MODIFY.test(goal)&&!new RegExp(negative+'.{0,12}(?:修改|编辑|改动|创建|制作|生成|安装|删除|清理|fix|edit|change|create|build|install|delete|remove)','i').test(goal);
-  const test=TEST.test(goal)&&!new RegExp(negative+'.{0,12}(?:测试|验证|test|verify)','i').test(goal);
-  const push=PUSH.test(goal)&&!new RegExp(negative+'.{0,12}(?:推送|git\\s+push|push)','i').test(goal);
+  const {modify,test,push}=goalDemands(goal);
   if(modify&&!evidence.some(step=>MUTATION.has(step.name))&&!alreadySatisfied)return '目标要求修改或创建内容，但只有查阅记录；请完成改动，或用完成自查明确记录现状已满足且无需改动。';
   if(test&&!hasTestEvidence(state,evidence))return '目标明确要求测试，但没有成功测试命令的记录。请运行相应测试并核对结果。';
   if(push&&!evidence.some(step=>PUSH_COMMAND.test(commandOf(step))))return '目标明确要求推送到 GitHub，但没有成功 git push 的记录。请完成推送，或明确说明阻塞。';

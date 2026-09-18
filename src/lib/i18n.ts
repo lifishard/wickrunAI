@@ -16,6 +16,31 @@ export const LOCALES: { value: Locale; label: string; label2: string; lang: stri
  * 英文查词典，查不到就退回简体原文 —— 半翻译的界面也比缺字的界面好用。
  */
 const EN: Record<string, string> = {
+  /* 失灵交接 */
+  '失灵交接名单': 'Failover order',
+  '当前路由失灵时，按你排的顺序往下交接，带着已保存的进度继续，不从头再来。':
+    'When the current route fails, work is handed to the next route in your order and continues from the saved progress instead of starting over.',
+  '顺序由你定：免费的排前面还是稳的排前面，程序不替你判断，它也不知道哪条是付费的。名单为空就维持现在的行为：失败后停下来等你。':
+    'You decide the order: free routes first, or the reliable ones first. wickrunAI does not judge for you and does not know which routes are paid. An empty list keeps today\'s behaviour: it stops and waits for you.',
+  '失灵时自动交接': 'Hand off automatically on failure',
+  '下移': 'Move down',
+  '移出名单': 'Remove from the list',
+  '名单是空的，现在不会自动交接。': 'The list is empty, so nothing is handed off automatically.',
+  '添加一条候选路由': 'Add a candidate route',
+  '添加一条候选路由…': 'Add a candidate route…',
+  '{reason}，已按你的接力名单交给 {model} 接手，进度不重来。':
+    '{reason}. Handed to {model} from your failover order; the saved progress carries over.',
+  '这条路由自己坏了': 'This route is broken',
+  '这条路由的额度暂时用完了': 'This route is out of quota for now',
+  '这条路由当前不可用': 'This route is unavailable right now',
+  '这条路由不支持本次任务要用的工具调用': 'This route does not support the tool calls this task needs',
+  '这条路由看不了图': 'This route cannot read images',
+  '这条路由的上下文窗口装不下': 'This route\'s context window is too small for the task',
+  '连接反复不通': 'The connection keeps failing',
+  '目标要求实际操作，但只有模型复核通过，没有任何经程序核验的验收条目。请补一条可程序核验的验收（文件存在、内容包含之类），通过后再交付。':
+    'The goal asks for real operations, but only a model review passed and no acceptance check was verified by the program. Add a program-verifiable check (file exists, content contains, and so on) and pass it before delivering.',
+  '目标要求实际操作，但没有任何经程序核验的验收条目。请用 update_requirements 声明可核验的交付条件，核验通过后再交付。':
+    'The goal asks for real operations, but no acceptance check was verified by the program. Declare verifiable delivery conditions with update_requirements and pass them before delivering.',
   /* 侧栏 */
   '＋ 新对话': '+ New chat',
   '搜索对话…': 'Search chats…',

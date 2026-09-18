@@ -178,6 +178,8 @@ export interface ParamState {
 
 /** 一次会话的全部生成配置 */
 export interface GenerationConfig {
+  /** 失灵交接名单：用户自己排的顺序。会话级，空名单 = 不交接 */
+  failover?: import('./lib/failover').FailoverConfig;
   subagents?: import('./lib/subagents').SubagentConfig;
   client?: import('./lib/connections').ClientSelection;
   model: string;
@@ -672,6 +674,8 @@ export interface ToolResult {
   /** 原生执行日志显示操作已开始但没有可靠完成记录。 */
   uncertain?: boolean;
   operationStatus?: 'not_started' | 'completed' | 'uncertain';
+  /** 本次任务里已经做过同样的操作，程序没有重复执行 */
+  repeated?: { at: number; callId: string };
 }
 
 /**
@@ -796,7 +800,7 @@ export interface ErrorInfo {
   vars?: Record<string, string | number>;
 }
 
-export type ModelHealthStatus = 'ok' | 'broken' | 'missing' | 'ratelimited' | 'timeout' | 'unknown';
+export type ModelHealthStatus = 'ok' | 'hollow' | 'broken' | 'missing' | 'ratelimited' | 'timeout' | 'unknown';
 
 export interface ModelHealth {
   status: ModelHealthStatus;

@@ -72,7 +72,7 @@ export function createSubagentRuntime(args:RunAgentArgs,state:RunState,save:()=>
         job.status='running';await save();
         running.handle=run({...args,requestId:`${args.requestId}-sub-${job.id}`,profile:selected.profile,apiKey:selected.apiKey,config,
           history:[{id:'subtask-'+job.id,role:'user',content:task,createdAt:Date.now()}],resume:undefined,conversationMemory:undefined,compactBeforeRun:false,
-          resolveWorker:undefined,previousModel:undefined,limitOf:undefined,onLearnLimit:undefined,modelInfo:selected.models?.find(m=>m.id===worker.model),autoRetry:0,
+          resolveWorker:undefined,previousModel:undefined,limitOf:()=>args.limits?.get(selected.profile.id,worker.model,selected.profile.baseUrl),onLearnLimit:l=>args.limits?.learn(selected.profile.id,worker.model,selected.profile.baseUrl,l),modelInfo:selected.models?.find(m=>m.id===worker.model),autoRetry:0,
           extraSystem:'你是临时子代理，只完成指定子任务并返回结果、证据与局限。不要假设拥有父任务的完整历史，不要派发其他子代理，不要扩大范围。'+(pool!.allowEdits?'编辑仍需遵守用户当前权限和逐步审批。':'仅可查阅资料和给出文字结果，不能修改文件或执行写操作。'),
           events:{onContentDelta:text=>{job.content=(job.content+text).slice(0,100000);},onContentReplace:text=>{job.content=text.slice(0,100000);},onReasoningDelta(){},
             onStep:()=>{job.steps=job.checkpoint?.steps?.length || job.steps;},onSources(){},onUsage(){},onRound(){},onNotice:text=>{if(text)job.error=text;},onStopReason(){},

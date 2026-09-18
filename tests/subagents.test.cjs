@@ -21,7 +21,7 @@ function fixture(options={}){
     customBody:'parent-private-body',systemPrompt:'parent-private-system',historyLimit:99,client:{kind:'codex'}};
   const args={requestId:'parent-run',config,profile:{id:'parent-profile'},apiKey:'parent-secret',history:[],
     resolveWorker:options.resolveWorker|| (async id=>({profile:{id},apiKey:'child-secret',models:[{id:workers.find(w=>w.profileId===id)?.model}]})),
-    events:{onUsage(){usageEvents++;}},toolCtx:()=>({}),effortMappings:[],extraSystem:'parent-extra',timeoutMs:1000,canRunHostTools:true,autoRetry:0};
+    events:{onUsage(){usageEvents++;}},toolCtx:()=>({}),effortMappings:[],extraSystem:'parent-extra',timeoutMs:1000,canRunHostTools:true,autoRetry:0,limits:options.limits};
   const run=childArgs=>{
     const launch={args:childArgs,aborted:false};launches.push(launch);
     launch.handle={abort(){launch.aborted=true;options.onAbort?.(launch);}};
@@ -131,4 +131,35 @@ test('real parent runAgent holds its final delivery until the child run finishes
   if(outcome instanceof Error)throw outcome;
   assert.equal(parentDone,1);assert.equal(calls.parent,4);assert.match(JSON.stringify(parentBodies[3]),/子任务已核对/);
   assert.equal(states.at(-1).subagents[0].status,'completed');
+});
+
+test('子代理按自己那条路由读写学到的限速，不记到父任务头上',async()=>{
+  const reads=[],writes=[];
+  const f=fixture({
+    resolveWorker:async id=>({profile:{id,baseUrl:'https://child.example/v1'},apiKey:'child-secret',
+      models:[{id:workers.find(w=>w.profileId===id)?.model}]}),
+    limits:{
+      get:(profileId,model,baseUrl)=>{reads.push([profileId,model,baseUrl]);return {maxContext:4096,at:1,from:'seed'};},
+      learn:(profileId,model,baseUrl,l)=>{writes.push([profileId,model,baseUrl,l]);},
+    },
+  });
+  await spawn(f,'k1','子任务','luna');
+  const child=f.launches[0].args;
+  assert.equal(typeof child.limitOf,'function','子代理应当能读到学过的限速');
+  assert.equal(typeof child.onLearnLimit,'function','子代理撞出来的限速应当能回传');
+
+  assert.deepEqual(child.limitOf(),{maxContext:4096,at:1,from:'seed'});
+  child.onLearnLimit({minIntervalMs:800,at:2,from:'child 429'});
+
+  assert.deepEqual(reads[0],['profile-luna','gpt-5.6-luna','https://child.example/v1']);
+  assert.deepEqual(writes[0].slice(0,3),['profile-luna','gpt-5.6-luna','https://child.example/v1']);
+  assert.notEqual(writes[0][0],f.args.profile.id,'不能记到父任务那条路由上');
+});
+
+test('没给 limits 时子代理照常跑，只是学不到也不回传',async()=>{
+  const f=fixture();
+  await spawn(f,'k2','子任务','sol');
+  const child=f.launches[0].args;
+  assert.equal(child.limitOf(),undefined);
+  assert.doesNotThrow(()=>child.onLearnLimit({at:1,from:'x'}));
 });

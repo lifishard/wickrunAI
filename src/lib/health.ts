@@ -49,6 +49,21 @@ export function shouldHide(h: ModelHealth | undefined): boolean {
   return h.fails >= HIDE_THRESHOLD;
 }
 
+/**
+ * 这条路由能不能作为**自动**派单的候选。
+ *
+ * 比 shouldHide 严格。shouldHide 决定「默认列表里还显不显示」，那是给人看的；
+ * 这里决定「程序能不能在人没看着的时候把任务交给它」。
+ * hollow 正好是两者的分界：它值得留在列表里让人自己判断，但自动交接不该选它。
+ * 没有记录视为可用 —— 没撞过不等于坏，几百条路由不可能先各撞一遍。
+ */
+export function dispatchable(h: ModelHealth | undefined): boolean {
+  if (!h) return true;
+  if (h.muted) return false;
+  if (h.status === 'hollow') return false;
+  return !shouldHide(h);
+}
+
 function put(
   map: ModelHealthMap,
   profileId: string,
@@ -270,12 +285,18 @@ async function probeOne(
 
 function toHealth(r: { ok: boolean; info?: ErrorInfo; hollow?: boolean }): ModelHealth {
   if (r.ok) {
-    return {
-      status: 'ok',
-      at: Date.now(),
-      fails: 0,
-      reason: r.hollow ? '返回 200 但正文是空的 —— 可能不是聊天模型' : undefined,
-    };
+    // 200 但正文为空：不是坏路由，但也不该打上「体检通过」的勾。
+    // 单独一档 —— 人还能在列表里自己选，自动派单不选它。一条只回空正文的
+    // 路由接过去，只是把任务卡在下一步。
+    if (r.hollow) {
+      return {
+        status: 'hollow',
+        at: Date.now(),
+        fails: 0,
+        reason: '返回 200 但正文是空的，可能不是聊天模型',
+      };
+    }
+    return { status: 'ok', at: Date.now(), fails: 0 };
   }
   const info = r.info!;
   const status: ModelHealthStatus =
@@ -393,6 +414,7 @@ export function mergeProbe(
 
 export const HEALTH_LABEL: Record<ModelHealthStatus, string> = {
   ok: '正常',
+  hollow: '返回空正文',
   broken: '服务端报错',
   missing: '不存在',
   ratelimited: '被限流',

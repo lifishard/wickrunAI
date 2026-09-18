@@ -6,6 +6,7 @@ import { GROUP_LABEL, TOOLS, availableTools, type ToolGroup } from '../lib/tools
 import { Field, Segmented, Switch } from './ui';
 import { runtimePolicy } from '../lib/task-context';
 import RouteSettings from './RouteSettings';
+import FailoverList, { type RouteOption } from './FailoverList';
 import GatewayRecovery from './GatewayRecovery';
 
 const THINKING_OPTIONS: { value: ThinkingStyle; label: string }[] = [
@@ -28,6 +29,7 @@ export default function ConfigPanel(props: {
   modelsLoading: boolean;
   modelsError: string | null;
   onRefreshModels: () => void;
+  routeOptions?: RouteOption[];
   onAddModel: (id: string) => void;
   /* 上面几个现在只有历史遗留的调用还在传，面板本身不用了 */
   onPreview: () => void;
@@ -105,6 +107,8 @@ export default function ConfigPanel(props: {
           </div>
         </div>
       </div>
+
+      <FailoverList config={cfg} options={props.routeOptions ?? []} onChange={onChange} />
 
       {/* ---------------- 工具 ---------------- */}
       <div className="section">

@@ -8,7 +8,7 @@ import {desktop} from './transport';
 import type {RunState} from '../types';
 import type {ClientTurnResult} from './connections';
 import {formatUserAnswers,parseUserQuestions,validateUserAnswers} from './user-questions';
-import {taskSeed,harnessInstructions,planOnly,completionBlocker} from './harness';
+import {taskSeed,harnessInstructions,planOnly,completionBlocker,nativeCompletionIssue} from './harness';
 import {runDesktopConversation} from './desktop-conversation';
 
 /** Native adapters receive a portable transcript; vendor session IDs are evidence, not the sole memory. */
@@ -155,6 +155,11 @@ ${JSON.stringify(context)}`;
         throw Error('本机客户端只返回了下一步计划，任务尚未完成。请继续本轮以核实进度；应用没有自动重发可能已执行的本机操作。');
       }
       await applyNativeProgress(state,result.text,check=>args.config.toolsEnabled&&bridge.tool?bridge.tool('inspect_deliverable',check,args.toolCtx()):Promise.resolve({ok:false,content:'',error:'当前连接无法核验文件'}));
+      const unproven=nativeCompletionIssue(state,args.config);
+      if(unproven){
+        state.harness!.completion={status:'needs_work',reason:unproven,evidence:[],at:Date.now()};
+        throw Error(unproven);
+      }
       events.onContentReplace?.(state.content??'','');
       state.working.push({id:args.requestId+'-answer',role:'assistant',content:state.content??'',createdAt:Date.now()});
       state.status='completed';state.reason=undefined;state.pendingCalls=undefined;state.toolCursor=undefined;

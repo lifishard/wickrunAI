@@ -63,9 +63,19 @@ async function projectMemoryWrite(args, ctx) {
       ? text
       : `${String(list[i].memory || '').trimEnd()}\n\n[${stamp}] ${text}`.trim();
 
-  // 别让记忆无限膨胀 —— 每轮都要拼进 system prompt
+  // 别让记忆无限膨胀 —— 每轮都要拼进 system prompt。
+  //
+  // 只从尾部保留会让**开头**跟着变。这段拼在 system prompt 里，前缀一变，
+  // 整段上下文缓存就失配 —— 记一次记忆的代价是重算全部前缀。
+  // 所以保住固定长度的开头、挖掉中间、只让结尾滚动：开头逐字节稳定，
+  // 缓存至少能命中到那个边界。
   const MAX = 20000;
-  list[i].memory = next.length > MAX ? `…（较早的记忆已截断）\n${next.slice(-MAX)}` : next;
+  const HEAD = 12000;
+  const GAP = '\n\n…（中间部分已归档，未展示）\n\n';
+  list[i].memory =
+    next.length > MAX
+      ? `${next.slice(0, HEAD)}${GAP}${next.slice(-(MAX - HEAD))}`
+      : next;
   await writeList(K_PROJECTS, list);
 
   return ok(`已${mode === 'replace' ? '覆盖' : '追加'}到项目「${p.name}」的记忆。`, {

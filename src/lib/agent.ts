@@ -112,6 +112,17 @@ export interface RunAgentArgs {
   /** 又从报错里学到了新的窗口信息，交给上层存起来 */
   onLearnLimit?: (l: LearnedLimit) => void;
   /**
+   * 按路由取 / 存学到的限速与窗口。
+   *
+   * 上面那两个绑定的是**本次运行**那条路由。子代理跑在另一条路由上，用父任务
+   * 的键去读写，会把两条路由的限速搅在一起：子代理撞出来的节奏记到主模型头上，
+   * 主模型学到的窗口又被子代理拿去用。这个访问器带键，子代理用它。
+   */
+  limits?: {
+    get: (profileId: string, model: string, baseUrl: string) => LearnedLimit | undefined;
+    learn: (profileId: string, model: string, baseUrl: string, l: LearnedLimit) => void;
+  };
+  /**
    * 从上次中断的地方接着跑。
    *
    * 有值时 history 只用来取「最初那个问题」，真正的上下文以这里为准 ——
@@ -724,7 +735,7 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
               if (!ref) { ref = { ...src, n: state.sources!.length+1 }; state.sources!.push(ref); }
               fresh.push(ref);
             }
-            Object.assign(step, { status: step.status === 'denied' ? 'denied' : result.ok ? 'ok' : 'error',
+            Object.assign(step, { status: step.status === 'denied' || result.repeated ? 'denied' : result.ok ? 'ok' : 'error',
               output: clipToolOutput(result.content), error: result.error, summary: result.summary ?? step.summary,
               sources: fresh, filePath: result.filePath, files: result.files, resultRef: result.resultRef,
               elapsedMs: Date.now()-step.startedAt });

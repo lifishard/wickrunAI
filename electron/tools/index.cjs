@@ -19,6 +19,47 @@ const { verifyFiles } = require('../file-records.cjs');
 const crypto = require('node:crypto');
 const { inspectDeliverable, recoverExactWrite } = require('./verification.cjs');
 
+/**
+ * 操作编号：从「做了什么」派生，不从「在对话的哪个位置发起」派生。
+ *
+ * 账本原来只有一把键：runId:${round}-${i}-${call.id} —— 轮次、批内序号、模型自己
+ * 生成的调用 id。换个模型接手，这三样全变，同一件事在账本里就成了一件新事，
+ * 「这个操作做过没有」于是永远答「没做过」。自动交接建立在这个答案上，
+ * 答错一次就是重复推送、重复建 issue。
+ *
+ * 所以另存一份按内容派生的编号：做的是同一件事，不管谁在哪一轮发起，编号都一样。
+ * 参数先递归按键排序再哈希 —— 不同模型序列化同一组参数时字段顺序可能不同，
+ * 不排序就等于白记。数组保持原序，顺序在数组里是有意义的。
+ */
+function canonical(value) {
+  if (Array.isArray(value)) return value.map(canonical);
+  if (value && typeof value === 'object') {
+    const out = {};
+    for (const key of Object.keys(value).sort()) out[key] = canonical(value[key]);
+    return out;
+  }
+  return value;
+}
+function opKeyOf(name, args) {
+  return crypto.createHash('sha256')
+    .update(JSON.stringify({ name, args: canonical(args && typeof args === 'object' ? args : {}) }))
+    .digest('hex');
+}
+
+/**
+ * 重复发起要拦下来的操作。
+ *
+ * 刻意只有两项。`run_command` 不在里面：同一条 `npm test` 本来就该重跑，
+ * 拦住它、把上一次的旧结果当成这一次的答案，比重复执行更危险。
+ * `write_file` / `edit_file` 也不在里面：同样内容写第二遍是幂等的，没有害处。
+ * 留下的是「同样参数发第二遍就是多了一件事」的那两类。
+ */
+function onceOnly(name, args) {
+  if (name === 'github_api') return String(args.method || 'GET').toUpperCase() !== 'GET';
+  if (name === 'project_memory_write') return args.mode !== 'replace';
+  return false;
+}
+
 /** 按 id 取密钥。工具模块通过这个函数拿，拿不到就返回 null */
 async function secrets(id) {
   try {
@@ -33,7 +74,19 @@ const HANDLERS = {
     const runId=String(a.runId || ''),callId=String(a.callId || ''),name=String(a.name || '');
     const input=a.args && typeof a.args==='object'?a.args:{};
     const job=runtimeStore().job(runId,callId);
-    if(!job)return {ok:false,operationStatus:'not_started',content:'这项旧计划尚未开始；用户补充要求后已取消派发。',summary:'取消尚未执行的旧计划'};
+    if(!job){
+      // 位置键落空，多半是换了模型或换了轮次。按操作编号再查一次：
+      // 「这件事本次任务里做过没有」不该因为换了执行者就答不上来。
+      const prior=runtimeStore().op(runId,opKeyOf(name,input));
+      if(prior?.callId&&prior.callId!==callId){
+        const earlier=runtimeStore().job(runId,prior.callId);
+        if(earlier?.result)return {...earlier.result,operationStatus:'completed',
+          summary:`此操作本次任务里已由调用 ${prior.callId} 完成，返回当时的结果`};
+        if(prior.status==='started')return {ok:false,uncertain:true,operationStatus:'uncertain',content:'',
+          error:`此操作本次任务里已由调用 ${prior.callId} 发起，但没有可靠的完成记录。请先核实外部结果，再决定跳过还是重做。`};
+      }
+      return {ok:false,operationStatus:'not_started',content:'这项旧计划尚未开始；用户补充要求后已取消派发。',summary:'取消尚未执行的旧计划'};
+    }
     const fingerprint=crypto.createHash('sha256').update(JSON.stringify({name,args:input})).digest('hex');
     if(job.fingerprint!==fingerprint)return {ok:false,uncertain:true,operationStatus:'uncertain',content:'',error:'原操作记录与参数不一致，需要核实'};
     if(job.result)return {...job.result,operationStatus:'completed'};
@@ -120,6 +173,7 @@ async function executeTool(name, args, ctx) {
   const readOnly = new Set(['inspect_deliverable', 'read_tool_result', 'register_outputs', 'web_search', 'fetch_url', 'list_dir',
     'read_file', 'read_document', 'search_files', 'chrome_tabs', 'chrome_read_page', 'chrome_fetch_json', 'github_search',
     'project_memory_read', 'project_doc_read', 'skill_list']);
+  const opKey = journal && !readOnly.has(name) ? opKeyOf(name, input) : null;
   if (journal) {
     const previous = journal.job(execution.runId, execution.callId);
     if (previous && previous.fingerprint !== fingerprint) return fail('同一工具调用编号对应了不同参数，已停止执行');
@@ -133,6 +187,16 @@ async function executeTool(name, args, ctx) {
       }
       return { ok: false, content: '', uncertain: true,
         error: '这一步在中断前已开始，但没有可靠的完成记录。请先核实外部结果，再选择跳过或明确允许重试，避免重复操作。' };
+    }
+    if (opKey) {
+      const done = journal.op(execution.runId, opKey);
+      if (done && done.callId !== execution.callId && onceOnly(name, input)) {
+        if (done.status === 'completed') return { ok: false, content: '', repeated: { at: done.at, callId: done.callId },
+          error: `这次任务里已经做过完全相同的操作（调用 ${done.callId}），本次没有重复执行。需要那次的结果就去读它；确实要再做一遍，请改变参数或说明理由，由用户确认。` };
+        return { ok: false, content: '', uncertain: true,
+          error: `这次任务里已由调用 ${done.callId} 发起过完全相同的操作，但没有可靠的完成记录。请先核实外部结果，再决定跳过还是重做。` };
+      }
+      journal.saveOp(execution.runId, opKey, { name, status: 'started', callId: execution.callId, at: Date.now() });
     }
     journal.saveJob(execution.runId, execution.callId, { fingerprint, name, status: 'started', at: Date.now() });
   }
@@ -153,6 +217,9 @@ async function executeTool(name, args, ctx) {
       res.content = `${raw.slice(0, 8000)}\n\n[完整结果已保存，${raw.length} 字符；用 read_tool_result(id="${res.resultRef}", offset=8000) 分页读取，不必重新查询。]\n\n${raw.slice(-2000)}`;
     }
     if (journal) journal.saveJob(execution.runId, execution.callId, { fingerprint, name, status: 'completed', result: res, at: Date.now() });
+    // 只记「做过、什么时候、哪次调用」，不在这里存结果本体。
+    // 存了就会引出自动重放，而把旧结果当成这一次的答案，是比重复执行更隐蔽的错误。
+    if (opKey) journal.saveOp(execution.runId, opKey, { name, status: 'completed', callId: execution.callId, at: Date.now() });
     return res;
   } catch (e) {
     if (journal) return { ok: false, content: '', uncertain: true,

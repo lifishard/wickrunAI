@@ -141,3 +141,70 @@ test('layered context folds summarized old user material but protects the active
   assert.equal(state.harness.context.foldedMessages,1);
   assert.match(memory.readContext(state,{id:'old-doc',offset:0,limit:12000}).content,/OLD_DEEP_EXACT/);
 });
+
+/* ---- 动作判定：疑问句开头不再一票否决（2.4.0） ---- */
+const harnessLib=base(file('src/lib/harness.ts'));
+const seed=text=>harnessLib.taskSeed([{id:'u1',role:'user',content:text,createdAt:1}],config());
+
+test('疑问句开头 + 祈使动作，仍然算动作任务',()=>{
+  assert.equal(seed('如何修复这个日期错误？请直接修改文件并运行测试。').action,true);
+  assert.equal(seed('为什么这里会报错？帮我改掉并提交。').action,true);
+});
+
+test('补上的无歧义改动动词认得出来',()=>{
+  assert.equal(seed('把 config.json 重命名为 settings.json').action,true);
+  assert.equal(seed('替换掉 README 里的旧链接').action,true);
+});
+
+test('「改为」这类连接词刻意不进词表：它常用来改口，不是改东西',()=>{
+  assert.equal(seed('不要执行旧写入，改为解释当前结果').action,false);
+});
+
+
+test('原来判成动作的仍然是动作 —— 这个改动只会更严，不会更松',()=>{
+  assert.equal(seed('修复这个日期错误并运行测试').action,true);
+  assert.equal(seed('把 README 里的版本号改一下并推送到 github').action,true);
+});
+
+test('真的只要解释，仍然不是动作任务',()=>{
+  assert.equal(seed('解释一下这段代码在做什么').action,false);
+  assert.equal(seed('如何理解事件循环？').action,false);
+  assert.equal(seed('什么是幂等键').action,false);
+});
+
+test('goalDemands 只解析目标，且认得出否定',()=>{
+  assert.deepEqual(harnessLib.goalDemands('修改文件并运行测试后推送到 github'),{modify:true,test:true,push:true});
+  assert.deepEqual(harnessLib.goalDemands('修改文件，但不要运行测试'),{modify:true,test:false,push:false});
+  assert.deepEqual(harnessLib.goalDemands('介绍一下这个仓库'),{modify:false,test:false,push:false});
+});
+
+/* ---- 本机路径的完成检查：证据只认程序核验过的验收条目 ---- */
+function nativeState(requirements){
+  return {harness:{mode:'guided',goal:'修改配置文件并运行测试',sourceId:'u1',action:true,stage:'execute',continuations:0},requirements};
+}
+const passed=kind=>({id:'r1',title:'配置已改',revision:1,check:{kind,path:'a.json'},history:[],
+  verification:{status:'passed',revision:1,detail:'',evidence:['text:已改'],at:1}});
+
+test('本机路径：没有任何验收就声称完成，拦下来',()=>{
+  const issue=harnessLib.nativeCompletionIssue(nativeState([]),config());
+  assert.match(issue,/没有任何经程序核验的验收条目/);
+});
+
+test('本机路径：只有模型复核通过不算数',()=>{
+  const issue=harnessLib.nativeCompletionIssue(nativeState([passed('review')]),config());
+  assert.match(issue,/只有模型复核通过/);
+});
+
+test('本机路径：有程序核验通过的验收条目就放行',()=>{
+  assert.equal(harnessLib.nativeCompletionIssue(nativeState([passed('file_exists')]),config()),undefined);
+});
+
+test('本机路径：验收版本对不上不算通过',()=>{
+  const stale=passed('file_exists');stale.revision=2;
+  assert.match(harnessLib.nativeCompletionIssue(nativeState([stale]),config()),/没有任何经程序核验/);
+});
+
+test('本机路径：目标本来就不要求操作，不拦',()=>{
+  const state=nativeState([]);state.harness.goal='介绍一下这个仓库的结构';
+  assert.equal(harnessLib.nativeCompletionIssue(state,config()),undefined);
+});

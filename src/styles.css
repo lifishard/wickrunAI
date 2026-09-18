@@ -2836,6 +2836,12 @@ kbd {
 .delivery-path { font-family: var(--mono); font-size: 11px; overflow-wrap: anywhere; }
 .recovery-card { border-left: 3px solid var(--accent); }
 .recovery-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.failover-list { list-style: decimal; margin: 8px 0 12px; padding-left: 22px; display: flex; flex-direction: column; gap: 6px; }
+.failover-list li { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.failover-route { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.failover-route code { overflow-wrap: anywhere; }
+.failover-route small { color: var(--muted); }
+.failover-actions { display: flex; gap: 4px; flex-shrink: 0; }
 .recovery-input { margin-top: 12px; }
 .recovery-input textarea { display: block; width: 100%; box-sizing: border-box; margin: 10px 0; resize: vertical; }
 .task-feedback { margin: 18px 0; padding: 12px 0; border-top: 1px solid var(--border); font-size: 12px; }

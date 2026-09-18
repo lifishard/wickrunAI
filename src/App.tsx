@@ -39,6 +39,7 @@ import {
   setMuted,
   type ProbeProgress,
 } from './lib/health';
+import { nextRoute, type RouteRef } from './lib/failover';
 import { TOOL_BY_NAME, availableTools } from './lib/tools/registry';
 import {
   loadConversations,
@@ -185,6 +186,10 @@ export default function App() {
   const startingRef = React.useRef(new Set<string>());
   const interruptingRef = React.useRef(new Map<string, {requestId:string;input:ChatMessage}>());
   const [resumeInput,setResumeInput]=React.useState<{convId:string;state:RunState}|null>(null);
+  // 失灵交接：换好路由后带着现场重新起跑
+  const [failoverResume,setFailoverResume]=React.useState<{convId:string;state:RunState;question:string}|null>(null);
+  // 本次任务里已经试过的路由，保证一次任务最多把名单走一遍，不来回打转
+  const failoverTriedRef=React.useRef(new Map<string,RouteRef[]>());
   const runningRef = React.useRef(new Map<string, { requestId: string; handle: AgentHandle }>());
   const questionDraftSaveRef = React.useRef(Promise.resolve());
   const questionSubmitRef = React.useRef(new Set<string>());
@@ -978,6 +983,8 @@ export default function App() {
         baseList = [conv, ...conversations];
       }
       const cfg = queuedInput?.toolsEnabled===undefined?conv.config:{...conv.config,toolsEnabled:queuedInput.toolsEnabled};
+      // 新任务重新开始数：已试过的名单只在一次任务内有效，不该拖累下一个问题
+      if(!resumeFrom)failoverTriedRef.current.delete(conv.id);
 
       if (!cfg.model) {
         startingRef.current.delete(startKey);
@@ -1156,6 +1163,23 @@ export default function App() {
                 }
               : prev,
           ),
+        // 子代理跑在别的路由上，按它自己的键读写，别记到主任务那条上去
+        limits: {
+          get: (profileId, model, baseUrl) =>
+            settingsRef.current?.modelLimits?.[limitKey(profileId, model, baseUrl)],
+          learn: (profileId, model, baseUrl, l) =>
+            setSettings((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    modelLimits: {
+                      ...(prev.modelLimits ?? {}),
+                      [limitKey(profileId, model, baseUrl)]: mergeLearnedLimit(prev.modelLimits?.[limitKey(profileId, model, baseUrl)],l),
+                    },
+                  }
+                : prev,
+            ),
+        },
         extraSystem: [
           projectSystemBlock(projects.find((p) => p.id === conv.projectId) ?? null),
           skillSystemBlock(turnSkills),
@@ -1252,6 +1276,7 @@ export default function App() {
               artifacts: arts.length ? arts : undefined,
             });
             if(finishInterruption())return;
+            failoverTriedRef.current.delete(convId);
             notifyTask('completed',`${requestId}:completed`,convId,t('任务已完成'),buf.content.slice(-240)||nextConv.title);
             // 只有完整响应成功才清除失败记录。
             if (latestState?.status === 'completed') setSettings((prev) =>
@@ -1267,28 +1292,41 @@ export default function App() {
           },
           onError(msg, info) {
             finishUi(); pauseQueue(convId);
-            if(!finishInterruption())notifyTask('error',`${requestId}:error`,convId,t('任务遇到问题'),msg);
+            const interrupted = finishInterruption();
+            if(!interrupted)notifyTask('error',`${requestId}:error`,convId,t('任务遇到问题'),msg);
+            // 记一笔健康度：确定性的服务端崩溃和「模型不存在」会让这个 ID
+            // 从默认模型列表里消失，限流和超时不算
+            const health = info.blameModel
+              ? recordFailure(settingsRef.current?.modelHealth ?? {}, profile.id, cfg.model, info)
+              : (settingsRef.current?.modelHealth ?? {});
+            if (info.blameModel) setSettings((prev) => prev ? { ...prev, modelHealth: health } : prev);
+
+            // 失灵即交接。名单是用户排的，程序只按顺序往下走；名单为空就是原来的行为。
+            const current: RouteRef = { profileId: profile.id, model: cfg.model };
+            const tried = failoverTriedRef.current.get(convId) ?? [];
+            const decision = !interrupted && latestState && cfg.failover?.enabled && !cfg.client
+              ? nextRoute({ current, order: cfg.failover.routes ?? [], tried, health, info })
+              : null;
+            const note = decision
+              ? t('{reason}，已按你的接力名单交给 {model} 接手，进度不重来。', { reason: t(decision.reason), model: decision.route.model })
+              : '';
             patchMessage(convId, answerMsg.id, {
               pending: false,
               notice: undefined,
-              error: msg,
+              error: note ? `${msg}\n${note}` : msg,
               errorInfo: info,
               progress: localProgress(steps, msg),
               artifacts: collectArtifacts(buf.content, steps),
               content: buf.content,
               elapsedMs: Date.now() - started,
             });
-            // 记一笔健康度：确定性的服务端崩溃和「模型不存在」会让这个 ID
-            // 从默认模型列表里消失，限流和超时不算
-            if (info.blameModel) {
-              setSettings((prev) =>
-                prev
-                  ? {
-                      ...prev,
-                      modelHealth: recordFailure(prev.modelHealth ?? {}, profile.id, cfg.model, info),
-                    }
-                  : prev,
-              );
+            if (decision && latestState) {
+              failoverTriedRef.current.set(convId, [...tried, current]);
+              setConversations((all) => all.map((c) => c.id === convId
+                ? { ...c, keyProfileId: decision.route.profileId, config: { ...c.config, model: decision.route.model } }
+                : c));
+              toast.show(note);
+              setFailoverResume({ convId, state: latestState, question: userMsg.content });
             }
           },
         },
@@ -1301,6 +1339,14 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [settings, conversations, active, profile, runs, canRunHostTools, attachments, activeSkills, projects, quotes, quoteOnly],
   );
+
+  React.useEffect(()=>{
+    if(!failoverResume)return;
+    const {convId,state,question}=failoverResume;
+    if(runningRef.current.has(convId)||startingRef.current.has(convId))return;
+    setFailoverResume(null);
+    void send(question,undefined,state,{text:'',attachments:[],quotes:[],quoteOnly:false,conversationId:convId});
+  },[failoverResume,runs,send]);
 
   React.useEffect(()=>{
     if(!resumeInput)return;
@@ -1912,6 +1958,8 @@ export default function App() {
           models={models}
           modelsLoading={modelsLoading}
           modelsError={modelsError}
+          routeOptions={(settings.keyProfiles ?? []).map(p => ({ profileId: p.id, profileName: p.name,
+            models: [...(settings.cachedModels[p.id] ?? []), ...(settings.customModels[p.id] ?? [])].map(m => m.id) }))}
           hasKey={Boolean(profile)}
           canRunHostTools={canRunHostTools}
           onRefreshModels={() => void refreshModels()}

@@ -76,6 +76,9 @@ function createRunStore(root, { io = fs } = {}) {
     remove(id) { atomic(location('runs', id), { id, deleted: true }); runDisposition.set(id, 'deleted'); },
     job(runId, callId) { return read(location('jobs', `${runId}:${callId}`)); },
     saveJob(runId, callId, value) { atomic(location('jobs', `${runId}:${callId}`), value); },
+    // 按「做了什么」索引的一层，跨模型、跨轮次都指向同一条记录
+    op(runId, opKey) { return read(location('ops', `${runId}:${opKey}`)); },
+    saveOp(runId, opKey, value) { atomic(location('ops', `${runId}:${opKey}`), value); },
     saveResult(runId, callId, text) {
       const id = hash(`${runId}:${callId}`);
       atomic(location('results', id), { text: String(text), runId, at: Date.now() });
