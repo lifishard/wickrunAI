@@ -48,8 +48,20 @@ jobs:
           npm test
       - name: 构建前端
         run: npm run build:fast
+      # electron-builder 要先从 GitHub 下载 116MB 的 Electron 二进制，这一步
+      # 偶发被对端掐断（wsarecv: An existing connection was forcibly closed），
+      # 跟代码无关，Windows 上尤其常见。失败就整步重来，已经下好的分片留在
+      # 本地缓存里不会重复下载。三次都失败才算真的失败。
       - name: 打包
-        run: npx electron-builder ${{ matrix.args }} --publish never
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            if npx electron-builder ${{ matrix.args }} --publish never; then exit 0; fi
+            echo "::warning::打包第 ${attempt} 次失败，15 秒后重试"
+            sleep 15
+          done
+          echo "::error::打包连续三次失败，请查看上面的日志"
+          exit 1
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
       - name: 保存平台产物

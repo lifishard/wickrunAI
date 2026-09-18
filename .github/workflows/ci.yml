@@ -48,4 +48,11 @@ jobs:
       # 只打包不出安装器：验证 electron-builder 的配置没写坏，
       # 又不用花几分钟去压安装包。
       - name: 验证打包配置
-        run: npx electron-builder --linux --dir
+        shell: bash
+        run: |
+          for attempt in 1 2; do
+            if npx electron-builder --linux --dir; then exit 0; fi
+            echo "::warning::第 ${attempt} 次失败，15 秒后重试（多半是 Electron 下载被掐断）"
+            sleep 15
+          done
+          exit 1

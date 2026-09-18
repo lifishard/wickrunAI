@@ -23,6 +23,24 @@ Use an API key from a model provider, or connect an official client you already 
 
 The interface reads in Simplified Chinese, Traditional Chinese, and English, switchable from the top right. The documents under `docs/` are in Chinese.
 
+## 2.3 Conversation isolation and three interface languages
+
+Opening a new conversation no longer leaves the composer occupied by another running task. Run state is bucketed per conversation: each one runs its own route, none of them locks another's composer, and queued input only joins the queue of the conversation it belongs to. Quota was always counted per route (credential, model, endpoint), and the run lock now matches that same granularity. Conversations in one project share its rules, memory, documents, and prompts, but not the run queue or the quota.
+
+Two conversations writing into the same directory tree would overwrite each other, so write access is registered per tree. While one holds it, the next waits and says which conversation is working there. Read-only runs neither register nor get blocked.
+
+The interface reads in Simplified Chinese, Traditional Chinese, and English, switchable next to the model chip at the top right. The Simplified text is the translation source, Traditional is converted by OpenCC, and English comes from a dictionary. Text meant for the model does not follow the interface language: permission tool results, continuation instructions, and exported diagnostic reports stay in Chinese, because switching them would change how the model behaves.
+
+Also in this line: the run-mode entry became a button, the bottom toolbar has an adjustable button density, deleting a conversation asks first, a pinned conversation still appears under its project, and team workspace notifications match the single-agent ones. See the [2.3.14 notes](docs/releases/v2.3.14.md).
+
+## 2.2 Local clients, task guardrails, and large attachments
+
+API routes and locally installed subscription clients have separate jobs: the API side handles the compatible interface and connection checks, while Local AI calls the official Codex or Claude Code client you are already signed in to. Helper models are dispatched on demand with visible progress, and the run journal stays on your machine.
+
+Task execution gained optional context management and delivery guardrails. Understanding the request, asking when something is missing, editing under the project's rules, reviewing, testing, and reporting delivery state are all recorded by the program, and you can turn the whole flow off for a model that does not need it. An interruption, a stream ending, or a model stopping early preserves the scene, so unfinished work is not mistaken for finished.
+
+Attachment limits are one text or code file up to 25MB, one image up to 20MB, and 100MB per selection. Originals stay in the local record and long text is paged in on demand, instead of quietly pushing a whole large file into every round of context. Saving large records moved to a dedicated background thread so it does not block the main process. See the [2.2.0 notes](docs/releases/v2.2.0.md).
+
 ## 2.1 Local clients and question cards
 
 The model picker gained a Local AI entry. It detects Codex, Claude Code, and Kimi Code, and shows the connection state, models, and reasoning effort. Codex supports the official ChatGPT login; Claude and Kimi reuse the authorization their official clients already hold. Grok and other compatible services continue over the API. Capability differences, native client requirements, and the open connector interface are in [Local connections](docs/LOCAL_CONNECTIONS.md).
