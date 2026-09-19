@@ -15,7 +15,8 @@ export function addRunInput(state:RunState,message:{id:string;content:string;cre
   reconcileProgress(next);next.delivery=deliveryReport(next);return next;
 }
 
-const kinds = new Set(['file_exists','json','ics','answer_contains','review']);
+const kinds = new Set(['file_exists','file_contains','json','ics','answer_contains','review']);
+const kindList = [...kinds].join(' / ');
 const versionOf = (r: DeliveryRequirement) => ({ revision:r.revision,title:r.title,sourceId:r.sourceId,sourceQuote:r.sourceQuote,check:r.check,at:r.at });
 const error = (e: unknown): ToolResult => ({ok:false,content:'',error:e instanceof Error ? e.message : String(e)});
 export function updateRequirements(state: RunState, args: Record<string,unknown>): ToolResult {
@@ -30,10 +31,13 @@ export function updateRequirements(state: RunState, args: Record<string,unknown>
       const source = state.working.find(m => m.id === r.sourceId && m.role === 'user' && state.requirementSourceIds?.includes(m.id));
       if (!source || typeof r.sourceQuote !== 'string' || !r.sourceQuote.trim() || r.sourceQuote.length > 2000 || !source.content.includes(r.sourceQuote)) throw new Error('要求必须引用真实用户消息 ID 和其中的原文；不能引用模型或内部继续指令');
       const c = r.check;
-      if (!c || !kinds.has(c.kind)) throw new Error('检查类型无效');
+      // 报错要说清楚哪一条、有哪些合法类型 —— 只说「无效」会让模型反复猜，
+      // 而这个调用是原子的：猜错一次，整批要求都登记不上
+      if (!c || !kinds.has(c.kind)) throw new Error(`要求 ${r.id} 的检查类型「${c?.kind ?? '空'}」无效；可用类型：${kindList}`);
       const strings = (v: unknown) => v === undefined || (Array.isArray(v) && v.length <= 30 && v.every(s => typeof s === 'string' && s.length > 0 && s.length <= 1000));
       if (!strings(c.contains) || !strings(c.requiredKeys) || (c.count !== undefined && (!Number.isSafeInteger(c.count) || c.count < 0))) throw new Error('检查条件无效');
-      if (['file_exists','json','ics'].includes(c.kind) && (typeof c.path !== 'string' || !c.path.trim() || c.path.length > 2000)) throw new Error('文件检查需要真实绝对路径');
+      if (['file_exists','file_contains','json','ics'].includes(c.kind) && (typeof c.path !== 'string' || !c.path.trim() || c.path.length > 2000)) throw new Error('文件检查需要真实绝对路径');
+      if (c.kind === 'file_contains' && !c.contains?.length) throw new Error('file_contains 需要 contains：要在文件里找到的原文片段');
       if (c.kind === 'answer_contains' && !c.contains?.length) throw new Error('答案匹配需要 contains；它只核对字面内容，不证明语义正确');
       const check: AcceptanceCheck = {kind:c.kind,...(c.path ? {path:c.path}:{}),...(c.contains ? {contains:c.contains}:{}),...(c.requiredKeys ? {requiredKeys:c.requiredKeys}:{}),...(c.count !== undefined ? {count:c.count}:{})};
       if (r.milestoneId && !state.milestones?.some(m => m.id === r.milestoneId)) throw new Error('里程碑 ID 不存在');

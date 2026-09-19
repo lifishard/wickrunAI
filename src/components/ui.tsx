@@ -85,7 +85,9 @@ export function Modal(props: {
             ✕
           </button>
         </div>
-        {props.children}
+        {/* children 原来直接挂在 .modal 上，没有滚动容器：内容一长（比如成员弹窗展开工具清单），
+            底部连同「保存」按钮一起被裁掉，而且滚不动。这里补上唯一的滚动区。 */}
+        <div className="modal-scroll">{props.children}</div>
         {props.footer ? <div className="modal-foot">{props.footer}</div> : null}
       </div>
     </div>

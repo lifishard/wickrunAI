@@ -115,7 +115,14 @@ export class TeamRuntime {
     const ready=[...new Set(r.queue)];
     const work=ready.filter(id=>graph.nodes.find(n=>n.id===id)?.type!=='end');
     const frontier=work.length?work.slice(0,count):ready;
-    const results=await Promise.allSettled(frontier.map(async nodeId=>{try{await this.executeNode(projectId,runId,nodeId,control);}catch(error){control.stop=true;for(const handle of control.handles)handle.abort();await teamBridge().toolAbort(runId);await this.runUpdate(projectId,runId,run=>{const a=[...run.attempts].reverse().find(a=>a.nodeId===nodeId&&a.status==='running');if(a){a.status=a.state?.uncertainCallId?'uncertain':'failed';a.error=String(error);a.endedAt=Date.now();}});throw error;}}));
+    const results=await Promise.allSettled(frontier.map(async nodeId=>{try{await this.executeNode(projectId,runId,nodeId,control);}catch(error){
+     const paused=control.stop; // 用户按了暂停/停止，不是这一步自己失败
+     control.stop=true;for(const handle of control.handles)handle.abort();await teamBridge().toolAbort(runId);
+     await this.runUpdate(projectId,runId,run=>{const a=[...run.attempts].reverse().find(a=>a.nodeId===nodeId&&a.status==='running');if(a){
+      // 「被用户打断」和「这条路由干砸了」是两件事。混成 failed 会把人为中止算进路由的失败率。
+      a.status=paused||a.state?.uncertainCallId?'uncertain':'failed';
+      a.error=paused?tr('用户中止时这一步正在执行，结果需要核实：{error}',{error:String(error)}):String(error);
+      a.endedAt=Date.now();}});throw error;}}));
     const failed=results.find(result=>result.status==='rejected');if(failed?.status==='rejected')throw failed.reason;
     const latest=this.project(projectId).runs.find(x=>x.id===runId)!;
     if(latest.pendingApproval){await this.runUpdate(projectId,runId,run=>{if(run.status==='running')run.status='waiting_user';});break;}
@@ -123,8 +130,18 @@ export class TeamRuntime {
   }catch(error){const current=this.project(projectId).runs.find(x=>x.id===runId);if(current?.status!=='cancelled')await this.pauseWith(projectId,runId,String(error),control.stop?'uncertain':'failed').catch(()=>{});}
   finally{this.running.delete(runId);this.observe(projectId,runId);this.emit();}
  }
+ /**
+  * 执行器的停机原因是按单人对话写的（「接着跑会开启下一阶段预算」）。
+  * 协作空间里没有「接着跑」这个按钮，照搬过来等于告诉用户去点一个不存在的东西。
+  */
+ private teamHint(text:string){
+  if(/剩余阶段预算不足|阶段轮次已到/.test(text))
+   return `${text}\n${tr('在这里：填一句核实依据后点「核实并接着跑」，用新的一段预算从检查点继续；想一次跑完就先提高流程的总用量上限（以及项目设置里的每次运行上限），再新建运行。')}`;
+  return text;
+ }
  private async pauseWith(p:string,id:string,text:string,status:TeamRun['status']='paused'){
-  await this.runUpdate(p,id,r=>{r.status=status;r.events.push({id:uid(),at:Date.now(),kind:status,text});});
+  const note=this.teamHint(text);
+  await this.runUpdate(p,id,r=>{r.status=status;r.events.push({id:uid(),at:Date.now(),kind:status,text:note});});
   this.observe(p,id);
  }
  async pause(projectId:string,runId:string,cancel=false){
@@ -317,7 +334,10 @@ export class TeamRuntime {
   const sources=r.attempts.filter(a=>a.status==='completed'&&(node.inputRefs.length?node.inputRefs.includes(a.nodeId):true)).map(a=>`${a.nodeId} 第${a.visit}次\n${a.output}`).join('\n\n');
   const memories=r.memorySnapshot.map(m=>`${m.title}（${m.applicability}）\n${m.text}`).join('\n\n');
   const task=p.tasks.find(t=>t.id===r.taskId);
-  const prompt=`目标：${r.goal}\n验收：${r.acceptance}\n步骤：${node.instructions}\n输出要求：${node.outputRequirement}\n允许工作目录：${roots.join('、')||'无'}\n前置记录：\n${sources}\n本轮讨论：\n${discussion}\n补充指令：\n${task?.entries.filter(e=>e.kind==='instruction'&&(e.author==='你 → 所有成员'||e.author==='你 → '+member.name)).map(e=>e.text).join('\n')??''}`;
+  // 隔离副本按设计排除了 .git 等目录。不先说，模型第一反应就是 git status，
+  // 白烧一轮拿到退出码 128 —— 这一轮的上下文和预算都是真金白银。
+  const isolationNote=fileSessionId?'\n注意：工作目录是这次运行的隔离副本，不含 .git / node_modules / dist / build / .next。git 命令在这里用不了，要看改动就直接读文件；改动稍后由用户在「文件与产物」里合并回主目录。':'';
+  const prompt=`目标：${r.goal}\n验收：${r.acceptance}\n步骤：${node.instructions}\n输出要求：${node.outputRequirement}\n允许工作目录：${roots.join('、')||'无'}${isolationNote}\n前置记录：\n${sources}\n本轮讨论：\n${discussion}\n补充指令：\n${task?.entries.filter(e=>e.kind==='instruction'&&(e.author==='你 → 所有成员'||e.author==='你 → '+member.name)).map(e=>e.text).join('\n')??''}`;
   const resume=r.attempts.find(a=>a.id===attemptId)?.memberStates?.[member.id];
   let output=resume?.content??'',state:RunState|undefined=resume,usage=resume?.spentTokens??0,handle:AgentHandle|undefined;
   const persist=()=>this.runUpdate(projectId,runId,run=>{const a=run.attempts.find(x=>x.id===attemptId)!;a.output=output;a.state=state;if(state)(a.memberStates??={})[member.id]=state;});
@@ -364,7 +384,14 @@ export class TeamRuntime {
     await this.runUpdate(projectId,runId,run=>{const item={nodeId:attemptId,text:`${member.name} 请求 ${step.name}\n${JSON.stringify(step.args,null,2)}`};run.approvalQueue=[...(run.approvalQueue??[]),item];run.pendingApproval=run.approvalQueue[0];});
     return new Promise<boolean>((res)=>{this.approvals.set(runId+':'+attemptId,ok=>{this.approvals.delete(runId+':'+attemptId);void this.runUpdate(projectId,runId,run=>{run.approvalQueue=(run.approvalQueue??[]).filter(x=>x.nodeId!==attemptId);run.pendingApproval=run.approvalQueue[0];run.events.push({id:uid(),at:Date.now(),kind:'permission',text:`${member.name} 的 ${step.name}：${ok?'批准':'拒绝'}`,nodeId:node.id});}).then(()=>res(ok)).catch(()=>res(false));});});
    };
-   handle=runAgent({resume,resolveUncertain:resume?'retry':undefined,requestId:uid('teamrequest'),profile:profile!,apiKey:key!,config,history:[{id:uid(),role:'user',content:prompt,createdAt:Date.now()}],
+   handle=runAgent({resume,resolveUncertain:resume?'retry':undefined,requestId:uid('teamrequest'),profile:profile!,apiKey:key!,config,
+    // 任务消息的 id 必须跨派发稳定。
+    //
+    // 原来每次派发都新生成一个 uid：第一次能登记验收条目（sourceId 指向当时那条消息），
+    // 一旦续跑，检查点里记的 requirementSourceIds 还是旧 id，而这次的消息换了新 id，
+    // 于是 update_requirements 永远报「要求必须引用真实用户消息 ID」——
+    // 而在预算和轮次限制下，续跑几乎是必然的，等于协作空间里根本没法声明验收。
+    history:[{id:`teamtask-${runId}-${node.id}-${member.id}`,role:'user',content:prompt,createdAt:Date.now()}],
     skills:chosen,
     modelInfo:[...(settings.cachedModels?.[member.connectionId]??[]),...(settings.customModels?.[member.connectionId]??[])].find(m=>m.id===member.model),
     limitOf:()=>this.settings()?.modelLimits?.[routeKeyOf(profile!.id,member.model,profile!.baseUrl)],
@@ -374,7 +401,14 @@ export class TeamRuntime {
     recallTasks:async(query,limit)=>recallFrom(await loadRuns(),await observationSnapshot(),{query,limit,projectId}),toolCtx:()=>({...toolContextOf(settings,projectId),teamExecution:{projectId,runId,attemptId,memberId:member.id,fileSessionId},workspaceRoots:roots,grants:{extraRoots:[],screen:false,admin:false}}),effortMappings:settings.effortMappings,extraSystem:[projectSystemBlock(this.projects().find(x=>x.id===projectId)??null),
     `你是项目成员 ${member.name}。\n${member.instructions}\n已采用项目经验：\n${memories}\n${node.type==='review'?'以 JSON 返回 {"verdict":"pass 或 fail","evidence":"具体检查证据","changes":"需要修改项"}。不得声称执行了没有执行的测试。':''}`,
     skillSystemBlock(chosen)].filter(Boolean).join('\n\n'),timeoutMs:settings.requestTimeoutMs,canRunHostTools:true,autoRetry:settings.autoRetry,confirm,grantAccess:async()=>({ok:false,content:'',error:'协作运行权限固定；请暂停后在项目设置调整并创建新运行。'}),events:{
-    onContentDelta(text){output+=text;},onContentReplace(text){output=text;},onReasoningDelta(){},onSources(){},onRound(){},onNotice(){},onStopReason(){},
+    onContentDelta(text){output+=text;},onContentReplace(text){output=text;},onReasoningDelta(){},onSources(){},onRound(){},
+    /*
+     * 限流、重试、等待都走这条。原来这里是个空函数，于是运行详情页从头到尾只有一个
+     * 「运行中」：模型在等 429 退避、等了几次、下一次什么时候，你一个字都看不到。
+     * 传空串表示清掉。
+     */
+    onNotice:text=>{void this.runUpdate(projectId,runId,run=>{const a=run.attempts.find(x=>x.id===attemptId);if(a){if(text)a.notice=`${member.name}：${text}`;else delete a.notice;}}).catch(()=>{});},
+    onStopReason(){},
     onStep:step=>{void this.runUpdate(projectId,runId,run=>{const a=run.attempts.find(x=>x.id===attemptId)!;const i=a.steps.findIndex(s=>s.id===step.id);if(i<0)a.steps.push(step);else a.steps[i]=step;}).catch(()=>{control.stop=true;handle?.abort();});},
     onUsage:u=>{const next=u.total_tokens??(u.prompt_tokens??0)+(u.completion_tokens??0),delta=Math.max(0,next-usage);usage=next;void this.runUpdate(projectId,runId,run=>{run.tokens+=delta;if(run.reservations[reservationKey]!==undefined)run.reservations[reservationKey]=Math.max(0,run.reservations[reservationKey]-delta);}).catch(()=>{control.stop=true;handle?.abort();});},
     onRunState:async next=>{if(next){state=next;const nextTokens=next.spentTokens??0,delta=Math.max(0,nextTokens-usage);usage=Math.max(usage,nextTokens);if(delta)await this.runUpdate(projectId,runId,run=>{run.tokens+=delta;if(run.reservations[reservationKey]!==undefined)run.reservations[reservationKey]=Math.max(0,run.reservations[reservationKey]-delta);});}await persist();},onDone:()=>end(),onError:(message,info)=>{failure=info;end(message);},onPaused:reason=>{control.stop=true;end(reason);},

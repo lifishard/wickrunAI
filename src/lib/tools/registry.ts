@@ -103,10 +103,10 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name:'update_requirements',label:'记录交付要求',group:'agent',
-    description:'复杂任务开始时记录用户要求与可检查条件，按 id 合并，遗漏项保留。sourceId 和 sourceQuote 必须来自原始用户消息。检查范围只能证明指定条件：file_exists 只证明文件存在；json 核对解析、顶层数组 count 和 requiredKeys；ics 核对基本格式和事件 count；answer_contains 只核对答案字面 contains；review 供开放式语义复核。覆盖完整性应另列 review 要求，不能用文件存在替代。修订会清除旧检查结果。',
+    description:'复杂任务开始时记录用户要求与可检查条件，按 id 合并，遗漏项保留。sourceId 和 sourceQuote 必须来自原始用户消息。检查范围只能证明指定条件：file_exists 只证明文件存在；file_contains 核对文件里是否出现 contains 里的原文片段（改 README、配置、文档这类交付用它）；json 核对解析、顶层数组 count 和 requiredKeys；ics 核对基本格式和事件 count；answer_contains 只核对答案字面 contains；review 供开放式语义复核。覆盖完整性应另列 review 要求，不能用文件存在替代。修订会清除旧检查结果。',
     parameters:{type:'object',properties:{requirements:{type:'array',maxItems:20,items:{type:'object',properties:{
       id:{type:'string'},title:{type:'string'},sourceId:{type:'string'},sourceQuote:{type:'string'},milestoneId:{type:'string'},
-      check:{type:'object',properties:{kind:{type:'string',enum:['file_exists','json','ics','answer_contains','review']},path:{type:'string'},contains:{type:'array',items:{type:'string'}},requiredKeys:{type:'array',items:{type:'string'}},count:{type:'integer',minimum:0}},required:['kind']},
+      check:{type:'object',properties:{kind:{type:'string',enum:['file_exists','file_contains','json','ics','answer_contains','review']},path:{type:'string'},contains:{type:'array',items:{type:'string'}},requiredKeys:{type:'array',items:{type:'string'}},count:{type:'integer',minimum:0}},required:['kind']},
     },required:['id','title','sourceId','sourceQuote','check']}}},required:['requirements']},summarize:()=> tr('记录用户要求与验收条件'),
   },
   {

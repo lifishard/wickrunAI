@@ -7,7 +7,7 @@ const { guardPath } = require('./common.cjs');
 function inspectDeliverable(args, ctx) {
   const respond = (status, detail) => ({ok:true,content:JSON.stringify({status,detail}),summary:detail});
   try {
-    if (!['file_exists','json','ics'].includes(args.kind)) return respond('unverifiable','不支持这项程序检查');
+    if (!['file_exists','file_contains','json','ics'].includes(args.kind)) return respond('unverifiable','不支持这项程序检查');
     if (typeof args.path !== 'string' || !path.isAbsolute(args.path)) return respond('unverifiable','文件检查需要绝对路径');
     const p = guardPath(args.path,ctx.workspaceRoots);
     const stat = fs.statSync(p);
@@ -15,6 +15,22 @@ function inspectDeliverable(args, ctx) {
     if (args.kind === 'file_exists') return respond('passed',`文件存在，${stat.size} 字节；尚未检查内容正确性或完整性`);
     if (stat.size > 8*1024*1024) return respond('unverifiable','文件超过 8MB 检查上限；未读取或推断内容');
     const raw = fs.readFileSync(p,'utf8').replace(/^\uFEFF/,'');
+    /*
+     * 文本文件的字面检查。
+     *
+     * 在这之前，「README 里出现某个文件名」这类最常见的交付条件根本没有对应的检查类型：
+     * file_exists 只证明文件在，json 只认 JSON，answer_contains 查的是模型自己的答复。
+     * 于是模型只能退回 review（自评），而自评不算证据 —— 整条质检链就断在这儿。
+     *
+     * 它只证明字面出现，不证明语义正确，detail 里如实写明。
+     */
+    if (args.kind === 'file_contains') {
+      if (!Array.isArray(args.contains) || !args.contains.length) return respond('unverifiable','文本包含检查需要 contains');
+      const missing = args.contains.filter(s => typeof s !== 'string' || !raw.includes(s));
+      return respond(missing.length ? 'failed':'passed', missing.length
+        ? `文件缺少指定内容：${missing.join('、')}`
+        : `文件包含全部 ${args.contains.length} 段指定内容；仅证明字面出现，不证明语义正确或上下文合适`);
+    }
     const problems = [];
     if (args.kind === 'json') {
       let value;

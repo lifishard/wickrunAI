@@ -66,7 +66,8 @@ export interface Milestone {
 }
 
 export interface AcceptanceCheck {
-  kind: 'file_exists' | 'json' | 'ics' | 'answer_contains' | 'review';
+  /** file_contains：文件里是否出现 contains 里的原文片段。改 README / 配置 / 文档这类交付靠它才能程序核验 */
+  kind: 'file_exists' | 'file_contains' | 'json' | 'ics' | 'answer_contains' | 'review';
   path?: string;
   contains?: string[];
   requiredKeys?: string[];

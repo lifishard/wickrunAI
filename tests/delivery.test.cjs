@@ -171,3 +171,31 @@ test('没挂里程碑的验收条目照样进交付闸门',async()=>{
   assert.equal(s.requirements[0].milestoneId,undefined);
   assert.equal(d.deliveryReport(s).status,'unchecked','不挂里程碑也不该隐形');
 });
+
+test('file_contains 让「改了某个文本文件」这类交付能程序核验',async()=>{
+  const fs2=require('node:fs'),os2=require('node:os');
+  const dir=fs2.mkdtempSync(path.join(os2.tmpdir(),'wickrun-contains-'));
+  const target=path.join(dir,'README.md');
+  fs2.writeFileSync(target,'# Reading Log\n- 预填问答见 data/subject-context/psyc102.json\n');
+  const s=state();
+  const req={id:'r-readme',title:'README 提到目标文件',sourceId:'u1',sourceQuote:'包含三项的 JSON',
+    check:{kind:'file_contains',path:target,contains:['psyc102.json']}};
+  assert.equal(d.updateRequirements(s,{requirements:[req]}).ok,true);
+  // contains 是这类检查的全部依据，缺了就不该放行
+  assert.equal(d.updateRequirements(state(),{requirements:[{...req,check:{kind:'file_contains',path:target}}]}).ok,false);
+  // 报错要指名道姓，并列出可用类型 —— 这个调用是原子的，猜错一次整批都登记不上
+  const bad=d.updateRequirements(state(),{requirements:[{...req,check:{kind:'contains',path:target,contains:['x']}}]});
+  assert.equal(bad.ok,false);
+  assert.match(bad.error,/r-readme/);assert.match(bad.error,/file_contains/);
+
+  await d.verifyRequirements(s,{ids:['r-readme']},check=>Promise.resolve(native.inspectDeliverable(check,{workspaceRoots:[dir]})));
+  assert.equal(s.requirements[0].verification.status,'passed');
+  assert.equal(s.requirements[0].verification.method,'program');
+
+  fs2.writeFileSync(target,'# Reading Log\n');
+  await d.verifyRequirements(s,{ids:['r-readme']},check=>Promise.resolve(native.inspectDeliverable(check,{workspaceRoots:[dir]})));
+  assert.equal(s.requirements[0].verification.status,'failed');
+  assert.match(s.requirements[0].verification.detail,/psyc102\.json/);
+  fs2.rmSync(dir,{recursive:true,force:true});
+});
+

@@ -80,3 +80,29 @@ test('本机订阅客户端不参与自动交接',async t=>{
   await f.runtime.start('p',id).catch(()=>{});
   assert.equal(f.calls.length,0);   // 本机客户端根本不走 runAgent
 });
+
+test('任务消息的 id 跨派发稳定，续跑后还能声明验收',async t=>{
+  const f=fixture(t,async(args,n)=>{
+    if(n===1){await args.events.onRunState({working:[],round:1,at:1,stoppedBy:'unknown',status:'paused',content:'半成品',spentTokens:10});args.events.onError('本阶段轮次已到',{kind:'unknown'});}
+    else{args.events.onContentDelta('好了');args.events.onDone();}
+  });
+  const id=await setup(f);
+  await f.runtime.start('p',id);
+  await f.runtime.resolveUncertain('p',id,'retry','已核实，接着跑');
+  await f.runtime.start('p',id);
+  assert.equal(f.calls.length,2);
+  // 原来每次派发都新生成 uid：检查点里记的 requirementSourceIds 指向旧 id，
+  // 续跑后 update_requirements 永远报「要求必须引用真实用户消息 ID」
+  assert.equal(f.calls[0].history[0].id,f.calls[1].history[0].id);
+  assert.match(f.calls[0].history[0].id,/^teamtask-/);
+});
+
+test('隔离副本没有 .git 这件事要先告诉成员，别让它白撞一次 git',async t=>{
+  const f=fixture(t,async args=>{args.events.onContentDelta('ok');args.events.onDone();});
+  const id=await setup(f);
+  await f.runtime.start('p',id);
+  const prompt=f.calls[0].history[0].content;
+  // 这次夹具没有配工作目录，所以不该出现这段；有隔离副本时才提示
+  assert.equal(/不含 \.git/.test(prompt),false);
+});
+

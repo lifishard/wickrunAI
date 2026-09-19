@@ -16,6 +16,18 @@ export const LOCALES: { value: Locale; label: string; label2: string; lang: stri
  * 英文查词典，查不到就退回简体原文 —— 半翻译的界面也比缺字的界面好用。
  */
 const EN: Record<string, string> = {
+  '未知任务':
+    'Unknown task',
+  '打开这次运行 →':
+    'Open this run →',
+  '新增':
+    'Added',
+  '核实并接着跑':
+    'Verified — carry on from here',
+  '在这里：填一句核实依据后点「核实并接着跑」，用新的一段预算从检查点继续；想一次跑完就先提高流程的总用量上限（以及项目设置里的每次运行上限），再新建运行。':
+    'Here: write one line of what you checked, then press "Verified — carry on from here" to continue from the checkpoint on a fresh budget. To finish in one go, raise the flow total token limit (and the per-run limit in project settings) first, then start a new run.',
+  '用户中止时这一步正在执行，结果需要核实：{error}':
+    'This step was still running when you stopped the run, so its result needs checking: {error}',
   '文件':
     'Files',
   '命令':
