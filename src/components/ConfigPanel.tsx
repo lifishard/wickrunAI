@@ -32,6 +32,7 @@ export default function ConfigPanel(props: {
   routeOptions?: RouteOption[];
   failoverScopes?: FailoverScopes;
   failoverProjectName?: string;
+  failoverScores?: React.ComponentProps<typeof FailoverList>['scores'];
   onFailoverChange?: React.ComponentProps<typeof FailoverList>['onChange'];
   onAddModel: (id: string) => void;
   /* 上面几个现在只有历史遗留的调用还在传，面板本身不用了 */
@@ -114,6 +115,7 @@ export default function ConfigPanel(props: {
       {props.onFailoverChange ? <FailoverList
         scopes={props.failoverScopes ?? {}}
         projectName={props.failoverProjectName}
+        scores={props.failoverScores}
         options={props.routeOptions ?? []}
         onChange={props.onFailoverChange}
       /> : null}

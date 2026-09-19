@@ -30,6 +30,13 @@ export interface Skill {
   /** 唤起次数，用来把常用的排前面 */
   uses: number;
   /**
+   * 用过之后成没成。
+   *
+   * uses 只说「被叫了多少次」，那是习惯不是效果 —— 一个每次都帮倒忙的技能
+   * 也会因为名字好记而排在前面。这里记的是「叫了它的那些任务后来做成没有」。
+   */
+  outcomes?: { used: number; usable: number };
+  /**
    * 安装时正文的指纹。
    * 用来区分「用户手改过」和「原样没动」—— 重装时前者不该被静默覆盖掉。
    * 手写的技能没有这个字段。
@@ -159,6 +166,32 @@ export function slashQuery(text: string, caret: number): string | null {
   return q;
 }
 
+/**
+ * 用了这个技能的任务，后来做成的比例。
+ *
+ * 样本不足就返回 -1 排在有数据的后面，而不是当成 0（那等于判它有罪）
+ * 也不是当成 1（那等于新技能天然排第一）。没数据就是没数据。
+ */
+export const SKILL_MIN_SAMPLES = 5;
+export function successRate(s: Skill): number {
+  const o = s.outcomes;
+  return o && o.used >= SKILL_MIN_SAMPLES ? o.usable / o.used : -1;
+}
+
+/**
+ * 一个任务有了结果之后，记到它当时用过的技能头上。
+ *
+ * 只认用户反馈和程序核验过的验收 —— 判据跟路由记分共用一套，
+ * 不给技能另立一套更宽松的标准。
+ */
+export function recordSkillOutcome(skills: Skill[], names: string[], done: boolean): Skill[] {
+  if (!names.length) return skills;
+  const wanted = new Set(names);
+  return skills.map((s) => wanted.has(s.name)
+    ? { ...s, outcomes: { used: (s.outcomes?.used ?? 0) + 1, usable: (s.outcomes?.usable ?? 0) + (done ? 1 : 0) } }
+    : s);
+}
+
 export function matchSkills(skills: Skill[], q: string): Skill[] {
   const needle = q.trim().toLowerCase();
   return skills
@@ -170,10 +203,12 @@ export function matchSkills(skills: Skill[], q: string): Skill[] {
         s.description.toLowerCase().includes(needle),
     )
     .sort((a, b) => {
-      // 名字前缀命中的排最前，其次按使用频次
+      // 名字前缀命中的排最前，其次按「用了它的任务做成没有」，最后才按频次
       const ap = a.name.toLowerCase().startsWith(needle) ? 0 : 1;
       const bp = b.name.toLowerCase().startsWith(needle) ? 0 : 1;
       if (ap !== bp) return ap - bp;
+      const ar = successRate(a), br = successRate(b);
+      if (ar !== br) return br - ar;
       return b.uses - a.uses;
     })
     .slice(0, 12);

@@ -102,6 +102,8 @@ export interface RunAgentArgs {
   extraSystem: string;
   /** 本轮唤起的技能。正文过长的只在 system 里留摘要，靠 read_skill 取回全文 */
   skills?: Skill[];
+  /** 按需回想过去的任务。不提供就没有这个工具 —— 默认零关联 */
+  recallTasks?: (query: string, limit: number) => Promise<unknown[]>;
   timeoutMs: number;
   canRunHostTools: boolean;
   resolveWorker?: (profileId:string) => Promise<{profile:KeyProfile;apiKey:string;models?:ModelInfo[]}>;
@@ -480,6 +482,7 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
           // 只有真的折叠了技能才声明这个工具：没折叠就没有可取回的东西，
           // 白占一条工具声明，还让前缀跟着变
           ...(foldedSkillNames(args.skills ?? []).length ? ['read_skill'] : []),
+          ...(args.recallTasks ? ['recall_past_task'] : []),
           ...(harnessMode(cfg)==='guided'?['complete_task']:[]),
           ...(cfg.runtime?.milestones === false && !state.milestones?.length && !state.requirements?.length
             ? []
@@ -738,6 +741,12 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
                       : call.name === 'complete_task' ? recordTaskReview(state,parsed)
                       : call.name === 'read_context' ? readContext(state, parsed)
                       : call.name === 'read_skill' ? readSkill(args.skills ?? [], parsed)
+                      : call.name === 'recall_past_task' ? await interrupted((async () => {
+                        const found = await args.recallTasks!(String(parsed.query ?? ''), Number(parsed.limit) || 5);
+                        return found.length
+                          ? { ok: true, content: JSON.stringify(found), summary: `回想到 ${found.length} 条旧任务` }
+                          : { ok: true, content: '[]', summary: '没有找到相关的旧任务' };
+                      })())
                       : call.name === 'update_plan' ? updatePlan(state, parsed)
                       : call.name === 'update_requirements' ? updateRequirements(state, parsed)
                       : call.name === 'verify_requirements' ? await interrupted(verifyRequirements(state,parsed,check => args.canRunHostTools

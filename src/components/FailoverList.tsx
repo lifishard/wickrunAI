@@ -2,6 +2,7 @@ import React from 'react';
 import { useT } from '../lib/i18n';
 import type { FailoverConfig, FailoverScope, RouteRef } from '../lib/failover';
 import { resolveFailover } from '../lib/failover';
+import type { RouteScore } from '../lib/routing-memory';
 import { Switch } from './ui';
 
 export interface RouteOption { profileId: string; profileName: string; models: string[] }
@@ -17,10 +18,12 @@ export interface FailoverScopes { session?: FailoverConfig; project?: FailoverCo
  * 项目里换一套，某一次对话再临时换。所以每一层都要能表达「我没意见」
  * （继承上层）和「我这层就是要这样」（哪怕是关掉）两种意思。
  */
-export default function FailoverList({ scopes, projectName, options, onChange }: {
+export default function FailoverList({ scopes, projectName, options, scores, onChange }: {
   scopes: FailoverScopes;
   projectName?: string;
   options: RouteOption[];
+  /** 「凭据::模型」→ 这条路由的历史表现。没有就是还没数据 */
+  scores?: Record<string, RouteScore>;
   onChange: (scope: FailoverScope, value: FailoverConfig | undefined) => void;
 }) {
   const t = useT();
@@ -43,6 +46,17 @@ export default function FailoverList({ scopes, projectName, options, onChange }:
     app: t('应用全局'), none: t('没有任何一层设置'),
   };
   const tabs: FailoverScope[] = projectName ? ['session', 'project', 'app'] : ['session', 'app'];
+  /*
+   * 排序建议：只动「样本够、判得出」的那些，样本不足的留在原位。
+   * 把没数据的一律挤到后面，等于让「没被用过」变成「不好」—— 那是编造。
+   */
+  const scoreOf = (r: RouteRef) => scores?.[`${r.profileId}::${r.model}`];
+  const rankable = routes.filter((r) => scoreOf(r)?.doneRate != null);
+  const suggested = (() => {
+    const sorted = [...rankable].sort((a, b) => (scoreOf(b)!.doneRate ?? 0) - (scoreOf(a)!.doneRate ?? 0));
+    let i = 0;
+    return routes.map((r) => (scoreOf(r)?.doneRate != null ? sorted[i++] : r));
+  })();
 
   return <div className="section">
     <div className="section-title">{t('失灵交接名单')}</div>
@@ -72,7 +86,15 @@ export default function FailoverList({ scopes, projectName, options, onChange }:
       </div>
       {routes.length ? <ol className="failover-list">
         {routes.map((r, i) => <li key={`${r.profileId}:${r.model}:${i}`}>
-          <span className="failover-route"><code>{r.model}</code><small>{nameOf(r)}</small></span>
+          <span className="failover-route"><code>{r.model}</code><small>{nameOf(r)}</small>
+            {(() => {
+              const s = scores?.[`${r.profileId}::${r.model}`];
+              if (!s) return null;
+              return <small className="failover-score">{s.doneRate === null
+                ? t('样本不足（{n} 条判得出）', { n: s.done + s.notDone })
+                : t('做成率 {rate}%（{n} 条判得出）', { rate: Math.round(s.doneRate * 100), n: s.done + s.notDone })}</small>;
+            })()}
+          </span>
           <span className="failover-actions">
             <button className="btn sm" aria-label={t('上移')} disabled={i === 0} onClick={() => move(i, i - 1)}>↑</button>
             <button className="btn sm" aria-label={t('下移')} disabled={i === routes.length - 1} onClick={() => move(i, i + 1)}>↓</button>
@@ -95,6 +117,10 @@ export default function FailoverList({ scopes, projectName, options, onChange }:
           </optgroup>)}
         </select>
       </div>
+      {rankable.length > 1 ? <>
+        <button className="btn sm" onClick={() => set({ routes: suggested })}>{t('按历史做成率重排（{n} 条有足够样本）', { n: rankable.length })}</button>
+        <p className="hint">{t('这是建议，不是自动执行：顺序仍然由你定。样本不足的保持原位，不会被历史数据挤到后面去。')}</p>
+      </> : null}
       <button className="btn sm ghost" onClick={() => onChange(scope, undefined)}>{t('这一层改回继承上层')}</button>
     </> : <>
       <p className="hint">{t('这一层没有设置，继承上层。')}</p>

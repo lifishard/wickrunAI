@@ -6,7 +6,7 @@ export interface HarnessCheckpoint {
   review?:{summary:string;checks:string;evidence:string[];nextAction:string;at:number};
   context?:{inputMessages:number;visibleMessages:number;foldedMessages:number};
 }
-const MANAGEMENT=new Set(['update_plan','update_requirements','verify_requirements','complete_task','request_user_input','read_context','read_tool_result','read_skill','spawn_subagent','list_subagents','wait_subagents']);
+const MANAGEMENT=new Set(['update_plan','update_requirements','verify_requirements','complete_task','request_user_input','read_context','read_tool_result','read_skill','recall_past_task','spawn_subagent','list_subagents','wait_subagents']);
 const ACTION=/(?:修复|修好|修改|编辑|替换|重命名|部署|发布|实现|重构|安装|提交|推送|执行|运行|测试|导出|制作|生成.{0,15}(?:文件|文档|报告|表格)|创建.{0,15}(?:文件|应用|网站)|\b(?:fix|implement|refactor|edit|install|commit|push|execute|run tests|build|export)\b)/i;
 const EXPLAIN=/^(?:请)?(?:解释|介绍|说明|什么是|如何|怎么|为什么|分析一下|帮我理解)|^(?:what|why|how|explain|describe)\b/i;
 const CONTINUE=/^(?:请|please\s*)?(?:继续|接着|continue|resume|go on)[\s。.!！]*$/i;
@@ -86,6 +86,23 @@ function reviewedAsAlreadySatisfied(state:RunState):boolean {
   const alreadySatisfied=/(?:无需|不需要|没有必要)(?:修改|改动|编辑)|(?:已经|原本|现有)(?:存在|满足|正确)|\b(?:no changes? (?:are )?required|already (?:exists|satisfied|correct))\b/i;
   return alreadySatisfied.test(review.summary+'\n'+review.checks);
 }
+export type TaskKind='push'|'test'|'modify'|'explain'|'other';
+
+/**
+ * 任务粗分类，用来按「哪一类活」统计路由表现。
+ *
+ * 刻意只用已有的正则，不新造分类器：一上来就引入一个没人验证过的组件，
+ * 等于在还没验证的数据上再叠一层没验证的判断。优先级 推送 > 测试 > 修改，
+ * 越具体的要求越靠前。
+ */
+export function taskKind(goal:string):TaskKind {
+  const {modify,test,push}=goalDemands(goal);
+  if(push)return 'push';
+  if(test)return 'test';
+  if(modify)return 'modify';
+  return EXPLAIN.test(goal.trim())?'explain':'other';
+}
+
 /**
  * 目标本身要求做到什么。只解析目标文字，不碰证据 ——
  * 证据从哪来是各条执行路径自己的事：API 主循环有 ToolStep，本机客户端没有。

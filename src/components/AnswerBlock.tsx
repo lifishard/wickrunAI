@@ -248,6 +248,9 @@ export default function AnswerBlock(props: {
   onHandoff?: () => void;
   onPauseForContext?: () => void;
   onResumeWithInput?: (text:string) => void;
+  onSkillOutcome?:(recordId:string,done:boolean)=>void;
+  onCorrection?:(recordId:string,kind:import('../lib/observations').CorrectionKind,note:string)=>Promise<string>;
+  onReplay?:(recordId:string)=>void;
   onResolveUncertain?: (choice: 'skip' | 'retry') => void;
   onQuestionSubmit?: (answers: UserQuestionAnswers) => void;
   onQuestionDraft?: (answers: UserQuestionAnswers) => void;
@@ -450,7 +453,7 @@ export default function AnswerBlock(props: {
       {files.length && props.onOpenArtifact ? (
         <ArtifactStrip artifacts={files} onOpen={props.onOpenArtifact} onSaved={props.onArtifactSaved} />
       ) : null}
-      {answer && !answer.pending ? <TaskFeedback taskId={answer.taskId ?? answer.runState?.runId}/>:null}
+      {answer && !answer.pending ? <TaskFeedback taskId={answer.taskId ?? answer.runState?.runId} onOutcome={props.onSkillOutcome} onCorrection={props.onCorrection} onReplay={props.onReplay}/>:null}
 
       {answer ? <MessageNotes notes={answer.annotations} onSave={props.onSaveAnnotation}
         onDelete={(id) => props.onDeleteAnnotation(answer.id, id)} /> : null}

@@ -2866,6 +2866,19 @@ kbd {
 .delivery-path { font-family: var(--mono); font-size: 11px; overflow-wrap: anywhere; }
 .recovery-card { border-left: 3px solid var(--accent); }
 .recovery-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.eval-cases { list-style: none; margin: 8px 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
+.eval-cases li { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.eval-title { overflow-wrap: anywhere; min-width: 0; }
+
+.grant-ledger { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
+.grant-ledger li { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.grant-ledger code { overflow-wrap: anywhere; }
+
+.route-scores { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 12px; }
+.route-scores th, .route-scores td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.route-scores th { color: var(--fg-faint); font-weight: 500; }
+.route-scores code { overflow-wrap: anywhere; }
+
 .failover-scopes { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
 
 .failover-list { list-style: decimal; margin: 8px 0 12px; padding-left: 22px; display: flex; flex-direction: column; gap: 6px; }
@@ -2873,6 +2886,8 @@ kbd {
 .failover-route { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .failover-route code { overflow-wrap: anywhere; }
 .failover-route small { color: var(--muted); }
+.failover-score { color: var(--fg-faint); }
+
 .failover-actions { display: flex; gap: 4px; flex-shrink: 0; }
 .recovery-input { margin-top: 12px; }
 .recovery-input textarea { display: block; width: 100%; box-sizing: border-box; margin: 10px 0; resize: vertical; }

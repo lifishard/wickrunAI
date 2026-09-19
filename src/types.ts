@@ -499,6 +499,10 @@ export interface Conversation {
   forkedFrom?: string;
   /** 属于哪个项目；null = 不在任何项目里 */
   projectId?: string | null;
+  /** 这个对话是在跑哪道回归题；跑完把结果记回题目上 */
+  evalCaseId?: string;
+  /** 跑这道题时用的配置标签，比分数时必须对齐 */
+  evalConfig?: string;
   /** 由哪个定时任务创建的 */
   taskId?: string;
   messages: ChatMessage[];
@@ -584,6 +588,14 @@ export interface AppSettings {
   schemaVersion?: number;
   /** 记住的授权，没有就是从来没记过（或者已经被撤销 / 过期清掉了） */
   rememberedGrants?: RememberedGrants;
+  /**
+   * 权限台账：每次放行决定记一笔，只增不改。
+   *
+   * rememberedGrants 回答的是「下次还问不问」，它是**状态**。台账回答的是
+   * 「到底放行过什么、什么时候、在哪个对话里」，它是**记录**。两个都要：
+   * 只有状态，用户没法回头核对自己都同意过什么；而那恰恰是最该能回头看的东西。
+   */
+  grantLedger?: GrantLedgerEntry[];
   /**
    * 从上游报错里学到的窗口大小，键包含 profileId、规范化 base URL 与 model。
    * 内置对照表永远会缺你正在用的那条路由，所以这里只记录明确上游证据。
@@ -712,6 +724,18 @@ export interface SessionGrants {
  * 跨重启记住的授权。只记目录和屏幕，**不记提权** —— 见 GrantDialog 的说明。
  * 带过期时间：没有期限的授权就是没人管的授权。
  */
+export interface GrantLedgerEntry {
+  at: number;
+  scope: 'path' | 'screen' | 'admin';
+  target?: string;
+  /** 模型当时给的理由，原话 */
+  reason?: string;
+  granted: boolean;
+  remembered: boolean;
+  conversationId?: string;
+  projectId?: string | null;
+}
+
 export interface RememberedGrants {
   extraRoots: string[];
   screen: boolean;

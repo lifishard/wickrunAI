@@ -97,6 +97,25 @@ export function outputReserve(body: Record<string, unknown>, cfg: GenerationConf
 }
 
 /** The configured client-side target used for organization and advisories. */
+/**
+ * 整理一次上下文的代价。
+ *
+ * 压缩把前缀缓存整段作废：跑摘要本身要完整读一遍上下文，之后第一轮又得按
+ * 未缓存价重算一遍。所以要重算的量大约是当前输入的两倍。
+ *
+ * 换算成「相当于几轮缓存命中」是个常数：缓存读通常按未缓存价的十分之一左右计，
+ * 两倍输入除以十分之一 ≈ 二十轮。这个比值不随上下文大小变，所以它只是个
+ * 数量级，不是账单 —— 各家缓存折扣不一样，这里不假装精确。
+ * 会变的是要重算的绝对 token 量，那个才是这一刻真实的代价。
+ *
+ * 有这个数只为一件事：让「压不压」变成一个有数字的决定，而不是一个感觉。
+ */
+const CACHE_DISCOUNT = 10;
+export function compactionCost(inputTokens: number): { tokens: number; turns: number } {
+  if (!(inputTokens > 0)) return { tokens: 0, turns: 0 };
+  return { tokens: Math.round(inputTokens * 2), turns: CACHE_DISCOUNT * 2 };
+}
+
 export function contextSuggestion(cfg: GenerationConfig): number {
   return runtimePolicy(cfg).contextTokens;
 }

@@ -2,14 +2,30 @@ import type { RunRecord } from '../types';
 import { getTransport } from './transport';
 import { TOOL_BY_NAME } from './tools/registry';
 import { recoveryInfo } from './delivery';
+import { taskKind, type TaskKind } from './harness';
 import { APP_VERSION as appVersion } from './version';
 
 export type UserOutcome = 'usable' | 'partial' | 'unresolved';
 export type FeedbackReason = 'omission' | 'incorrect' | 'artifact' | 'interrupted' | 'other';
-export interface TaskFeedback { outcome:UserOutcome;reason?:FeedbackReason;at:number;attemptId?:string }
+/**
+ * 纠错落到哪里。
+ *
+ * 借 Meta 那条内部实践的第一步：先判断错误来自知识缺口还是处理流程，
+ * 再决定改哪儿。两者改错地方都没用 —— 把流程问题写进知识库，下次照样犯；
+ * 把知识缺口写进规范，规范会越堆越长而问题还在。
+ */
+export type CorrectionKind='knowledge'|'process';
+export interface TaskFeedback {
+  outcome:UserOutcome;reason?:FeedbackReason;at:number;attemptId?:string;
+  /** 用户说的「哪里不对」原话 */
+  note?:string;
+  correction?:CorrectionKind;
+}
 export interface ObservationEvent { id:string;key:string;seq:number;at:number;attemptId:string;type:string;data:Record<string,string|number|boolean|null> }
 export interface AttemptObservation {id:string;sourceId:string;startedAt:number;lastAt:number;endedAt?:number;model:string;effort:string;route:string;appVersion:string;runtimeVersion:string;status:string;waitMs:number;humanWaitMs:number;activeMs:number;lastPhase:string;lastObservedAt:number;contextWindow?:number;workingBudget?:number}
 export interface TaskObservation {
+  /** 任务粗分类。旧记录没有，按 unknown 处理，不能假装它属于某一类 */
+  kind?:TaskKind;
   id:string;recordId:string;conversationId:string;answerId:string;startedAt:number;lastAt:number;status:string;appVersion:string;runtimeVersion:string;
   acceptance:{coverage:string;total:number;passed:number;failed:number;unverifiable:number;unchecked:number;program:number;model:number};
   feedback?:TaskFeedback;attempts:AttemptObservation[];droppedAttempts:number;events:ObservationEvent[];nextSeq:number;droppedEvents:number;seenEvents:Record<string,boolean>;detailLimitReached?:boolean;
@@ -43,6 +59,15 @@ export async function observationStore():Promise<ObservationStore> {
   })();
   return loading;
 }
+/**
+ * 路由别名：观测里不存明文路由，存的是它的哈希。
+ *
+ * 导出是为了让界面能把「接力名单里的候选」和「记分表里的行」对上号 ——
+ * 只能用同一套算法重算一遍，不能反解。别名不可逆是有意的。
+ */
+export async function routeAliasOf(model:string,profileId:string|null,routeKey:string,epoch:string):Promise<string>{
+  return routeAlias(model+'::'+profileId+'::'+routeKey,epoch);
+}
 async function routeAlias(url:string,epoch:string):Promise<string> {
   const key=epoch+'::'+url;
   if(routes.has(key))return routes.get(key)!;
@@ -70,6 +95,7 @@ export function projectObservation(previous:TaskObservation|undefined,record:Run
     requests:{total:0,accepted:0,failed:0,rejected:0,cancelled:0,pending:0,actualInput:0,actualOutput:0,missingInput:0,missingOutput:0,estimatedInput:0,reservedOutput:0,requestMs:0,missingDispatch:0},
     tools:{total:0,ok:0,failed:0,denied:0,elapsedMs:0},compactions:{total:0,latestBeforeTokens:null,latestAfterTokens:null},requirementStates:{},pauseCount:0,resumeCount:0,pauseReasons:{},supplements:0,recoveredWrites:0,missing:[],
   };
+  t.kind ??= taskKind(record.question.content ?? '');
   if(previous && at<previous.lastAt)return t;
   t.seenEvents ??= {};
   if(!previous&&s.isResumedAttempt){t.resumeCount=1;t.missing.push('本任务较早阶段没有统计，仅记录本次续跑及之后阶段');}

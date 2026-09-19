@@ -129,6 +129,12 @@ export const TOOLS: ToolDef[] = [
     summarize: () => tr('查阅保存的原文'),
   },
   {
+    name: 'recall_past_task', label: '回想过去的任务', group: 'agent',
+    description: '按关键词查本项目里过去做过的相似任务，返回标题、时间、当时用的模型、最后做成没有。只在你确实想不起来「这件事以前是怎么处理的」时调用；返回的是摘要不是原文，不能当作已核实的事实，需要细节就重新做一次核验。',
+    parameters: { type: 'object', properties: { query: { type: 'string', description: '关键词，空格分隔' }, limit: { type: 'integer', maximum: 10 } }, required: ['query'] },
+    summarize: (a) => tr('回想「{query}」相关的旧任务', { query: clip(a.query) }),
+  },
+  {
     name: 'read_skill', label: '取回技能正文', group: 'agent',
     description: '取回本轮唤起但正文未全部载入的技能（system 里标了 folded="true" 的那些）。需要它的具体规范、格式或清单时调用；没取回的部分不能当作已知。offset 是字符偏移，最多返回 12000 字符。',
     parameters: { type: 'object', properties: { name: { type: 'string', description: '技能名字' }, offset: { type: 'integer' }, limit: { type: 'integer' } }, required: ['name'] },

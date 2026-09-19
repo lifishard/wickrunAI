@@ -5,9 +5,17 @@ import { clearObservations, observationSnapshot, isCurrentFeedback, type Observa
 import { acceptanceLabel, acceptanceVars, buildAnalysisFiles, filterTasks, outcomeLabel, redactSelectedText, statusLabel, summarizeTasks, type ObservationFilter } from '../lib/observation-export';
 import { zipTextFiles } from '../lib/export-zip';
 import { runRecord, runTitle } from '../lib/runs';
+import { routeScores, MIN_RANK_SAMPLES, MIN_COST_SAMPLES } from '../lib/routing-memory';
+import { report, staleHoldout, worthKeeping, HOLDOUT_STALE_USES, type EvalStore } from '../lib/evals';
 import { desktop } from '../lib/transport';
 
-export default function ObservationPanel({onClose,onOpenTask}:{onClose:()=>void;onOpenTask:(conversationId:string,answerId:string)=>void}) {
+export default function ObservationPanel({onClose,onOpenTask,evals,onSaveCase,onRunCase,onSplit}:{
+  onClose:()=>void;onOpenTask:(conversationId:string,answerId:string)=>void;
+  evals?:EvalStore;
+  onSaveCase?:(recordId:string)=>void;
+  onRunCase?:(caseId:string)=>void;
+  onSplit?:(caseId:string,split:'dev'|'holdout')=>void;
+}) {
   const t = useT();
   const [store,setStore]=React.useState<ObservationStore>();const [from,setFrom]=React.useState(''),[to,setTo]=React.useState('');
   const [model,setModel]=React.useState(''),[version,setVersion]=React.useState('');const [selected,setSelected]=React.useState('');
@@ -17,6 +25,8 @@ export default function ObservationPanel({onClose,onOpenTask}:{onClose:()=>void;
   React.useEffect(()=>{let live=true;let timer:ReturnType<typeof setTimeout>|undefined;const read=()=>{void observationSnapshot().then(s=>{if(live)setStore(s);}).catch(()=>{if(live)setError(t('统计暂时无法读取'));});};const update=()=>{if(timer)clearTimeout(timer);timer=setTimeout(read,200);};read();window.addEventListener('anyai:observations',update);return()=>{live=false;if(timer)clearTimeout(timer);window.removeEventListener('anyai:observations',update);};},[]);
   const filter:ObservationFilter=React.useMemo(()=>({from:from?new Date(from+'T00:00:00').getTime():undefined,to:to?new Date(to+'T23:59:59.999').getTime():undefined,model:model||undefined,version:version||undefined}),[from,to,model,version]);
   const tasks=React.useMemo(()=>store?filterTasks(store.tasks,filter):[],[store,filter]);const summary=React.useMemo(()=>summarizeTasks(tasks),[tasks]);
+  const [scoreKind,setScoreKind]=React.useState<'all'|'modify'|'test'|'push'|'explain'|'other'|'unknown'>('all');
+  const scores=React.useMemo(()=>store?routeScores({...store,tasks},scoreKind):[],[store,tasks,scoreKind]);
   const selectedTask=tasks.find(t=>t.id===selected),record=selectedTask?runRecord(selectedTask.recordId):undefined;
   const snippets=React.useMemo(()=>record?[
     {id:'question',label:t('用户原始要求'),text:record.question.content},
@@ -66,10 +76,70 @@ export default function ObservationPanel({onClose,onOpenTask}:{onClose:()=>void;
         <p>{t('改进流程：选取未解决或遗漏的任务，导出脱敏排查包，提出具体修复，再用相同任务核对正确性、耗时和用量。通过回归检查后才更新执行规则；用户反馈与模型自查分别统计，不自动改写项目规范。')}</p>
       </details>
     </div>
+    <div className="observation-summary">
+      <strong>{t('各路由的表现')}</strong>
+      <p className="hint">
+        {t('这三个数只作参考展示，还没有参与任何自动决策。')}
+        {t('统计单元是「路由」而不是模型名：同一个模型挂在两份凭据下算两条，网关的 auto/ 这类逻辑路由算它自己一条 —— 网关背后随时可能换实际执行者。')}
+        <br />
+        {t('「做成率」的分母只含判得出来的任务。说不清的单独列，既不算成功也不算失败。少于 {rank} 条判得出来的不给做成率，少于 {cost} 条的不给成本。',{rank:MIN_RANK_SAMPLES,cost:MIN_COST_SAMPLES})}
+      </p>
+      <label>{t('按任务类型')}<select value={scoreKind} onChange={e=>setScoreKind(e.target.value as typeof scoreKind)}>
+        {([['all','全部'],['modify','改东西'],['test','跑测试'],['push','推送'],['explain','只要解释'],['other','其他'],['unknown','旧记录（没有分类）']] as const)
+          .map(([v,l])=><option key={v} value={v}>{t(l)}</option>)}
+      </select></label>
+      {scores.length?<table className="route-scores"><thead><tr>
+        <th>{t('路由')}</th><th>{t('做成率')}</th><th>{t('判得出 / 说不清')}</th>
+        <th>{t('耗时中位数')}</th><th>{t('每次做成的 token')}</th><th>{t('错误完成率')}</th>
+      </tr></thead><tbody>
+        {scores.map(s=><tr key={s.route}>
+          <td><code>{s.model}</code></td>
+          <td>{s.doneRate===null?<span className="hint">{t('样本不足')}</span>:`${Math.round(s.doneRate*100)}%`}</td>
+          <td>{s.done+s.notDone} / {s.unknown}</td>
+          <td>{s.medianActiveMs===null?'—':`${Math.round(s.medianActiveMs/1000)}s`}</td>
+          <td>{s.tokensPerDone===null?<span className="hint">{s.costIncomplete?t('用量有缺口'):t('样本不足')}</span>:s.tokensPerDone.toLocaleString()}</td>
+          <td>{s.falseDoneRate===null?'—':`${Math.round(s.falseDoneRate*100)}%`}</td>
+        </tr>)}
+      </tbody></table>:<p className="hint">{t('这个范围里还没有可统计的任务。')}</p>}
+    </div>
+    {evals?<div className="observation-summary">
+      <strong>{t('回归集')}</strong>
+      <p className="hint">
+        {t('题目来自真实失败：下面标了「未解决」的任务可以一键存成回归题。改了提示词、换了路由、加了技能之后，拿同一批题各跑一遍，比同一把尺子。')}
+        <br />
+        {t('dev 用来调，holdout 只在最后跑。但用来调过的题目就已经是开发数据了 —— holdout 跑满 {n} 次就该换一批，否则你量的只是自己的过拟合。',{n:HOLDOUT_STALE_USES})}
+      </p>
+      {staleHoldout(evals.cases).length?<p className="hint"><strong>{t('有 {n} 道 holdout 题已经跑满次数，建议换一批。',{n:staleHoldout(evals.cases).length})}</strong></p>:null}
+      {evals.cases.length?<><ul className="eval-cases">
+        {evals.cases.map(c=><li key={c.id}>
+          <span className="eval-title">{c.title}</span>
+          <span className="failover-actions">
+            <small>{t('{split} · 跑过 {n} 次',{split:c.split,n:c.uses})}</small>
+            {onSplit?<button className="btn sm ghost" onClick={()=>onSplit(c.id,c.split==='dev'?'holdout':'dev')}>{t('改到 {to}',{to:c.split==='dev'?'holdout':'dev'})}</button>:null}
+            {onRunCase?<button className="btn sm" onClick={()=>onRunCase(c.id)}>{t('跑这道题')}</button>:null}
+          </span>
+        </li>)}
+      </ul>
+      {(['dev','holdout'] as const).map(split=>{
+        const rows=report(evals,split);
+        return rows.length?<div key={split}><strong>{split}</strong><table className="route-scores"><thead><tr>
+          <th>{t('配置')}</th><th>{t('做成率')}</th><th>{t('题数')}</th><th>{t('耗时中位数')}</th><th>{t('每次做成的 token')}</th><th>{t('错误完成率')}</th>
+        </tr></thead><tbody>{rows.map(r=><tr key={r.config}>
+          <td><code>{r.config}</code></td>
+          <td>{r.doneRate===null?'—':`${Math.round(r.doneRate*100)}%`}</td>
+          <td>{r.done}/{r.cases}</td>
+          <td>{r.medianActiveMs===null?'—':`${Math.round(r.medianActiveMs/1000)}s`}</td>
+          <td>{r.tokensPerDone===null?'—':r.tokensPerDone.toLocaleString()}</td>
+          <td>{r.falseDoneRate===null?'—':`${Math.round(r.falseDoneRate*100)}%`}</td>
+        </tr>)}</tbody></table></div>:null;
+      })}</>:<p className="hint">{t('还没有回归题。')}</p>}
+    </div>:null}
     <div className="observation-task-list">{tasks.slice().reverse().map(item=><article key={item.id} className={selected===item.id?'selected':''}>
       <div><strong>{runTitle(item.recordId)??t('已保存的任务')}</strong><small> · {new Date(item.startedAt).toLocaleString()}</small><p>{t(statusLabel[item.status]??'未知')} · {t(acceptanceLabel(item),acceptanceVars(item))} · {item.feedback?(isCurrentFeedback(item)?'':t('较早阶段反馈：'))+t(outcomeLabel[item.feedback.outcome]):t('未反馈')}</p>
         <small>{t('续跑 {resumes} 次 · 暂停 {pauses} 次',{resumes:item.resumeCount,pauses:item.pauseCount})} · {item.attempts.map(a=>a.model).filter((x,i,a)=>a.indexOf(x)===i).join(' → ')}</small>
-        {item.missing.length||item.droppedEvents||item.detailLimitReached?<p className="hint">{t('有观测缺口或明细裁剪，导出报告中会注明。')}</p>:null}</div>
+        {item.missing.length||item.droppedEvents||item.detailLimitReached?<p className="hint">{t('有观测缺口或明细裁剪，导出报告中会注明。')}</p>:null}
+        {onSaveCase&&worthKeeping(item)&&!evals?.cases.some(c=>c.fromRecordId===item.recordId)
+          ?<button className="btn sm" onClick={()=>onSaveCase(item.recordId)}>{t('存为回归题')}</button>:null}</div>
       <div className="recovery-actions"><button className="btn sm" onClick={()=>onOpenTask(item.conversationId,item.answerId)}>{t('查看任务')}</button><button className="btn sm" aria-pressed={selected===item.id} onClick={()=>{setSelected(selected===item.id?'':item.id);setInclude([]);setPreview(undefined);}}>{t('选择排查')}</button></div>
     </article>)}</div>
     <div className="observation-export"><strong>{selectedTask?t('导出指定任务排查包'):t('导出使用分析包')}</strong>

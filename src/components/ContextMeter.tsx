@@ -4,7 +4,7 @@ import AnchoredPopover from './AnchoredPopover';
 import type { ChatMessage, ContextSnapshot, GenerationConfig, KeyProfile, ModelInfo } from '../types';
 import type { EffortMapping } from '../lib/effort';
 import type { LearnedLimit } from '../lib/limits';
-import { capabilities, prepareBody, snapshot } from '../lib/adaptive';
+import { capabilities, compactionCost, prepareBody, snapshot } from '../lib/adaptive';
 import { buildRequestBody } from '../lib/paramSchema';
 import { buildWire } from '../lib/agent';
 import { conversationMemory, withHandoffArchive } from '../lib/handoff';
@@ -24,6 +24,7 @@ export interface ContextPreview {
   current?: ContextSnapshot;
 }
 const n = (value: number) => value >= 10000 ? `${(value/1000).toFixed(1)}k` : value.toLocaleString();
+
 export default function ContextMeter({ preview, draft }: { preview: ContextPreview; draft: ChatMessage }) {
   const t = useT();
   const [open, setOpen] = React.useState(false);
@@ -68,6 +69,7 @@ export default function ContextMeter({ preview, draft }: { preview: ContextPrevi
           <div><dt>{t('图片预估')}</dt><dd>{n(s.components.attachments)}</dd></div>
           <div><dt>{t('工具结果')}</dt><dd>{n(s.components.toolResults)}</dd></div>
           <div><dt>{t('已整理摘要')}</dt><dd>{t('{n} 次', { n: s.compressionCount })}</dd></div>
+          <div><dt>{t('现在整理一次的代价')}</dt><dd>{t('约 {tokens} token 重算（≈ {turns} 轮缓存命中）', { tokens: n(compactionCost(s.inputTokens).tokens), turns: compactionCost(s.inputTokens).turns })}</dd></div>
           {s.lastReduction ? <div><dt>{t('较原始记录减少')}</dt><dd>{t('约 {n}', { n: n(s.lastReduction) })}</dd></div> : null}
           <div className="context-quota-row"><dt>{t('分钟额度（请求 / token）')}</dt><dd>{s.quota?.rpm ?? '?'} / {s.quota?.tpm ? n(s.quota.tpm) : '?'}</dd></div>
           {s.quota?.itpm || s.quota?.otpm ? <div><dt>{t('输入 / 输出额度')}</dt><dd>{s.quota.itpm ? n(s.quota.itpm) : '?'} / {s.quota.otpm ? n(s.quota.otpm) : '?'}</dd></div> : null}

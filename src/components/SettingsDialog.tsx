@@ -610,6 +610,24 @@ export default function SettingsDialog(props: {
         </div>
 
         <div className="section">
+          <div className="section-title">{t('权限台账')}</div>
+          <div className="hint" style={{ lineHeight: 1.85, marginBottom: 10 }}>
+            {t('每次放行或拒绝都记一笔，只增不改。上面那个「记住」决定的是下次还问不问，这里记的是你到底同意过什么 —— 那是最该能回头核对的东西。')}
+          </div>
+          {(s.grantLedger ?? []).length ? <>
+            <ul className="grant-ledger">
+              {[...(s.grantLedger ?? [])].reverse().slice(0, 50).map((g, i) => <li key={`${g.at}-${i}`}>
+                <span className={g.granted ? 'badge-ok' : 'badge-off'}>{t(g.granted ? '已放行' : '已拒绝')}</span>
+                <code>{g.scope === 'path' ? g.target : t(g.scope === 'screen' ? '屏幕控制' : '管理员权限')}</code>
+                <small>{new Date(g.at).toLocaleString()}{g.remembered ? t('· 已记住') : ''}</small>
+                {g.reason ? <small className="hint">{g.reason}</small> : null}
+              </li>)}
+            </ul>
+            <button className="btn sm ghost" onClick={() => props.onChange({ grantLedger: [] })}>{t('清空台账')}</button>
+          </> : <p className="hint">{t('还没有放行记录。')}</p>}
+        </div>
+
+        <div className="section">
           <div className="section-title">{t('事件驱动护栏')}</div>
           <div className="hint" style={{ lineHeight: 1.85, marginBottom: 10 }}>
             {t('模型每次改完东西，自动跑一条你写的检查命令。没通过就把原文摆到它面前，让它这一轮就看见；通过了一声不吭。')}

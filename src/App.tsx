@@ -55,7 +55,11 @@ import {
 } from './lib/store';
 import { desktop, getTransport, platformLabel, setRemoteConfig } from './lib/transport';
 import type { EffortLevel } from './lib/effort';
-import { loadSkills, saveSkills, skillSystemBlock, type Skill } from './lib/skills';
+import { loadSkills, recordSkillOutcome, saveSkills, skillSystemBlock, type Skill } from './lib/skills';
+import { recallFrom } from './lib/recall';
+import { observationSnapshot, routeAliasOf, type CorrectionKind } from './lib/observations';
+import { routeScores, type RouteScore } from './lib/routing-memory';
+import { caseFromRecord, loadEvals, resultFromRun, saveEvals, worthKeeping, type EvalStore } from './lib/evals';
 import { collectArtifacts } from './lib/artifacts';
 import { applyPlan, describeSync, planSync } from './lib/skillsync';
 import { loadProjects, makeProject, projectSystemBlock, saveProjects, type Project } from './lib/projects';
@@ -190,6 +194,11 @@ export default function App() {
   const [failoverResume,setFailoverResume]=React.useState<{convId:string;state:RunState;question:string}|null>(null);
   // 本次任务里已经试过的路由，保证一次任务最多把名单走一遍，不来回打转
   const failoverTriedRef=React.useRef(new Map<string,RouteRef[]>());
+  const [routeScoreMap,setRouteScoreMap]=React.useState<Record<string,RouteScore>>({});
+  const [evals,setEvals]=React.useState<EvalStore>();
+  React.useEffect(()=>{void loadEvals().then(setEvals);},[]);
+  const evalsRef=React.useRef<EvalStore|undefined>(undefined);evalsRef.current=evals;
+  const writeEvals=React.useCallback((next:EvalStore)=>{setEvals(next);void saveEvals(next);},[]);
   const runningRef = React.useRef(new Map<string, { requestId: string; handle: AgentHandle }>());
   const questionDraftSaveRef = React.useRef(Promise.resolve());
   const questionSubmitRef = React.useRef(new Set<string>());
@@ -827,6 +836,13 @@ export default function App() {
       setGrantReq({
         req,
         resolve: (okGranted, remember) => {
+          // 记一笔台账：同意和拒绝都记。只记同意的台账没有意义 ——
+          // 「我拒绝过这件事」跟「我同意过」一样值得回头看。
+          setSettings((prev) => prev ? { ...prev, grantLedger: [...(prev.grantLedger ?? []), {
+            at: Date.now(), scope, target: req.target, reason: req.reason,
+            granted: okGranted, remembered: Boolean(remember && okGranted && scope !== 'admin'),
+            conversationId: active?.id, projectId: active?.projectId ?? null,
+          }].slice(-200) } : prev);
           if (!okGranted) {
             resolve({
               ok: false,
@@ -1206,6 +1222,9 @@ export default function App() {
             ),
         },
         skills: turnSkills,
+        // 默认零关联：只在模型显式调用时才查，而且只查同一个项目
+        recallTasks: async (query, limit) => recallFrom(await loadRuns(), await observationSnapshot(),
+          { query, limit, projectId: conv!.projectId ?? null, excludeConversationId: conv!.id }),
         extraSystem: [
           projectSystemBlock(projects.find((p) => p.id === conv.projectId) ?? null),
           skillSystemBlock(turnSkills),
@@ -1303,6 +1322,16 @@ export default function App() {
             });
             if(finishInterruption())return;
             failoverTriedRef.current.delete(convId);
+            /*
+             * 在跑回归题就把结果记回去。没有这一步，回归集只是一张清单 ——
+             * 而清单证明不了任何事。
+             */
+            if(nextConv.evalCaseId&&latestState&&evalsRef.current){
+              const store=evalsRef.current;
+              const result=resultFromRun(nextConv.evalCaseId,nextConv.evalConfig??cfg.model,latestState,Date.now()-started);
+              writeEvals({...store,results:[...store.results,result],
+                cases:store.cases.map(c=>c.id===nextConv.evalCaseId?{...c,uses:c.uses+1,lastUsedAt:Date.now()}:c)});
+            }
             notifyTask('completed',`${requestId}:completed`,convId,t('任务已完成'),buf.content.slice(-240)||nextConv.title);
             // 只有完整响应成功才清除失败记录。
             if (latestState?.status === 'completed') setSettings((prev) =>
@@ -1369,6 +1398,34 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [settings, conversations, active, profile, runs, canRunHostTools, attachments, activeSkills, projects, quotes, quoteOnly],
   );
+
+  /*
+   * 把接力名单里的候选和记分表对上号。
+   *
+   * 观测里存的是路由别名（哈希，不可逆），所以只能用同一套算法给候选重算一遍。
+   * 只算名单里真的出现过的那几条 —— 给几百个模型逐个算哈希纯属浪费。
+   */
+  React.useEffect(()=>{
+    if(!settings)return;
+    let live=true;
+    const wanted=[...new Set([settings.failover,...projects.map(p=>p.failover),...conversations.map(c=>c.config.failover)]
+      .flatMap(f=>f?.routes??[]).map(r=>`${r.profileId}::${r.model}`))];
+    if(!wanted.length){setRouteScoreMap({});return;}
+    void (async()=>{
+      const store=await observationSnapshot();
+      const byAlias=new Map(routeScores(store,'all').map(s=>[s.route,s]));
+      const out:Record<string,RouteScore>={};
+      for(const key of wanted){
+        const at=key.indexOf('::'),profileId=key.slice(0,at),model=key.slice(at+2);
+        const profile=settings.keyProfiles.find(p=>p.id===profileId);
+        if(!profile)continue;
+        const score=byAlias.get(await routeAliasOf(model,profileId,routeKey(profile,model),store.epoch));
+        if(score)out[key]=score;
+      }
+      if(live)setRouteScoreMap(out);
+    })();
+    return ()=>{live=false;};
+  },[settings?.failover,settings?.keyProfiles,projects,conversations]);
 
   React.useEffect(()=>{
     if(!failoverResume)return;
@@ -1920,6 +1977,33 @@ export default function App() {
                         : () => void send(turn.q!.content, turn.qIndex)
                     }
                     onProbe={busy ? undefined : () => void runRequestProbe(turn.a ?? undefined)}
+                    onSkillOutcome={(recordId,done)=>{
+                      // skillNames 挂在用户那条消息上，不在 RunRecord 顶层
+                      const names=runRecord(recordId)?.question.skillNames??[];
+                      if(names.length)setSkills(prev=>recordSkillOutcome(prev,names,done));
+                    }}
+                    onCorrection={async(recordId,kind,note)=>{
+                      /*
+                       * 纠错分流：知识缺口进项目记忆，流程问题进项目规范。
+                       * 改错地方的纠错不会起作用 —— 流程问题塞进知识库，下次照样犯。
+                       * 写的是原话加来源，不做改写：改写过的就不是用户说的了。
+                       */
+                      const rec=runRecord(recordId);
+                      const project=projects.find(p=>p.id===rec?.projectId);
+                      if(!project){toast.show(t('这个任务不属于任何项目，纠错没有可写入的地方'));return t('（没有写入）');}
+                      const stamp=new Date().toLocaleString('zh-CN',{hour12:false});
+                      const title=(rec?.question.content??'').trim().replace(/\s+/g,' ').slice(0,60);
+                      const line=`[${stamp}] 纠错（来自任务「${title}」）：${note}`;
+                      const patch=kind==='knowledge'
+                        ?{memory:`${project.memory.trimEnd()}\n\n${line}`.trim()}
+                        :{instructions:`${project.instructions.trimEnd()}\n\n${line}`.trim()};
+                      setProjects(all=>all.map(p=>p.id===project.id?{...p,...patch}:p));
+                      return kind==='knowledge'?t('项目记忆'):t('项目规范');
+                    }}
+                    onReplay={busy?undefined:(recordId)=>{
+                      const question=runRecord(recordId)?.question.content;
+                      if(question)void send(question);
+                    }}
                     onResume={busy || !turn.a?.runState ? undefined : () => resumeRun(turn.a!)}
                     onCompact={busy || config.client || !turn.a?.runState ? undefined : () => resumeRun(turn.a!, undefined, undefined, true)}
                     onHandoff={!turn.a ? undefined : () => openContextHandoff(turn.a!)}
@@ -1993,6 +2077,7 @@ export default function App() {
             models: [...(settings.cachedModels[p.id] ?? []), ...(settings.customModels[p.id] ?? [])].map(m => m.id) }))}
           failoverScopes={{ session: config.failover, project: activeProject?.failover, app: settings.failover }}
           failoverProjectName={activeProject?.name}
+          failoverScores={routeScoreMap}
           onFailoverChange={(scope: FailoverScope, value: FailoverConfig | undefined) => {
             if (scope === 'session') setConfig({ failover: value });
             else if (scope === 'app') setSettings(prev => prev ? { ...prev, failover: value } : prev);
@@ -2054,7 +2139,33 @@ export default function App() {
       ) : null}
 
       {observationsOpen ? <React.Suspense fallback={<Modal title={t('任务记录与分析')} onClose={()=>setObservationsOpen(false)}><div className="modal-body">{t('正在读取记录…')}</div></Modal>}>
-        <ObservationPanel onClose={()=>setObservationsOpen(false)} onOpenTask={(conversationId,answerId)=>{setActiveId(conversationId);setObservationsOpen(false);setTimeout(()=>document.getElementById(`msg-${answerId}`)?.scrollIntoView({block:'center'}),150);}}/>
+        <ObservationPanel onClose={()=>setObservationsOpen(false)}
+          onOpenTask={(conversationId,answerId)=>{setActiveId(conversationId);setObservationsOpen(false);setTimeout(()=>document.getElementById(`msg-${answerId}`)?.scrollIntoView({block:'center'}),150);}}
+          evals={evals}
+          onSaveCase={recordId=>{
+            const rec=runRecord(recordId);
+            if(!rec||!evals)return;
+            writeEvals({...evals,cases:[...evals.cases,caseFromRecord(rec)]});
+            toast.show(t('已存为回归题（先进 dev）'));
+          }}
+          onSplit={(caseId,split)=>{
+            if(!evals)return;
+            // 转到 holdout 时把跑过的次数清零：它要重新开始当留出集
+            writeEvals({...evals,cases:evals.cases.map(c=>c.id===caseId?{...c,split,uses:split==='holdout'?0:c.uses}:c)});
+          }}
+          onRunCase={caseId=>{
+            const item=evals?.cases.find(c=>c.id===caseId);
+            if(!settings||!item)return;
+            const conv=newConversation(settings.defaultConfig,settings.activeKeyProfileId);
+            conv.title=t('回归题：{title}',{title:item.title});
+            conv.evalCaseId=item.id;
+            conv.evalConfig=conv.config.model;
+            setConversations(all=>[conv,...all]);
+            setActiveId(conv.id);
+            setObservationsOpen(false);
+            setTimeout(()=>{void send(item.task,undefined,undefined,
+              {text:'',attachments:[],quotes:[],quoteOnly:false,conversationId:conv.id});},0);
+          }}/>
       </React.Suspense>:null}
       {settingsOpen ? (
         <ErrorBoundary label={t('设置')} onReset={() => setSettingsTab('keys')}>
