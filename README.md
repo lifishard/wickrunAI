@@ -8,7 +8,7 @@
 
 Open or closed, paid or free. Bring your own keys; they never leave your machine.
 
-[![Version](https://img.shields.io/badge/version-2.9.0-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
+[![Version](https://img.shields.io/badge/version-2.9.2-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-lightgrey)](#install)
 [![CI](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml/badge.svg)](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml)
@@ -21,9 +21,17 @@ Open or closed, paid or free. Bring your own keys; they never leave your machine
 
 ---
 
-<!-- TODO: failover.gif -->
+**When a route dies mid-task, the task does not.** This is the notice you get, verbatim, and the run continues from where it stopped:
 
-> **Demo slot — recording needed.** Capture the sequence that was verified end to end with no human intervention: a task running on **OpenRouter** hits an out-of-credit error, hands off to **SenseNova**, where **glm-5.2** turns out to be short on quota, hands off again, and **kimi-k3** picks the task up and finishes it. Three routes, two handovers, one task, nobody watching. Keep the route chips and the handover notice legible; about fifteen seconds is enough. Save it as `docs/failover.gif` and replace the comment above with `![Failover in progress](docs/failover.gif)`.
+```
+This account is out of quota. Handed to glm-5.2 from your failover order;
+the saved progress carries over.
+
+This account is out of quota. Handed to kimi-k3 from your failover order;
+the saved progress carries over.
+```
+
+Three routes, two handovers, one task, nobody watching. The order is a list **you** wrote — the program walks it, it does not decide for you which of your routes is the cheap one. [How it decides](docs/llm-failover.md).
 
 ## 60 seconds to your first answer
 
@@ -70,7 +78,41 @@ On a long task you can have one model gather the material, pause, then hand the 
 
 Use an API key from a model provider, or connect an official client you already run on your machine from the desktop model picker. Accounts, subscriptions, and API charges stay with the provider. An Android client connects to your computer over the local network; it has not been verified on a physical device yet.
 
-The interface reads in Simplified Chinese, Traditional Chinese, and English, switchable from the top right. Most reference documents under `docs/` are in Chinese; the five concept pages linked above are in English.
+The interface reads in Simplified Chinese, Traditional Chinese, and English, switchable from the top right. Most reference documents under `docs/` are in Chinese; the concept pages linked above are in English.
+
+## 2.9 Cross-device sync and a private-network relay
+
+Conversations, projects, skills, scheduled tasks, task records and route scores now travel between your devices through a folder you choose: a Syncthing share, a cloud-synced directory, a drive on your LAN or Tailscale, even a USB stick. Every bundle is sealed with scrypt and AES-256-GCM under a passphrase you type each time and that is never stored, so the folder itself does not have to be trusted. Merging is per record and deterministic — syncing A into B and B into A give the same result, and syncing the same bundle twice changes nothing.
+
+**API keys never sync. Not once.** They are locked to one machine by the operating system's keystore and would not decrypt elsewhere anyway. To use the same route on another device, enter a key there, or route the call through the relay. Hooks do not sync either, because a hook is a command line that runs automatically, and syncing one would let anyone who can write to that folder deliver executable content to your desktop.
+
+The phone relay now judges where a connection came from, not only whether it carries the right token. Private ranges, CGNAT — which is where Tailscale addresses live — link-local and loopback get through; anything from the public internet is dropped without a reply, so a port scan cannot tell the difference between this and a closed port. Put both devices on the same Tailscale network and the address keeps working on any Wi-Fi, with nothing exposed to the internet. The remote settings page now labels each address by kind and puts the one that survives a network change first.
+
+## 2.8 A regression set built from your own failures
+
+A task recorded as not done can be saved as a regression case in one click, keeping the original wording rather than a rewritten version. Development and hold-out splits are scored separately and never mixed, and a hold-out case used three times prompts you to rotate it — a case you have already tuned against is development data.
+
+A candidate configuration is adopted only when it gains **and** nothing regresses. Fixing two things while breaking one is not progress: the broken one was something that already worked. Verdicts come from program checks, never from a model grading its own output, because a regression set scored by the model under test measures nothing.
+
+## 2.6–2.7 Route scores computed from your own finished tasks
+
+Ninety days of task records are aggregated into the three yardsticks that matter — completion rate, median end-to-end time, tokens per success — plus a false-completion rate that measures how often a run claimed to be done while a required check had not passed. The statistical unit is the route, not the model name: a gateway alias like `auto/best-coding` can change what actually runs behind it, so a score attached to a model name is a score attached to something that moves.
+
+Done, not done and **unclear** are three outcomes, not two. Unclear is excluded from the denominator rather than quietly counted as a failure. Below eight samples a route is not ranked at all, and below twenty no cost figure is shown.
+
+The failover list shows each candidate's history next to it, with a **Reorder by history** button you have to click — a recommendation, not a replacement. The order stays yours, and routes without enough samples keep their position instead of being pushed down by an absence of data. Skills now record whether the tasks that used them finished, so *used often* no longer passes for *useful*. See [Multi-model router](docs/multi-model-router.md).
+
+## 2.5 Event-driven guardrails and folded skills
+
+Checks you would otherwise write down and hope the model remembers now run as programs. After a tool changes something, a command you configured runs, and its output is put in front of the model only when it fails — reporting every success just teaches the model to skip past the report. Hooks are read from the app's settings only, never from a working directory, so a repository you cloned cannot run commands on your machine.
+
+A skill longer than 4000 characters is folded in the system prompt down to its name, description and opening excerpt, with the body fetched on demand. Deliberately *not* down to a bare code name: with only a name the model cannot judge whether it needs the skill, so it would fetch all of them, which costs more than leaving them inlined. After a compaction, the files this run is writing are read back at the tail of the context, so the cached prefix is left untouched.
+
+## 2.4 Operation identity and automatic hand-off
+
+When a route fails, the run moves to the next entry on a list **you** wrote instead of retrying the same model. The list is empty by default, and an empty list behaves exactly like earlier versions. Errors nobody can explain — a malformed parameter, a detected loop, an unidentified cause — deliberately do not trigger a hand-off, because switching models on those burns the whole list while looking like an attempt was made. The list is inherited across three scopes: this conversation, then the project, then the app, so a global preference can still be turned off for one task.
+
+Hand-off needs an operation identity first, or automatic switching becomes automatic duplicate side effects. The ledger used to key operations by position — run, round, index, and the call id the model generated — every one of which changes when another model takes over, so "has this been done already?" always answered no. Each side-effecting call now also carries a key derived from its content, which points at the same ledger entry across models, rounds and restarts. See [LLM failover](docs/llm-failover.md), and [the architecture write-up](docs/architecture-rsi.md) for how these pieces fit together.
 
 ## 2.3 Conversation isolation and three interface languages
 
@@ -144,7 +186,7 @@ The model choice is saved per conversation. Reasoning effort, tool permissions, 
 
 The community list at [github.com/raullenchai/free-llm-api-resources](https://github.com/raullenchai/free-llm-api-resources) records which providers offer a free tier and what they rate-limit it to. It is a fork of [cheahjs/free-llm-api-resources](https://github.com/cheahjs/free-llm-api-resources).
 
-wickrunAI has no affiliation with the authors of that list, or with any API provider named in it. This application makes no endorsement or recommendation of them, and is neither endorsed nor sponsored by them. Free tiers and their terms are set by each provider and can change at any time.
+wickrunAI is an independent service and is not affiliated with, endorsed by, or owned by the authors of that list or any API provider named in it. Listing a provider is not a recommendation. Free tiers and their terms are set by each provider and can change at any time.
 
 ### Upgrading from an older version
 
@@ -180,6 +222,12 @@ The desktop app runs on Electron 34 with a React 19, Vite, and TypeScript interf
 Published versions are listed under [Releases](https://github.com/lifishard/wickrunAI/releases). Android on a physical device and the reasoning-parameter mapping for some providers still need verification. Image attachments need a model that accepts image input.
 
 For a problem, open an [issue](https://github.com/lifishard/wickrunAI/issues) with the app version, your system, the endpoint, the model ID, and the steps to reproduce. Remove API keys and private content before attaching logs or a request preview.
+
+## Disclaimer
+
+wickrunAI is an independent service and is not affiliated with, endorsed by, or owned by Anthropic, OpenAI, Google, xAI, SenseTime, Moonshot AI, OpenRouter, or any other model provider or service named in this repository. Product names, logos and trademarks are the property of their respective owners and are used here only to describe what this client can connect to.
+
+Connecting to a provider requires your own account and credentials with that provider, and your use of their service is governed by their terms, not by this project's. Accounts, subscriptions, quotas and charges stay with the provider. This project neither resells nor proxies access to any of them.
 
 ## License
 

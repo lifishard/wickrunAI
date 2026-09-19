@@ -178,6 +178,13 @@ export async function loadConversations(): Promise<Conversation[]> {
       return {
         ...c,
         config,
+        /*
+         * 老版本把「新对话」四个字存进了 title，切语言时它不会变。空会话叫
+         * 这个名字只可能是那个默认值（用户不会给一条空会话手动取这个名），
+         * 所以归一成「还没取名」，之后它就跟着界面语言走。
+         * 有消息的不动 —— 那可能是用户自己取的名字。
+         */
+        title: c.title === '新对话' && !(c.messages ?? []).length ? UNTITLED : c.title,
         messages: (c.messages ?? []).map((m) => ({ ...m, pending: false })),
       };
     });
@@ -202,11 +209,23 @@ export async function saveConversationsNow(list: Conversation[]): Promise<void> 
   await getTransport().kvSet(K_CONVS, JSON.stringify(list));
 }
 
+/*
+ * 还没有名字的会话，title 存空串，不存「新对话」四个字。
+ *
+ * 之前存的是中文字面量，于是它变成了数据而不是界面文案：切到英文，侧栏里
+ * 那条依然写着「新对话」，因为那就是这条记录里存着的名字。翻译在渲染时做
+ * 不了 —— t(c.title) 会把用户自己取名叫「新对话」的会话也一起翻掉。
+ *
+ * 所以改成用空串表示「还没取名」，显示时才落到当前语言（conversationTitle）。
+ * 一旦有了真名字（用户重命名、或者从首条消息推导），它就是真数据，不再翻译。
+ */
+export const UNTITLED = '';
+
 export function newConversation(cfg: GenerationConfig, keyProfileId: string | null): Conversation {
   const now = Date.now();
   return {
     id: uid('c'),
-    title: '新对话',
+    title: UNTITLED,
     messages: [],
     config: JSON.parse(JSON.stringify(cfg)) as GenerationConfig,
     keyProfileId,
@@ -215,9 +234,18 @@ export function newConversation(cfg: GenerationConfig, keyProfileId: string | nu
   };
 }
 
+/**
+ * 会话在界面上显示的名字。
+ * 没取名就落到当前语言，取过名就原样显示 —— 用户的名字不翻译。
+ */
+export function conversationTitle(title: string, t: (text: string) => string): string {
+  return title || t('新对话');
+}
+
 export function titleFrom(text: string): string {
   const t = text.replace(/\s+/g, ' ').trim();
-  if (!t) return '新对话';
+  // 推不出名字就保持「还没取名」，不要在这里落一个中文字面量进数据。
+  if (!t) return UNTITLED;
   return t.length > 24 ? `${t.slice(0, 24)}…` : t;
 }
 

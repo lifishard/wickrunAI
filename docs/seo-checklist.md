@@ -2,7 +2,25 @@
 
 Maintainer task list for the GitHub repository's own metadata. Nothing here changes the code; all of it changes how the repository is found and what a visitor sees before they read anything.
 
-These commands could not be run from the working environment that produced this file — the GitHub CLI is not installed there. Run them on a machine where `gh auth status` reports a logged-in account with write access to `lifishard/wickrunAI`, then check them off.
+Two ways to do it: the browser (Option A, no install) or the GitHub CLI (Option B). Both change the same settings — pick one.
+
+**Status, checked 2026-09-19:** description, homepage and topics are done — 17 topics are live. **`android` did not take**; add it in the About panel (the repository ships an Android client and that is a term people search for). Discussions and the wiki still need the Settings → Features pass, and there is still no social preview image.
+
+
+## Option A — do it in the browser, no `gh` needed
+
+Everything in sections 1 to 4 can be done from the GitHub web UI in about three minutes. This is the shorter path if you do not already have the CLI.
+
+1. **Description, homepage, topics** — open `https://github.com/lifishard/wickrunAI`, click the **gear icon** next to *About* in the right-hand column. The panel has a Description box, a Website box, and a Topics box (type a topic, press Enter, repeat). Paste the description from section 1, the URL from section 2, and add the eighteen topics from section 3. Click **Save changes**.
+2. **Discussions on** — **Settings → General → Features**, tick **Discussions**, then **Set up discussions**.
+3. **Wiki off** — same **Features** block, untick **Wikis**. Copy anything worth keeping into `docs/` first; turning the wiki off hides its content.
+4. **Social preview** — **Settings → General → Social preview → Edit → Upload an image**. 1280x640 PNG. Without one, every link to this repository renders grey and anonymous in chat apps and on social platforms.
+
+Verify by reloading the repository page: the About column should show the new description, the releases link, and a row of topic chips.
+
+## Option B — the `gh` CLI
+
+Install it first if you do not have it. On Windows: `winget install --id GitHub.cli`, then open a **new** terminal so `gh` is on `PATH`. Then `gh auth login` and pick GitHub.com, HTTPS, and login with a web browser.
 
 ```bash
 gh auth status   # confirm you are logged in and have write access
@@ -78,6 +96,6 @@ gh repo view lifishard/wickrunAI --json description,homepageUrl,repositoryTopics
 
 ## Still to do by hand
 
-- **Record `docs/failover.gif`.** The README reserves a slot for it. The sequence to capture is the verified one: OpenRouter out of credit, handover to SenseNova where `glm-5.2` is short on quota, second handover, `kimi-k3` picks the task up and finishes, no human intervention at any point. Keep it under about fifteen seconds and make sure the route chips and the handover notice are legible.
+- **A demo image — optional.** The README shows the handover notice as text, which carries the claim without any recording. If you want a picture, the cheap version is a still screenshot of the run journal after a handover has happened naturally; see section 1 of [launch-kit.md](launch-kit.md). Nothing waits on this.
 - **Social preview image.** Settings → General → Social preview. This is the image every link to the repository renders as on social platforms and in chat apps; without one the link is grey and anonymous.
 - **Release notes.** Each release's body is an indexable page. A release published with an empty body wastes it.

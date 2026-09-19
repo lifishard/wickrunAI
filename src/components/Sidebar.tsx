@@ -2,6 +2,7 @@ import React from 'react';
 import type { Conversation } from '../types';
 import type { Project } from '../lib/projects';
 import { useT } from '../lib/i18n';
+import { conversationTitle } from '../lib/store';
 
 export default function Sidebar(props: {
   conversations: Conversation[];
@@ -68,6 +69,8 @@ export default function Sidebar(props: {
         className={`conv-item${c.id === props.activeId ? ' active' : ''}`}
         onClick={() => props.onSelect(c.id)}
         onDoubleClick={() => {
+          // 没取名的会话开重命名时留空，占位符显示当前语言的默认名。
+          // 预填成「新对话」的话，用户直接回车就把当前语言固化进数据了。
           setRenaming(c.id);
           setDraft(c.title);
         }}
@@ -76,6 +79,7 @@ export default function Sidebar(props: {
           <input
             type="text"
             value={draft}
+            placeholder={conversationTitle(c.title, t)}
             autoFocus
             onClick={(e) => e.stopPropagation()}
             onChange={(e) => setDraft(e.target.value)}
@@ -95,9 +99,9 @@ export default function Sidebar(props: {
         ) : (
           <>
             {c.pinned ? <span className="pin-dot" title={t('已钉选')}>📌</span> : null}
-            <span className="conv-title" title={c.title}>
+            <span className="conv-title" title={conversationTitle(c.title, t)}>
               {c.forkedFrom ? <span className="fork-mark" title={t('从别的对话分叉来的')}>⑂</span> : null}
-              {c.title}
+              {conversationTitle(c.title, t)}
             </span>
             <button
               className="icon-btn"
@@ -143,7 +147,7 @@ export default function Sidebar(props: {
             <div className="modal-head">{t('删除这个对话？')}</div>
             <div className="modal-body">
               <p style={{ margin: 0, lineHeight: 1.7 }}>
-                {t('「{title}」的全部消息和执行记录会被一起删掉，删了就找不回来了。', { title: pendingDelete.title })}
+                {t('「{title}」的全部消息和执行记录会被一起删掉，删了就找不回来了。', { title: conversationTitle(pendingDelete.title, t) })}
               </p>
             </div>
             <div className="modal-foot">

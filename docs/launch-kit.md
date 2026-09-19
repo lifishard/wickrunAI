@@ -19,17 +19,21 @@ Work down this list. Nothing in the channels section ships until its row is gree
 |---|---|---|---|
 | 1 | 2.9.0 tagged, built, eighteen assets attached | everything | Every post links to Releases. A 404 or an empty page ends the visit. |
 | 2 | 2.9.0 Release body written (from the playbook) | everything | See above. |
-| 3 | README version badge says `2.9.0` | everything | It currently says 2.8.0. First thing a careful reader checks; a stale badge reads as an unmaintained project. |
-| 4 | `docs/failover.gif` recorded and committed, README comment replaced with the image | Show HN, Product Hunt, both subreddits | The single claim that distinguishes this project is a thing that happens over fifteen seconds. Described in prose it is a feature list; shown, it is the reason to download. |
+| 3 | README version badge matches the published release | everything | `tests/version-sync.test.cjs` now ties the badge to `package.json`, so this can only drift if the release itself was not tagged. First thing a careful reader checks. |
+| 4 | *(optional)* A screenshot or GIF of a handover in the README | nothing — nice to have | The README now shows the handover notice as text, which carries the claim without a recording. A picture would carry it faster, but it does not block any channel. See section 1 if you want to add one later. |
 | 5 | Repository description, homepage and topics fixed | everything | See [seo-checklist.md](seo-checklist.md). The description currently advertises an unrelated project; the homepage points at an unrelated site. Both are visible in the first second of a visit from any of these channels. |
 | 6 | A window of about six free hours | Show HN, Reddit | To answer comments. If you cannot sit with it, do not post it. |
 
 ---
 
-## 1. Demo GIF: recording script
+## 1. Demo image: optional, and the cheap version first
 
-**Timing:** before everything else. Item 4 in the gate above.
-**Prerequisite:** two credentials configured, one of which is genuinely out of credit; or a reproducible way to force the error.
+**Timing:** whenever. This blocks nothing — the README carries the claim as text.
+**Prerequisite for a GIF:** two credentials configured, one of which is genuinely out of credit, *and* a way to make that happen on cue. Reproducing a two-hop failure on demand is the hard part, which is why this is optional.
+
+**The cheap version:** a single still screenshot of the run journal after a handover has already happened, showing three route entries and two handover notices. No timing, no reproduction, no recording tool — just wait until it happens naturally once, then screenshot it. Crop to the journal, save as `docs/failover.png`, and add `![Handover in the run journal](docs/failover.png)` under the code block at the top of both READMEs. That gets most of the value for none of the effort.
+
+The full GIF script below stays here in case you ever want it.
 
 ### Output spec
 
@@ -64,7 +68,7 @@ Window sized so the composer, the route chip and the run journal are all visible
 
 **Check before committing:** open the GIF at 880px wide and read every route name and the handover reason without leaning in. If you cannot, the window was too large when you recorded. Re-record smaller rather than scaling up.
 
-Commit as `docs/failover.gif`, then replace the `<!-- TODO: failover.gif -->` comment and the demo-slot blockquote in `README.md` with `![Failover in progress](docs/failover.gif)`. Do the same in `README.zh-CN.md`.
+Commit as `docs/failover.gif`, then add `![Failover in progress](docs/failover.gif)` under the handover code block at the top of `README.md`. Do the same in `README.zh-CN.md`. Keep the text block — it is what a reader with images disabled, or a search engine, actually sees.
 
 ---
 

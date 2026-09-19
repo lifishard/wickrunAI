@@ -50,6 +50,7 @@ import {
   saveSettings,
   secretGet,
   titleFrom,
+  conversationTitle,
   toolContextOf,
   uid,
 } from './lib/store';
@@ -545,7 +546,7 @@ export default function App() {
     const copy: Conversation = {
       ...src,
       id: uid('c'),
-      title: t('{title}（分叉）', { title: src.title }),
+      title: t('{title}（分叉）', { title: conversationTitle(src.title, t) }),
       config: JSON.parse(JSON.stringify(src.config)) as GenerationConfig,
       messages: (JSON.parse(JSON.stringify(slice)) as ChatMessage[]).map((m) => ({
         ...m,
@@ -1092,7 +1093,7 @@ export default function App() {
         setQueue((q) => [...q, queuedInput ?? { toolsEnabled: cfg.toolsEnabled, text, attachments: [...attachments], quotes: [...quotes], quoteOnly, conversationId: convId }]);
         setAttachments([]); setQuotes([]);
         pauseQueue(convId);
-        const holderTitle = conversations.find((c) => c.id === holders[0])?.title ?? t('另一个会话');
+        const holderTitle = conversations.find((c) => c.id === holders[0])?.title || t('另一个会话');
         toast.show(t('「{title}」正在这个工作目录里执行。这条排着，等它结束再发。', { title: holderTitle }), 6000);
         return;
       }
@@ -1913,7 +1914,7 @@ export default function App() {
               ⇥
             </button>
           ) : null}
-          <span className="page-title" title={active?.title}>{active?.title ?? t('新对话')}</span>
+          <span className="page-title" title={active ? conversationTitle(active.title, t) : undefined}>{active ? conversationTitle(active.title, t) : t('新对话')}</span>
           <span className="spacer" />
           {!profile ? <span className="chip warn">{t('未配置凭据')}</span> : null}
           <span className="chip">{config.model || t('未选模型')}</span>
