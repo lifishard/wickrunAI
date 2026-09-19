@@ -8,7 +8,7 @@
 
 开源的、闭源的，付费的、免费的，都能调度。Key 自己带，只留在你本机。
 
-[![Version](https://img.shields.io/badge/version-2.9.2-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
+[![Version](https://img.shields.io/badge/version-2.10.0-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-lightgrey)](#安装)
 [![CI](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml/badge.svg)](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml)
@@ -77,6 +77,14 @@
 可使用模型服务商的 API Key，也可在桌面版模型选择器中连接本机官方客户端。账号、订阅和 API 费用由对应服务商管理。项目另有 Android 客户端，可通过局域网连接电脑；目前尚未完成真机验证。
 
 界面支持简体中文、繁體中文和 English，在右上角切换；`docs/` 下的参考文档多数是中文，上面链接的五篇概念页是英文。
+
+## 2.10 导出对话
+
+任何一条对话都可以存成文件：顶栏的**导出**按钮，或者侧栏每条对话上的 ⤓ 图标。两种格式——Markdown 给人读、贴进笔记、发给别人；JSON 是完整记录。执行步骤和模型的思考过程默认都不带，各有一个开关：多数时候你要的就是对话本身。
+
+不会进文件的东西：**API 密钥，一次也不会。** 这条对话用的凭据编号也被摘掉了——它在另一台机器上没有任何意义，只会透露你配了几条路由。附件保留名字、类型和大小，正文与图片本体留在原地，否则一条带几张图的对话导出来就是几十兆。
+
+存完之后，弹框里显示**完整路径**，旁边是「打开所在文件夹」和「打开文件」，你什么时候关它都行。用 toast 的话，路径会闪四秒然后消失——而那恰恰是你下一步要用的东西。
 
 ## 2.9 跨设备同步与私有网络中继
 

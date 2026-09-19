@@ -8,7 +8,7 @@
 
 Open or closed, paid or free. Bring your own keys; they never leave your machine.
 
-[![Version](https://img.shields.io/badge/version-2.9.2-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
+[![Version](https://img.shields.io/badge/version-2.10.0-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-lightgrey)](#install)
 [![CI](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml/badge.svg)](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml)
@@ -79,6 +79,14 @@ On a long task you can have one model gather the material, pause, then hand the 
 Use an API key from a model provider, or connect an official client you already run on your machine from the desktop model picker. Accounts, subscriptions, and API charges stay with the provider. An Android client connects to your computer over the local network; it has not been verified on a physical device yet.
 
 The interface reads in Simplified Chinese, Traditional Chinese, and English, switchable from the top right. Most reference documents under `docs/` are in Chinese; the concept pages linked above are in English.
+
+## 2.10 Exporting a conversation
+
+Any conversation can be saved to a file, from the **Export** button in the header or the ⤓ icon on a sidebar row. Two formats: Markdown to read, paste into notes or send to someone, and JSON for the complete record. Tool steps and the model's reasoning are off by default and each has its own switch — most of the time what you want is the conversation itself.
+
+What does not go into the file: **API keys, never.** The credential id the conversation used is stripped too — it means nothing on another machine and only reveals how many routes you have configured. Attachments keep their name, type and size; the text and image data stay behind, because a conversation with a few images would otherwise export as tens of megabytes.
+
+After saving, the dialog shows the **full path** with buttons to open the containing folder or the file itself, and stays open until you close it. A toast would have shown the path for four seconds and then taken away the one thing you needed next.
 
 ## 2.9 Cross-device sync and a private-network relay
 

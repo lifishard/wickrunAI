@@ -96,6 +96,7 @@ import GrantDialog, { REMEMBER_DAYS } from './components/GrantDialog';
 import WorkspaceDialog from './components/WorkspaceDialog';
 import { Modal, Toast, useToast } from './components/ui';
 const ObservationPanel = React.lazy(()=>import('./components/ObservationPanel'));
+const ExportDialog = React.lazy(()=>import('./components/ExportDialog'));
 const TeamWorkspace = React.lazy(()=>import('./components/collaboration/TeamWorkspace'));
 
 const EXAMPLES = [
@@ -131,6 +132,8 @@ export default function App() {
   const [runs, setRuns] = React.useState<Record<string, { requestId: string; handle: AgentHandle }>>({});
   const [settingsOpen, setSettingsOpen] = React.useState(false);
   const [observationsOpen,setObservationsOpen] = React.useState(false);
+  /** 正在导出哪条对话。存 id 不存对象 —— 存对象的话对话更新了框里还是旧快照。 */
+  const [exportingId,setExportingId] = React.useState<string|null>(null);
   const [settingsTab, setSettingsTab] = React.useState<string>('keys');
   const [configOpen, setConfigOpen] = React.useState(false);
   const [activityOpen, setActivityOpen] = React.useState(true);
@@ -1860,6 +1863,7 @@ export default function App() {
           projects={projects}
           onTogglePin={togglePin}
           onFork={(id) => forkConversation(id)}
+          onExport={(id) => setExportingId(id)}
           onNewInProject={(pid) => newChat(pid)}
           onOpenWorkspace={(t) => {
             setWorkspaceTab(t);
@@ -1919,6 +1923,12 @@ export default function App() {
           {!profile ? <span className="chip warn">{t('未配置凭据')}</span> : null}
           <span className="chip">{config.model || t('未选模型')}</span>
           <LocaleSwitch onChange={(locale) => setSettings((prev) => (prev ? { ...prev, locale } : prev))} />
+
+          {active && turns.length > 0 ? (
+            <button className="btn sm" title={t('把这条对话存成文件')} onClick={() => setExportingId(active.id)}>
+              {t('导出')}
+            </button>
+          ) : null}
 
           {msgs.some(hasActivity) ? <button className="btn sm" aria-pressed={activityOpen && !configOpen && !openArtifact} onClick={() => { setActivityOpen(!(activityOpen && !configOpen && !openArtifact)); setConfigOpen(false); setOpenArtifact(null); }}>{t('任务动态')}</button> : null}
 
@@ -2137,6 +2147,15 @@ export default function App() {
           onSkillSync={(c) => setSettings((p) => (p ? { ...p, skillSync: c } : p))}
         />
         </ErrorBoundary>
+      ) : null}
+
+      {exportingId && conversations.some(c=>c.id===exportingId) ? (
+        <React.Suspense fallback={null}>
+          <ExportDialog
+            conversation={conversations.find(c=>c.id===exportingId)!}
+            onClose={()=>setExportingId(null)}
+          />
+        </React.Suspense>
       ) : null}
 
       {observationsOpen ? <React.Suspense fallback={<Modal title={t('任务记录与分析')} onClose={()=>setObservationsOpen(false)}><div className="modal-body">{t('正在读取记录…')}</div></Modal>}>

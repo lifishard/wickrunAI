@@ -49,6 +49,7 @@ const TRANSLATED=[
   'components/ClientConnections.tsx',
   'components/NativeAiPanel.tsx',
   'components/DeliveryPanel.tsx',
+  'components/ExportDialog.tsx',
   'components/RecoveryCard.tsx',
   'components/Markdown.tsx',
   'components/ErrorBoundary.tsx',

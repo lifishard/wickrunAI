@@ -13,6 +13,7 @@ export default function Sidebar(props: {
   onRename: (id: string, title: string) => void;
   onTogglePin: (id: string) => void;
   onFork: (id: string) => void;
+  onExport: (id: string) => void;
   onOpenSettings: () => void;
   onOpenObservations: () => void;
 
@@ -122,6 +123,16 @@ export default function Sidebar(props: {
               }}
             >
               ⑂
+            </button>
+            <button
+              className="icon-btn"
+              title={t('存成文件')}
+              onClick={(e) => {
+                e.stopPropagation();
+                props.onExport(c.id);
+              }}
+            >
+              ⤓
             </button>
             <button
               className="icon-btn"

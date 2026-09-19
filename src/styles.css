@@ -2949,3 +2949,12 @@ kbd {
 .chip.scope-cgnat { background: var(--ok-bg, rgba(46,160,67,.15)); color: var(--ok, #2ea043); }
 .chip.scope-private { background: var(--chip-bg); }
 .chip.scope-linklocal, .chip.scope-loopback { opacity: .6; }
+
+/* 导出对话：存完之后路径要留在框里，而不是用 toast 闪一下就没 ——
+   路径正是用户接下来要用的东西。 */
+.export-done-head { margin: 0 0 6px; font-weight: 600; }
+.export-path {
+  display: block; padding: 6px 8px; border-radius: 6px;
+  background: var(--code-bg, rgba(127,127,127,.12));
+  font-size: 12px; word-break: break-all; user-select: all;
+}
