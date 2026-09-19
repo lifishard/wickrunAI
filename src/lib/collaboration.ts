@@ -128,3 +128,91 @@ export function importTemplate(raw:unknown,newId:(prefix:string)=>string=uid):{m
  });
  return {members,workflows};
 }
+
+/**
+ * 一键流程的建图。
+ *
+ * 只有一位成员时不放讨论节点 —— 讨论和执行会派给同一个人，第二个节点把第一个节点
+ * 做过的事整套重做（重新声明验收、重新核验、重新列文件）。实测一次小任务 343k tokens
+ * 里将近三分之一烧在这上面。一个人不需要跟自己开会。
+ */
+export function freeFlowGraph(
+ task:{title:string;goal:string;acceptance:string;ownerId?:string},
+ members:Member[],
+ name:string,
+ newId:(prefix:string)=>string=uid,
+):Workflow{
+ const enabled=members.filter(m=>m.enabled);
+ if(!enabled.length)throw Error('请先配置至少一位成员');
+ const flow=newWorkflow(name),start=flow.draft.nodes[0],end=flow.draft.nodes[1];
+ const execute=newNode('agent',enabled.length>1?540:300,120);
+ execute.id=newId('node');
+ execute.memberId=task.ownerId&&enabled.some(m=>m.id===task.ownerId)?task.ownerId:enabled[0].id;
+ execute.instructions=task.goal;execute.outputRequirement=task.acceptance;
+ end.outputRequirement=task.acceptance;
+ const chain:FlowNode[]=[start];
+ if(enabled.length>1){
+  const discuss=newNode('discussion',300,120);discuss.id=newId('node');
+  discuss.participants=enabled.map(m=>m.id);
+  discuss.instructions='围绕任务目标提出方案、指出分歧并形成可执行决定。保留不同意见。';
+  discuss.outputRequirement='决定、依据、待解决问题';
+  chain.push(discuss);
+ }
+ chain.push(execute,end);
+ end.x=chain.length>3?810:570;
+ flow.draft.nodes=chain;
+ flow.draft.edges=chain.slice(0,-1).map((a,i)=>({id:newId('edge'),from:a.id,to:chain[i+1].id,port:'next',label:'继续',maxTraversals:3}));
+ return flow;
+}
+
+/**
+ * 运行详情页顶部那一条总览。
+ *
+ * 页面原来只有一个「运行中」。在等什么、卡在哪一步、谁在跑、预算烧到什么程度，
+ * 全要滚到对应的尝试里才看得见 —— 实测一次运行里我三次滚回去找「它到底在等我什么」。
+ * 这里把这四件事一次算清楚，纯函数，好测。
+ */
+export interface RunOverview {
+ nodeTitle:string; memberName:string;
+ /** 界面按这个决定语气和是否高亮 */
+ waitingKind:'approval'|'verify'|'accept'|'notice'|'working'|'idle'|'done';
+ /** 已经是可以直接显示的一句话（notice 类是执行器原文） */
+ waiting:string;
+ tokens:number; cap:number; ratio:number;
+}
+export function runOverview(run:TeamRun):RunOverview{
+ const nodes=run.version.graph.nodes;
+ const live=[...run.attempts].reverse().find(a=>a.status==='running');
+ const pendingNode=run.pendingApproval?nodes.find(n=>n.id===run.pendingApproval!.nodeId):undefined;
+ const attention=[...run.attempts].reverse().find(a=>['waiting_user','uncertain','failed'].includes(a.status)&&!a.resolution);
+ const current=live??attention??[...run.attempts].reverse()[0];
+ const node=pendingNode??(current?nodes.find(n=>n.id===current.nodeId):undefined)
+  ??nodes.find(n=>n.id===run.queue[0]);
+ const named=(ids:(string|undefined)[])=>ids.filter(Boolean).map(id=>run.members.find(m=>m.id===id)?.name).filter(Boolean).join('、');
+ const memberName=node?named(node.type==='discussion'?(node.participants??[]):[node.memberId])||'—':'—';
+ const cap=run.version.graph.maxTokens||0;
+ const base={nodeTitle:node?.title??'—',memberName,tokens:run.tokens,cap,ratio:cap?Math.min(1,run.tokens/cap):0};
+ if(run.pendingApproval)return {...base,waitingKind:'approval',waiting:run.pendingApproval.text.split('\n')[0]};
+ if(['uncertain','failed'].includes(run.status))return {...base,waitingKind:'verify',
+  waiting:attention?.error??[...run.events].reverse().find(e=>['uncertain','failed','paused'].includes(e.kind))?.text??''};
+ if(run.status==='waiting_user')return {...base,waitingKind:'accept',waiting:''};
+ if(live?.notice)return {...base,waitingKind:'notice',waiting:live.notice};
+ if(run.status==='running')return {...base,waitingKind:'working',waiting:''};
+ if(['completed','cancelled'].includes(run.status))return {...base,waitingKind:'done',waiting:''};
+ return {...base,waitingKind:'idle',waiting:[...run.events].reverse().find(e=>e.kind==='paused'||e.kind==='pause')?.text??''};
+}
+
+/**
+ * 「运行此版本」默认该跑哪个任务。
+ *
+ * 原来固定取 tasks[0]，跟你正在编辑的流程毫无关系 —— 实测差点把 PHIL 220 的流程
+ * 跑到 PSYC 102 的任务上，而运行一旦创建，任务和版本就固定了。
+ * 顺序：这个流程绑定的任务（新的优先）→ 这个流程最近一次运行的任务 → 才轮到第一个。
+ */
+export function taskForFlow(project:Pick<TeamProject,'tasks'|'runs'>,flowId:string):string{
+ const bound=project.tasks.filter(t=>t.workflowId===flowId).sort((a,b)=>b.createdAt-a.createdAt)[0];
+ if(bound)return bound.id;
+ const lastRun=[...project.runs].filter(r=>r.workflowId===flowId).sort((a,b)=>b.createdAt-a.createdAt)[0];
+ if(lastRun&&project.tasks.some(t=>t.id===lastRun.taskId))return lastRun.taskId;
+ return project.tasks[0]?.id??'';
+}

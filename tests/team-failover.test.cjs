@@ -2,29 +2,30 @@ const test=require('node:test'),assert=require('node:assert/strict'),fs=require(
 const {loader}=require('./load-ts.cjs');const {createCollaborationStore}=require('../electron/collaboration-store.cjs');
 
 /** 跟 team-runtime.test.cjs 同一套夹具，只多一份接力名单。 */
-function fixture(t,execute,failover){
+function fixture(t,execute,failover,_opts){
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'wickrun-team-failover-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
   const store=createCollaborationStore(root),calls=[];
   const bridge={collaborationRead:async()=>store.read(),collaborationUpdate:async(rev,p)=>store.update(rev,p),collaborationClaim:async(p,id)=>store.claim(p,id),toolAbort:async()=>{}};
   const load=loader({'./store':{uid:()=>crypto.randomUUID(),secretGet:async()=>'fake-local-fixture-key',toolContextOf:()=>({grants:{extraRoots:[],screen:false,admin:false}})},
     './transport':{desktop:()=>bridge},
     './agent':{runAgent(args){calls.push(args);queueMicrotask(()=>void (async()=>{try{await execute(args,calls.length);}catch(e){args.events.onError(e.message,{kind:'unknown'});}})());return {abort(){args.events.onPaused&&args.events.onPaused('cancelled');}};}}});
-  const {TeamRuntime}=load(path.resolve('src/lib/team-runtime.ts')),domain=load(path.resolve('src/lib/collaboration.ts')),runtime=new TeamRuntime();
+  const runtimeModule=load(path.resolve('src/lib/team-runtime.ts')),{TeamRuntime}=runtimeModule,domain=load(path.resolve('src/lib/collaboration.ts')),runtime=new TeamRuntime();
   const cfg=load(path.resolve('src/lib/paramSchema.ts')).defaultGenerationConfig();
   runtime.settings=()=>({defaultConfig:cfg,keyProfiles:[{id:'key',name:'First',baseUrl:'https://one.invalid'},{id:'backup',name:'Backup',baseUrl:'https://two.invalid'}],
     effortMappings:[],requestTimeoutMs:1000,autoRetry:0,modelHealth:{},failover});
-  return {store,runtime,calls,cfg,domain};
+  return {store,runtime,calls,cfg,domain,runtimeModule};
 }
-async function setup(f,memberPatch={}){
+async function setup(f,memberPatch={},graph={}){
   await f.runtime.load();
   const p=f.domain.emptyTeamProject('p');
   p.settings.allowedConnections=[];
+  if(graph.maxTokens)p.settings.maxTokens=graph.maxTokens;
   p.members=[{id:'a',name:'A',instructions:'role',connectionId:'key',model:'first-model',effort:'medium',enabled:true,tools:[],maxTokens:4000,maxMinutes:1,...memberPatch}];
   const flow=f.domain.newWorkflow('Flow'),s=flow.draft.nodes[0],e=flow.draft.nodes[1],a=f.domain.newNode('agent');
   a.memberId='a';a.instructions='写一份说明';a.outputRequirement='说明正文';e.outputRequirement='review result';
   flow.draft.nodes=[s,a,e];
   flow.draft.edges=[[s,a],[a,e]].map(([from,to])=>({id:crypto.randomUUID(),from:from.id,to:to.id,port:'next',label:'next',maxTraversals:5}));
-  flow.draft.maxTokens=10000;flow.versions=[{id:'v',number:1,createdAt:1,graph:structuredClone(flow.draft)}];
+  flow.draft.maxTokens=graph.maxTokens??10000;if(graph.maxVisits)for(const n of flow.draft.nodes)n.maxVisits=graph.maxVisits;flow.versions=[{id:'v',number:1,createdAt:1,graph:structuredClone(flow.draft)}];
   p.workflows=[flow];p.tasks=[{id:'task',title:'Fixture',goal:'Goal',acceptance:'Evidence',entries:[],status:'ready',createdAt:1}];
   await f.runtime.update('p',target=>Object.assign(target,p));
   return f.runtime.createRun('p','task',flow.id,'v',f.cfg);
@@ -83,7 +84,7 @@ test('本机订阅客户端不参与自动交接',async t=>{
 
 test('任务消息的 id 跨派发稳定，续跑后还能声明验收',async t=>{
   const f=fixture(t,async(args,n)=>{
-    if(n===1){await args.events.onRunState({working:[],round:1,at:1,stoppedBy:'unknown',status:'paused',content:'半成品',spentTokens:10});args.events.onError('本阶段轮次已到',{kind:'unknown'});}
+    if(n===1){await args.events.onRunState({working:[],round:1,at:1,stoppedBy:'unknown',status:'paused',content:'半成品',spentTokens:10});args.events.onError('模型自己断了',{kind:'unknown'});}
     else{args.events.onContentDelta('好了');args.events.onDone();}
   });
   const id=await setup(f);
@@ -99,6 +100,108 @@ test('任务消息的 id 跨派发稳定，续跑后还能声明验收',async t=
   assert.ok(f.calls[0].history[0].id.length<=20,f.calls[0].history[0].id);
   // 而且要明确告诉它该填什么，别让它猜
   assert.ok(f.calls[0].history[0].content.includes(`sourceId 必须写 ${f.calls[0].history[0].id}`));
+});
+
+// ---- R4：轮次/阶段预算用完且没东西要核实时自己接着跑 ----
+
+test('轮次用完但没有待核实的操作时自动续跑，不用人点一次恢复',async t=>{
+  const f=fixture(t,async(args,n)=>{
+    if(n===1){await args.events.onRunState({working:[],round:1,at:1,stoppedBy:'unknown',status:'paused',content:'半成品',spentTokens:10});args.events.onPaused('本阶段轮次已到');}
+    else{assert.equal(args.resume.content,'半成品');args.events.onContentDelta('好了');args.events.onDone();}
+  });
+  const id=await setup(f);
+  await f.runtime.start('p',id);          // 只启动一次，中间没有任何人工动作
+  const run=f.runtime.project('p').runs[0];
+  assert.equal(f.calls.length,2);
+  assert.equal(run.status,'waiting_user');                        // 一路走到交付确认
+  assert.equal(run.events.filter(e=>e.kind==='auto_continue').length,1);
+  assert.match(run.events.find(e=>e.kind==='auto_continue').text,/第 1 次自动续跑/);
+});
+
+test('有未确认的工具调用就不自动续：副作用可能已经生效，必须人来核实',async t=>{
+  const f=fixture(t,async args=>{
+    await args.events.onRunState({working:[],round:1,at:1,stoppedBy:'unknown',status:'paused',content:'半成品',spentTokens:10,uncertainCallId:'call-1'});
+    args.events.onPaused('本阶段轮次已到');
+  });
+  const id=await setup(f);
+  await f.runtime.start('p',id);
+  const run=f.runtime.project('p').runs[0];
+  assert.equal(f.calls.length,1);
+  assert.equal(run.status,'uncertain');
+  assert.equal(run.events.some(e=>e.kind==='auto_continue'),false);
+});
+
+test('自动续跑有次数上限，不会原地打转',async t=>{
+  const f=fixture(t,async args=>{
+    await args.events.onRunState({working:[],round:1,at:1,stoppedBy:'unknown',status:'paused',content:'半成品',spentTokens:1});
+    args.events.onPaused('本阶段轮次已到');
+  },undefined,{maxVisits:20,maxTokens:400000});
+  const id=await setup(f,{},{maxVisits:20,maxTokens:400000});
+  await f.runtime.start('p',id);
+  const run=f.runtime.project('p').runs[0];
+  assert.equal(run.events.filter(e=>e.kind==='auto_continue').length,3);   // MAX_AUTO_CONTINUE
+  assert.equal(f.calls.length,4);
+  assert.equal(run.status,'uncertain');                                    // 最后还是交回给人
+});
+
+test('用户按的暂停不算「轮次用完」，绝不自动续',async t=>{
+  let f;
+  f=fixture(t,async args=>{
+    await args.events.onRunState({working:[],round:1,at:1,stoppedBy:'unknown',status:'paused',content:'半成品',spentTokens:10});
+    await f.runtime.pause('p',f.runtime.project('p').runs[0].id);          // 人按了暂停
+    args.events.onPaused('本阶段轮次已到');
+  });
+  const id=await setup(f);
+  await f.runtime.start('p',id);
+  const run=f.runtime.project('p').runs[0];
+  assert.equal(f.calls.length,1);
+  assert.equal(run.events.some(e=>e.kind==='auto_continue'),false);
+});
+
+// ---- R3：每段预算下限 ----
+
+test('剩余预算开不了一段就直说剩多少、该调哪个设置，而不是派一段注定跑不动的',async t=>{
+  const f=fixture(t,async args=>{args.events.onContentDelta('ok');args.events.onDone();});
+  const id=await setup(f,{},{maxTokens:400000});
+  await f.runtime.update('p',p=>{const r=p.runs.find(x=>x.id===id);r.tokens=395000;});
+  await f.runtime.start('p',id);
+  const run=f.runtime.project('p').runs[0];
+  assert.equal(f.calls.length,0);                                          // 根本没派出去
+  const note=run.events.at(-1).text;
+  assert.match(note,/还剩 5000 tokens/);
+  assert.match(note,/至少要 20000/);
+  assert.match(note,/上限/);
+});
+
+test('小预算流程按比例缩放下限，不会因为绝对下限一次都跑不起来',t=>{
+  const f=fixture(t,async()=>{});
+  const {stageFloor,MIN_STAGE_TOKENS}=f.runtimeModule;
+  assert.equal(stageFloor(400000),MIN_STAGE_TOKENS);
+  assert.equal(stageFloor(10000),2000);
+  assert.equal(stageFloor(1),1);
+});
+
+// ---- R2：review 类验收要引用的证据编号，直接列进提示 ----
+
+test('续跑时把上一段的成功步骤编号列进提示，别让模型猜 callId',async t=>{
+  const f=fixture(t,async(args,n)=>{
+    if(n===1){
+      args.events.onStep({id:'s1',callId:'call-aaa',name:'read_file',status:'ok',args:{}});
+      await args.events.onRunState({working:[],round:1,at:1,stoppedBy:'unknown',status:'paused',content:'半成品',spentTokens:10,
+        steps:[{id:'s1',callId:'call-aaa',name:'read_file',status:'ok'},{id:'s2',callId:'call-bbb',name:'write_file',status:'error'}]});
+      args.events.onError('模型自己断了',{kind:'unknown'});
+    } else {args.events.onContentDelta('好了');args.events.onDone();}
+  });
+  const id=await setup(f);
+  await f.runtime.start('p',id);
+  await f.runtime.resolveUncertain('p',id,'retry','已核实');
+  await f.runtime.start('p',id);
+  const prompt=f.calls[1].history[0].content;
+  assert.match(prompt,/可引用的证据编号/);
+  assert.ok(prompt.includes('call-aaa（read_file）'),prompt);
+  assert.equal(prompt.includes('call-bbb'),false);                          // 失败的步骤不是证据
+  // 第一段没有可引用的编号时，也要说清楚该拿什么当证据
+  assert.match(f.calls[0].history[0].content,/review 类验收的证据/);
 });
 
 test('隔离副本没有 .git 这件事要先告诉成员，别让它白撞一次 git',async t=>{

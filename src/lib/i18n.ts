@@ -22,6 +22,34 @@ const EN: Record<string, string> = {
     'Open this run →',
   '新增':
     'Added',
+  '当前步骤':
+    'Current step',
+  '执行成员':
+    'Member',
+  '在等什么':
+    'Waiting on',
+  '用量':
+    'Usage',
+  '等你确认工具调用':
+    'Waiting for you to approve a tool call',
+  '等你核实后决定':
+    'Waiting for you to check the result and decide',
+  '等你验收交付':
+    'Waiting for your delivery sign-off',
+  '已停下':
+    'Stopped',
+  '已结束':
+    'Finished',
+  '这一步的「最多执行几次」用完了。在设计器里把该节点的次数调高，保存新版本后新建运行；已完成的产物保留在「文件与产物」里。':
+    'This step has used up its "max runs" allowance. Raise it on that node in the designer, save a new version and start a new run; anything already produced stays under Files & artifacts.',
+  '自动续跑：轮次或阶段预算用完，没有待核实的操作':
+    'Auto-continue: the round or stage budget ran out and nothing is waiting to be checked',
+  '第 {n} 次自动续跑：{reason}。已用 {used}/{cap} tokens。':
+    'Auto-continue #{n}: {reason}. Used {used}/{cap} tokens.',
+  '本次运行还剩 {left} tokens（上限 {cap}，已用 {used}），不足以再开一段（至少要 {min}）。提高这个流程的总用量上限、或项目设置里的每次运行上限，然后新建运行；也可以就此接受已有结果。':
+    'This run has {left} tokens left (cap {cap}, used {used}), not enough to start another stage (needs at least {min}). Raise the flow total token limit or the per-run limit in project settings and start a new run — or accept what you have.',
+  '注意：这个任务平时用的是「{other}」，这次要用「{now}」跑。运行一旦创建就改不了。':
+    'Heads up: this task normally runs on "{other}", and this run would use "{now}". A run is fixed to its flow once created.',
   '核实并接着跑':
     'Verified — carry on from here',
   '在这里：填一句核实依据后点「核实并接着跑」，用新的一段预算从检查点继续；想一次跑完就先提高流程的总用量上限（以及项目设置里的每次运行上限），再新建运行。':

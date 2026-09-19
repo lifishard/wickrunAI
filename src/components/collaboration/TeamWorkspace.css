@@ -2,3 +2,12 @@
 @media(max-width:760px){.team-content{padding:20px 18px 40px}.team-intro h1{font-size:23px}.team-metrics{gap:12px}.team-toolbar{align-items:start;flex-direction:column}.team-run-graph{height:290px}.team-detail-head{flex-direction:column}.team-compose{grid-template-columns:1fr}.team-compose textarea{grid-column:1;grid-row:auto}.team-form-grid,.team-diff{grid-template-columns:1fr}.team-timeline header{flex-wrap:wrap;gap:5px 12px}}
 .team-tool-group{margin-bottom:12px}
 .team-tool-group-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:6px 0 4px;font-size:12px;color:var(--fg-dim)}
+.team-runbar{display:flex;flex-wrap:wrap;gap:10px 26px;align-items:start;padding:14px 16px;margin:0 0 20px;border:1px solid var(--border);border-radius:10px;background:var(--bg-elev);font-size:13px}
+.team-runbar>span{display:grid;gap:4px;min-width:0}
+.team-runbar .grow{flex:1;min-width:200px}
+.team-runbar small{color:var(--fg-dim);font-size:11px;letter-spacing:.4px}
+.team-runbar strong{font-weight:600;overflow-wrap:anywhere;line-height:1.5}
+.team-runbar progress{width:160px;height:5px}
+.team-runbar.approval,.team-runbar.verify,.team-runbar.accept{background:#b77d250f;border-color:#b77d2550}
+.team-runbar.approval strong,.team-runbar.verify strong,.team-runbar.accept strong{color:#9a6226}
+@media(max-width:760px){.team-runbar{gap:10px 18px}.team-runbar progress{width:120px}}

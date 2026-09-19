@@ -17,6 +17,22 @@ import { emptyTeamProject, loadCollaboration, teamBridge, validateGraph, type Co
 import { tr } from './i18n';
 
 type Listener = () => void;
+/**
+ * 一段执行最少要有的预算。
+ *
+ * 低于这个数，唤起模型的那一轮本身就把预算吃掉了，除了「刚起步就说预算不足」什么也做不成。
+ */
+export const MIN_STAGE_TOKENS = 20000;
+/** 同一步最多自动续几次。再多就是原地打转，该叫人了。 */
+export const MAX_AUTO_CONTINUE = 3;
+/**
+ * 一段至少要拿到多少预算才值得派。
+ *
+ * 绝对下限是 MIN_STAGE_TOKENS，但对小预算流程不能照搬：总预算 10k 的流程如果也要求
+ * 每段 20k，它一次都跑不起来。所以取「总预算的两成」和绝对下限里的小者 —— 大预算
+ * 用绝对下限挡住注定跑不动的残额，小预算按比例缩放，仍然留得下后续几段。
+ */
+export function stageFloor(cap:number):number{return Math.max(1,Math.min(MIN_STAGE_TOKENS,Math.floor(cap*0.2)));}
 /** 由内容派生的短标识：跨派发稳定，又短到模型能原样抄回来。 */
 function shortKey(value:string):string{
  let h=2166136261;
@@ -122,6 +138,7 @@ export class TeamRuntime {
     const work=ready.filter(id=>graph.nodes.find(n=>n.id===id)?.type!=='end');
     const frontier=work.length?work.slice(0,count):ready;
     const results=await Promise.allSettled(frontier.map(async nodeId=>{try{await this.executeNode(projectId,runId,nodeId,control);}catch(error){
+     if(await this.autoContinue(projectId,runId,nodeId,String(error),control))return; // 自己开下一段，不惊动用户
      // 只有 pause()/stop 才是人按的。执行器因预算或轮次自己收尾时也会置 control.stop（onPaused 里），
      // 拿 control.stop 当「用户中止」会把文案安到错误的原因上。
      const paused=control.stoppedByUser===true;
@@ -143,9 +160,49 @@ export class TeamRuntime {
   * 协作空间里没有「接着跑」这个按钮，照搬过来等于告诉用户去点一个不存在的东西。
   */
  private teamHint(text:string){
+  if(/达到执行次数上限/.test(text))
+   return `${text}\n${tr('这一步的「最多执行几次」用完了。在设计器里把该节点的次数调高，保存新版本后新建运行；已完成的产物保留在「文件与产物」里。')}`;
   if(/剩余阶段预算不足|阶段轮次已到/.test(text))
    return `${text}\n${tr('在这里：填一句核实依据后点「核实并接着跑」，用新的一段预算从检查点继续；想一次跑完就先提高流程的总用量上限（以及项目设置里的每次运行上限），再新建运行。')}`;
   return text;
+ }
+ /**
+  * 轮次或阶段预算用完，但这一步本身没出事 —— 这种情况自己接着跑，不要叫人。
+  *
+  * 「轮次用完」和「需要人核实」是两件事，原来混成同一个停机：一次小任务被切成三段，
+  * 每段都要人填一句核实依据再点恢复，而那三次里没有一次真的有东西需要核实。
+  * 这里只在三个条件同时成立时自动续：停机原因是轮次或阶段预算、没有未确认的工具调用、
+  * 剩余总预算还够开一段。其余情况一律照旧停下来等人。
+  */
+ private async autoContinue(projectId:string,runId:string,nodeId:string,message:string,control:{stop:boolean;stoppedByUser?:boolean}):Promise<boolean>{
+  if(control.stoppedByUser)return false;
+  if(!/本阶段轮次已到|剩余阶段预算不足/.test(message))return false;
+  const run=this.project(projectId).runs.find(r=>r.id===runId);
+  if(!run)return false;
+  const attempt=[...run.attempts].reverse().find(a=>a.nodeId===nodeId);
+  // 有没确认的工具调用就必须交给人：自动重试可能重复已经生效的副作用
+  const uncertainCall=attempt?.state?.uncertainCallId||Object.values(attempt?.memberStates??{}).some(x=>x?.uncertainCallId);
+  if(uncertainCall)return false;
+  const used=run.events.filter(e=>e.kind==='auto_continue'&&e.nodeId===nodeId).length;
+  if(used>=MAX_AUTO_CONTINUE)return false;
+  // 续跑要再占一次 visit。名额不够就别自动续：让它照常停下来，用户看到的是
+  //「执行次数上限」而不是一次莫名其妙的失败。
+  const node=run.version.graph.nodes.find(n=>n.id===nodeId);
+  if(!node||(run.visits[nodeId]??0)>=node.maxVisits)return false;
+  if(run.version.graph.maxTokens-run.tokens<stageFloor(run.version.graph.maxTokens))return false;
+  await this.runUpdate(projectId,runId,r=>{
+   const a=[...r.attempts].reverse().find(x=>x.nodeId===nodeId&&['running','failed'].includes(x.status));
+   if(!a)return;
+   a.status='failed';a.error=message;a.endedAt=Date.now();
+   a.resolution='retry: '+tr('自动续跑：轮次或阶段预算用完，没有待核实的操作');
+   if(!r.queue.includes(nodeId))r.queue.unshift(nodeId);
+   r.events.push({id:uid(),at:Date.now(),kind:'auto_continue',nodeId,
+    text:tr('第 {n} 次自动续跑：{reason}。已用 {used}/{cap} tokens。',{n:String(used+1),reason:message.slice(0,120),used:String(r.tokens),cap:String(r.version.graph.maxTokens)})});
+  });
+  // onPaused 已经把 control.stop 置上了（执行器自己收尾也走那条）。不清掉的话
+  // 外层 while 立刻退出，节点排回队列却没人来跑 —— 运行停在 running 上不动。
+  control.stop=false;
+  return true;
  }
  private async pauseWith(p:string,id:string,text:string,status:TeamRun['status']='paused'){
   const note=this.teamHint(text);
@@ -346,17 +403,38 @@ export class TeamRuntime {
   // 白烧一轮拿到退出码 128 —— 这一轮的上下文和预算都是真金白银。
   const isolationNote=fileSessionId?'\n注意：工作目录是这次运行的隔离副本，不含 .git / node_modules / dist / build / .next。git 命令在这里用不了，要看改动就直接读文件；改动稍后由用户在「文件与产物」里合并回主目录。':'';
   const taskMessageId='teamtask-'+shortKey(`${runId}:${node.id}:${member.id}`);
-  const prompt=`目标：${r.goal}\n验收：${r.acceptance}\n步骤：${node.instructions}\n输出要求：${node.outputRequirement}\n允许工作目录：${roots.join('、')||'无'}${isolationNote}\n声明验收要求（update_requirements）时：sourceId 必须写 ${taskMessageId}，sourceQuote 必须是上面「目标」或「验收」里的原文片段；文件类检查（file_exists / file_contains / json）的 path 必须是绝对路径，以上面的允许工作目录开头。verify_requirements 的 ids 是你自己起的要求 id，不是文件名。\n前置记录：\n${sources}\n本轮讨论：\n${discussion}\n补充指令：\n${task?.entries.filter(e=>e.kind==='instruction'&&(e.author==='你 → 所有成员'||e.author==='你 → '+member.name)).map(e=>e.text).join('\n')??''}`;
   const resume=r.attempts.find(a=>a.id===attemptId)?.memberStates?.[member.id];
+  /*
+   * review 类验收要求引用「已成功工具步骤的 id/callId」，但续跑时那些调用发生在上一段
+   * 上下文里，模型这一段根本看不到编号，只能猜 —— 实测两次提交都被拒，最后只能标
+   * unverifiable 交回人工。把可引用的编号直接列出来，跟 sourceId 一样明说。
+   */
+  const citable=(resume?.steps??[]).filter(x=>x.status==='ok').slice(-12).map(x=>`${x.callId||x.id}（${x.name}）`);
+  const evidenceNote=citable.length
+   ? `\n可引用的证据编号（verify_requirements 的 review 类型要用）：${citable.join('、')}。也可以用 text: 加上你已输出答复里的原文片段。`
+   : `\nreview 类验收的证据：填你本轮发起那次工具调用的 id，或 text: 加上你已输出答复里的原文片段；空着或写理由都不算证据。`;
+  const prompt=`目标：${r.goal}\n验收：${r.acceptance}\n步骤：${node.instructions}\n输出要求：${node.outputRequirement}\n允许工作目录：${roots.join('、')||'无'}${isolationNote}\n声明验收要求（update_requirements）时：sourceId 必须写 ${taskMessageId}，sourceQuote 必须是上面「目标」或「验收」里的原文片段；文件类检查（file_exists / file_contains / json）的 path 必须是绝对路径，以上面的允许工作目录开头。verify_requirements 的 ids 是你自己起的要求 id，不是文件名。${evidenceNote}\n前置记录：\n${sources}\n本轮讨论：\n${discussion}\n补充指令：\n${task?.entries.filter(e=>e.kind==='instruction'&&(e.author==='你 → 所有成员'||e.author==='你 → '+member.name)).map(e=>e.text).join('\n')??''}`;
+
   let output=resume?.content??'',state:RunState|undefined=resume,usage=resume?.spentTokens??0,handle:AgentHandle|undefined;
   const persist=()=>this.runUpdate(projectId,runId,run=>{const a=run.attempts.find(x=>x.id===attemptId)!;a.output=output;a.state=state;if(state)(a.memberStates??={})[member.id]=state;});
   const reservationKey=attemptId+':'+member.id;let remaining=0;
   await this.runUpdate(projectId,runId,run=>{
    const reserved=Object.values(run.reservations).reduce((sum,n)=>sum+n,0);
    const available=run.version.graph.maxTokens-run.tokens-reserved;
-   if(available<512)throw Error('总用量预算不足，已停止派发');
+   /*
+    * 别派一段注定跑不动的预算。
+    *
+    * 每轮都要重发整段上下文，剩个几千 token 连一轮都发不出去：模型刚被叫起来就报
+    * 「剩余阶段预算不足」，而这一次唤起本身又花掉一轮的钱。实测一次小任务被切成三段，
+    * 每段比上一段更短，最后一段只前进了一步。所以下限卡在这里，并且把具体数字和
+    * 该调哪个设置一起说清楚，而不是让人对着「预算不足」猜。
+    */
+   const floor=stageFloor(run.version.graph.maxTokens);
+   if(available<floor)throw Error(tr(
+    '本次运行还剩 {left} tokens（上限 {cap}，已用 {used}），不足以再开一段（至少要 {min}）。提高这个流程的总用量上限、或项目设置里的每次运行上限，然后新建运行；也可以就此接受已有结果。',
+    {left:String(Math.max(0,available)),cap:String(run.version.graph.maxTokens),used:String(run.tokens),min:String(floor)}));
    const slots=Math.max(1,run.projectSettings.maxConcurrent-Object.keys(run.reservations).length);
-   remaining=Math.max(1,Math.min(member.maxTokens||available,Math.floor(available/slots)));
+   remaining=Math.max(floor,Math.min(member.maxTokens||available,Math.floor(available/slots)));
    run.reservations[reservationKey]=remaining;
   });
   const routeKeyOf=(profileId:string,model:string,baseUrl:string)=>limitKey(profileId,model,baseUrl);
