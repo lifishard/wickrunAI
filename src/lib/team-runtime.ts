@@ -29,7 +29,7 @@ export class TeamRuntime {
   saving = 0;
  private listeners = new Set<Listener>();
  private serial: Promise<unknown> = Promise.resolve();
- private running = new Map<string, {stop:boolean; handles:Set<AgentHandle>}>();
+ private running = new Map<string, {stop:boolean; stoppedByUser?:boolean; handles:Set<AgentHandle>}>();
  private approvals = new Map<string,(ok:boolean)=>void>();
  settings: () => AppSettings | null = () => null;
  /** 项目规范与文档跟单人对话用同一份，成员不该比对话少知道项目的约定 */
@@ -106,7 +106,7 @@ export class TeamRuntime {
   if(this.running.has(runId))throw Error(tr('此运行已在执行'));
   await this.serial;
   this.data=await teamBridge().collaborationClaim(projectId,runId);this.emit();
-  const control={stop:false,handles:new Set<AgentHandle>()};this.running.set(runId,control);
+  const control={stop:false,stoppedByUser:false,handles:new Set<AgentHandle>()};this.running.set(runId,control);
   try{
    await this.runUpdate(projectId,runId,(r,p)=>{const t=p.tasks.find(t=>t.id===r.taskId);if(t)t.status='运行中';});
    while(!control.stop){
@@ -122,7 +122,9 @@ export class TeamRuntime {
     const work=ready.filter(id=>graph.nodes.find(n=>n.id===id)?.type!=='end');
     const frontier=work.length?work.slice(0,count):ready;
     const results=await Promise.allSettled(frontier.map(async nodeId=>{try{await this.executeNode(projectId,runId,nodeId,control);}catch(error){
-     const paused=control.stop; // 用户按了暂停/停止，不是这一步自己失败
+     // 只有 pause()/stop 才是人按的。执行器因预算或轮次自己收尾时也会置 control.stop（onPaused 里），
+     // 拿 control.stop 当「用户中止」会把文案安到错误的原因上。
+     const paused=control.stoppedByUser===true;
      control.stop=true;for(const handle of control.handles)handle.abort();await teamBridge().toolAbort(runId);
      await this.runUpdate(projectId,runId,run=>{const a=[...run.attempts].reverse().find(a=>a.nodeId===nodeId&&a.status==='running');if(a){
       // 「被用户打断」和「这条路由干砸了」是两件事。混成 failed 会把人为中止算进路由的失败率。
@@ -151,7 +153,7 @@ export class TeamRuntime {
   this.observe(p,id);
  }
  async pause(projectId:string,runId:string,cancel=false){
-  const control=this.running.get(runId);if(control){control.stop=true;for(const handle of control.handles)handle.abort();}
+  const control=this.running.get(runId);if(control){control.stop=true;control.stoppedByUser=true;for(const handle of control.handles)handle.abort();}
   await teamBridge().toolAbort(runId);
   for(const [id,resolve] of this.approvals)if(id.startsWith(runId+':')){resolve(false);this.approvals.delete(id);}
   await this.runUpdate(projectId,runId,r=>{r.status=cancel?'cancelled':control?'pausing':'paused';r.events.push({id:uid(),at:Date.now(),kind:'pause',text:cancel?'用户停止运行，已有记录和产物保留':'停止派发后续步骤，等待当前操作核实'});});
