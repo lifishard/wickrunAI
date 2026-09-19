@@ -13,13 +13,14 @@ import {
 } from '../lib/effort';
 import { Field, Modal, Segmented, Switch } from './ui';
 
-type Tab = 'keys' | 'tools' | 'effort' | 'remote' | 'look';
+type Tab = 'keys' | 'tools' | 'effort' | 'remote' | 'sync' | 'look';
 
 const TAB_LABEL: Record<Tab, string> = {
   keys: 'API 凭据',
   tools: '工具',
   effort: '思考强度',
   remote: '遥控',
+  sync: '同步',
   look: '外观',
 };
 
@@ -263,6 +264,14 @@ function ChromeSection(props: { port: number; onPort: (p: number) => void }) {
  * 会违反 hooks 调用顺序必须稳定的规则。
  * ------------------------------------------------------------------ */
 
+/** 地址档位对应的中文标签。cgnat 段（100.64.0.0/10）就是 Tailscale 的 tailnet。 */
+const SCOPE_LABEL: Record<string, string> = {
+  cgnat: '私有网络',
+  private: '局域网',
+  linklocal: '链路本地',
+  loopback: '本机',
+};
+
 function RemoteTab(props: {
   settings: AppSettings;
   onChange: (patch: Partial<AppSettings>) => void;
@@ -290,6 +299,8 @@ function RemoteTab(props: {
           {t('手机上没有文件系统权限、控不了 Chrome、也没有 claude CLI，所以手机端的这些工具调用会转发到这台电脑执行。打开下面的服务，然后把地址和令牌抄到手机端的「遥控」设置里。')}
           <br />
           <strong>{t('只在内网用。')}</strong>{t('别把这个端口做端口转发暴露到公网。它背后就是你电脑的命令行。')}
+          <br />
+          {t('想在外面也能用：给两台设备装 Tailscale（或自建 WireGuard），让它们进同一个私有网络。那样地址就变成下面标了「私有网络」的那条，换到哪个 Wi-Fi 都通，而且不用把任何端口暴露出去。')}
         </div>
 
         <Field label={t('监听端口')}>
@@ -326,14 +337,38 @@ function RemoteTab(props: {
 
         {status?.running ? (
           <>
-            <Field label={t('手机端填这个地址')} hint={t('同一个 Wi-Fi 下，挑能通的那条。')}>
-              <textarea
-                className="mono"
-                rows={Math.max(2, status.addresses.length)}
-                readOnly
-                value={status.addresses.join('\n')}
-              />
+            <Field
+              label={t('手机端填这个地址')}
+              hint={
+                status.hasPrivateNetwork
+                  ? t('挑第一条「私有网络」的，它不挑 Wi-Fi。')
+                  : t('同一个 Wi-Fi 下，挑能通的那条。')
+              }
+            >
+              {status.endpoints?.length ? (
+                <div className="remote-endpoints">
+                  {status.endpoints.map((e) => (
+                    <div key={e.url} className="remote-endpoint">
+                      <span className={`chip scope-${e.scope}`}>{t(SCOPE_LABEL[e.scope])}</span>
+                      <code className="mono">{e.url}</code>
+                      <span className="hint">{e.iface}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <textarea
+                  className="mono"
+                  rows={Math.max(2, status.addresses.length)}
+                  readOnly
+                  value={status.addresses.join('\n')}
+                />
+              )}
             </Field>
+            {status.publicInterfaces?.length ? (
+              <div className="hint" style={{ color: 'var(--danger)', marginBottom: 12, lineHeight: 1.8 }}>
+                {t('这台机器有直接连公网的网卡（{ifaces}）。服务会掐掉公网来源的连接，但这说明它不在路由器后面 —— 任何一条端口转发或者防火墙放行，都会立刻把这个入口变成公网入口。', { ifaces: status.publicInterfaces.join('、') })}
+              </div>
+            ) : null}
             <Field label={t('配对令牌')} hint={t('抄到手机端。换端口重启会保留同一个令牌。')}>
               <input
                 type="text"
@@ -394,6 +429,121 @@ function RemoteTab(props: {
   );
 }
 
+function SyncTab(props: {
+  settings: AppSettings;
+  onChange: (patch: Partial<AppSettings>) => void;
+}) {
+  const t = useT();
+  const bridge = desktop();
+  const cfg = props.settings.sync ?? { dir: '', auto: false };
+  const patch = (p: Partial<typeof cfg>) => props.onChange({ sync: { ...cfg, ...p } });
+  const [pass, setPass] = React.useState('');
+  const [busy, setBusy] = React.useState(false);
+  const [note, setNote] = React.useState<string | null>(null);
+  const [bad, setBad] = React.useState(false);
+  const [peers, setPeers] = React.useState<number | null>(null);
+
+  React.useEffect(() => {
+    if (!bridge || !cfg.dir) { setPeers(null); return; }
+    void bridge.syncPeek(cfg.dir).then((list) => setPeers(list.length)).catch(() => setPeers(null));
+  }, [bridge, cfg.dir]);
+
+  if (!bridge) {
+    return (
+      <div className="hint" style={{ lineHeight: 1.8 }}>
+        {t('同步要往一个本地文件夹读写，所以只能在桌面端跑。手机端拿到同一份数据有两条路：把桌面端的同步文件夹放进网盘，或者用「遥控」把工具调用转发到桌面执行。')}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="hint" style={{ marginBottom: 14, lineHeight: 1.8 }}>
+        {t('同步的是会话、项目、技能、定时任务、任务记录和路由做成率 —— 也就是这个应用积累下来的使用习惯。')}
+        <br />
+        <strong>{t('API 密钥不参与同步，一次也不会。')}</strong>
+        {t('密钥用系统的加密能力锁在本机（Windows 是 DPAPI，macOS 是钥匙串），搬到另一台机器上本来也解不开。另一台设备要用同一条路由，自己填一个密钥，或者走遥控转发。')}
+        <br />
+        {t('事件钩子也不同步：钩子是一条会自动执行的命令行，同步它等于让任何能写这个文件夹的人往你的桌面投递可执行内容。换设备请手动重配。')}
+      </div>
+
+      <Field
+        label={t('同步文件夹')}
+        hint={t('放进网盘、Syncthing 的共享目录、或者局域网/Tailscale 上挂的共享盘都行。落点上躺的永远是密文，所以这个文件夹本身不需要可信。')}
+      >
+        <div className="row">
+          <input type="text" value={cfg.dir} readOnly placeholder={t('还没选')} />
+          <button
+            className="btn"
+            onClick={async () => {
+              const d = await bridge.syncPickFolder();
+              if (d) patch({ dir: d });
+            }}
+          >
+            {t('选文件夹')}
+          </button>
+        </div>
+      </Field>
+
+      <Field
+        label={t('同步口令')}
+        hint={t('至少 12 位。每次同步现输，不保存 —— 存下来就等于把锁和钥匙放在一起。两台设备必须用同一串。忘了只能重新配一次同步。')}
+      >
+        <input
+          type="password"
+          value={pass}
+          autoComplete="off"
+          onChange={(e) => setPass(e.target.value)}
+          placeholder={t('至少 12 位')}
+        />
+      </Field>
+
+      <div className="row" style={{ marginBottom: 12 }}>
+        <button
+          className="btn primary"
+          disabled={busy || !cfg.dir || pass.length < 12}
+          onClick={async () => {
+            setBusy(true);
+            setBad(false);
+            setNote(t('同步中…'));
+            try {
+              const { syncOnce } = await import('../lib/sync');
+              const r = await syncOnce(cfg.dir, pass, props.settings);
+              props.onChange(r.settings);
+              const counts = Object.values(r.merged).reduce((a, b) => a + b, 0);
+              setNote(
+                r.failures.length
+                  ? t('同步完成：{devices} 台设备，{items} 条记录；{bad} 个包没打开（口令不对或写到一半）。', {
+                      devices: String(r.devices), items: String(counts), bad: String(r.failures.length),
+                    })
+                  : t('同步完成：{devices} 台设备，{items} 条记录。', {
+                      devices: String(r.devices), items: String(counts),
+                    }),
+              );
+              setBad(r.failures.length > 0);
+              void bridge.syncPeek(cfg.dir).then((l) => setPeers(l.length)).catch(() => {});
+            } catch (e) {
+              setBad(true);
+              setNote(e instanceof Error ? e.message : String(e));
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          {t('立即同步')}
+        </button>
+        {peers !== null ? (
+          <span className="chip">{t('文件夹里有 {n} 台设备', { n: String(peers) })}</span>
+        ) : null}
+      </div>
+
+      {note ? (
+        <div className="hint" style={{ color: bad ? 'var(--danger)' : undefined, lineHeight: 1.8 }}>{note}</div>
+      ) : null}
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------------ */
 
 export default function SettingsDialog(props: {
@@ -407,7 +557,7 @@ export default function SettingsDialog(props: {
   storePath: string;
 }) {
   const t = useT();
-  const tab = (['keys', 'tools', 'effort', 'remote', 'look'] as Tab[]).includes(props.tab as Tab)
+  const tab = (['keys', 'tools', 'effort', 'remote', 'sync', 'look'] as Tab[]).includes(props.tab as Tab)
     ? (props.tab as Tab)
     : 'keys';
   const setTab = (t: Tab) => props.onTab(t);
@@ -996,6 +1146,7 @@ export default function SettingsDialog(props: {
         {tab === 'tools' ? ToolsTab() : null}
         {tab === 'effort' ? EffortTab() : null}
         {tab === 'remote' ? <RemoteTab settings={s} onChange={props.onChange} /> : null}
+        {tab === 'sync' ? <SyncTab settings={s} onChange={props.onChange} /> : null}
         {tab === 'look' ? LookTab() : null}
       </div>
     </Modal>

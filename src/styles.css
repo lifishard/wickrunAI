@@ -2939,3 +2939,13 @@ kbd {
 .team-topbar > .chip { max-width: 35%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 860px) { .sidebar { max-width: 88vw; } .topbar { min-height: 48px; } }
 @media (prefers-reduced-motion: reduce) { .sidebar { transition: none; } }
+
+/* 遥控地址列表：把「私有网络（换网也通）」和「局域网（只在同一个 Wi-Fi）」
+   在视觉上分开，否则用户只会抄第一条，而第一条未必是能用的那条。 */
+.remote-endpoints { display: flex; flex-direction: column; gap: 6px; }
+.remote-endpoint { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.remote-endpoint code { font-size: 12px; user-select: all; }
+.remote-endpoint .hint { font-size: 11px; opacity: .6; }
+.chip.scope-cgnat { background: var(--ok-bg, rgba(46,160,67,.15)); color: var(--ok, #2ea043); }
+.chip.scope-private { background: var(--chip-bg); }
+.chip.scope-linklocal, .chip.scope-loopback { opacity: .6; }

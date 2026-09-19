@@ -7,6 +7,7 @@ const store = require('./store.cjs');
 const { extractErrorMessage } = require('./sse.cjs');
 const { runTool } = require('./tools/index.cjs');
 const remote = require('./remote-server.cjs');
+const syncFolder = require('./sync-folder.cjs');
 const chromeLaunch = require('./chrome-launch.cjs');
 const skillFolder = require('./skill-folder.cjs');
 const attachments = require('./attachments.cjs');
@@ -499,6 +500,34 @@ function registerIpc() {
   });
   ipcMain.handle('snc:remoteStop', () => remote.stop());
   ipcMain.handle('snc:remoteStatus', () => remote.status());
+
+  /* ---------------- 跨设备同步 ----------------
+   * 主进程这边只做三件事：认领一个设备号、封包/拆包、往落点目录读写。
+   * 「哪些数据能同步」和「两份数据怎么合」都在渲染进程（sync-policy.ts /
+   * sync-merge.ts），那边有完整的用例。这样分是因为密钥桶从来不进渲染进程，
+   * 而同步包里本来就不该有密钥 —— 两条约束刚好对得上。
+   */
+  const DEVICE_KEY = 'snc:device:id';
+  async function deviceId() {
+    dataAvailable();
+    let id = store.kvGet(DEVICE_KEY);
+    // 随机 UUID，不含任何机器信息：这个字符串会变成落点目录里的文件名。
+    if (!id || typeof id !== 'string') { id = require('node:crypto').randomUUID(); await store.kvSet(DEVICE_KEY, id); }
+    return id;
+  }
+  ipcMain.handle('snc:syncDeviceId', () => deviceId());
+  ipcMain.handle('snc:syncPickFolder', async () => {
+    const r = await dialog.showOpenDialog(mainWindow, {
+      title: '选择同步文件夹（网盘 / Syncthing / 共享目录都行）',
+      properties: ['openDirectory', 'createDirectory'],
+    });
+    return r.canceled ? null : r.filePaths[0];
+  });
+  ipcMain.handle('snc:syncPeek', (_e, { dir }) => syncFolder.peek(dir));
+  ipcMain.handle('snc:syncPush', async (_e, { dir, payload, passphrase }) =>
+    syncFolder.push(dir, await deviceId(), payload, passphrase));
+  ipcMain.handle('snc:syncPull', async (_e, { dir, passphrase }) =>
+    syncFolder.pull(dir, await deviceId(), passphrase));
 }
 
 /* ------------------------------------------------------------------ *

@@ -563,6 +563,8 @@ export interface AppSettings {
   requestTimeoutMs: number;
   tools: ToolConfig;
   remote: RemoteConfig;
+  /** 跨设备同步：落点文件夹 + 是否自动。口令不存这里，每次现输。 */
+  sync?: { dir: string; auto: boolean };
   /** 思考强度的跨厂商映射表 */
   effortMappings: EffortMapping[];
   /** 事件驱动护栏：只从这里读，绝不从工作目录读，避免仓库自带钩子 */

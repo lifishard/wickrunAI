@@ -52,6 +52,7 @@ export function defaultSettings(): AppSettings {
     modelHealth: {},
     autoRetry: 2,
     skillSync: { dir: '', auto: false },
+    sync: { dir: '', auto: false },
   };
 }
 

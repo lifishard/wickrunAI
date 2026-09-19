@@ -4,16 +4,65 @@
 
 # wickrunAI · 灯芯AI
 
-用自己的 API Key，在同一个任务里切换模型、继续工作。
+**把你手上所有的 AI 模型放进同一个应用——某一个失灵时，下一个在任务中途接手。**
 
-[![CI](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml/badge.svg)](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml)
+开源的、闭源的，付费的、免费的，都能调度。Key 自己带，只留在你本机。
+
+[![Version](https://img.shields.io/badge/version-2.9.0-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-lightgrey)](#安装)
+[![CI](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml/badge.svg)](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml)
 
-[下载](https://github.com/lifishard/wickrunAI/releases) · [配置说明](docs/CONFIGURATION.md) · [构建方法](docs/BUILD.md) · [安全说明](SECURITY.md)
+[下载](https://github.com/lifishard/wickrunAI/releases) · [文档](docs/README.md) · [配置说明](docs/CONFIGURATION.md) · [构建方法](docs/BUILD.md) · [安全说明](SECURITY.md)
 
 [English](README.md) · **简体中文**
 
 </div>
+
+---
+
+<!-- TODO: failover.gif -->
+
+> **演示位——需要录制。** 要录的是已经真实跑通、全程无人干预的那一段：任务跑在 **OpenRouter** 上，遇到额度用尽，交接到 **SenseNova**，那边的 **glm-5.2** 额度也不够，再交接一次，**kimi-k3** 接过任务并跑完。三条路由、两次交接、一个任务，没人盯着。录的时候让路由标签和交接提示看得清，十五秒左右就够。存成 `docs/failover.gif`，然后把上面那行注释换成 `![失灵交接](docs/failover.gif)`。
+
+## 60 秒拿到第一个回答
+
+1. **下载。** 到 [Releases](https://github.com/lifishard/wickrunAI/releases) 拿对应平台的文件运行。不用注册，不用登录。
+2. **填一个 Key。** 设置 → API 凭据 → 填 Base URL 和 API Key，点「测试连接」。想先用免费路由就选 OpenRouter 那个预设。Key 会经系统密钥库加密保存——Windows 走 DPAPI，macOS 走 Keychain，Linux 走 libsecret。
+3. **发一条消息。** 在输入框旁边选一个模型，问点什么。配置到这里就结束了。
+
+之后想更进一步：再加一个 Key，把两条路由都放进失灵交接名单；加一个工作目录让它能读写文件；或者配一个搜索服务。见[配置说明](docs/CONFIGURATION.md)。
+
+## 和同类工具的区别
+
+自带 Key 的客户端有很多。灯芯AI 特别的地方在于：模型在任务中途不干活了之后会发生什么。
+
+下表里只有 wickrunAI 那一列是对本仓库的断言，逐条对着源码核过。其他产品的格子凡是本表作者没有核实过的一律写 **—**；**「—」不代表那个产品没有这项功能。** 有写错的地方欢迎提 issue 指出。
+
+| | wickrunAI | Chatbox | LobeChat | Cherry Studio | Open WebUI |
+|---|---|---|---|---|---|
+| 自带 API Key | 是 | 是 | 是 | 是 | 是 |
+| 以桌面应用形态运行 | 是（Electron） | 是 | — | 是 | 否——自托管 Web 服务 |
+| 任务中途自动交接到下一条路由，并带上已保存的进度 | 是 | — | — | — | — |
+| 交接名单分「本对话 → 项目 → 应用全局」三层，每层都能继承或覆盖 | 是 | — | — | — | — |
+| 按你自己跑完的任务统计路由做成率 | 是 | — | — | — | — |
+| Key 加密进系统密钥库 | 是 | — | — | — | — |
+| 手机端经局域网把工具调用转给桌面执行 | 是 | — | — | — | — |
+| 调用本机已装的订阅制 CLI（Claude Code、Codex、Kimi Code） | 是 | — | — | — | — |
+| 许可证 | Apache-2.0 | — | — | — | — |
+
+中间那几行值得直接去看代码：
+
+- **[失灵交接](docs/llm-failover.md)**——哪些错误触发交接，以及哪三类刻意不触发：请求本身写错了、跟模型无关的行为循环、说不清原因的，这三种换人都解决不了。
+- **[多模型路由](docs/multi-model-router.md)**——按哈希后的路由别名统计做成率，样本不足八条就不给数字，重排是个要你自己点的按钮，因为程序不知道你哪条路由是免费的。
+- **[BYOK](docs/byok-ai-client.md)**——Key 存在哪，什么东西从不离开这台机器。
+- **[手机遥控桥](docs/mobile-remote-bridge.md)**——没有文件权限的手机怎么照样用上文件、浏览器和 CLI 工具。
+
+完整文档索引：**[docs/README.md](docs/README.md)**。
+
+---
+
+## 这是什么
 
 灯芯AI 是一个开源 AI 客户端，支持 Windows、macOS 和 Linux。你可以连接采用 OpenAI 兼容接口的模型，用它查资料、处理文档、读写文件，也可以授权它操作 Chrome 或调用本机的 Claude Code。
 
@@ -21,7 +70,7 @@
 
 可使用模型服务商的 API Key，也可在桌面版模型选择器中连接本机官方客户端。账号、订阅和 API 费用由对应服务商管理。项目另有 Android 客户端，可通过局域网连接电脑；目前尚未完成真机验证。
 
-界面支持简体中文、繁體中文和 English，在右上角切换；`docs/` 下的文档目前是中文。
+界面支持简体中文、繁體中文和 English，在右上角切换；`docs/` 下的参考文档多数是中文，上面链接的五篇概念页是英文。
 
 ## 2.3 会话隔离与两文三语
 

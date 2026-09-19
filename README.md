@@ -4,16 +4,65 @@
 
 # wickrunAI · 灯芯AI
 
-Bring your own API key, switch models inside one task, and keep working.
+**Every AI model you own, in one app — and when one fails, the next one takes over mid-task.**
 
-[![CI](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml/badge.svg)](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml)
+Open or closed, paid or free. Bring your own keys; they never leave your machine.
+
+[![Version](https://img.shields.io/badge/version-2.9.0-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-lightgrey)](#install)
+[![CI](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml/badge.svg)](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml)
 
-[Download](https://github.com/lifishard/wickrunAI/releases) · [Configuration](docs/CONFIGURATION.md) · [Building](docs/BUILD.md) · [Security](SECURITY.md)
+[Download](https://github.com/lifishard/wickrunAI/releases) · [Docs](docs/README.md) · [Configuration](docs/CONFIGURATION.md) · [Building](docs/BUILD.md) · [Security](SECURITY.md)
 
 **English** · [简体中文](README.zh-CN.md)
 
 </div>
+
+---
+
+<!-- TODO: failover.gif -->
+
+> **Demo slot — recording needed.** Capture the sequence that was verified end to end with no human intervention: a task running on **OpenRouter** hits an out-of-credit error, hands off to **SenseNova**, where **glm-5.2** turns out to be short on quota, hands off again, and **kimi-k3** picks the task up and finishes it. Three routes, two handovers, one task, nobody watching. Keep the route chips and the handover notice legible; about fifteen seconds is enough. Save it as `docs/failover.gif` and replace the comment above with `![Failover in progress](docs/failover.gif)`.
+
+## 60 seconds to your first answer
+
+1. **Download.** Grab the file for your platform from [Releases](https://github.com/lifishard/wickrunAI/releases) and run it. No account, no sign-up.
+2. **Add one key.** Settings → API credentials → paste a Base URL and an API key, press **Test connection**. Pick the OpenRouter preset if you want a free route to start with. The key is encrypted into your OS keystore — Windows DPAPI, macOS Keychain, Linux libsecret.
+3. **Send a message.** Choose a model next to the composer and ask something. That is the whole setup.
+
+Then, when you want more: add a second key and put both routes in the failover list, add a working directory for file tools, or configure a search service. See [Configuration](docs/CONFIGURATION.md).
+
+## How it compares
+
+wickrunAI is one of many bring-your-own-key clients. What is specific to it is what happens when a model stops working in the middle of a task.
+
+Only the wickrunAI column is a claim about this repository, verified against the source. For the other products, a cell says **—** wherever this table's authors have not verified the answer; **— does not mean the product lacks the feature.** Correct any of it by opening an issue.
+
+| | wickrunAI | Chatbox | LobeChat | Cherry Studio | Open WebUI |
+|---|---|---|---|---|---|
+| Bring your own API key | Yes | Yes | Yes | Yes | Yes |
+| Runs as a desktop application | Yes (Electron) | Yes | — | Yes | No — self-hosted web server |
+| Automatic handover to the next route mid-task, carrying saved progress | Yes | — | — | — | — |
+| Failover list scoped session → project → app, each level able to inherit or override | Yes | — | — | — | — |
+| Route ranking computed from your own finished tasks | Yes | — | — | — | — |
+| Keys encrypted into the OS keystore | Yes | — | — | — | — |
+| Phone relays tool calls to your desktop over the LAN | Yes | — | — | — | — |
+| Calls subscription CLIs installed on your machine (Claude Code, Codex, Kimi Code) | Yes | — | — | — | — |
+| License | Apache-2.0 | — | — | — | — |
+
+The four rows in the middle are the ones worth reading the code for:
+
+- **[LLM failover](docs/llm-failover.md)** — which errors trigger a handover, and which three deliberately do not, because switching models cannot fix a malformed request, a behavioural loop, or a cause nobody identified.
+- **[Multi-model router](docs/multi-model-router.md)** — done rates computed per hashed route alias, an eight-sample floor before any number is shown, and a reorder button you have to click, because the program does not know which of your routes is the free one.
+- **[BYOK](docs/byok-ai-client.md)** — where the key goes and what never leaves the machine.
+- **[Mobile remote bridge](docs/mobile-remote-bridge.md)** — how a phone with no file access still gets file, browser and CLI tools.
+
+Full documentation index: **[docs/README.md](docs/README.md)**.
+
+---
+
+## What it is
 
 wickrunAI is an open-source AI client for Windows, macOS, and Linux. Connect any service that uses the OpenAI-compatible API and use it to research topics, work through documents, read and write files, drive Chrome, or call the Claude Code installed on your machine.
 
@@ -21,7 +70,7 @@ On a long task you can have one model gather the material, pause, then hand the 
 
 Use an API key from a model provider, or connect an official client you already run on your machine from the desktop model picker. Accounts, subscriptions, and API charges stay with the provider. An Android client connects to your computer over the local network; it has not been verified on a physical device yet.
 
-The interface reads in Simplified Chinese, Traditional Chinese, and English, switchable from the top right. The documents under `docs/` are in Chinese.
+The interface reads in Simplified Chinese, Traditional Chinese, and English, switchable from the top right. Most reference documents under `docs/` are in Chinese; the five concept pages linked above are in English.
 
 ## 2.3 Conversation isolation and three interface languages
 

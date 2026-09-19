@@ -89,4 +89,9 @@ contextBridge.exposeInMainWorld('snc', {
   remoteStart: (port, token) => ipcRenderer.invoke('snc:remoteStart', { port, token }),
   remoteStop: () => ipcRenderer.invoke('snc:remoteStop'),
   remoteStatus: () => ipcRenderer.invoke('snc:remoteStatus'),
+  syncDeviceId: () => ipcRenderer.invoke('snc:syncDeviceId'),
+  syncPickFolder: () => ipcRenderer.invoke('snc:syncPickFolder'),
+  syncPeek: (dir) => ipcRenderer.invoke('snc:syncPeek', { dir }),
+  syncPush: (dir, payload, passphrase) => ipcRenderer.invoke('snc:syncPush', { dir, payload, passphrase }),
+  syncPull: (dir, passphrase) => ipcRenderer.invoke('snc:syncPull', { dir, passphrase }),
 });

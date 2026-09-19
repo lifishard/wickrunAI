@@ -129,6 +129,14 @@ interface ElectronBridge {
   remoteStart(port: number, token: string): Promise<RemoteStatus>;
   remoteStop(): Promise<RemoteStatus>;
   remoteStatus(): Promise<RemoteStatus>;
+  syncDeviceId(): Promise<string>;
+  syncPickFolder(): Promise<string | null>;
+  syncPeek(dir: string): Promise<Array<{ deviceId: string; bytes: number; mtimeMs: number }>>;
+  syncPush(dir: string, payload: unknown, passphrase: string): Promise<{ deviceId: string; bytes: number; file: string }>;
+  syncPull(dir: string, passphrase: string): Promise<{
+    bundles: Array<{ deviceId: string; at: number; payload: unknown }>;
+    failures: Array<{ file: string; error: string }>;
+  }>;
 }
 
 export type TaskNotificationKind = 'question' | 'paused' | 'error' | 'completed';
@@ -196,11 +204,26 @@ export interface ChromeLaunchResult {
 }
 
 /** 遥控服务的运行状态（只有桌面端有） */
+/** 地址所属的网段档位。手机端优先用 cgnat（Tailscale），换网也通。 */
+export type RemoteScope = 'cgnat' | 'private' | 'linklocal' | 'loopback';
+
+export interface RemoteEndpoint {
+  url: string;
+  scope: RemoteScope;
+  iface: string;
+}
+
 export interface RemoteStatus {
   running: boolean;
   port: number;
   token: string;
   addresses: string[];
+  /** 带档位的地址列表；旧版本主进程可能没有这个字段 */
+  endpoints?: RemoteEndpoint[];
+  /** 有没有 Tailscale 之类的私有网络地址 */
+  hasPrivateNetwork?: boolean;
+  /** 直接挂在公网上的网卡名。非空说明这台机器不在路由器后面。 */
+  publicInterfaces?: string[];
 }
 
 declare global {
