@@ -94,7 +94,11 @@ test('任务消息的 id 跨派发稳定，续跑后还能声明验收',async t=
   // 原来每次派发都新生成 uid：检查点里记的 requirementSourceIds 指向旧 id，
   // 续跑后 update_requirements 永远报「要求必须引用真实用户消息 ID」
   assert.equal(f.calls[0].history[0].id,f.calls[1].history[0].id);
-  assert.match(f.calls[0].history[0].id,/^teamtask-/);
+  assert.match(f.calls[0].history[0].id,/^teamtask-[0-9a-z]{7,8}$/);
+  // 短到模型能原样抄回 sourceId —— 第一版是三个 uuid 拼起来的 140 字符，实测弱模型直接编一个
+  assert.ok(f.calls[0].history[0].id.length<=20,f.calls[0].history[0].id);
+  // 而且要明确告诉它该填什么，别让它猜
+  assert.ok(f.calls[0].history[0].content.includes(`sourceId 必须写 ${f.calls[0].history[0].id}`));
 });
 
 test('隔离副本没有 .git 这件事要先告诉成员，别让它白撞一次 git',async t=>{

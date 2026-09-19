@@ -17,6 +17,12 @@ import { emptyTeamProject, loadCollaboration, teamBridge, validateGraph, type Co
 import { tr } from './i18n';
 
 type Listener = () => void;
+/** 由内容派生的短标识：跨派发稳定，又短到模型能原样抄回来。 */
+function shortKey(value:string):string{
+ let h=2166136261;
+ for(let i=0;i<value.length;i++){h^=value.charCodeAt(i);h=Math.imul(h,16777619);}
+ return (h>>>0).toString(36).padStart(7,'0');
+}
 export class TeamRuntime {
  data: CollaborationData | null = null;
  error: string | null = null;
@@ -337,7 +343,8 @@ export class TeamRuntime {
   // 隔离副本按设计排除了 .git 等目录。不先说，模型第一反应就是 git status，
   // 白烧一轮拿到退出码 128 —— 这一轮的上下文和预算都是真金白银。
   const isolationNote=fileSessionId?'\n注意：工作目录是这次运行的隔离副本，不含 .git / node_modules / dist / build / .next。git 命令在这里用不了，要看改动就直接读文件；改动稍后由用户在「文件与产物」里合并回主目录。':'';
-  const prompt=`目标：${r.goal}\n验收：${r.acceptance}\n步骤：${node.instructions}\n输出要求：${node.outputRequirement}\n允许工作目录：${roots.join('、')||'无'}${isolationNote}\n前置记录：\n${sources}\n本轮讨论：\n${discussion}\n补充指令：\n${task?.entries.filter(e=>e.kind==='instruction'&&(e.author==='你 → 所有成员'||e.author==='你 → '+member.name)).map(e=>e.text).join('\n')??''}`;
+  const taskMessageId='teamtask-'+shortKey(`${runId}:${node.id}:${member.id}`);
+  const prompt=`目标：${r.goal}\n验收：${r.acceptance}\n步骤：${node.instructions}\n输出要求：${node.outputRequirement}\n允许工作目录：${roots.join('、')||'无'}${isolationNote}\n声明验收要求（update_requirements）时：sourceId 必须写 ${taskMessageId}，sourceQuote 必须是上面「目标」或「验收」里的原文片段；文件类检查（file_exists / file_contains / json）的 path 必须是绝对路径，以上面的允许工作目录开头。verify_requirements 的 ids 是你自己起的要求 id，不是文件名。\n前置记录：\n${sources}\n本轮讨论：\n${discussion}\n补充指令：\n${task?.entries.filter(e=>e.kind==='instruction'&&(e.author==='你 → 所有成员'||e.author==='你 → '+member.name)).map(e=>e.text).join('\n')??''}`;
   const resume=r.attempts.find(a=>a.id===attemptId)?.memberStates?.[member.id];
   let output=resume?.content??'',state:RunState|undefined=resume,usage=resume?.spentTokens??0,handle:AgentHandle|undefined;
   const persist=()=>this.runUpdate(projectId,runId,run=>{const a=run.attempts.find(x=>x.id===attemptId)!;a.output=output;a.state=state;if(state)(a.memberStates??={})[member.id]=state;});
@@ -385,13 +392,13 @@ export class TeamRuntime {
     return new Promise<boolean>((res)=>{this.approvals.set(runId+':'+attemptId,ok=>{this.approvals.delete(runId+':'+attemptId);void this.runUpdate(projectId,runId,run=>{run.approvalQueue=(run.approvalQueue??[]).filter(x=>x.nodeId!==attemptId);run.pendingApproval=run.approvalQueue[0];run.events.push({id:uid(),at:Date.now(),kind:'permission',text:`${member.name} 的 ${step.name}：${ok?'批准':'拒绝'}`,nodeId:node.id});}).then(()=>res(ok)).catch(()=>res(false));});});
    };
    handle=runAgent({resume,resolveUncertain:resume?'retry':undefined,requestId:uid('teamrequest'),profile:profile!,apiKey:key!,config,
-    // 任务消息的 id 必须跨派发稳定。
+    // 任务消息的 id 必须跨派发稳定，而且要短到模型抄得动。
     //
-    // 原来每次派发都新生成一个 uid：第一次能登记验收条目（sourceId 指向当时那条消息），
-    // 一旦续跑，检查点里记的 requirementSourceIds 还是旧 id，而这次的消息换了新 id，
-    // 于是 update_requirements 永远报「要求必须引用真实用户消息 ID」——
-    // 而在预算和轮次限制下，续跑几乎是必然的，等于协作空间里根本没法声明验收。
-    history:[{id:`teamtask-${runId}-${node.id}-${member.id}`,role:'user',content:prompt,createdAt:Date.now()}],
+    // 稳定：原来每次派发都新生成 uid，续跑后检查点里的 requirementSourceIds 指向旧 id，
+    // update_requirements 永远报「要求必须引用真实用户消息 ID」。
+    // 短：第一版直接把三个 uuid 拼起来，140 个字符 —— 实测弱模型抄不动，干脆自己编一个
+    // （见过 "project-memory"），照样过不了校验。现在派生成 teamtask-xxxxxxxx。
+    history:[{id:taskMessageId,role:'user',content:prompt,createdAt:Date.now()}],
     skills:chosen,
     modelInfo:[...(settings.cachedModels?.[member.connectionId]??[]),...(settings.customModels?.[member.connectionId]??[])].find(m=>m.id===member.model),
     limitOf:()=>this.settings()?.modelLimits?.[routeKeyOf(profile!.id,member.model,profile!.baseUrl)],
