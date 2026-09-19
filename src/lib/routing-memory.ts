@@ -19,6 +19,10 @@ import type { TaskKind } from './harness';
  *    既不能算成功也不能算失败。doneRate 的分母只含前两者，unknown 单独报。
  *
  * C. 样本不足就不给数字，而不是给一个小样本算出来的数字。
+ *
+ * D. 来源不混算。对话路径的完成背后有 ToolStep 和交付核验，协作空间的完成是流程里的
+ *    质检节点加人工确认 —— 证据强度不同，做成率放在一起算就是自欺。所以默认只看
+ *    对话路径（接力名单、模型选择器要的就是这个），要看协作空间得显式切过去。
  * ------------------------------------------------------------------ */
 
 /** 低于这个样本量不排名：拿三次调用报一个做成率是这类系统最容易翻的车 */
@@ -51,9 +55,13 @@ export function falseDone(t: TaskObservation): boolean {
     (t.acceptance.failed > 0 || t.acceptance.unchecked > 0 || t.acceptance.unverifiable > 0);
 }
 
+export type ScoreSource = 'chat' | 'team' | 'all';
+
 export interface RouteScore {
   /** 统计单元：路由别名。同一个模型挂在两份凭据下是两条 */
   route: string;
+  /** 这组数字出自哪条执行路径。'all' 只在明确要求合并时出现 */
+  source: ScoreSource;
   /** 给人看的标签，取这条路由上最近一次用的模型名 */
   model: string;
   kind: TaskKind | 'unknown' | 'all';
@@ -82,7 +90,7 @@ const median = (xs: number[]): number | null => {
   return s.length % 2 ? s[m] : Math.round((s[m - 1] + s[m]) / 2);
 };
 
-function score(route: string, kind: RouteScore['kind'], tasks: TaskObservation[]): RouteScore {
+function score(route: string, kind: RouteScore['kind'], source: ScoreSource, tasks: TaskObservation[]): RouteScore {
   const verdicts = tasks.map(verdictOf);
   const done = verdicts.filter((v) => v === 'done').length;
   const notDone = verdicts.filter((v) => v === 'not_done').length;
@@ -95,7 +103,7 @@ function score(route: string, kind: RouteScore['kind'], tasks: TaskObservation[]
   const toolFails = tasks.reduce((n, t) => n + t.tools.failed, 0);
   const rankable = judged >= MIN_RANK_SAMPLES;
   return {
-    route, kind, model: tasks.at(-1)?.attempts.at(-1)?.model ?? route,
+    route, kind, source, model: tasks.at(-1)?.attempts.at(-1)?.model ?? route,
     samples: tasks.length, done, notDone, unknown: verdicts.filter((v) => v === 'unknown').length,
     doneRate: rankable ? done / judged : null,
     medianActiveMs: median(active),
@@ -112,9 +120,10 @@ function score(route: string, kind: RouteScore['kind'], tasks: TaskObservation[]
  * kind 传 'all' 时不分任务类型；传具体类型时只统计那一类，旧记录没有 kind，
  * 归进 'unknown'，不会被算进任何一个具体类型里。
  */
-export function routeScores(store: ObservationStore, kind: RouteScore['kind'] = 'all'): RouteScore[] {
+export function routeScores(store: ObservationStore, kind: RouteScore['kind'] = 'all', source: ScoreSource = 'chat'): RouteScore[] {
   const groups = new Map<string, TaskObservation[]>();
   for (const t of store.tasks) {
+    if (source !== 'all' && (t.source ?? 'chat') !== source) continue;
     if (kind !== 'all' && (t.kind ?? 'unknown') !== kind) continue;
     for (const route of new Set(t.attempts.map((a) => a.route))) {
       if (!groups.has(route)) groups.set(route, []);
@@ -122,7 +131,7 @@ export function routeScores(store: ObservationStore, kind: RouteScore['kind'] = 
     }
   }
   return [...groups.entries()]
-    .map(([route, tasks]) => score(route, kind, tasks))
+    .map(([route, tasks]) => score(route, kind, source, tasks))
     // 能排名的按做成率降序在前；不能排名的按样本量降序排在后面，等着攒够
     .sort((a, b) => (b.rankable ? 1 : 0) - (a.rankable ? 1 : 0)
       || (b.doneRate ?? -1) - (a.doneRate ?? -1) || b.samples - a.samples);

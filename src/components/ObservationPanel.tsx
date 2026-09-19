@@ -5,7 +5,7 @@ import { clearObservations, observationSnapshot, isCurrentFeedback, type Observa
 import { acceptanceLabel, acceptanceVars, buildAnalysisFiles, filterTasks, outcomeLabel, redactSelectedText, statusLabel, summarizeTasks, type ObservationFilter } from '../lib/observation-export';
 import { zipTextFiles } from '../lib/export-zip';
 import { runRecord, runTitle } from '../lib/runs';
-import { routeScores, MIN_RANK_SAMPLES, MIN_COST_SAMPLES } from '../lib/routing-memory';
+import { routeScores, MIN_RANK_SAMPLES, MIN_COST_SAMPLES, type ScoreSource } from '../lib/routing-memory';
 import { report, staleHoldout, worthKeeping, HOLDOUT_STALE_USES, type EvalStore } from '../lib/evals';
 import { desktop } from '../lib/transport';
 
@@ -26,7 +26,8 @@ export default function ObservationPanel({onClose,onOpenTask,evals,onSaveCase,on
   const filter:ObservationFilter=React.useMemo(()=>({from:from?new Date(from+'T00:00:00').getTime():undefined,to:to?new Date(to+'T23:59:59.999').getTime():undefined,model:model||undefined,version:version||undefined}),[from,to,model,version]);
   const tasks=React.useMemo(()=>store?filterTasks(store.tasks,filter):[],[store,filter]);const summary=React.useMemo(()=>summarizeTasks(tasks),[tasks]);
   const [scoreKind,setScoreKind]=React.useState<'all'|'modify'|'test'|'push'|'explain'|'other'|'unknown'>('all');
-  const scores=React.useMemo(()=>store?routeScores({...store,tasks},scoreKind):[],[store,tasks,scoreKind]);
+  const [scoreSource,setScoreSource]=React.useState<ScoreSource>('chat');
+  const scores=React.useMemo(()=>store?routeScores({...store,tasks},scoreKind,scoreSource):[],[store,tasks,scoreKind,scoreSource]);
   const selectedTask=tasks.find(t=>t.id===selected),record=selectedTask?runRecord(selectedTask.recordId):undefined;
   const snippets=React.useMemo(()=>record?[
     {id:'question',label:t('用户原始要求'),text:record.question.content},
@@ -88,6 +89,11 @@ export default function ObservationPanel({onClose,onOpenTask,evals,onSaveCase,on
         {([['all','全部'],['modify','改东西'],['test','跑测试'],['push','推送'],['explain','只要解释'],['other','其他'],['unknown','旧记录（没有分类）']] as const)
           .map(([v,l])=><option key={v} value={v}>{t(l)}</option>)}
       </select></label>
+      <label>{t('按来源')}<select value={scoreSource} onChange={e=>setScoreSource(e.target.value as ScoreSource)}>
+        {([['chat','单一 Agent 对话'],['team','协作空间'],['all','合并（证据强度不同，只作粗看）']] as const)
+          .map(([v,l])=><option key={v} value={v}>{t(l)}</option>)}
+      </select></label>
+      <p className="hint">{t('两条路径的完成不是一回事：对话路径背后有工具记录和交付核验，协作空间是流程里的质检节点加人工确认。默认分开看。')}</p>
       {scores.length?<table className="route-scores"><thead><tr>
         <th>{t('路由')}</th><th>{t('做成率')}</th><th>{t('判得出 / 说不清')}</th>
         <th>{t('耗时中位数')}</th><th>{t('每次做成的 token')}</th><th>{t('错误完成率')}</th>

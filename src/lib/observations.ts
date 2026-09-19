@@ -26,6 +26,13 @@ export interface AttemptObservation {id:string;sourceId:string;startedAt:number;
 export interface TaskObservation {
   /** 任务粗分类。旧记录没有，按 unknown 处理，不能假装它属于某一类 */
   kind?:TaskKind;
+  /**
+   * 这条记录来自哪条执行路径。
+   *
+   * 对话路径的验收有 ToolStep 和交付核验，协作空间的验收是流程里的质检节点加人工确认，
+   * 两者证据强度不同，**不能混着算做成率**。旧记录没有这个字段，按 chat 处理。
+   */
+  source?:'chat'|'team';
   id:string;recordId:string;conversationId:string;answerId:string;startedAt:number;lastAt:number;status:string;appVersion:string;runtimeVersion:string;
   acceptance:{coverage:string;total:number;passed:number;failed:number;unverifiable:number;unchecked:number;program:number;model:number};
   feedback?:TaskFeedback;attempts:AttemptObservation[];droppedAttempts:number;events:ObservationEvent[];nextSeq:number;droppedEvents:number;seenEvents:Record<string,boolean>;detailLimitReached?:boolean;
@@ -74,7 +81,7 @@ async function routeAlias(url:string,epoch:string):Promise<string> {
   const hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(key));
   const alias='route-'+[...new Uint8Array(hash)].slice(0,8).map(x=>x.toString(16).padStart(2,'0')).join('');routes.set(key,alias);return alias;
 }
-function event(t:TaskObservation,key:string,type:string,at:number,attemptId:string,payload:ObservationEvent['data']) {
+export function observationEvent(t:TaskObservation,key:string,type:string,at:number,attemptId:string,payload:ObservationEvent['data']) {
   const old=t.events.find(e=>e.key===key);
   if(old){old.data=payload;return;}
   if(t.seenEvents[key] || t.detailLimitReached)return;
@@ -83,6 +90,7 @@ function event(t:TaskObservation,key:string,type:string,at:number,attemptId:stri
   const seq=++t.nextSeq;t.events.push({id:`${t.id}:${seq}`,key,seq,type,at,attemptId,data:payload});
   if(t.events.length>MAX_EVENTS){t.droppedEvents+=t.events.length-MAX_EVENTS;t.events=t.events.slice(-MAX_EVENTS);}
 }
+const event=observationEvent;
 function countStatus(items:{status?:string}[],status:string){return items.filter(i=>i.status===status).length;}
 
 /** Pure snapshot projection; raw text, titles, paths, headers and error messages never enter the index. */
@@ -156,6 +164,8 @@ export function pruneObservations(store:ObservationStore,now=Date.now()):void {
   while(store.tasks.length>1 && new TextEncoder().encode(JSON.stringify(store)).length>MAX_INDEX_BYTES){store.tasks.shift();store.droppedTasks++;}
 }
 type StoreMutation = (store:ObservationStore)=>Promise<void>|void;
+/** 协作空间的投影住在 team-observations.ts，用这个入口写同一份索引，不另开一套存储。 */
+export async function mutateObservations(fn:StoreMutation):Promise<void> { return mutate(fn); }
 async function mutate(fn:StoreMutation):Promise<void> {
   const applyMutation=fn;
   chain=chain.catch(()=>{}).then(async()=>{
@@ -177,7 +187,8 @@ export async function observeRun(record:RunRecord):Promise<void>{
 }
 export async function reconcileObservations(records:RunRecord[]):Promise<void>{
   await mutate(store=>{
-    const ids=new Set(records.map(r=>r.id));store.tasks=store.tasks.filter(t=>ids.has(t.recordId));
+    // 协作空间的记录没有 RunRecord，按对话路径的 id 清单过滤会把它们全删掉
+    const ids=new Set(records.map(r=>r.id));store.tasks=store.tasks.filter(t=>t.source==='team'||ids.has(t.recordId));
     for(const t of store.tasks)if(['running','waiting','awaiting_user'].includes(t.status)){
       t.status='interrupted';const a=t.attempts.at(-1);if(a){a.status='interrupted';a.endedAt=a.lastAt;}
       if(!t.missing.includes('应用中断后的实际执行结果尚未核实'))t.missing.push('应用中断后的实际执行结果尚未核实');

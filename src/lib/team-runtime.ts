@@ -3,6 +3,16 @@ import { runAgent, type AgentHandle } from './agent';
 import { uid, secretGet, toolContextOf } from './store';
 import { TOOL_BY_NAME } from './tools/registry';
 import { runtimePolicy } from './task-context';
+import { goalDemands } from './harness';
+import { observeTeamRun } from './team-observations';
+import { loadSkills, skillSystemBlock, type Skill } from './skills';
+import { projectSystemBlock, type Project } from './projects';
+import { recallFrom } from './recall';
+import { loadRuns } from './runs';
+import { observationSnapshot } from './observations';
+import { limitKey, mergeLearnedLimit, type LearnedLimit } from './limits';
+import { nextRoute, resolveFailover, type RouteRef } from './failover';
+import type { ErrorInfo } from '../types';
 import { emptyTeamProject, loadCollaboration, teamBridge, validateGraph, type CollaborationData, type TeamProject, type TeamRun, type Member, type FlowNode, type FlowVersion } from './collaboration';
 import { tr } from './i18n';
 
@@ -16,6 +26,15 @@ export class TeamRuntime {
  private running = new Map<string, {stop:boolean; handles:Set<AgentHandle>}>();
  private approvals = new Map<string,(ok:boolean)=>void>();
  settings: () => AppSettings | null = () => null;
+ /** 项目规范与文档跟单人对话用同一份，成员不该比对话少知道项目的约定 */
+ projects: () => Project[] = () => [];
+ /**
+  * 学到的限速与窗口要能写回去。
+  *
+  * 之前成员既读不到 limits.ts 学过的节奏，也不回写自己撞出来的 —— 跟 2.3.15 修好的
+  * 子代理漏桶是同一个 bug，只是换了一条支路。
+  */
+ saveSettings: ((update:(prev:AppSettings)=>AppSettings)=>void) | null = null;
   schedulingPaused=false;
  private ticking=false;
  async tick(now=Date.now()){
@@ -102,10 +121,11 @@ export class TeamRuntime {
     if(latest.pendingApproval){await this.runUpdate(projectId,runId,run=>{if(run.status==='running')run.status='waiting_user';});break;}
    }
   }catch(error){const current=this.project(projectId).runs.find(x=>x.id===runId);if(current?.status!=='cancelled')await this.pauseWith(projectId,runId,String(error),control.stop?'uncertain':'failed').catch(()=>{});}
-  finally{this.running.delete(runId);this.emit();}
+  finally{this.running.delete(runId);this.observe(projectId,runId);this.emit();}
  }
  private async pauseWith(p:string,id:string,text:string,status:TeamRun['status']='paused'){
   await this.runUpdate(p,id,r=>{r.status=status;r.events.push({id:uid(),at:Date.now(),kind:status,text});});
+  this.observe(p,id);
  }
  async pause(projectId:string,runId:string,cancel=false){
   const control=this.running.get(runId);if(control){control.stop=true;for(const handle of control.handles)handle.abort();}
@@ -128,6 +148,7 @@ export class TeamRuntime {
    if(!r.attempts.some(a=>a.nodeId!==n.id&&a.output.trim()))throw Error('缺少可供验收的结果');
   }
   await this.runUpdate(projectId,runId,run=>{const a=[...run.attempts].reverse().find(a=>a.nodeId===n.id&&a.status==='waiting_user');if(a){a.status='completed';a.outcome=ok?'pass':'fail';a.output=ok?'用户已确认':'用户拒绝';a.endedAt=Date.now();}run.approvalQueue=(run.approvalQueue??[]).filter(x=>x.nodeId!==n.id);run.pendingApproval=run.approvalQueue[0];run.status=run.pendingApproval?'waiting_user':'paused';this.route(run,n,ok?'pass':'fail');if(n.type==='end'&&ok&&!run.pendingApproval&&!run.attempts.some(a=>run.version.graph.nodes.find(n=>n.id===a.nodeId)?.type==='end'&&a.outcome==='fail')){run.status='completed';run.queue=[];}run.events.push({id:uid(),at:Date.now(),kind:'approval',approved:ok,text:ok?'用户确认验收':'用户拒绝验收',nodeId:n.id});});
+  this.observe(projectId,runId);
  }
  async resolveUncertain(projectId:string,runId:string,decision:'accept'|'retry',evidence:string){
   if(!evidence.trim())throw Error('请记录核实依据或重试范围');
@@ -142,6 +163,45 @@ export class TeamRuntime {
    r.approvalQueue=(r.approvalQueue??[]).filter(x=>x.nodeId!==a.id&&!x.nodeId.startsWith('client:'));r.pendingApproval=r.approvalQueue[0];
    r.status=uncertain.length>1?r.status:'paused';r.events.push({id:uid(),at:Date.now(),kind:'verified',text:evidence,nodeId:n.id});
   });
+  this.observe(projectId,runId);
+ }
+ /**
+  * 把这次运行的现状写进观测索引。
+  *
+  * 写失败只影响统计，不影响运行本身，所以这里吞掉错误、不等待 —— 观测是旁路，
+  * 不能变成派活路上的一道闸门。
+  */
+ private observe(projectId:string,runId:string){
+  const run=this.project(projectId).runs.find(r=>r.id===runId);
+  if(run)void observeTeamRun(structuredClone(run)).catch(()=>{});
+ }
+ /**
+  * 本机客户端成员的完成检查。
+  *
+  * 它在自己那边执行工具，wickrunAI 一条 ToolStep 都看不到，模型说「已完成」不构成证据。
+  * 这边唯一能程序核对的是隔离区里的文件哈希。核不出来就交回给人核实（uncertain），
+  * 不当成通过，也不当成失败 —— 说不清就是说不清。
+  *
+  * 判断只看这一步的指令和输出要求，不看整次运行的目标：顶层设计这种「不要改文件」的
+  * 步骤，如果拿运行目标里的「修改」来判，每次都会被误判成没干活。
+  */
+ private async clientEvidenceIssue(projectId:string,runId:string,node:FlowNode,members:Member[]):Promise<string|undefined>{
+  const clients=members.filter(m=>['client:codex','client:claude'].includes(m.connectionId));
+  if(!clients.length)return;
+  const demands=goalDemands(`${node.instructions}\n${node.outputRequirement}`);
+  if(!demands.modify&&!demands.test&&!demands.push)return;
+  let changed=0;
+  for(const member of clients){
+   const session=this.project(projectId).files.find(f=>f.taskId===runId&&f.memberId===member.id&&f.status!=='merged');
+   if(!session)continue;
+   try{
+    const diff=await teamBridge().teamFilesDiff(session.id);
+    await this.update(projectId,p=>{const i=p.files.findIndex(f=>f.id===diff.id);if(i<0)p.files.push(diff);else p.files[i]=diff;});
+    changed+=diff.files.filter(f=>f.afterHash!==f.beforeHash).length;
+   }catch(error){return tr('无法核对本机成员的隔离区文件变化：{error}',{error:String(error)});}
+  }
+  if(demands.modify&&!changed)return tr('这一步要求改动文件，但本机客户端的隔离区里没有任何文件变化。请核实它实际做了什么，再决定接受或重试。');
+  return tr('这一步要求测试或推送。本机客户端在它自己那边执行，wickrunAI 看不到执行记录，无法程序核验；请核实后再决定。');
  }
  private route(r:TeamRun,n:FlowNode,outcome:string){
   const graph=r.version.graph;
@@ -174,13 +234,71 @@ export class TeamRuntime {
   if(['start','parallel','join'].includes(node.type)){await finish(node.type==='start'?r.goal:'依赖已满足');return;}
   const members=node.type==='discussion'?(node.participants??[]).map(id=>r.members.find(m=>m.id===id)!):[r.members.find(m=>m.id===node.memberId)!];
   const output:string[]=[];
-  for(const member of members){if(control.stop)break;let text=resumeAttempt?.memberOutputs?.[member.id];if(text===undefined){text=await this.runMember(projectId,runId,attemptId,node,member,output.join('\n\n'),control);const saved=text;await this.runUpdate(projectId,runId,run=>{const a=run.attempts.find(x=>x.id===attemptId)!;(a.memberOutputs??={})[member.id]=saved;});}output.push(`${member.name}\n${text}`);}
+  for(const member of members){if(control.stop)break;let text=resumeAttempt?.memberOutputs?.[member.id];if(text===undefined){text=await this.runMemberWithFailover(projectId,runId,attemptId,node,member,output.join('\n\n'),control);const saved=text;await this.runUpdate(projectId,runId,run=>{const a=run.attempts.find(x=>x.id===attemptId)!;(a.memberOutputs??={})[member.id]=saved;});}output.push(`${member.name}\n${text}`);}
   if(control.stop){await this.runUpdate(projectId,runId,run=>{const a=run.attempts.find(x=>x.id===attemptId)!;if(a.status==='running')a.status='uncertain';if(run.status!=='cancelled')run.status='uncertain';});return;}
   const text=output.join('\n\n');
   // A reviewer must provide a structured verdict and evidence; unknown results route explicitly.
   let outcome='next';
   if(node.type==='review'){try{const raw=text.slice(text.indexOf('{'),text.lastIndexOf('}')+1);const v=JSON.parse(raw);outcome=v.evidence&&v.verdict==='pass'?'pass':v.evidence&&v.verdict==='fail'?'fail':'default';}catch{outcome='default';}}
+  if(['agent','handoff'].includes(node.type)){
+   const issue=await this.clientEvidenceIssue(projectId,runId,node,members);
+   if(issue){
+    await this.runUpdate(projectId,runId,run=>{
+     const a=run.attempts.find(x=>x.id===attemptId)!;a.status='uncertain';a.output=text;a.error=issue;a.endedAt=Date.now();
+     if(['running','pausing'].includes(run.status))run.status='uncertain';
+     run.events.push({id:uid(),at:Date.now(),kind:'uncertain',text:issue,nodeId:node.id});
+    });
+    this.observe(projectId,runId);return;
+   }
+  }
   await finish(text,outcome);
+  this.observe(projectId,runId);
+ }
+ /**
+  * 成员失灵就按名单交给下一位，进度不重来。
+  *
+  * 三件事分开（跟单人对话同一套）：**名单是用户排的**，程序不挑、不打分；
+  * **换不换**由 errors.ts 的归类决定，说不清的错误留在原地；
+  * **怎么换**由这里执行 —— 检查点按成员 id 存着，接手的那位从断点续，
+  * 已发生的副作用由幂等键账本兜底，不重复执行。
+  *
+  * 本机订阅客户端不参与：它的失败没有统一的错误归类，拿不准就不换。
+  * 名单为空（用户没设）就是原来的行为，一点不变。
+  */
+ private async runMemberWithFailover(projectId:string,runId:string,attemptId:string,node:FlowNode,member:Member,discussion:string,control:{stop:boolean;handles:Set<AgentHandle>}):Promise<string>{
+  const tried:RouteRef[]=[];
+  let active=member;
+  for(;;){
+   const current:RouteRef={profileId:active.connectionId,model:active.model};
+   try{
+    const text=await this.runMember(projectId,runId,attemptId,node,active,discussion,control);
+    await this.logRoute(projectId,runId,attemptId,member.id,current,'done');
+    return text;
+   }catch(error){
+    await this.logRoute(projectId,runId,attemptId,member.id,current,'failed');
+    const info=(error as {info?:ErrorInfo}).info;
+    const settings=this.settings();
+    const list=resolveFailover(active.failover,undefined,settings?.failover).config;
+    const isClient=['client:codex','client:claude'].includes(active.connectionId);
+    const decision=!control.stop&&info&&!isClient&&list.enabled
+     ? nextRoute({current,order:list.routes??[],tried,health:settings?.modelHealth??{},info}):null;
+    if(!decision)throw error;
+    tried.push(current);
+    // 成员快照是运行的审计基线，创建后不可改写（collaboration-store 会拒绝）。
+    // 换人只活在这一次派发里，留痕走 routeLog 和运行事件。
+    active={...active,connectionId:decision.route.profileId,model:decision.route.model};
+    await this.runUpdate(projectId,runId,run=>{
+     run.events.push({id:uid(),at:Date.now(),kind:'failover',nodeId:node.id,
+      text:tr('{name}：{reason}，已按接力名单交给 {model} 接手，已有进度保留',{name:member.name,reason:tr(decision.reason),model:decision.route.model})});
+    });
+   }
+  }
+ }
+ private async logRoute(projectId:string,runId:string,attemptId:string,memberId:string,route:RouteRef,status:'failed'|'done'){
+  await this.runUpdate(projectId,runId,run=>{
+   const a=run.attempts.find(x=>x.id===attemptId);if(!a)return;
+   (a.routeLog??=[]).push({memberId,profileId:route.profileId,model:route.model,at:Date.now(),status});
+  }).catch(()=>{});
  }
  private async runMember(projectId:string,runId:string,attemptId:string,node:FlowNode,member:Member,discussion:string,control:{stop:boolean;handles:Set<AgentHandle>}):Promise<string>{
   const settings=this.settings();if(!settings)throw Error('设置未就绪');
@@ -195,6 +313,7 @@ export class TeamRuntime {
    if(!session){session=await teamBridge().teamFilesCreate(projectId,runId,member.id,r.projectSettings.roots[0]);const created=session;await this.update(projectId,p=>{p.files.push(created);});}
    fileSessionId=session.id;roots=[session.isolatedRoot];
   }
+  const chosen=member.skills?.length?(await loadSkills()).filter((x:Skill)=>x.enabled&&member.skills!.includes(x.name)):[];
   const sources=r.attempts.filter(a=>a.status==='completed'&&(node.inputRefs.length?node.inputRefs.includes(a.nodeId):true)).map(a=>`${a.nodeId} 第${a.visit}次\n${a.output}`).join('\n\n');
   const memories=r.memorySnapshot.map(m=>`${m.title}（${m.applicability}）\n${m.text}`).join('\n\n');
   const task=p.tasks.find(t=>t.id===r.taskId);
@@ -211,11 +330,18 @@ export class TeamRuntime {
    remaining=Math.max(1,Math.min(member.maxTokens||available,Math.floor(available/slots)));
    run.reservations[reservationKey]=remaining;
   });
+  const routeKeyOf=(profileId:string,model:string,baseUrl:string)=>limitKey(profileId,model,baseUrl);
+  const learn=(profileId:string,model:string,baseUrl:string,value:LearnedLimit)=>this.saveSettings?.(prev=>({...prev,
+    modelLimits:{...(prev.modelLimits??{}),[routeKeyOf(profileId,model,baseUrl)]:mergeLearnedLimit(prev.modelLimits?.[routeKeyOf(profileId,model,baseUrl)],value)}}));
   const config:GenerationConfig={...r.config,model:member.model,effortLevel:member.effort as GenerationConfig['effortLevel'],reasoningEffort:member.effort as GenerationConfig['reasoningEffort'],toolsEnabled:member.tools.length>0,enabledTools:member.tools,approvalMode:r.projectSettings.approvalMode,runtime:{...runtimePolicy(r.config),maxTokens:remaining,maxMinutes:Math.min(member.maxMinutes||30,r.version.graph.maxMinutes)}};
   if(isClient){
    const timer=setInterval(()=>void this.load(),600);
    try{
-    const result=await teamBridge().clientRun({projectId,runId,attemptId,memberId:member.id,prompt:`${node.type==='review'?'以 JSON 返回 {"verdict":"pass 或 fail","evidence":"具体检查证据","changes":"需要修改项"}。':''}\n成员职责：${member.instructions}\n项目经验：${memories}\n${prompt}`,fileSessionId});
+    const result=await teamBridge().clientRun({projectId,runId,attemptId,memberId:member.id,prompt:[
+     projectSystemBlock(this.projects().find(x=>x.id===projectId)??null),
+     `${node.type==='review'?'以 JSON 返回 {"verdict":"pass 或 fail","evidence":"具体检查证据","changes":"需要修改项"}。':''}\n成员职责：${member.instructions}\n项目经验：${memories}\n${prompt}`,
+     skillSystemBlock(chosen),
+    ].filter(Boolean).join('\n\n'),fileSessionId});
     await this.load();
     await this.runUpdate(projectId,runId,run=>{const a=run.attempts.find(a=>a.id===attemptId)!;a.output=result.text??'';run.tokens+=run.reservations[reservationKey]??0;delete run.reservations[reservationKey];run.events.push({id:uid(),at:Date.now(),kind:'client_budget',nodeId:node.id,text:'订阅客户端未提供统一精确用量，已将本次预留额度保守计入总预算。'});});
     if(result.status!=='completed')throw Error(result.error||`本机客户端结果：${result.status}，请核实本次操作`);
@@ -225,7 +351,12 @@ export class TeamRuntime {
   }
   return new Promise<string>((resolve,reject)=>{
    let ended=false;
-   const end=(error?:string)=>{if(ended)return;ended=true;if(handle)control.handles.delete(handle);void persist().then(()=>this.runUpdate(projectId,runId,run=>{delete run.reservations[reservationKey];})).then(()=>error?reject(Error(error)):resolve(output)).catch(reject);};
+   let failure:ErrorInfo|undefined;
+   const end=(error?:string)=>{if(ended)return;ended=true;if(handle)control.handles.delete(handle);void persist().then(()=>this.runUpdate(projectId,runId,run=>{delete run.reservations[reservationKey];})).then(()=>{
+    if(!error)return resolve(output);
+    // 把归类带出去：换不换人由 failover.ts 按这个判断，这里只负责不把它丢掉
+    const thrown=Object.assign(Error(error),{info:failure});reject(thrown);
+   }).catch(reject);};
    const confirm=async(step:ToolStep)=>{
     if(control.stop)return false;
     if(config.approvalMode==='all')return true;
@@ -233,11 +364,20 @@ export class TeamRuntime {
     await this.runUpdate(projectId,runId,run=>{const item={nodeId:attemptId,text:`${member.name} 请求 ${step.name}\n${JSON.stringify(step.args,null,2)}`};run.approvalQueue=[...(run.approvalQueue??[]),item];run.pendingApproval=run.approvalQueue[0];});
     return new Promise<boolean>((res)=>{this.approvals.set(runId+':'+attemptId,ok=>{this.approvals.delete(runId+':'+attemptId);void this.runUpdate(projectId,runId,run=>{run.approvalQueue=(run.approvalQueue??[]).filter(x=>x.nodeId!==attemptId);run.pendingApproval=run.approvalQueue[0];run.events.push({id:uid(),at:Date.now(),kind:'permission',text:`${member.name} 的 ${step.name}：${ok?'批准':'拒绝'}`,nodeId:node.id});}).then(()=>res(ok)).catch(()=>res(false));});});
    };
-   handle=runAgent({resume,resolveUncertain:resume?'retry':undefined,requestId:uid('teamrequest'),profile:profile!,apiKey:key!,config,history:[{id:uid(),role:'user',content:prompt,createdAt:Date.now()}],toolCtx:()=>({...toolContextOf(settings,projectId),teamExecution:{projectId,runId,attemptId,memberId:member.id,fileSessionId},workspaceRoots:roots,grants:{extraRoots:[],screen:false,admin:false}}),effortMappings:settings.effortMappings,extraSystem:`你是项目成员 ${member.name}。\n${member.instructions}\n已采用项目经验：\n${memories}\n${node.type==='review'?'以 JSON 返回 {"verdict":"pass 或 fail","evidence":"具体检查证据","changes":"需要修改项"}。不得声称执行了没有执行的测试。':''}`,timeoutMs:settings.requestTimeoutMs,canRunHostTools:true,autoRetry:settings.autoRetry,confirm,grantAccess:async()=>({ok:false,content:'',error:'协作运行权限固定；请暂停后在项目设置调整并创建新运行。'}),events:{
+   handle=runAgent({resume,resolveUncertain:resume?'retry':undefined,requestId:uid('teamrequest'),profile:profile!,apiKey:key!,config,history:[{id:uid(),role:'user',content:prompt,createdAt:Date.now()}],
+    skills:chosen,
+    modelInfo:[...(settings.cachedModels?.[member.connectionId]??[]),...(settings.customModels?.[member.connectionId]??[])].find(m=>m.id===member.model),
+    limitOf:()=>this.settings()?.modelLimits?.[routeKeyOf(profile!.id,member.model,profile!.baseUrl)],
+    onLearnLimit:value=>learn(profile!.id,member.model,profile!.baseUrl,value),
+    limits:{get:(profileId,model,baseUrl)=>this.settings()?.modelLimits?.[routeKeyOf(profileId,model,baseUrl)],learn},
+    // 默认零关联：成员想不起来时才显式查，而且只查同一个项目
+    recallTasks:async(query,limit)=>recallFrom(await loadRuns(),await observationSnapshot(),{query,limit,projectId}),toolCtx:()=>({...toolContextOf(settings,projectId),teamExecution:{projectId,runId,attemptId,memberId:member.id,fileSessionId},workspaceRoots:roots,grants:{extraRoots:[],screen:false,admin:false}}),effortMappings:settings.effortMappings,extraSystem:[projectSystemBlock(this.projects().find(x=>x.id===projectId)??null),
+    `你是项目成员 ${member.name}。\n${member.instructions}\n已采用项目经验：\n${memories}\n${node.type==='review'?'以 JSON 返回 {"verdict":"pass 或 fail","evidence":"具体检查证据","changes":"需要修改项"}。不得声称执行了没有执行的测试。':''}`,
+    skillSystemBlock(chosen)].filter(Boolean).join('\n\n'),timeoutMs:settings.requestTimeoutMs,canRunHostTools:true,autoRetry:settings.autoRetry,confirm,grantAccess:async()=>({ok:false,content:'',error:'协作运行权限固定；请暂停后在项目设置调整并创建新运行。'}),events:{
     onContentDelta(text){output+=text;},onContentReplace(text){output=text;},onReasoningDelta(){},onSources(){},onRound(){},onNotice(){},onStopReason(){},
     onStep:step=>{void this.runUpdate(projectId,runId,run=>{const a=run.attempts.find(x=>x.id===attemptId)!;const i=a.steps.findIndex(s=>s.id===step.id);if(i<0)a.steps.push(step);else a.steps[i]=step;}).catch(()=>{control.stop=true;handle?.abort();});},
     onUsage:u=>{const next=u.total_tokens??(u.prompt_tokens??0)+(u.completion_tokens??0),delta=Math.max(0,next-usage);usage=next;void this.runUpdate(projectId,runId,run=>{run.tokens+=delta;if(run.reservations[reservationKey]!==undefined)run.reservations[reservationKey]=Math.max(0,run.reservations[reservationKey]-delta);}).catch(()=>{control.stop=true;handle?.abort();});},
-    onRunState:async next=>{if(next){state=next;const nextTokens=next.spentTokens??0,delta=Math.max(0,nextTokens-usage);usage=Math.max(usage,nextTokens);if(delta)await this.runUpdate(projectId,runId,run=>{run.tokens+=delta;if(run.reservations[reservationKey]!==undefined)run.reservations[reservationKey]=Math.max(0,run.reservations[reservationKey]-delta);});}await persist();},onDone:()=>end(),onError:message=>end(message),onPaused:reason=>{control.stop=true;end(reason);},
+    onRunState:async next=>{if(next){state=next;const nextTokens=next.spentTokens??0,delta=Math.max(0,nextTokens-usage);usage=Math.max(usage,nextTokens);if(delta)await this.runUpdate(projectId,runId,run=>{run.tokens+=delta;if(run.reservations[reservationKey]!==undefined)run.reservations[reservationKey]=Math.max(0,run.reservations[reservationKey]-delta);});}await persist();},onDone:()=>end(),onError:(message,info)=>{failure=info;end(message);},onPaused:reason=>{control.stop=true;end(reason);},
    }});control.handles.add(handle);
   });
  }

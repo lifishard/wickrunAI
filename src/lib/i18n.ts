@@ -16,6 +16,38 @@ export const LOCALES: { value: Locale; label: string; label2: string; lang: stri
  * 英文查词典，查不到就退回简体原文 —— 半翻译的界面也比缺字的界面好用。
  */
 const EN: Record<string, string> = {
+  '导入配置模板':
+    'Import a configuration template',
+  '这个文件读不出文本内容':
+    'That file has no readable text content',
+  '导入的成员和流程一律换新编号、先停用，不会覆盖现有配置；流程版本要在设计器里重新保存一次再运行。':
+    'Imported members and workflows get fresh ids and arrive disabled, so nothing you already have is overwritten. Save a workflow version in the designer before running it.',
+  '失灵时的接力名单':
+    'Handoff list when a route fails',
+  '顺序由你排：这位成员的路由失灵时按名单往下走，进度不重来。不设就沿用应用全局名单；本机订阅客户端不参与自动交接。':
+    'You set the order. When the route of this member fails, wickrunAI walks down the list and the work continues from its checkpoint. Leave it unset to inherit the app-wide list. Local subscription clients are never handed off automatically.',
+  '为这位成员单独设一份名单':
+    'Give this member its own list',
+  '接入':
+    'Connection',
+  '加入名单':
+    'Add to list',
+  '{name}：{reason}，已按接力名单交给 {model} 接手，已有进度保留':
+    '{name}: {reason}. Handed to {model} from your list; the work so far is kept.',
+  '这位成员带哪些技能': 'Skills this member carries',
+  '由你勾选，不按指令自动匹配。正文过长的技能只放开头，成员需要具体规范时自己取回。':
+    'You pick them; nothing is matched automatically from the step text. A long skill is injected head-only, and the member fetches the rest when it needs the details.',
+  '还没有已启用的技能。': 'No skills are enabled yet.',
+  '按来源': 'By source',
+  '单一 Agent 对话': 'Single-agent chat',
+  '合并（证据强度不同，只作粗看）': 'Merged (different evidence strength; rough view only)',
+  '两条路径的完成不是一回事：对话路径背后有工具记录和交付核验，协作空间是流程里的质检节点加人工确认。默认分开看。':
+    'Completion does not mean the same thing on both paths: chat runs carry tool records and delivery verification, team runs carry a review node plus your own approval. They are kept apart by default.',
+  '无法核对本机成员的隔离区文件变化：{error}': 'Cannot check the isolated copy of this local client member for file changes: {error}',
+  '这一步要求改动文件，但本机客户端的隔离区里没有任何文件变化。请核实它实际做了什么，再决定接受或重试。':
+    'This step asked for file changes, but nothing changed in the local client\'s isolated copy. Check what it actually did before accepting or retrying.',
+  '这一步要求测试或推送。本机客户端在它自己那边执行，wickrunAI 看不到执行记录，无法程序核验；请核实后再决定。':
+    'This step asked for tests or a push. The local client runs them on its own side, so wickrunAI has no execution record to verify against. Check it yourself before deciding.',
   '彻底删除这个手动补的 ID': 'Delete this manually added ID for good',
   '再点一次就彻底删除这个手动 ID': 'Click again to delete this manual ID for good',
   '确认删除': 'Confirm',

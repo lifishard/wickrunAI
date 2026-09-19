@@ -1,9 +1,11 @@
 import type { GenerationConfig, RunState, ToolStep } from '../types';
 import { desktop } from './transport';
 import { uid } from './store';
+import type { FailoverConfig } from './failover';
 
 export type NodeKind = 'start' | 'agent' | 'discussion' | 'condition' | 'parallel' | 'join' | 'review' | 'approval' | 'handoff' | 'end';
-export interface Member { id: string; name: string; instructions: string; connectionId: string; model: string; effort: string; enabled: boolean; tools: string[]; maxTokens: number; maxMinutes: number }
+/** skills：这位成员要带的技能名单。刻意由用户勾选，不按指令自动匹配 —— 自动塞技能等于替用户改了他没写的要求。 */
+export interface Member { id: string; name: string; instructions: string; connectionId: string; model: string; effort: string; enabled: boolean; tools: string[]; maxTokens: number; maxMinutes: number; skills?: string[]; failover?: FailoverConfig }
 export interface FlowNode { id: string; title: string; type: NodeKind; x: number; y: number; memberId?: string; participants?: string[]; instructions: string; inputRefs: string[]; outputRequirement: string; maxVisits: number; join: 'all' | 'any'; condition?: { source: string; contains: string }; ports?: { id: string; label: string }[] }
 export interface FlowEdge { id: string; from: string; to: string; port?: string; label: string; loop?: boolean; maxTraversals: number }
 export interface Graph { nodes: FlowNode[]; edges: FlowEdge[]; maxSteps: number; maxMinutes: number; maxTokens: number }
@@ -12,7 +14,14 @@ export interface Workflow { editorView?:'canvas'|'list'; id: string; name: strin
 export interface DiscussionEntry { id: string; at: number; author: string; kind: 'message'|'decision'|'instruction'|'handoff'; text: string; runId?: string }
 export interface TeamTask { id: string; title: string; goal: string; acceptance: string; workflowId?: string; ownerId?: string; status: string; entries: DiscussionEntry[]; createdAt: number; sourceConversationId?: string }
 export type TeamRunStatus = 'ready'|'running'|'pausing'|'paused'|'waiting_user'|'uncertain'|'failed'|'cancelled'|'completed';
-export interface NodeAttempt { memberStates?:Record<string,RunState>; memberOutputs?:Record<string,string>; resolution?:string; id: string; nodeId: string; visit: number; status: 'running'|'completed'|'failed'|'uncertain'|'waiting_user'; startedAt: number; endedAt?: number; output: string; steps: ToolStep[]; state?: RunState; error?: string; outcome?: string }
+/**
+ * routeLog：这次尝试里，每位成员实际用过哪几条路由，以及那一条是失败还是做完。
+ *
+ * 中途换过人之后，成员记录上只剩最后那条路由。没有这份流水，观测会把整段成绩
+ * 记到接手的那条路由头上，失败的那条反而干干净净 —— 记分表从此是错的。
+ */
+export interface RouteAttempt { memberId:string; profileId:string; model:string; at:number; status:'failed'|'done' }
+export interface NodeAttempt { routeLog?:RouteAttempt[]; memberStates?:Record<string,RunState>; memberOutputs?:Record<string,string>; resolution?:string; id: string; nodeId: string; visit: number; status: 'running'|'completed'|'failed'|'uncertain'|'waiting_user'; startedAt: number; endedAt?: number; output: string; steps: ToolStep[]; state?: RunState; error?: string; outcome?: string }
 export interface RunEvent { approved?:boolean; id: string; at: number; kind: string; text: string; nodeId?: string }
 export interface TeamRun { approvalQueue?:{nodeId:string;text:string}[]; projectSettings:TeamProject["settings"]; memorySnapshot:MemoryEntry[]; reservations:Record<string,number>; id: string; taskId: string; workflowId: string; version: FlowVersion; members: Member[]; config: GenerationConfig; status: TeamRunStatus; goal: string; acceptance: string; queue: string[]; arrivals: Record<string,string[]>; visits: Record<string,number>; traversals: Record<string,number>; attempts: NodeAttempt[]; events: RunEvent[]; tokens: number; createdAt: number; updatedAt: number; owner?: string; pendingApproval?: { nodeId:string; text:string }; scheduleKey?: string; memoryIds: string[] }
 export interface MemoryEntry { id: string; title: string; text: string; applicability: string; evidence: string; status: 'candidate'|'validated'|'adopted'|'invalid'; revision: number; history: {at:number;text:string;status:string}[]; sourceRunId?: string }
@@ -73,3 +82,49 @@ export function validateGraph(graph:Graph,members:Member[],allowedConnections?:s
 }
 export function teamBridge(){const bridge=desktop();if(!bridge?.collaborationRead)throw new Error('协作空间需要桌面版的本地存储');return bridge;}
 export async function loadCollaboration():Promise<CollaborationData>{return teamBridge().collaborationRead();}
+
+/* ------------------------------------------------------------------ *
+ * 配置模板的导入
+ *
+ * 导出一直都有，导入没有 —— 于是一套跑通的流程没法在另一台机器、另一个项目
+ * 重来一遍，只能照着截图重新点一遍。
+ *
+ * 三条刻意的规矩：
+ *   1. 全部换新编号。模板是拿来复制的，不是拿来覆盖现有配置的：同名同 id
+ *      直接盖掉别人正在用的成员，是这类功能最容易造成的事故。
+ *   2. 导入的成员一律先停用。模板里的模型 ID 和凭据是另一台机器上的，
+ *      直接可运行等于替用户决定了用哪条路由花谁的钱。
+ *   3. 不导入运行记录、任务、经验和文件。它们是证据，不是配置。
+ * ------------------------------------------------------------------ */
+export const TEMPLATE_FORMAT='wickrunAI-project-template';
+export function importTemplate(raw:unknown,newId:(prefix:string)=>string=uid):{members:Member[];workflows:Workflow[]}{
+ const data=raw as {format?:string;version?:number;members?:Member[];workflows?:Workflow[]};
+ if(!data||data.format!==TEMPLATE_FORMAT||data.version!==1||!Array.isArray(data.members)||!Array.isArray(data.workflows))throw Error('这不是 wickrunAI 的成员与流程配置模板');
+ const memberIds=new Map<string,string>();
+ const members=data.members.map(m=>{
+  if(!m||typeof m.name!=='string'||!m.name.trim())throw Error('模板里的成员缺少名称');
+  const id=newId('member');memberIds.set(m.id,id);
+  return {...m,id,enabled:false,tools:Array.isArray(m.tools)?m.tools:[],
+   maxTokens:Number.isFinite(m.maxTokens)&&m.maxTokens>0?m.maxTokens:30000,
+   maxMinutes:Number.isFinite(m.maxMinutes)&&m.maxMinutes>0?m.maxMinutes:20};
+ });
+ const remapGraph=(graph:Graph):Graph=>{
+  const nodeIds=new Map(graph.nodes.map(n=>[n.id,newId('node')]));
+  return {...graph,
+   nodes:graph.nodes.map(n=>({...n,id:nodeIds.get(n.id)!,
+    memberId:n.memberId?memberIds.get(n.memberId):undefined,
+    participants:n.participants?.map(x=>memberIds.get(x)!).filter(Boolean),
+    inputRefs:(n.inputRefs??[]).map(x=>nodeIds.get(x)!).filter(Boolean),
+    condition:n.condition?{...n.condition,source:nodeIds.get(n.condition.source)??n.condition.source}:undefined})),
+   edges:graph.edges.map(e=>({...e,id:newId('edge'),from:nodeIds.get(e.from)!,to:nodeIds.get(e.to)!}))};
+ };
+ const workflows=data.workflows.map(f=>{
+  if(!f?.draft?.nodes?.length)throw Error('模板里的流程缺少节点');
+  return {...f,id:newId('flow'),name:f.name||'导入的流程',archived:false,updatedAt:Date.now(),
+   viewport:f.viewport??{x:0,y:0,zoom:1},
+   draft:remapGraph(f.draft),
+   // 版本是「当时跑的是这一份」的证据，换了编号就不是原来那份了；导入后重新保存版本
+   versions:[]};
+ });
+ return {members,workflows};
+}

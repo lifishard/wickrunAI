@@ -1,0 +1,241 @@
+{
+  "format": "wickrunAI-project-template",
+  "version": 1,
+  "name": "reading log 微型试点",
+  "members": [
+    {
+      "id": "m-design",
+      "name": "顶层设计 · Claude Code",
+      "connectionId": "client:claude",
+      "model": "claude-opus-5",
+      "effort": "high",
+      "enabled": true,
+      "tools": [],
+      "maxTokens": 60000,
+      "maxMinutes": 25,
+      "skills": [],
+      "instructions": "你负责方案与边界，不负责施工。读得多、改得少：给出的改动清单要小到能一眼验完，并且每条都要能被程序核验。"
+    },
+    {
+      "id": "m-build",
+      "name": "执行 · omni 次级模型",
+      "connectionId": "k-541b88c9-0dee-4f69-90dd-39e98af74d04",
+      "model": "oc/glm-5.3",
+      "effort": "medium",
+      "enabled": true,
+      "tools": [
+        "list_dir",
+        "read_file",
+        "search_files",
+        "write_file",
+        "edit_file",
+        "run_command"
+      ],
+      "maxTokens": 80000,
+      "maxMinutes": 30,
+      "skills": [],
+      "instructions": "你只按清单施工，范围之外的想法先写下来交回，不要顺手改。声明验收条目并实跑核验，做不到就如实说没做到。",
+      "failover": {
+        "enabled": true,
+        "routes": [
+          {
+            "profileId": "k-541b88c9-0dee-4f69-90dd-39e98af74d04",
+            "model": "oc/kimi-k2.7-code"
+          },
+          {
+            "profileId": "k-541b88c9-0dee-4f69-90dd-39e98af74d04",
+            "model": "cfp/zai-org/glm-5.2"
+          }
+        ]
+      }
+    },
+    {
+      "id": "m-check",
+      "name": "质检 · Claude Code",
+      "connectionId": "client:claude",
+      "model": "claude-opus-5",
+      "effort": "high",
+      "enabled": true,
+      "tools": [],
+      "maxTokens": 60000,
+      "maxMinutes": 25,
+      "skills": [],
+      "instructions": "你是独立质检，不参与施工。只认证据：文件里实际是什么、验收条目实际跑出什么。证据不足就判不通过，说不清就写说不清。"
+    }
+  ],
+  "workflows": [
+    {
+      "id": "flow-readinglog-pilot",
+      "name": "微型试点 · 设计→执行→质检",
+      "archived": false,
+      "updatedAt": 0,
+      "editorView": "canvas",
+      "viewport": {
+        "x": 0,
+        "y": 0,
+        "zoom": 0.9
+      },
+      "versions": [],
+      "draft": {
+        "nodes": [
+          {
+            "id": "n0",
+            "type": "start",
+            "title": "输入 / 开始",
+            "x": 70,
+            "y": 160,
+            "instructions": "",
+            "inputRefs": [],
+            "outputRequirement": "",
+            "maxVisits": 3,
+            "join": "all",
+            "ports": [
+              {
+                "id": "next",
+                "label": "继续"
+              }
+            ]
+          },
+          {
+            "id": "n1",
+            "type": "agent",
+            "title": "顶层设计",
+            "x": 330,
+            "y": 160,
+            "instructions": "只读这次的隔离副本，先把现状摸清：public/app.js 里科目/集合相关的代码、db.js 的 COLLECTIONS、以及 /api/:collection/:id 这条通用接口。然后产出改动清单：每个文件改什么、为什么这么改、不改什么。本步不要改任何文件，也不要运行命令。",
+            "inputRefs": [],
+            "outputRequirement": "两部分：1）改动清单，逐条写明「文件 → 改什么 → 为什么」，只允许新增文件加一处集合注册；2）三到五条可程序核验的验收条件（文件存在、JSON 结构、接口返回条目数这类），每条写清楚怎么核。",
+            "maxVisits": 3,
+            "join": "all",
+            "ports": [
+              {
+                "id": "next",
+                "label": "继续"
+              }
+            ],
+            "memberId": "m-design"
+          },
+          {
+            "id": "n2",
+            "type": "agent",
+            "title": "执行改动",
+            "x": 590,
+            "y": 160,
+            "instructions": "严格按上一步的改动清单在隔离副本里实施，不扩大范围。先用 update_requirements 把上一步给的验收条件登记成可核验的条目，改完用 verify_requirements 实跑一遍，没通过就继续修。没做到的事不要写成做到了。",
+            "inputRefs": [],
+            "outputRequirement": "改了哪些文件（逐个列出）、验收条目的核验结果，以及仍未通过的项和原因。",
+            "maxVisits": 3,
+            "join": "all",
+            "ports": [
+              {
+                "id": "next",
+                "label": "继续"
+              }
+            ],
+            "memberId": "m-build"
+          },
+          {
+            "id": "n3",
+            "type": "review",
+            "title": "独立质检",
+            "x": 850,
+            "y": 160,
+            "instructions": "独立核对：改动是否只落在清单允许的范围内、验收条目是否真的通过、有没有声称做了却没有证据的部分。不要替它改文件，也不要把「看起来合理」当成通过。",
+            "inputRefs": [],
+            "outputRequirement": "以 JSON 返回 {\"verdict\":\"pass 或 fail\",\"evidence\":\"你实际检查了什么\",\"changes\":\"需要修改项\"}。",
+            "maxVisits": 3,
+            "join": "all",
+            "ports": [
+              {
+                "id": "pass",
+                "label": "通过"
+              },
+              {
+                "id": "fail",
+                "label": "不通过"
+              },
+              {
+                "id": "default",
+                "label": "其他"
+              }
+            ],
+            "memberId": "m-check"
+          },
+          {
+            "id": "n4",
+            "type": "end",
+            "title": "交付验收",
+            "x": 1110,
+            "y": 160,
+            "instructions": "",
+            "inputRefs": [],
+            "outputRequirement": "最终改动清单、每条验收条目的核验结果，以及合并前需要人工确认的点。",
+            "maxVisits": 3,
+            "join": "all",
+            "ports": [
+              {
+                "id": "next",
+                "label": "继续"
+              }
+            ]
+          }
+        ],
+        "edges": [
+          {
+            "id": "e0",
+            "from": "n0",
+            "to": "n1",
+            "port": "next",
+            "label": "继续",
+            "maxTraversals": 3
+          },
+          {
+            "id": "e1",
+            "from": "n1",
+            "to": "n2",
+            "port": "next",
+            "label": "继续",
+            "maxTraversals": 3
+          },
+          {
+            "id": "e2",
+            "from": "n2",
+            "to": "n3",
+            "port": "next",
+            "label": "送质检",
+            "maxTraversals": 3
+          },
+          {
+            "id": "e3",
+            "from": "n3",
+            "to": "n4",
+            "port": "pass",
+            "label": "通过",
+            "maxTraversals": 3
+          },
+          {
+            "id": "e4",
+            "from": "n3",
+            "to": "n2",
+            "port": "fail",
+            "label": "打回返工",
+            "maxTraversals": 2,
+            "loop": true
+          },
+          {
+            "id": "e5",
+            "from": "n3",
+            "to": "n4",
+            "port": "default",
+            "label": "说不清，交人工",
+            "maxTraversals": 3
+          }
+        ],
+        "maxSteps": 60,
+        "maxMinutes": 90,
+        "maxTokens": 200000
+      }
+    }
+  ],
+  "note": "导入后：1) 在成员里确认接入与模型再启用；2) 打开设计器保存一个版本；3) 在项目设置里选好 reading_log 目录；4) 新建任务填目标与验收，再运行前检查。"
+}
