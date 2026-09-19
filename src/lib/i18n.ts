@@ -16,6 +16,26 @@ export const LOCALES: { value: Locale; label: string; label2: string; lang: stri
  * 英文查词典，查不到就退回简体原文 —— 半翻译的界面也比缺字的界面好用。
  */
 const EN: Record<string, string> = {
+  '文件':
+    'Files',
+  '命令':
+    'Commands',
+  '联网':
+    'Web',
+  '项目记忆与文档':
+    'Project memory and docs',
+  '任务管理':
+    'Task management',
+  '全选这一组':
+    'Select all in this group',
+  '全部取消':
+    'Clear this group',
+  '点任意一条，画布会跳到出问题的那一步并选中它，右侧属性就是修改的地方。':
+    'Click any of these and the canvas jumps to the step at fault and selects it; the panel on the right is where you fix it.',
+  '连线':
+    'Connection line',
+  '整个流程':
+    'The workflow as a whole',
   '导入配置模板':
     'Import a configuration template',
   '这个文件读不出文本内容':

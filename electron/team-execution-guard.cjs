@@ -1,6 +1,18 @@
 'use strict';
 const path = require('node:path');
 const WORK = new Set(['agent','discussion','review','handoff']);
+/*
+ * 交付闸门自己要用的两件只读工具，不受成员工具白名单限制。
+ *
+ * 它们不是成员挑来干活的工具，是执行器在 verify_requirements 和分页读结果时
+ * 自己发起的调用，界面上也没有对应的勾选项。按白名单拦下来的后果是：
+ * 协作空间里**任何**「可程序核验的验收」都会失败，模型只能退回自评，
+ * 而自评本来就不算证据 —— 整条质检链就此空转。
+ *
+ * 两件都是只读：inspect_deliverable 只读取并比对交付物，read_tool_result 只翻自己
+ * 已经存下来的结果。工作目录仍然受隔离区约束，没有放宽任何范围。
+ */
+const HARNESS_TOOLS = new Set(['inspect_deliverable','read_tool_result']);
 function createTeamExecutionGuard({ collaboration, teamFiles }) {
   const normalized = value => process.platform === 'win32' ? path.resolve(value).toLowerCase() : path.resolve(value);
   function identity(projectId, runId, memberId, attemptId) {
@@ -25,7 +37,7 @@ function createTeamExecutionGuard({ collaboration, teamFiles }) {
     const scope = ctx?.teamExecution;
     if (!scope || typeof scope.attemptId !== 'string' || !scope.attemptId) throw Error('工具缺少协作执行身份');
     const current = identity(scope.projectId, scope.runId, scope.memberId, scope.attemptId), { run, member } = current;
-    if (!Array.isArray(member.tools) || !member.tools.includes(name)) throw Error('工具不在当前成员授权范围');
+    if (!Array.isArray(member.tools) || (!member.tools.includes(name) && !(HARNESS_TOOLS.has(name) && member.tools.length))) throw Error('工具不在当前成员授权范围');
     const amount = run.reservations?.[scope.attemptId + ':' + scope.memberId], reserved = Object.values(run.reservations || {}).reduce((sum,n) => sum + n,0);
     if (!Number.isFinite(amount) || amount <= 0 || amount > member.maxTokens || !Number.isFinite(reserved) || !Number.isFinite(run.version.graph.maxTokens) || (run.tokens || 0) + reserved > run.version.graph.maxTokens) throw Error('工具派发缺少有效的本次用量预留');
     const roots = scope.fileSessionId ? [authorizedFile(scope.fileSessionId,current).isolatedRoot] : [];

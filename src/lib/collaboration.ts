@@ -52,31 +52,31 @@ export function validateGraph(graph:Graph,members:Member[],allowedConnections?:s
  const ids=new Set(graph.nodes.map(n=>n.id));
  if(ids.size!==graph.nodes.length)error('节点 ID 重复');
  const starts=graph.nodes.filter(n=>n.type==='start'),ends=graph.nodes.filter(n=>n.type==='end');
- if(!starts.length)error('需要开始节点'); if(!ends.length)error('需要结束节点');
+ if(!starts.length)error('流程缺少开始节点：在画布上加一个「输入 / 开始」'); if(!ends.length)error('流程缺少结束节点：在画布上加一个「结束」，它同时是你的人工验收门');
  if(!Number.isInteger(graph.maxSteps)||graph.maxSteps<1||graph.maxSteps>10000)error('总步骤上限需为 1–10000');
  if(!Number.isFinite(graph.maxMinutes)||graph.maxMinutes<=0)error('需要总时间上限');
  if(!Number.isFinite(graph.maxTokens)||graph.maxTokens<=0)error('需要总用量上限');
- for(const edge of graph.edges){ if(!ids.has(edge.from)||!ids.has(edge.to))error('连线引用的节点不存在',undefined,edge.id); if(edge.loop&&(!Number.isInteger(edge.maxTraversals)||edge.maxTraversals<1))error('回路需要次数上限',edge.from,edge.id); }
+ for(const edge of graph.edges){ if(!ids.has(edge.from)||!ids.has(edge.to))error('连线引用的节点不存在',undefined,edge.id); if(edge.loop&&(!Number.isInteger(edge.maxTraversals)||edge.maxTraversals<1))error('这条回路没有次数上限：选中这条连线，把「最多走几次」填成 1 以上，否则会无限返工',edge.from,edge.id); }
  const reach=(seeds:string[],reverse=false)=>{const seen=new Set(seeds),q=[...seeds];while(q.length){const id=q.shift()!;for(const e of graph.edges){if((reverse?e.to:e.from)!==id)continue;const next=reverse?e.from:e.to;if(!seen.has(next)){seen.add(next);q.push(next);}}}return seen;};
  const reachable=reach(starts.map(n=>n.id)),exits=reach(ends.map(n=>n.id),true);
  for(const n of graph.nodes){
-  if(!reachable.has(n.id))error('节点无法从开始到达',n.id); if(!exits.has(n.id))error('节点没有通向结束的退出路径',n.id);
-  if(!Number.isInteger(n.maxVisits)||n.maxVisits<1)error('需要节点执行次数上限',n.id);
+  if(!reachable.has(n.id))error('这一步从开始节点走不到：从上一步拉一条线过来，或删掉它',n.id); if(!exits.has(n.id))error('这一步没有通向结束的路：补一条出线，最终要能走到结束节点',n.id);
+  if(!Number.isInteger(n.maxVisits)||n.maxVisits<1)error('这一步缺少执行次数上限：右侧属性里的「最多执行几次」填 1 以上',n.id);
   if(['agent','review','handoff','discussion'].includes(n.type)){
    const selected=n.type==='discussion'?(n.participants??[]):[n.memberId];
-   if(!selected.length)error('请选择讨论参与者',n.id);
-   for(const id of selected){const member=members.find(m=>m.id===id);if(!member?.enabled)error('成员未配置或已停用',n.id);else if(!member.connectionId||!member.model||(allowedConnections?.length&&!allowedConnections.includes(member.connectionId)))error('成员没有允许的模型接入',n.id);}
-   if(!n.instructions.trim())error('需要步骤指令',n.id);
-   if(['agent','review'].includes(n.type)&&!n.outputRequirement.trim())error('需要输出或验收要求',n.id);
+   if(!selected.length)error('讨论步骤还没选参与者：右侧属性里至少勾一位已启用的成员',n.id);
+   for(const id of selected){const member=members.find(m=>m.id===id);if(!member?.enabled)error('这一步还没选成员，或选的成员已停用：右侧属性里挑一位；成员在左侧「Agent」页新建和启用',n.id);else if(!member.connectionId||!member.model||(allowedConnections?.length&&!allowedConnections.includes(member.connectionId)))error('这一步的成员没有可用的模型接入：去「Agent」页给它选连接和模型；项目设置里勾了「允许的模型接入」时，这个连接也得在名单里',n.id);}
+   if(!n.instructions.trim())error('这一步还没写指令：右侧属性的「步骤指令」里写清楚要它做什么',n.id);
+   if(['agent','review'].includes(n.type)&&!n.outputRequirement.trim())error('这一步还没写输出要求：右侧属性的「输出 / 验收要求」里写清楚交什么、怎么算做完',n.id);
   }
-  for(const ref of n.inputRefs)if(!ids.has(ref))error('输入引用不存在',n.id);
+  for(const ref of n.inputRefs)if(!ids.has(ref))error('这一步引用的输入步骤已经不在流程里：右侧属性里重新选输入来源',n.id);
   const edges=graph.edges.filter(e=>e.from===n.id);
-  if(n.type==='end'&&edges.length)error('结束节点不能继续派发；返工请连接条件或质检节点',n.id);
-  if(n.type!=='end'&&!edges.length)error('节点缺少后继',n.id);
-  if(['condition','review','approval'].includes(n.type))for(const port of ['pass','fail','default'])if(!edges.some(e=>e.port===port))error('需要通过、不通过及其他结果去向',n.id);
-  if(n.type==='condition'&&(!n.condition?.source||!ids.has(n.condition.source)||!n.condition.contains))error('条件需要来源节点和匹配文字',n.id);
-  if(n.type==='parallel'&&!graph.nodes.some(j=>j.type==='join'&&reach([n.id]).has(j.id)))error('并行分支需要汇合节点',n.id);
-  if(n.type==='end'&&!n.outputRequirement.trim())error('结束节点需要交付要求',n.id);
+  if(n.type==='end'&&edges.length)error('结束节点不能再往下派发：要返工就把线接到质检或条件节点，再由它决定回哪一步',n.id);
+  if(n.type!=='end'&&!edges.length)error('这一步没有下一步：从节点右边的圆点拉一条线到下一个节点',n.id);
+  if(['condition','review','approval'].includes(n.type))for(const port of ['pass','fail','default'])if(!edges.some(e=>e.port===port))error('质检 / 条件 / 人工确认要三条出线：通过、不通过、其他各接一个去处（说不清的那条通常接回人工验收）',n.id);
+  if(n.type==='condition'&&(!n.condition?.source||!ids.has(n.condition.source)||!n.condition.contains))error('条件步骤还缺判断依据：右侧属性里选看哪一步的输出、匹配什么文字',n.id);
+  if(n.type==='parallel'&&!graph.nodes.some(j=>j.type==='join'&&reach([n.id]).has(j.id)))error('并行分支后面要有一个「汇合」节点，否则各支跑完没人收口',n.id);
+  if(n.type==='end'&&!n.outputRequirement.trim())error('结束节点还没写交付要求：右侧属性里写清楚最后要交什么，验收时按它逐条对',n.id);
  }
  return out;
 }

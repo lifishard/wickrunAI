@@ -13,3 +13,16 @@ test('tool scope uses actual node member reservation and registered isolated roo
 test('tool dispatch rejects missing budget disabled member stopped run and wrong connection',()=>{for(const change of [f=>f.run.reservations={},f=>f.run.reservations['attempt:a']=0,f=>f.run.tokens=450,f=>f.run.members[0].enabled=false,f=>f.run.status='paused',f=>f.run.projectSettings.allowedConnections=['other'],f=>f.run.members[0].tools=[]]){const f=fixture();change(f);assert.throws(()=>f.guard.tool('read_file',f.ctx));}});
 test('tool rejects unregistered foreign conflicting recovering and unauthorized file sessions',()=>{for(const change of [f=>f.project.files=[],f=>f.file.projectId='other',f=>f.file.taskId='other',f=>f.file.memberId='b',f=>f.file.status='merged',f=>f.file.status='conflict',f=>f.file.recoveryRequired=true,f=>f.file.root=path.parse(f.root).root]){const f=fixture();change(f);assert.throws(()=>f.guard.tool('read_file',f.ctx),/隔离范围/);}});
 test('file copy uses frozen run roots and current node member without requiring a model reservation',()=>{const f=fixture();f.run.reservations={};const args={projectId:'p',taskId:'r',memberId:'a',root:f.root};assert.equal(f.guard.createFileSession(args),f.file);assert.deepEqual(f.creates[0][1],[f.root]);assert.throws(()=>f.guard.createFileSession({...args,root:path.parse(f.root).root}),/冻结/);assert.throws(()=>f.guard.createFileSession({...args,memberId:'b'}),/没有指派/);f.run.status='cancelled';assert.throws(()=>f.guard.createFileSession(args),/已停止/);});
+
+test('交付闸门自己要用的只读工具不被成员白名单拦，其它工具照拦',()=>{
+  const f=fixture();
+  // verify_requirements 的程序核验走 inspect_deliverable，界面上没有这个勾选项 ——
+  // 拦下来的后果是协作空间里任何可程序核验的验收都失败，只剩模型自评
+  assert.deepEqual(f.guard.tool('inspect_deliverable',f.ctx).workspaceRoots,[f.isolated]);
+  assert.deepEqual(f.guard.tool('read_tool_result',f.ctx).workspaceRoots,[f.isolated]);
+  assert.throws(()=>f.guard.tool('write_file',f.ctx),/授权范围/);
+  // 纯文本协作的成员（一个工具都没选）依然什么都调不了
+  const bare=fixture();bare.run.members[0].tools=[];
+  assert.throws(()=>bare.guard.tool('inspect_deliverable',bare.ctx),/授权范围/);
+});
+

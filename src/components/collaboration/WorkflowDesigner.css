@@ -2,3 +2,7 @@
 @media(max-width:1250px){.workflow-designer-top-row{grid-template-columns:1fr 90px 90px 110px}.workflow-designer-workspace{grid-template-columns:minmax(0,1fr) 250px}.workflow-designer-tip{display:none}}
 @media(max-width:900px){.workflow-designer-workspace{display:flex;flex-direction:column}.workflow-designer-canvas{height:400px;position:relative}.workflow-designer-side{height:auto;max-height:650px;border-left:0;border-top:1px solid var(--border)}.workflow-designer-top-row{grid-template-columns:repeat(3,1fr)}.workflow-designer-top-row>.workflow-designer-field:first-child{grid-column:1/-1}.workflow-designer.view-list .workflow-designer-side{grid-template-columns:1fr}.workflow-designer-canvas .workflow-canvas-main{min-height:400px}}
 @media(prefers-reduced-motion:reduce){.workflow-designer *{scroll-behavior:auto!important;transition:none!important}}
+.workflow-designer-hint{font-size:12px;line-height:1.6;color:var(--fg-dim);margin:0 0 4px}
+.workflow-designer-issue{width:100%}
+.workflow-designer-issue:hover{background:var(--bg-hover);border-color:var(--accent)}
+.workflow-designer-issue strong{font-size:12px;color:var(--fg)}

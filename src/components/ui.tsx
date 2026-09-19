@@ -74,7 +74,9 @@ export function Modal(props: {
   }, [props]);
 
   return (
-    <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && props.onClose()}>
+    // 带保存按钮的弹窗是表单：点一下外面就整份丢掉，是这个应用里最容易踩的坑。
+    // 只读弹窗（没有 footer）保留点外面关闭，表单必须走 ✕ 或 Esc。
+    <div className="overlay" onMouseDown={(e) => !props.footer && e.target === e.currentTarget && props.onClose()}>
       <div className="modal" style={props.wide ? { maxWidth: 860 } : undefined}>
         <div className="modal-head">
           <span>{props.title}</span>

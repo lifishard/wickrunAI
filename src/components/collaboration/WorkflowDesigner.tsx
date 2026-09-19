@@ -70,6 +70,7 @@ export default function WorkflowDesigner({
   const t = useT();
   const [local, setLocal] = useState<Workflow>(() => structuredClone(workflow));
   const localRef = useRef(local);
+  const canvasRef = useRef<HTMLDivElement>(null);
   const [selection, setSelection] = useState<CanvasSelection>(null);
   const [undoStack, setUndoStack] = useState<Workflow[]>([]);
   const [redoStack, setRedoStack] = useState<Workflow[]>([]);
@@ -182,6 +183,22 @@ export default function WorkflowDesigner({
       draft.viewport = viewport;
     },{record:false});
   }, [mutate]);
+  /**
+   * 把画布挪到出问题的那一步上。
+   *
+   * 只选中不挪画布等于没说：出错的节点十有八九在视野外，用户看到的还是原来那一屏，
+   * 会以为点了没反应。
+   */
+  const locateIssue = useCallback((issue: { nodeId?: string; edgeId?: string }) => {
+    const nodeId = issue.nodeId ?? local.draft.edges.find((e) => e.id === issue.edgeId)?.from;
+    if (issue.edgeId) setSelection({ type: 'edge', id: issue.edgeId });
+    else if (issue.nodeId) setSelection({ type: 'node', id: issue.nodeId });
+    const node = local.draft.nodes.find((n) => n.id === nodeId);
+    const box = canvasRef.current?.querySelector('.workflow-canvas-main')?.getBoundingClientRect();
+    if (!node || !box) return;
+    const zoom = local.viewport.zoom || 1;
+    setViewport({ ...local.viewport, x: box.width / 2 - (node.x + 91) * zoom, y: box.height / 2 - (node.y + 40) * zoom });
+  }, [local.draft, local.viewport, setViewport]);
 
   const connect = useCallback((from: string, to: string, port: string) => {
     const source = localRef.current.draft.nodes.find((node) => node.id === from);
@@ -545,7 +562,7 @@ export default function WorkflowDesigner({
       </header>
 
       <div className="workflow-designer-workspace">
-        <div className="workflow-designer-canvas">
+        <div className="workflow-designer-canvas" ref={canvasRef}>
           <WorkflowCanvas
             nodes={nodeList}
             edges={edgeList}
@@ -959,23 +976,24 @@ export default function WorkflowDesigner({
             <h3>{t('校验')}</h3>
             <div className="workflow-designer-list">
               {issues.length ? (
-                issues.map((issue) => (
-                  <div
-                    key={`${issue.message}-${issue.nodeId ?? issue.edgeId}`}
-                    className={`workflow-designer-list-item ${issue.severity === 'error' ? 'workflow-designer-error' : ''}`}
-                    onClick={() => {
-                      if (issue.nodeId) {
-                        setSelection({ type: 'node', id: issue.nodeId });
-                      }
-                      if (issue.edgeId) {
-                        setSelection({ type: 'edge', id: issue.edgeId });
-                      }
-                    }}
-                  >
-                    <strong>[{issue.severity}]</strong>
-                    <span>{issue.message}</span>
-                  </div>
-                ))
+                <>
+                  <p className="workflow-designer-hint">{t('点任意一条，画布会跳到出问题的那一步并选中它，右侧属性就是修改的地方。')}</p>
+                  {issues.map((issue, index) => {
+                    const node = issue.nodeId ? local.draft.nodes.find((n) => n.id === issue.nodeId) : undefined;
+                    const where = node ? `${node.title || nodeLabels[node.type]}` : issue.edgeId ? t('连线') : t('整个流程');
+                    return (
+                      <button
+                        type="button"
+                        key={`${issue.message}-${issue.nodeId ?? issue.edgeId ?? index}`}
+                        className={`workflow-designer-list-item workflow-designer-issue ${issue.severity === 'error' ? 'workflow-designer-error' : ''}`}
+                        onClick={() => locateIssue(issue)}
+                      >
+                        <strong>{where}</strong>
+                        <span>{t(issue.message)}</span>
+                      </button>
+                    );
+                  })}
+                </>
               ) : (
                 <p className="workflow-designer-empty">{t('校验通过。')}</p>
               )}
