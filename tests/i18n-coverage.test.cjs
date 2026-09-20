@@ -26,6 +26,7 @@ const TRANSLATED=[
   'components/ObservationPanel.tsx',
   'components/UserQuestionCard.tsx',
   'components/collaboration/TeamWorkspace.tsx',
+  'components/collaboration/TeamTaskSetup.tsx',
   'components/collaboration/WorkflowDesigner.tsx',
   'components/collaboration/WorkflowCanvas.tsx',
   'components/GrantDialog.tsx',

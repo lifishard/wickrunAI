@@ -1,0 +1,12 @@
+[
+  {
+    "antipattern": "side-tab",
+    "name": "Side-tab accent border",
+    "description": "Thick colored border on one side of a card — the most recognizable tell of AI-generated UIs. Use a subtler accent or remove it entirely.",
+    "severity": "warning",
+    "category": "slop",
+    "file": "C:\\Users\\nowf1\\Documents\\AI_deck\\sensenova-chat\\src\\components\\collaboration\\TeamWorkspace.css",
+    "line": 1,
+    "snippet": "border-left:2px solid var(--border)"
+  }
+]

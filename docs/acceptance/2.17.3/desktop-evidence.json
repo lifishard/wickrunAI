@@ -1,0 +1,453 @@
+{
+  "fixture": "Actual Electron UI + real runAgent + localhost synthetic HTTP",
+  "version": "2.17.3",
+  "runId": "teamrun-53cf3346-6b4d-4bdd-ad2f-440502f335da",
+  "createdAt": 1789892714159,
+  "status": "completed",
+  "rendererReloadBeforeExplicitRetry": true,
+  "osProcessRestartTested": false,
+  "qualityConclusion": "Control flow accepted manually; all model review verdicts remain fail. No supplier quality claim.",
+  "totals": {
+    "workerCalls": 2,
+    "reviewCalls": 3,
+    "requests": 5,
+    "fixtureTokens": 1000
+  },
+  "sourceHashes": {
+    "src/lib/team-runtime.ts": "35ff1e4801670b47c9f2b3f069a79fc2f7dc46e1f5cf1dddf69e3ca5e50682d9",
+    "src/lib/team-stagnation.ts": "72b6c9a62cedab6c4d56f03f6ee7593c92881e578435a0204f60273dbf89d616",
+    "src/lib/collaboration.ts": "d59e3f3c8a61bc8911c21fb0da3111a2e9e13b10faa3eac98a0cc559efee4e78",
+    "dist/index.html": "1ded650beebf0d944b0a60613300be85db8fb2c11c923a82539363ae7db98ded"
+  },
+  "attempts": [
+    {
+      "id": "attempt-9f834d46-b06b-49de-b129-396fc7a3dd30",
+      "type": "start",
+      "visit": 1,
+      "status": "completed",
+      "outcome": "next",
+      "output": "输出停滞验收固定文本，返工时仍保持完全相同。"
+    },
+    {
+      "id": "attempt-73453437-9f28-44a2-9989-dce98b70cc9f",
+      "type": "agent",
+      "visit": 1,
+      "status": "completed",
+      "outcome": "next",
+      "output": "固定文本执行成员\n停滞验收固定文本：内容完全不变。",
+      "checkpoint": {
+        "content": "停滞验收固定文本：内容完全不变。",
+        "spentTokens": 200,
+        "requestStats": [
+          {
+            "requestId": "teamrequest-5cb7b7da-bfe3-4269-a1ed-9c109b2735bd-r1-a1",
+            "profileId": "stagnation-executor",
+            "model": "qa-stagnation-executor",
+            "route": "http://127.0.0.1:9340::chat-completions::qa-stagnation-executor",
+            "effort": "medium",
+            "purpose": "agent",
+            "estimatedInput": 1848,
+            "reservedOutput": 8192,
+            "at": 1789892714486,
+            "outcome": "accepted",
+            "dispatchedAt": 1789892714513,
+            "httpStatus": 200,
+            "actualInput": 160,
+            "output": 40,
+            "elapsedMs": 72
+          }
+        ]
+      }
+    },
+    {
+      "id": "attempt-0c3cf903-c623-4204-91dc-d6c5aae3f9fb",
+      "type": "review",
+      "visit": 1,
+      "status": "completed",
+      "outcome": "fail",
+      "output": "固定失败复核成员\n{\"verdict\":\"fail\",\"artifactIds\":[\"text:attempt-73453437-9f28-44a2-9989-dce98b70cc9f\"],\"textEvidence\":[{\"artifactId\":\"text:attempt-73453437-9f28-44a2-9989-dce98b70cc9f\",\"quote\":\"停滞验收固定文本：内容完全不变。\"}],\"changes\":\"受控验收固定返回失败；输入原文和引用没有变化，用于验证精确重复停滞。\"}",
+      "inputTexts": [
+        {
+          "id": "text:attempt-73453437-9f28-44a2-9989-dce98b70cc9f",
+          "attemptId": "attempt-73453437-9f28-44a2-9989-dce98b70cc9f",
+          "nodeId": "node-908a5f6a-f540-4cde-adb9-daf3a797bc8d",
+          "version": 1,
+          "text": "固定文本执行成员\n停滞验收固定文本：内容完全不变。",
+          "digest": "1e4b4c04a489cc9fc4b337a17ff88c35a13fee7731c9a4649d839ddb106f71dd"
+        }
+      ],
+      "textReview": {
+        "verdict": "fail",
+        "artifactIds": [
+          "text:attempt-73453437-9f28-44a2-9989-dce98b70cc9f"
+        ],
+        "textEvidence": [
+          {
+            "artifactId": "text:attempt-73453437-9f28-44a2-9989-dce98b70cc9f",
+            "quote": "停滞验收固定文本：内容完全不变。"
+          }
+        ],
+        "changes": "受控验收固定返回失败；输入原文和引用没有变化，用于验证精确重复停滞。",
+        "method": "model"
+      },
+      "checkpoint": {
+        "content": "{\"verdict\":\"fail\",\"artifactIds\":[\"text:attempt-73453437-9f28-44a2-9989-dce98b70cc9f\"],\"textEvidence\":[{\"artifactId\":\"text:attempt-73453437-9f28-44a2-9989-dce98b70cc9f\",\"quote\":\"停滞验收固定文本：内容完全不变。\"}],\"changes\":\"受控验收固定返回失败；输入原文和引用没有变化，用于验证精确重复停滞。\"}",
+        "spentTokens": 200,
+        "requestStats": [
+          {
+            "requestId": "teamrequest-4450af52-4252-42ae-a127-5ac6efe0e8a6-r1-a1",
+            "profileId": "stagnation-reviewer",
+            "model": "qa-stagnation-reviewer",
+            "route": "http://127.0.0.1:9340::chat-completions::qa-stagnation-reviewer",
+            "effort": "medium",
+            "purpose": "agent",
+            "estimatedInput": 2238,
+            "reservedOutput": 8192,
+            "at": 1789892715067,
+            "outcome": "accepted",
+            "dispatchedAt": 1789892715101,
+            "httpStatus": 200,
+            "actualInput": 160,
+            "output": 40,
+            "elapsedMs": 78
+          }
+        ]
+      }
+    },
+    {
+      "id": "attempt-6f348a2a-b2e2-435e-8641-e14c861e4707",
+      "type": "agent",
+      "visit": 2,
+      "status": "completed",
+      "outcome": "next",
+      "output": "固定文本执行成员\n停滞验收固定文本：内容完全不变。",
+      "checkpoint": {
+        "content": "停滞验收固定文本：内容完全不变。",
+        "spentTokens": 200,
+        "requestStats": [
+          {
+            "requestId": "teamrequest-036c9dc8-58ac-4384-8deb-66f1e58826eb-r1-a1",
+            "profileId": "stagnation-executor",
+            "model": "qa-stagnation-executor",
+            "route": "http://127.0.0.1:9340::chat-completions::qa-stagnation-executor",
+            "effort": "medium",
+            "purpose": "agent",
+            "estimatedInput": 1973,
+            "reservedOutput": 8192,
+            "at": 1789892715625,
+            "outcome": "accepted",
+            "dispatchedAt": 1789892715655,
+            "httpStatus": 200,
+            "actualInput": 160,
+            "output": 40,
+            "elapsedMs": 77
+          }
+        ]
+      }
+    },
+    {
+      "id": "attempt-921c6744-5323-40ff-b478-f8c18f40ff65",
+      "type": "review",
+      "visit": 2,
+      "status": "failed",
+      "outcome": "fail",
+      "output": "固定失败复核成员\n{\"verdict\":\"fail\",\"artifactIds\":[\"text:attempt-6f348a2a-b2e2-435e-8641-e14c861e4707\"],\"textEvidence\":[{\"artifactId\":\"text:attempt-6f348a2a-b2e2-435e-8641-e14c861e4707\",\"quote\":\"停滞验收固定文本：内容完全不变。\"}],\"changes\":\"受控验收固定返回失败；输入原文和引用没有变化，用于验证精确重复停滞。\"}",
+      "inputTexts": [
+        {
+          "id": "text:attempt-6f348a2a-b2e2-435e-8641-e14c861e4707",
+          "attemptId": "attempt-6f348a2a-b2e2-435e-8641-e14c861e4707",
+          "nodeId": "node-908a5f6a-f540-4cde-adb9-daf3a797bc8d",
+          "version": 2,
+          "text": "固定文本执行成员\n停滞验收固定文本：内容完全不变。",
+          "digest": "1e4b4c04a489cc9fc4b337a17ff88c35a13fee7731c9a4649d839ddb106f71dd"
+        }
+      ],
+      "textReview": {
+        "verdict": "fail",
+        "artifactIds": [
+          "text:attempt-6f348a2a-b2e2-435e-8641-e14c861e4707"
+        ],
+        "textEvidence": [
+          {
+            "artifactId": "text:attempt-6f348a2a-b2e2-435e-8641-e14c861e4707",
+            "quote": "停滞验收固定文本：内容完全不变。"
+          }
+        ],
+        "changes": "受控验收固定返回失败；输入原文和引用没有变化，用于验证精确重复停滞。",
+        "method": "model"
+      },
+      "reviewStagnation": {
+        "fingerprint": "b7dd8687ad002f4427e2e96711b8641e29d4941cfd6d2fbc2ec014e023b6b7ba",
+        "repeats": 2
+      },
+      "resolution": "retry: 受控回归：重载后已核对原文和引用一致，无外部副作用。只重新复核一次，验证回复不拼接、用量只增加一次、仍停止自动返工。",
+      "checkpoint": {
+        "content": "{\"verdict\":\"fail\",\"artifactIds\":[\"text:attempt-6f348a2a-b2e2-435e-8641-e14c861e4707\"],\"textEvidence\":[{\"artifactId\":\"text:attempt-6f348a2a-b2e2-435e-8641-e14c861e4707\",\"quote\":\"停滞验收固定文本：内容完全不变。\"}],\"changes\":\"受控验收固定返回失败；输入原文和引用没有变化，用于验证精确重复停滞。\"}",
+        "spentTokens": 200,
+        "requestStats": [
+          {
+            "requestId": "teamrequest-6fca3630-0ac4-4bde-8cf3-ead3c2ca4d88-r1-a1",
+            "profileId": "stagnation-reviewer",
+            "model": "qa-stagnation-reviewer",
+            "route": "http://127.0.0.1:9340::chat-completions::qa-stagnation-reviewer",
+            "effort": "medium",
+            "purpose": "agent",
+            "estimatedInput": 2238,
+            "reservedOutput": 8192,
+            "at": 1789892716226,
+            "outcome": "accepted",
+            "dispatchedAt": 1789892716259,
+            "httpStatus": 200,
+            "actualInput": 160,
+            "output": 40,
+            "elapsedMs": 84
+          }
+        ]
+      }
+    },
+    {
+      "id": "attempt-452cdc0c-ec9f-46d6-ab5c-597c06a73817",
+      "type": "review",
+      "visit": 3,
+      "status": "completed",
+      "outcome": "fail",
+      "output": "固定失败复核成员\n{\"verdict\":\"fail\",\"artifactIds\":[\"text:attempt-6f348a2a-b2e2-435e-8641-e14c861e4707\"],\"textEvidence\":[{\"artifactId\":\"text:attempt-6f348a2a-b2e2-435e-8641-e14c861e4707\",\"quote\":\"停滞验收固定文本：内容完全不变。\"}],\"changes\":\"受控验收固定返回失败；输入原文和引用没有变化，用于验证精确重复停滞。\"}\n人工核实：受控验收已确认停滞与单次重试行为。人工接受本次固定测试文本，仅验证交付确认入口；不把模型的 fail 改写成通过。",
+      "inputTexts": [
+        {
+          "id": "text:attempt-6f348a2a-b2e2-435e-8641-e14c861e4707",
+          "attemptId": "attempt-6f348a2a-b2e2-435e-8641-e14c861e4707",
+          "nodeId": "node-908a5f6a-f540-4cde-adb9-daf3a797bc8d",
+          "version": 2,
+          "text": "固定文本执行成员\n停滞验收固定文本：内容完全不变。",
+          "digest": "1e4b4c04a489cc9fc4b337a17ff88c35a13fee7731c9a4649d839ddb106f71dd"
+        }
+      ],
+      "textReview": {
+        "verdict": "fail",
+        "artifactIds": [
+          "text:attempt-6f348a2a-b2e2-435e-8641-e14c861e4707"
+        ],
+        "textEvidence": [
+          {
+            "artifactId": "text:attempt-6f348a2a-b2e2-435e-8641-e14c861e4707",
+            "quote": "停滞验收固定文本：内容完全不变。"
+          }
+        ],
+        "changes": "受控验收固定返回失败；输入原文和引用没有变化，用于验证精确重复停滞。",
+        "method": "model"
+      },
+      "reviewStagnation": {
+        "fingerprint": "b7dd8687ad002f4427e2e96711b8641e29d4941cfd6d2fbc2ec014e023b6b7ba",
+        "repeats": 2
+      },
+      "resolution": "accept: 受控验收已确认停滞与单次重试行为。人工接受本次固定测试文本，仅验证交付确认入口；不把模型的 fail 改写成通过。",
+      "checkpoint": {
+        "content": "{\"verdict\":\"fail\",\"artifactIds\":[\"text:attempt-6f348a2a-b2e2-435e-8641-e14c861e4707\"],\"textEvidence\":[{\"artifactId\":\"text:attempt-6f348a2a-b2e2-435e-8641-e14c861e4707\",\"quote\":\"停滞验收固定文本：内容完全不变。\"}],\"changes\":\"受控验收固定返回失败；输入原文和引用没有变化，用于验证精确重复停滞。\"}",
+        "spentTokens": 200,
+        "requestStats": [
+          {
+            "requestId": "teamrequest-7189166d-c953-47df-b1f6-4565575404ad-r1-a1",
+            "profileId": "stagnation-reviewer",
+            "model": "qa-stagnation-reviewer",
+            "route": "http://127.0.0.1:9340::chat-completions::qa-stagnation-reviewer",
+            "effort": "medium",
+            "purpose": "agent",
+            "estimatedInput": 2238,
+            "reservedOutput": 8192,
+            "at": 1789892768471,
+            "outcome": "accepted",
+            "dispatchedAt": 1789892768499,
+            "httpStatus": 200,
+            "actualInput": 160,
+            "output": 40,
+            "elapsedMs": 132
+          }
+        ]
+      }
+    },
+    {
+      "id": "attempt-1a3dd3c0-a81a-43ec-9b1c-1355b58b4fcf",
+      "type": "end",
+      "visit": 1,
+      "status": "completed",
+      "outcome": "pass",
+      "output": "用户已确认"
+    }
+  ],
+  "events": [
+    {
+      "id": "c66f459e-6e40-493f-8a52-b88c407ec88f",
+      "at": 1789892714159,
+      "kind": "created",
+      "text": "已固定版本 1、成员及输入快照"
+    },
+    {
+      "id": "addd4614-a8e2-4aa3-992c-a677813d5971",
+      "at": 1789892714322,
+      "kind": "start",
+      "nodeId": "node-8232d013-5688-4580-b389-a737f5932277",
+      "text": "输入 / 开始 · 第 1 次"
+    },
+    {
+      "id": "451d1104-6abb-423b-9d20-4487f69a7cde",
+      "at": 1789892714372,
+      "kind": "start",
+      "nodeId": "node-908a5f6a-f540-4cde-adb9-daf3a797bc8d",
+      "text": "Agent 执行 · 第 1 次"
+    },
+    {
+      "id": "b0baf5fe-3c57-47d1-b168-52d8743df7fe",
+      "at": 1789892714833,
+      "kind": "start",
+      "nodeId": "node-ac9020e5-b5bb-4a32-af3c-f2750a950d62",
+      "text": "质检 · 第 1 次"
+    },
+    {
+      "id": "8a1e8dd2-a461-421e-a931-78286c578a57",
+      "at": 1789892715520,
+      "kind": "start",
+      "nodeId": "node-908a5f6a-f540-4cde-adb9-daf3a797bc8d",
+      "text": "Agent 执行 · 第 2 次"
+    },
+    {
+      "id": "f96e4c23-8504-450c-8394-cef3c7a7fb17",
+      "at": 1789892715977,
+      "kind": "start",
+      "nodeId": "node-ac9020e5-b5bb-4a32-af3c-f2750a950d62",
+      "text": "质检 · 第 2 次"
+    },
+    {
+      "id": "73a4f73e-8431-43c6-8f22-7196a058ee11",
+      "at": 1789892716693,
+      "kind": "uncertain",
+      "text": "连续 2 次复核面对完全相同的已交付内容和要求，且没有新增可区分的检查证据（重复指纹 b7dd8687ad00）。这只能确认精确产物与检查重复，不能判断语义缺陷是否已解决；已停止自动返工，等待人工核实后选择接受或重试。",
+      "nodeId": "node-ac9020e5-b5bb-4a32-af3c-f2750a950d62"
+    },
+    {
+      "id": "5f47a9ef-c7d5-46c3-8e07-74679956b462",
+      "at": 1789892760465,
+      "kind": "verified",
+      "text": "受控回归：重载后已核对原文和引用一致，无外部副作用。只重新复核一次，验证回复不拼接、用量只增加一次、仍停止自动返工。",
+      "nodeId": "node-ac9020e5-b5bb-4a32-af3c-f2750a950d62"
+    },
+    {
+      "id": "dbe1f54c-6f8e-4ead-bd06-9b40f1556269",
+      "at": 1789892768232,
+      "kind": "start",
+      "nodeId": "node-ac9020e5-b5bb-4a32-af3c-f2750a950d62",
+      "text": "质检 · 第 3 次"
+    },
+    {
+      "id": "8b7e18b1-893d-4b03-ac27-647ac4be9404",
+      "at": 1789892768904,
+      "kind": "uncertain",
+      "text": "连续 2 次复核面对完全相同的已交付内容和要求，且没有新增可区分的检查证据（重复指纹 b7dd8687ad00）。这只能确认精确产物与检查重复，不能判断语义缺陷是否已解决；已停止自动返工，等待人工核实后选择接受或重试。",
+      "nodeId": "node-ac9020e5-b5bb-4a32-af3c-f2750a950d62"
+    },
+    {
+      "id": "ae4209cd-ecf0-407f-99ef-6023db873f20",
+      "at": 1789892809676,
+      "kind": "verified",
+      "text": "受控验收已确认停滞与单次重试行为。人工接受本次固定测试文本，仅验证交付确认入口；不把模型的 fail 改写成通过。",
+      "nodeId": "node-ac9020e5-b5bb-4a32-af3c-f2750a950d62"
+    },
+    {
+      "id": "cdffe8ef-9cac-4fa7-bc61-0465e150a3c7",
+      "at": 1789892823000,
+      "kind": "start",
+      "nodeId": "node-4d4a22fa-9502-4ea1-9788-86d8fc9cac5f",
+      "text": "结束 · 第 1 次"
+    },
+    {
+      "id": "0e6ff92c-eaf9-4197-9c7a-a9b8315a29a1",
+      "at": 1789892831938,
+      "kind": "approval",
+      "approved": true,
+      "text": "用户确认验收",
+      "nodeId": "node-4d4a22fa-9502-4ea1-9788-86d8fc9cac5f"
+    }
+  ],
+  "wire": [
+    {
+      "at": 1789892714550,
+      "ordinal": 6,
+      "method": "POST",
+      "url": "/chat/completions",
+      "model": "qa-stagnation-executor",
+      "kind": "fixed_text",
+      "tools": [
+        "request_user_input"
+      ],
+      "messageCount": 2
+    },
+    {
+      "at": 1789892715112,
+      "ordinal": 7,
+      "method": "POST",
+      "url": "/chat/completions",
+      "model": "qa-stagnation-reviewer",
+      "kind": "fixed_failed_review",
+      "tools": [
+        "request_user_input"
+      ],
+      "messageCount": 2
+    },
+    {
+      "at": 1789892715663,
+      "ordinal": 8,
+      "method": "POST",
+      "url": "/chat/completions",
+      "model": "qa-stagnation-executor",
+      "kind": "fixed_text",
+      "tools": [
+        "request_user_input"
+      ],
+      "messageCount": 2
+    },
+    {
+      "at": 1789892716272,
+      "ordinal": 9,
+      "method": "POST",
+      "url": "/chat/completions",
+      "model": "qa-stagnation-reviewer",
+      "kind": "fixed_failed_review",
+      "tools": [
+        "request_user_input"
+      ],
+      "messageCount": 2
+    },
+    {
+      "at": 1789892768597,
+      "ordinal": 10,
+      "method": "POST",
+      "url": "/chat/completions",
+      "model": "qa-stagnation-reviewer",
+      "kind": "fixed_failed_review",
+      "tools": [
+        "request_user_input"
+      ],
+      "messageCount": 2
+    }
+  ],
+  "earlierTrials": [
+    {
+      "id": "teamrun-cd96657d-bab0-4bf2-b596-b2923d6828da",
+      "status": "uncertain",
+      "tokens": 800,
+      "createdAt": 1789892015726,
+      "errors": [
+        "Error: 尚未确认任务完成：本次要求实际操作，但没有成功操作的记录。请执行并核验，不能把口头承诺当成完成。"
+      ]
+    },
+    {
+      "id": "teamrun-1d0a7eac-981d-4b65-8830-0ac47274d65f",
+      "status": "uncertain",
+      "tokens": 1000,
+      "createdAt": 1789892257142,
+      "errors": [
+        "用户核实后批准重试：受控验收：已核对两份文本摘要和原文引用完全一致，没有文件或外部副作用。只允许重新复核一次，验证重复失败仍停止。",
+        "Error: 文本复核需要 JSON：verdict、artifactIds、textEvidence、changes"
+      ]
+    }
+  ]
+}

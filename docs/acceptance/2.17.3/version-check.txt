@@ -1,0 +1,13 @@
+✔ 版本号本身是三段数字 (0.8049ms)
+✔ package-lock 根部两处跟 package.json 一致 (3.3413ms)
+✔ src/lib/version.ts 跟 package.json 一致 (1.25ms)
+✔ 两份 README 的版本徽章跟 package.json 一致 (1.315ms)
+✔ 依赖树里碰巧同版本号的包没有被顺手改掉 (2.3392ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 5
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 98.502

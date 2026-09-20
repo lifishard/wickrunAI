@@ -84,6 +84,20 @@ function guessMissingBinary(msg: string): string | null {
 const TRANSIENT_5XX =
   /bad gateway|gateway time|service unavailable|temporarily|overload|try again|upstream|connection reset|EOF/i;
 
+/**
+ * A few OpenAI-compatible providers reuse `insufficient_quota` as the error
+ * code for minute-window limits.  The surrounding message is the only way to
+ * distinguish that recoverable TPM/RPM case from an exhausted balance.
+ */
+const SHORT_TERM_RATE_LIMIT =
+  /rate.?limit|too many requests|\b(?:tpm|rpm)\b|tokens? per minute|requests? per minute|请求过于频繁|限流|并发/i;
+const MINUTE_WINDOW_LIMIT = /\b(?:tpm|rpm)\b|tokens? per minute|requests? per minute/i;
+
+const EXHAUSTED_QUOTA =
+  /insufficient|balance|欠费|余额|out of credit|exceeded your current quota/i;
+
+const EXPLICIT_BILLING_FAILURE = /balance|欠费|余额|out of credit/i;
+
 export function classifyError(
   rawMessage: string,
   status: number | undefined,
@@ -143,8 +157,26 @@ export function classifyError(
       '已有任务现场会保留，避免连续点击重新发送',
     ]);
   }
-  if (status === undefined && /rate.?limit|tpm|rpm|too many requests|限流/i.test(msg)) {
+  // Explicit billing failures remain durable even if a gateway also mentions
+  // rate limiting.  Otherwise a concrete minute-window signal wins when the
+  // provider merely labels it `insufficient_quota`.
+  if (status === 402 || (status !== 401 && status !== 403 && has(lower, EXPLICIT_BILLING_FAILURE))) {
+    return mk('quota', '这个账号的额度用完了', [
+      '去上游控制台看一下余额 / 免费额度是不是到期了',
+      '换一份别的凭据：输入框左下角可以切，不影响别的会话',
+    ]);
+  }
+  if (status !== 401 && status !== 403 && has(msg, SHORT_TERM_RATE_LIMIT) &&
+      (!has(msg, EXHAUSTED_QUOTA) || has(msg, MINUTE_WINDOW_LIMIT))) {
     return mk('rate_limit', '暂时达到调用额度，等待后继续', [], { retryable: true, retryAfterMs: parseRetryAfter(msg) });
+  }
+  // Stateless SSE errors have no HTTP status, so classify their durable quota
+  // failures before the generic status-less network branch below.
+  if (status === undefined && has(lower, EXHAUSTED_QUOTA)) {
+    return mk('quota', '这个账号的额度用完了', [
+      '去上游控制台看一下余额 / 免费额度是不是到期了',
+      '换一份别的凭据：输入框左下角可以切，不影响别的会话',
+    ]);
   }
   /* ---------------- 网络层：请求根本没出去 ---------------- */
 
@@ -193,7 +225,7 @@ export function classifyError(
 
   /* ---------------- 402 / 余额 ---------------- */
 
-  if (status === 402 || has(lower, /insufficient|balance|欠费|余额|out of credit|exceeded your current quota/)) {
+  if (status === 402 || has(lower, EXHAUSTED_QUOTA)) {
     return mk('quota', '这个账号的额度用完了', [
       '去上游控制台看一下余额 / 免费额度是不是到期了',
       '换一份别的凭据：输入框左下角可以切，不影响别的会话',

@@ -1,0 +1,213 @@
+{
+  "version": "2.17.4",
+  "fixture": "Native Electron UI, real runAgent and localhost HTTP with real 62-second wait",
+  "runId": "teamrun-136e3148-84d2-49a1-9d2a-b66d7ffa90ad",
+  "status": "completed",
+  "elapsedBetweenRequestsMs": 62144,
+  "beforeConfirmationObserved": {
+    "members": 1,
+    "workflows": 1,
+    "versions": 1,
+    "runs": 0,
+    "modelRequests": 0
+  },
+  "knownFixtureTokens": 200,
+  "failedRequestUsage": "missing, not zero",
+  "workflow": {
+    "id": "flowversion-44215679-b418-4246-9aea-c3118c7414bc",
+    "number": 1,
+    "createdAt": 1789919000834,
+    "graph": {
+      "nodes": [
+        {
+          "id": "node-8cce31ec-bd29-4961-a7dd-00d45b869654",
+          "type": "start",
+          "title": "输入 / 开始",
+          "x": 70,
+          "y": 150,
+          "instructions": "",
+          "inputRefs": [],
+          "outputRequirement": "",
+          "maxVisits": 3,
+          "join": "all",
+          "ports": [
+            {
+              "id": "next",
+              "label": "继续"
+            }
+          ]
+        },
+        {
+          "id": "node-fc56b6f1-bc88-418e-8520-60048325b5ba",
+          "type": "agent",
+          "title": "Agent 执行",
+          "x": 300,
+          "y": 120,
+          "instructions": "请原样输出：协作易用性验收成功。",
+          "inputRefs": [],
+          "outputRequirement": "答复必须包含原文“协作易用性验收成功。”",
+          "maxVisits": 3,
+          "join": "all",
+          "ports": [
+            {
+              "id": "next",
+              "label": "继续"
+            }
+          ],
+          "memberId": "member-3af4315e-99d3-497b-9e7c-b76f0956e96b"
+        },
+        {
+          "id": "node-06094da1-fb30-42a3-8858-107c342b758e",
+          "type": "end",
+          "title": "结束",
+          "x": 570,
+          "y": 150,
+          "instructions": "",
+          "inputRefs": [],
+          "outputRequirement": "答复必须包含原文“协作易用性验收成功。”",
+          "maxVisits": 3,
+          "join": "all",
+          "ports": [
+            {
+              "id": "next",
+              "label": "继续"
+            }
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "id": "edge-2b43dfec-45a8-46b2-9cb0-b83c48e3d342",
+          "from": "node-8cce31ec-bd29-4961-a7dd-00d45b869654",
+          "to": "node-fc56b6f1-bc88-418e-8520-60048325b5ba",
+          "port": "next",
+          "label": "继续",
+          "maxTraversals": 3
+        },
+        {
+          "id": "edge-404245d9-0c9e-4bd7-b670-5627cec1fcfd",
+          "from": "node-fc56b6f1-bc88-418e-8520-60048325b5ba",
+          "to": "node-06094da1-fb30-42a3-8858-107c342b758e",
+          "port": "next",
+          "label": "继续",
+          "maxTraversals": 3
+        }
+      ],
+      "maxSteps": 50,
+      "maxMinutes": 30,
+      "maxTokens": 50000
+    }
+  },
+  "memberSnapshot": [
+    {
+      "id": "member-3af4315e-99d3-497b-9e7c-b76f0956e96b",
+      "name": "首次任务与 62 秒退避验收 · 执行",
+      "instructions": "按任务目标交付文本，依据验收标准检查结果。",
+      "connectionId": "ease-local",
+      "model": "qa-ease-model",
+      "effort": "medium",
+      "enabled": true,
+      "tools": [],
+      "skills": [],
+      "maxTokens": 30000,
+      "maxMinutes": 20,
+      "failover": {
+        "enabled": false,
+        "routes": []
+      }
+    }
+  ],
+  "attempts": [
+    {
+      "id": "attempt-78ba5a68-bb10-43f8-8593-e2f9fc701769",
+      "nodeId": "node-8cce31ec-bd29-4961-a7dd-00d45b869654",
+      "status": "completed",
+      "output": "请原样输出：协作易用性验收成功。"
+    },
+    {
+      "id": "attempt-86150e89-8fe3-4c74-9ad9-7a8adb26e277",
+      "nodeId": "node-fc56b6f1-bc88-418e-8520-60048325b5ba",
+      "status": "completed",
+      "output": "首次任务与 62 秒退避验收 · 执行\n协作易用性验收成功。",
+      "requests": [
+        {
+          "requestId": "teamrequest-49a52d61-3eda-4706-9ca1-632ec2ca30df-r1-a1",
+          "profileId": "ease-local",
+          "model": "qa-ease-model",
+          "route": "http://127.0.0.1:9341::chat-completions::qa-ease-model",
+          "effort": "medium",
+          "purpose": "agent",
+          "estimatedInput": 1872,
+          "reservedOutput": 8192,
+          "at": 1789919023732,
+          "outcome": "failed",
+          "dispatchedAt": 1789919023772,
+          "httpStatus": 429,
+          "elapsedMs": 162,
+          "detail": "inference exceeds tpm/rpm limit (code insufficient_quota)",
+          "failureKind": "rate_limit"
+        },
+        {
+          "requestId": "teamrequest-49a52d61-3eda-4706-9ca1-632ec2ca30df-r1-a2",
+          "profileId": "ease-local",
+          "model": "qa-ease-model",
+          "route": "http://127.0.0.1:9341::chat-completions::qa-ease-model",
+          "effort": "medium",
+          "purpose": "agent",
+          "estimatedInput": 1872,
+          "reservedOutput": 8192,
+          "at": 1789919085960,
+          "outcome": "accepted",
+          "dispatchedAt": 1789919085992,
+          "httpStatus": 200,
+          "actualInput": 160,
+          "output": 40,
+          "elapsedMs": 72
+        }
+      ]
+    },
+    {
+      "id": "attempt-8dbc5758-604e-4075-8913-f0133370d1bd",
+      "nodeId": "node-06094da1-fb30-42a3-8858-107c342b758e",
+      "status": "completed",
+      "output": "用户已确认"
+    }
+  ],
+  "wire": [
+    {
+      "at": 1789919023855,
+      "ordinal": 1,
+      "model": "qa-ease-model",
+      "status": 429,
+      "tools": [
+        "request_user_input"
+      ],
+      "messageCount": 2
+    },
+    {
+      "at": 1789919085999,
+      "ordinal": 2,
+      "model": "qa-ease-model",
+      "status": 200,
+      "tools": [
+        "request_user_input"
+      ],
+      "messageCount": 2
+    }
+  ],
+  "sourceHashes": {
+    "src/lib/errors.ts": "9e9c58001cd9ce8b63656268ec77429e2587a27cf87f77d816d6c13b944d89d5",
+    "src/lib/agent.ts": "8541fcd52b164b7487f72ef59b020012cf38f46f90d14c020c95744816364d38",
+    "src/lib/team-runtime.ts": "35ff1e4801670b47c9f2b3f069a79fc2f7dc46e1f5cf1dddf69e3ca5e50682d9",
+    "src/lib/team-quick-start.ts": "38dc785b103c949491a873e102269b74499bd65a43db320fd7022df1a50e203b",
+    "src/components/collaboration/TeamWorkspace.tsx": "2ac668d8eb3d98d695d0a40588c17b2729e452317c798aa38107d7f532756956",
+    "src/components/collaboration/TeamTaskSetup.tsx": "9b898d2b0819a5b2ad5dfc4ad415fc6475f239ef3dc54547fc35b62c212581d5"
+  },
+  "limits": [
+    "Synthetic provider only; no claim about live SenseNova recovery",
+    "Desktop covers direct text setup; other two generated structures covered by automated tests",
+    "No first-time-human usability study or OS process restart test"
+  ],
+  "finalBuildReloadObserved": true,
+  "finalBuildReloadResult": "Completed task, saved workflow and advanced entry preserved"
+}

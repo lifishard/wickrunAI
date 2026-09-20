@@ -102,7 +102,41 @@ function localElectronBridge(store, callTool) {
   };
 }
 
-async function fixture(t, server, { tools = [], callTool = async () => ({ ok: true, content: '' }) } = {}) {
+function immediatePacer() {
+  const actual = loader()(projectFile('src/lib/pacer.ts'));
+  const waits = [];
+  const rateLimitDelays = [];
+  return {
+    waits,
+    rateLimitDelays,
+    module: {
+      ...actual,
+      async paced(_key, fn, options = {}) {
+        if (options.signal?.aborted) throw actual.abortError();
+        return fn();
+      },
+      async waitCancellable(ms, signal, onWait) {
+        waits.push(ms);
+        onWait?.(ms);
+        if (signal?.aborted) throw actual.abortError();
+      },
+      noteRateLimit(_key, retryAfterMs) {
+        const delay = retryAfterMs ?? 62000;
+        rateLimitDelays.push(delay);
+        return delay;
+      },
+      waitForTokens: () => 0,
+      waitForQuota: () => 0,
+      reserveTokens: () => {},
+      reconcileTokens: () => {},
+      consumeQuota: () => {},
+      noteQuotaHeaders: () => {},
+      noteSuccess: () => {},
+    },
+  };
+}
+
+async function fixture(t, server, { tools = [], callTool = async () => ({ ok: true, content: '' }), autoRetry = 0, pacer } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'wickrun-team-http-recovery-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const store = createCollaborationStore(root);
@@ -113,6 +147,7 @@ async function fixture(t, server, { tools = [], callTool = async () => ({ ok: tr
 
   let serial = 0;
   const load = loader({
+    ...(pacer ? { './pacer': pacer.module } : {}),
     './store': {
       uid: (prefix = 'id') => `${prefix}-${++serial}`,
       secretGet: async () => 'fake-local-key',
@@ -133,7 +168,7 @@ async function fixture(t, server, { tools = [], callTool = async () => ({ ok: tr
     ],
     effortMappings: [],
     requestTimeoutMs: 2000,
-    autoRetry: 0,
+    autoRetry,
     modelHealth: {},
     failover: {
       enabled: true,
@@ -263,4 +298,45 @@ test('team failover crosses real localhost HTTP and preserves recovery state', a
     assert.equal(checkpoint.toolCursor, 0, 'the unresolved operation remains at the durable cursor');
     assert.equal(run.tokens, 18);
   });
+});
+
+test('team run uses the shared automatic rate-limit retry over real localhost HTTP', async (t) => {
+  for (const scenario of [
+    { name: 'provider default wait', headers: {}, expectedDelay: 62000 },
+    { name: 'Retry-After wait', headers: { 'retry-after': '2' }, expectedDelay: 2000 },
+  ]) {
+    await t.test(scenario.name, async (t) => {
+      let calls = 0;
+      const server = await localOpenAi(t, ({ req }) => {
+        assert.equal(req.url.startsWith('/primary/'), true, 'runAgent should retry the same team route');
+        if (calls++ === 0) {
+          return {
+            status: 429,
+            headers: scenario.headers,
+            body: { error: { message: 'inference exceeds tpm limit (code insufficient_quota)' } },
+          };
+        }
+        return { body: completion('same route recovered after throttling', 25) };
+      });
+      const pacer = immediatePacer();
+      const f = await fixture(t, server, { autoRetry: 1, pacer });
+      await f.runtime.start('p', f.runId);
+
+      const run = f.runtime.project('p').runs[0];
+      const attempt = agentAttempt(run);
+      const state = attempt.memberStates['member-a'];
+      assert.equal(run.status, 'waiting_user');
+      assert.deepEqual(server.routeLog.map((entry) => [entry.url.split('/')[1], entry.model]), [
+        ['primary', 'primary-model'],
+        ['primary', 'primary-model'],
+      ]);
+      assert.deepEqual(pacer.rateLimitDelays, [scenario.expectedDelay]);
+      assert.deepEqual(pacer.waits, [scenario.expectedDelay]);
+      assert.equal(run.tokens, 25, 'the rejected request must not invent token usage');
+      assert.deepEqual(state.requestStats.map((stat) => [stat.httpStatus, stat.failureKind, stat.outcome]), [
+        [429, 'rate_limit', 'failed'],
+        [200, undefined, 'accepted'],
+      ]);
+    });
+  }
 });

@@ -1,0 +1,573 @@
+{
+  "version": 2,
+  "fixture": "latest-revision-v1",
+  "projectId": "p-2ce061b6-d71f-4455-b021-239256f873f9",
+  "profileIds": "anonymized",
+  "inputHash": "af93c93e71f372e6a440840bc0f0d3b535bb43152d562cef02acd7e8a0feb1a2",
+  "usageSource": "gateway_reported_or_missing",
+  "sampleLimit": "Pilot attempts may be incomplete; all three strategies may not have run. No quality ranking or monetary inference.",
+  "runs": [
+    {
+      "runId": "teamrun-56b4f546-73be-4277-bfb4-f20592c70f3c",
+      "taskId": "teamtask-d4e579a9-2fc5-49a0-b788-b7d27f23dab8",
+      "workflow": "single",
+      "strategy": "single",
+      "status": "uncertain",
+      "elapsedExecutionMs": 4697,
+      "tokensReservedOrSpent": 0,
+      "executorMemberId": "member-e0709dfa-b28f-4d97-89f9-4aab5878f8ad",
+      "frozenRoutes": [
+        {
+          "memberId": "member-e0709dfa-b28f-4d97-89f9-4aab5878f8ad",
+          "profileId": "profile-3",
+          "model": "deepseek-v4-flash",
+          "failoverEnabled": false
+        }
+      ],
+      "requestUsage": {
+        "rawEntries": 2,
+        "identifiedRequests": 1,
+        "duplicateEntries": 1,
+        "unidentifiedEntries": 0,
+        "identified": {
+          "requests": 1,
+          "accepted": 0,
+          "failed": 1,
+          "rejected": 0,
+          "cancelled": 0,
+          "pending": 0,
+          "actualInput": 0,
+          "actualOutput": 0,
+          "knownTokens": 0,
+          "missingInput": 1,
+          "missingOutput": 1,
+          "estimatedInput": 3646,
+          "reservedOutput": 8192,
+          "elapsedMs": 2006,
+          "missingElapsed": 0,
+          "missingDispatch": 0,
+          "complete": false,
+          "availability": "partial"
+        },
+        "unidentified": {
+          "requests": 0,
+          "accepted": 0,
+          "failed": 0,
+          "rejected": 0,
+          "cancelled": 0,
+          "pending": 0,
+          "actualInput": 0,
+          "actualOutput": 0,
+          "knownTokens": 0,
+          "missingInput": 0,
+          "missingOutput": 0,
+          "estimatedInput": 0,
+          "reservedOutput": 0,
+          "elapsedMs": 0,
+          "missingElapsed": 0,
+          "missingDispatch": 0,
+          "complete": false,
+          "availability": "unavailable"
+        }
+      },
+      "modelRoutes": [
+        {
+          "profileId": "profile-3",
+          "model": "deepseek-v4-flash",
+          "usage": {
+            "requests": 1,
+            "accepted": 0,
+            "failed": 1,
+            "rejected": 0,
+            "cancelled": 0,
+            "pending": 0,
+            "actualInput": 0,
+            "actualOutput": 0,
+            "knownTokens": 0,
+            "missingInput": 1,
+            "missingOutput": 1,
+            "estimatedInput": 3646,
+            "reservedOutput": 8192,
+            "elapsedMs": 2006,
+            "missingElapsed": 0,
+            "missingDispatch": 0,
+            "complete": false,
+            "availability": "partial"
+          }
+        }
+      ],
+      "requestOutcomes": [
+        {
+          "id": "teamrequest-64260f84-7631-4abd-9502-00d02a797316-r1-a1",
+          "route": {
+            "profileId": "profile-3",
+            "model": "deepseek-v4-flash"
+          },
+          "purpose": "agent",
+          "at": 1789891152554,
+          "outcome": "failed",
+          "httpStatus": 429,
+          "failureKind": "quota",
+          "actualInput": null,
+          "actualOutput": null,
+          "missingInput": true,
+          "missingOutput": true,
+          "estimatedInput": 3646,
+          "reservedOutput": 8192,
+          "elapsedMs": 2006,
+          "missingDispatch": false
+        }
+      ],
+      "attempts": [
+        {
+          "id": "attempt-8f586a16-4b7f-4e9d-83c4-316b05cec2d4",
+          "nodeType": "start",
+          "nodeTitle": "输入 / 开始",
+          "status": "completed",
+          "outcome": "next",
+          "startedAt": 1789891150951,
+          "endedAt": 1789891151260,
+          "elapsedMs": 309,
+          "error": null,
+          "review": null,
+          "artifacts": []
+        },
+        {
+          "id": "attempt-0cab605c-6bbe-4038-80a6-1c9f39447f71",
+          "nodeType": "agent",
+          "nodeTitle": "Agent 执行",
+          "status": "failed",
+          "outcome": null,
+          "startedAt": 1789891151509,
+          "endedAt": 1789891156206,
+          "elapsedMs": 4697,
+          "error": "Error: inference exceeds tpm/rpm limit (code insufficient_quota)",
+          "review": null,
+          "artifacts": []
+        }
+      ],
+      "reviews": [],
+      "artifacts": [],
+      "approvals": [],
+      "failures": [
+        {
+          "attemptId": "attempt-0cab605c-6bbe-4038-80a6-1c9f39447f71",
+          "nodeType": "agent",
+          "status": "failed",
+          "error": "Error: inference exceeds tpm/rpm limit (code insufficient_quota)"
+        }
+      ],
+      "fileSession": {
+        "executorMemberId": "member-e0709dfa-b28f-4d97-89f9-4aab5878f8ad",
+        "session": {
+          "id": "f64a216a-a0ba-40f7-84ef-a2f86effb5f5",
+          "status": "isolated",
+          "files": []
+        },
+        "files": {
+          "reportJson": null,
+          "inputCsv": {
+            "sha256": "af93c93e71f372e6a440840bc0f0d3b535bb43152d562cef02acd7e8a0feb1a2",
+            "bytes": 142
+          }
+        },
+        "programCheck": {
+          "passed": false,
+          "failures": [
+            "no_report"
+          ],
+          "expectedInputHash": "af93c93e71f372e6a440840bc0f0d3b535bb43152d562cef02acd7e8a0feb1a2",
+          "actualInputHash": "af93c93e71f372e6a440840bc0f0d3b535bb43152d562cef02acd7e8a0feb1a2"
+        }
+      }
+    },
+    {
+      "runId": "teamrun-fbdfbd6b-ec34-4d32-a0a6-baf60067165f",
+      "taskId": "teamtask-d4e579a9-2fc5-49a0-b788-b7d27f23dab8",
+      "workflow": "single",
+      "strategy": "single",
+      "status": "uncertain",
+      "elapsedExecutionMs": 7272,
+      "tokensReservedOrSpent": 0,
+      "executorMemberId": "member-e0709dfa-b28f-4d97-89f9-4aab5878f8ad",
+      "frozenRoutes": [
+        {
+          "memberId": "member-e0709dfa-b28f-4d97-89f9-4aab5878f8ad",
+          "profileId": "profile-1",
+          "model": "auto/coding:free",
+          "failoverEnabled": false
+        }
+      ],
+      "requestUsage": {
+        "rawEntries": 2,
+        "identifiedRequests": 1,
+        "duplicateEntries": 1,
+        "unidentifiedEntries": 0,
+        "identified": {
+          "requests": 1,
+          "accepted": 0,
+          "failed": 1,
+          "rejected": 0,
+          "cancelled": 0,
+          "pending": 0,
+          "actualInput": 0,
+          "actualOutput": 0,
+          "knownTokens": 0,
+          "missingInput": 1,
+          "missingOutput": 1,
+          "estimatedInput": 3646,
+          "reservedOutput": 8192,
+          "elapsedMs": 4493,
+          "missingElapsed": 0,
+          "missingDispatch": 0,
+          "complete": false,
+          "availability": "partial"
+        },
+        "unidentified": {
+          "requests": 0,
+          "accepted": 0,
+          "failed": 0,
+          "rejected": 0,
+          "cancelled": 0,
+          "pending": 0,
+          "actualInput": 0,
+          "actualOutput": 0,
+          "knownTokens": 0,
+          "missingInput": 0,
+          "missingOutput": 0,
+          "estimatedInput": 0,
+          "reservedOutput": 0,
+          "elapsedMs": 0,
+          "missingElapsed": 0,
+          "missingDispatch": 0,
+          "complete": false,
+          "availability": "unavailable"
+        }
+      },
+      "modelRoutes": [
+        {
+          "profileId": "profile-1",
+          "model": "auto/coding:free",
+          "usage": {
+            "requests": 1,
+            "accepted": 0,
+            "failed": 1,
+            "rejected": 0,
+            "cancelled": 0,
+            "pending": 0,
+            "actualInput": 0,
+            "actualOutput": 0,
+            "knownTokens": 0,
+            "missingInput": 1,
+            "missingOutput": 1,
+            "estimatedInput": 3646,
+            "reservedOutput": 8192,
+            "elapsedMs": 4493,
+            "missingElapsed": 0,
+            "missingDispatch": 0,
+            "complete": false,
+            "availability": "partial"
+          }
+        }
+      ],
+      "requestOutcomes": [
+        {
+          "id": "teamrequest-188042cf-6946-4f20-b05f-1e87c7d1891e-r1-a1",
+          "route": {
+            "profileId": "profile-1",
+            "model": "auto/coding:free"
+          },
+          "purpose": "agent",
+          "at": 1789891358848,
+          "outcome": "failed",
+          "httpStatus": 403,
+          "failureKind": "auth",
+          "actualInput": null,
+          "actualOutput": null,
+          "missingInput": true,
+          "missingOutput": true,
+          "estimatedInput": 3646,
+          "reservedOutput": 8192,
+          "elapsedMs": 4493,
+          "missingDispatch": false
+        }
+      ],
+      "attempts": [
+        {
+          "id": "attempt-2c13ce05-aaba-47b7-8a37-f2686755b911",
+          "nodeType": "start",
+          "nodeTitle": "输入 / 开始",
+          "status": "completed",
+          "outcome": "next",
+          "startedAt": 1789891357164,
+          "endedAt": 1789891357432,
+          "elapsedMs": 268,
+          "error": null,
+          "review": null,
+          "artifacts": []
+        },
+        {
+          "id": "attempt-ae3d12c8-524c-466b-bc43-5b5bbe6db8c6",
+          "nodeType": "agent",
+          "nodeTitle": "Agent 执行",
+          "status": "failed",
+          "outcome": null,
+          "startedAt": 1789891357713,
+          "endedAt": 1789891364985,
+          "elapsedMs": 7272,
+          "error": "Error: oc/big-pickle: auth — [403]: Error from provider (Console): OpenCode's free tier can only be used from within OpenCode (HTTP 403) (code insufficient_quota)",
+          "review": null,
+          "artifacts": []
+        }
+      ],
+      "reviews": [],
+      "artifacts": [],
+      "approvals": [],
+      "failures": [
+        {
+          "attemptId": "attempt-ae3d12c8-524c-466b-bc43-5b5bbe6db8c6",
+          "nodeType": "agent",
+          "status": "failed",
+          "error": "Error: oc/big-pickle: auth — [403]: Error from provider (Console): OpenCode's free tier can only be used from within OpenCode (HTTP 403) (code insufficient_quota)"
+        }
+      ],
+      "fileSession": {
+        "executorMemberId": "member-e0709dfa-b28f-4d97-89f9-4aab5878f8ad",
+        "session": {
+          "id": "59668332-4028-41e8-8c00-c3c28341adad",
+          "status": "isolated",
+          "files": []
+        },
+        "files": {
+          "reportJson": null,
+          "inputCsv": {
+            "sha256": "af93c93e71f372e6a440840bc0f0d3b535bb43152d562cef02acd7e8a0feb1a2",
+            "bytes": 142
+          }
+        },
+        "programCheck": {
+          "passed": false,
+          "failures": [
+            "no_report"
+          ],
+          "expectedInputHash": "af93c93e71f372e6a440840bc0f0d3b535bb43152d562cef02acd7e8a0feb1a2",
+          "actualInputHash": "af93c93e71f372e6a440840bc0f0d3b535bb43152d562cef02acd7e8a0feb1a2"
+        }
+      }
+    },
+    {
+      "runId": "teamrun-db4435ef-8742-4f1e-a6c3-b6f5d3b67657",
+      "taskId": "teamtask-d4e579a9-2fc5-49a0-b788-b7d27f23dab8",
+      "workflow": "single",
+      "strategy": "single",
+      "status": "uncertain",
+      "elapsedExecutionMs": 159860,
+      "tokensReservedOrSpent": 0,
+      "executorMemberId": "member-e0709dfa-b28f-4d97-89f9-4aab5878f8ad",
+      "frozenRoutes": [
+        {
+          "memberId": "member-e0709dfa-b28f-4d97-89f9-4aab5878f8ad",
+          "profileId": "profile-2",
+          "model": "qwen/qwen3.8-27b:free",
+          "failoverEnabled": false
+        }
+      ],
+      "requestUsage": {
+        "rawEntries": 6,
+        "identifiedRequests": 3,
+        "duplicateEntries": 3,
+        "unidentifiedEntries": 0,
+        "identified": {
+          "requests": 3,
+          "accepted": 0,
+          "failed": 3,
+          "rejected": 0,
+          "cancelled": 0,
+          "pending": 0,
+          "actualInput": 0,
+          "actualOutput": 0,
+          "knownTokens": 0,
+          "missingInput": 3,
+          "missingOutput": 3,
+          "estimatedInput": 10941,
+          "reservedOutput": 24576,
+          "elapsedMs": 3403,
+          "missingElapsed": 0,
+          "missingDispatch": 0,
+          "complete": false,
+          "availability": "partial"
+        },
+        "unidentified": {
+          "requests": 0,
+          "accepted": 0,
+          "failed": 0,
+          "rejected": 0,
+          "cancelled": 0,
+          "pending": 0,
+          "actualInput": 0,
+          "actualOutput": 0,
+          "knownTokens": 0,
+          "missingInput": 0,
+          "missingOutput": 0,
+          "estimatedInput": 0,
+          "reservedOutput": 0,
+          "elapsedMs": 0,
+          "missingElapsed": 0,
+          "missingDispatch": 0,
+          "complete": false,
+          "availability": "unavailable"
+        }
+      },
+      "modelRoutes": [
+        {
+          "profileId": "profile-2",
+          "model": "qwen/qwen3.8-27b:free",
+          "usage": {
+            "requests": 3,
+            "accepted": 0,
+            "failed": 3,
+            "rejected": 0,
+            "cancelled": 0,
+            "pending": 0,
+            "actualInput": 0,
+            "actualOutput": 0,
+            "knownTokens": 0,
+            "missingInput": 3,
+            "missingOutput": 3,
+            "estimatedInput": 10941,
+            "reservedOutput": 24576,
+            "elapsedMs": 3403,
+            "missingElapsed": 0,
+            "missingDispatch": 0,
+            "complete": false,
+            "availability": "partial"
+          }
+        }
+      ],
+      "requestOutcomes": [
+        {
+          "id": "teamrequest-667180fa-273e-4798-81eb-fdac1cd14046-r1-a1",
+          "route": {
+            "profileId": "profile-2",
+            "model": "qwen/qwen3.8-27b:free"
+          },
+          "purpose": "agent",
+          "at": 1789891582918,
+          "outcome": "failed",
+          "httpStatus": 429,
+          "failureKind": "rate_limit",
+          "actualInput": null,
+          "actualOutput": null,
+          "missingInput": true,
+          "missingOutput": true,
+          "estimatedInput": 3647,
+          "reservedOutput": 8192,
+          "elapsedMs": 1051,
+          "missingDispatch": false
+        },
+        {
+          "id": "teamrequest-667180fa-273e-4798-81eb-fdac1cd14046-r1-a2",
+          "route": {
+            "profileId": "profile-2",
+            "model": "qwen/qwen3.8-27b:free"
+          },
+          "purpose": "agent",
+          "at": 1789891646622,
+          "outcome": "failed",
+          "httpStatus": 429,
+          "failureKind": "rate_limit",
+          "actualInput": null,
+          "actualOutput": null,
+          "missingInput": true,
+          "missingOutput": true,
+          "estimatedInput": 3647,
+          "reservedOutput": 8192,
+          "elapsedMs": 845,
+          "missingDispatch": false
+        },
+        {
+          "id": "teamrequest-667180fa-273e-4798-81eb-fdac1cd14046-r1-a3",
+          "route": {
+            "profileId": "profile-2",
+            "model": "qwen/qwen3.8-27b:free"
+          },
+          "purpose": "agent",
+          "at": 1789891710061,
+          "outcome": "failed",
+          "httpStatus": 429,
+          "failureKind": "rate_limit",
+          "actualInput": null,
+          "actualOutput": null,
+          "missingInput": true,
+          "missingOutput": true,
+          "estimatedInput": 3647,
+          "reservedOutput": 8192,
+          "elapsedMs": 1507,
+          "missingDispatch": false
+        }
+      ],
+      "attempts": [
+        {
+          "id": "attempt-689cb138-577f-4608-b245-9f777f92c6d3",
+          "nodeType": "start",
+          "nodeTitle": "输入 / 开始",
+          "status": "completed",
+          "outcome": "next",
+          "startedAt": 1789891581262,
+          "endedAt": 1789891581518,
+          "elapsedMs": 256,
+          "error": null,
+          "review": null,
+          "artifacts": []
+        },
+        {
+          "id": "attempt-65cb0eb0-981a-469d-9af8-5f8999a71a9b",
+          "nodeType": "agent",
+          "nodeTitle": "Agent 执行",
+          "status": "uncertain",
+          "outcome": null,
+          "startedAt": 1789891581769,
+          "endedAt": 1789891741629,
+          "elapsedMs": 159860,
+          "error": "用户中止时这一步正在执行，结果需要核实：Error: 你已暂停任务",
+          "review": null,
+          "artifacts": []
+        }
+      ],
+      "reviews": [],
+      "artifacts": [],
+      "approvals": [],
+      "failures": [
+        {
+          "attemptId": "attempt-65cb0eb0-981a-469d-9af8-5f8999a71a9b",
+          "nodeType": "agent",
+          "status": "uncertain",
+          "error": "用户中止时这一步正在执行，结果需要核实：Error: 你已暂停任务"
+        }
+      ],
+      "fileSession": {
+        "executorMemberId": "member-e0709dfa-b28f-4d97-89f9-4aab5878f8ad",
+        "session": {
+          "id": "33c5ec14-e17e-4e21-ad3c-85d55275e086",
+          "status": "isolated",
+          "files": []
+        },
+        "files": {
+          "reportJson": null,
+          "inputCsv": {
+            "sha256": "af93c93e71f372e6a440840bc0f0d3b535bb43152d562cef02acd7e8a0feb1a2",
+            "bytes": 142
+          }
+        },
+        "programCheck": {
+          "passed": false,
+          "failures": [
+            "no_report"
+          ],
+          "expectedInputHash": "af93c93e71f372e6a440840bc0f0d3b535bb43152d562cef02acd7e8a0feb1a2",
+          "actualInputHash": "af93c93e71f372e6a440840bc0f0d3b535bb43152d562cef02acd7e8a0feb1a2"
+        }
+      }
+    }
+  ]
+}

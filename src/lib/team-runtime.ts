@@ -17,6 +17,7 @@ import { emptyTeamProject, loadCollaboration, teamBridge, validateGraph, type Co
 import { tr } from './i18n';
 import { teamInputs, teamTaskContract, verifyTeamReview } from './team-contract';
 import { textReviewInputs, verifyTextReview, TEXT_REVIEW_INSTRUCTIONS } from './team-text-review';
+import { repeatedReviewStagnation, type ReviewStagnation } from './team-stagnation';
 import { selectTeamMemories } from './team-memory';
 
 type Listener = () => void;
@@ -319,7 +320,11 @@ export class TeamRuntime {
   if(visit>node.maxVisits){await this.pauseWith(projectId,runId,`「${node.title}」达到执行次数上限`);control.stop=true;return;}
   const attemptId=uid('attempt');
   const prior=[...r.attempts].reverse().find(a=>a.nodeId===nodeId);
-  const resumeAttempt=prior?.resolution?.startsWith('retry:')?prior:undefined;
+  // Stagnation is a completed review, not an interrupted agent call. A user-approved retry
+  // must generate a fresh verdict; carrying its terminal content would concatenate two JSONs.
+  // Keep the original checkpoint and usage on the prior attempt for audit.
+  const freshReview=node.type==='review'&&!!prior?.reviewStagnation;
+  const resumeAttempt=prior?.resolution?.startsWith('retry:')&&!freshReview?prior:undefined;
   // Must finish durable attempted record BEFORE dispatching any model or external action.
   await this.runUpdate(projectId,runId,run=>{run.queue=run.queue.filter(id=>id!==nodeId);run.visits[nodeId]=visit;run.attempts.push({id:attemptId,nodeId,visit,status:'running',startedAt:Date.now(),output:'',steps:[],memberStates:structuredClone(resumeAttempt?.memberStates??{}),memberOutputs:structuredClone(resumeAttempt?.memberOutputs??{})});run.events.push({id:uid(),at:Date.now(),kind:'start',nodeId,text:`${node.title} · 第 ${visit} 次`});});
   const finish=async(output:string,outcome='next')=>this.runUpdate(projectId,runId,(run,p)=>{const a=run.attempts.find(x=>x.id===attemptId)!;a.status='completed';a.output=output;a.outcome=outcome;a.endedAt=Date.now();this.route(run,node,outcome);const task=p.tasks.find(t=>t.id===run.taskId);if(task&&['discussion','handoff','review','agent'].includes(node.type))task.entries.push({id:uid(),at:Date.now(),author:node.title,kind:node.type==='discussion'?'decision':node.type==='handoff'?'handoff':'message',text:output,runId});});
@@ -335,6 +340,7 @@ export class TeamRuntime {
   const text=output.join('\n\n');
   // A reviewer must provide a structured verdict and evidence; unknown results route explicitly.
   let outcome='next';
+  let stagnation:ReviewStagnation|undefined;
   if(node.type==='review'){
    const attempt=this.project(projectId).runs.find(r=>r.id===runId)!.attempts.find(a=>a.id===attemptId)!;
    if(node.reviewMode==='text'){
@@ -348,6 +354,21 @@ export class TeamRuntime {
     outcome=review.verdict==='unverifiable'?'default':review.verdict;
     await this.runUpdate(projectId,runId,run=>{run.attempts.find(a=>a.id===attemptId)!.review=review;});
    }
+   if(outcome==='fail'){
+    const latest=this.project(projectId).runs.find(r=>r.id===runId)!;
+    stagnation=await repeatedReviewStagnation(latest,node,latest.attempts.find(a=>a.id===attemptId)!);
+   }
+  }
+  if(stagnation){
+   const detected=stagnation;
+   await this.runUpdate(projectId,runId,(run,p)=>{
+    const a=run.attempts.find(x=>x.id===attemptId)!;a.status='uncertain';a.output=text;a.outcome='fail';a.error=detected.reason;a.endedAt=Date.now();
+    a.reviewStagnation={fingerprint:detected.fingerprint,repeats:detected.repeats};
+    if(['running','pausing'].includes(run.status))run.status='uncertain';
+    run.events.push({id:uid(),at:Date.now(),kind:'uncertain',text:detected.reason,nodeId:node.id});
+    const task=p.tasks.find(t=>t.id===run.taskId);if(task)task.entries.push({id:uid(),at:Date.now(),author:node.title,kind:'message',text,runId});
+   });
+   this.observe(projectId,runId);return;
   }
   if(['agent','handoff'].includes(node.type)){
    const issue=await this.clientEvidenceIssue(projectId,runId,node,members);
@@ -447,6 +468,8 @@ export class TeamRuntime {
   const reviewInstructions=textMode?TEXT_REVIEW_INSTRUCTIONS:'仅可读取/检查，不得修改文件或运行命令。以 JSON 返回 {"verdict":"pass 或 fail 或 unverifiable","evidence":["本次成功读取或检查的 callId"],"changes":"检查覆盖与需要修改项","artifactIds":["已接收的全部产物版本 id"]}。编号必须来自真实执行；无法核实用 unverifiable，不能猜测。不得声称执行了没有执行的测试。';
   const memories=selectTeamMemories(r.memorySnapshot,r,{now:r.createdAt}).prompt;
   const task=p.tasks.find(t=>t.id===r.taskId);
+  const supplementalInstructions=task?.entries.filter(e=>e.kind==='instruction'&&(e.author==='你 → 所有成员'||e.author==='你 → '+member.name)).map(e=>e.text)??[];
+  if(node.type==='review')await this.runUpdate(projectId,runId,run=>{run.attempts.find(a=>a.id===attemptId)!.reviewInstructionSnapshot=[...supplementalInstructions];});
   // 隔离副本按设计排除了 .git 等目录。不先说，模型第一反应就是 git status，
   // 白烧一轮拿到退出码 128 —— 这一轮的上下文和预算都是真金白银。
   const isolationNote=fileSessionId?'\n注意：工作目录是这次运行的隔离副本，不含 .git / node_modules / dist / build / .next。git 命令在这里用不了，要看改动就直接读文件；改动稍后由用户在「文件与产物」里合并回主目录。':'';
@@ -461,7 +484,7 @@ export class TeamRuntime {
   const evidenceNote=citable.length
    ? `\n可引用的证据编号（verify_requirements 的 review 类型要用）：${citable.join('、')}。也可以用 text: 加上你已输出答复里的原文片段。`
    : `\nreview 类验收的证据：填你本轮发起那次工具调用的 id，或 text: 加上你已输出答复里的原文片段；空着或写理由都不算证据。`;
-  const prompt=`${textMode?TEXT_REVIEW_INSTRUCTIONS+'\n':node.type==='review'?'本步骤只读复核。不要修改文件，不要运行测试；读取产物并给出复核结论。\n':''}任务契约：${JSON.stringify(teamTaskContract(r,node,member.id,inputs,roots))}\n已接收产物版本：${JSON.stringify(inputArtifacts)}\n${textMode?`文本产物快照：${JSON.stringify(inputTexts)}\n`:``}目标：${r.goal}\n验收：${r.acceptance}\n步骤：${node.instructions}\n输出要求：${node.outputRequirement}\n允许工作目录：${roots.join('、')||'无'}${isolationNote}\n声明验收要求（update_requirements）时：sourceId 必须写 ${taskMessageId}，sourceQuote 必须是上面「目标」或「验收」里的原文片段；文件类检查（file_exists / file_contains / json）的 path 必须是绝对路径，以上面的允许工作目录开头。verify_requirements 的 ids 是你自己起的要求 id，不是文件名。${evidenceNote}\n前置记录：\n${sources}\n本轮讨论：\n${discussion}\n补充指令：\n${task?.entries.filter(e=>e.kind==='instruction'&&(e.author==='你 → 所有成员'||e.author==='你 → '+member.name)).map(e=>e.text).join('\n')??''}`;
+  const prompt=`${textMode?TEXT_REVIEW_INSTRUCTIONS+'\n':node.type==='review'?'本步骤只读复核。不要修改文件，不要运行测试；读取产物并给出复核结论。\n':''}任务契约：${JSON.stringify(teamTaskContract(r,node,member.id,inputs,roots))}\n已接收产物版本：${JSON.stringify(inputArtifacts)}\n${textMode?`文本产物快照：${JSON.stringify(inputTexts)}\n`:``}目标：${r.goal}\n验收：${r.acceptance}\n步骤：${node.instructions}\n输出要求：${node.outputRequirement}\n允许工作目录：${roots.join('、')||'无'}${isolationNote}\n声明验收要求（update_requirements）时：sourceId 必须写 ${taskMessageId}，sourceQuote 必须是上面「目标」或「验收」里的原文片段；文件类检查（file_exists / file_contains / json）的 path 必须是绝对路径，以上面的允许工作目录开头。verify_requirements 的 ids 是你自己起的要求 id，不是文件名。${evidenceNote}\n前置记录：\n${sources}\n本轮讨论：\n${discussion}\n补充指令：\n${supplementalInstructions.join('\n')}`;
 
   let output=resume?.content??'',state:RunState|undefined=resume,usage=resume?.spentTokens??0,handle:AgentHandle|undefined;
   const persist=()=>this.runUpdate(projectId,runId,run=>{const a=run.attempts.find(x=>x.id===attemptId)!;a.output=output;a.state=state;if(state)(a.memberStates??={})[member.id]=state;});
