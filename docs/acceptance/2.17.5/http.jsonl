@@ -1,0 +1,4 @@
+{"at":1789922174576,"ordinal":1,"model":"qa-intuition-model","status":200,"planning":false,"refined":false,"tools":["request_user_input"],"messageCount":2}
+{"at":1789922175159,"ordinal":2,"model":"qa-intuition-model","status":200,"planning":true,"refined":false,"tools":["request_user_input"],"messageCount":2}
+{"at":1789922493435,"ordinal":3,"model":"qa-intuition-model","status":200,"planning":true,"refined":true,"tools":["request_user_input"],"messageCount":2}
+{"at":1789922494065,"ordinal":4,"model":"qa-intuition-model","status":200,"planning":true,"refined":true,"tools":["request_user_input"],"messageCount":2}

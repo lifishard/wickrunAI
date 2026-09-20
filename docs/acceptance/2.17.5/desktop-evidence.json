@@ -1,0 +1,359 @@
+{
+  "baseline": "7c58d7f",
+  "sourceVersion": "2.17.5",
+  "installedVersionRead": "2.17.4",
+  "capturedAt": "2026-09-20T16:49:20.556Z",
+  "evidenceKind": "Native Electron UI + loopback synthetic HTTP. No external provider or first-time human usability trial.",
+  "prepared": {
+    "taskCount": 1,
+    "goal": "我想办一场社区活动，但还没想好做什么。",
+    "intent": "explore",
+    "members": 4,
+    "flows": 2,
+    "runs": 0,
+    "httpLogExists": false
+  },
+  "tasks": [
+    {
+      "id": "teamtask-b5185a7b-651a-481b-948a-c8e4a501cd88",
+      "intent": "explore",
+      "title": "我想办一场社区活动，但还没想好做什么。",
+      "goal": "我想办一场社区活动，但还没想好做什么。",
+      "acceptance": "给出至少两个可选方向及取舍、最多三个需要用户决定的问题，以及一份可修改的下一步任务建议。明确区分已知信息和假设。本轮只梳理想法，不执行建议中的实际任务。",
+      "workflowId": "flow-19aefd94-31c9-4bd7-8728-0f94136de1b7"
+    },
+    {
+      "id": "teamtask-6fb51ac9-e0e0-4840-8bca-6964a3b5f0bf",
+      "intent": "deliver",
+      "title": "社区活动备选方案",
+      "goal": "比较预算200元、面向邻居的社区野餐和室内备选方案；先写方案，不联系任何人。",
+      "acceptance": "给出两种可选方案，分别说明场地、时间、费用假设和待确认问题。",
+      "sourceTaskId": "teamtask-b5185a7b-651a-481b-948a-c8e4a501cd88",
+      "sourceRunId": "teamrun-82287656-f4fd-42af-afb9-b7a93b4640ca",
+      "workflowId": "flow-321f121f-723a-4134-8068-823fc921b47b"
+    }
+  ],
+  "runs": [
+    {
+      "id": "teamrun-4fdd6abe-cf8d-451c-9b16-9f6558c809cc",
+      "intent": "explore",
+      "taskId": "teamtask-b5185a7b-651a-481b-948a-c8e4a501cd88",
+      "versionId": "flowversion-c75fb72f-2dc9-43f3-8f36-07888c569b3b",
+      "status": "completed",
+      "tokens": 600,
+      "attempts": [
+        {
+          "node": "你的想法",
+          "status": "completed",
+          "visit": 1,
+          "output": "我想办一场社区活动，但还没想好做什么。"
+        },
+        {
+          "node": "探索可选方向",
+          "status": "completed",
+          "visit": 1,
+          "output": "我想办一场社区活动，但还没想好做什么。 · 方向探索\n可以从社区野餐和室内手作交流两个方向考虑。先了解参加人群、预算和场地；不把任何假设当作已确认条件。"
+        },
+        {
+          "node": "整理下一步建议",
+          "status": "completed",
+          "visit": 1,
+          "output": "我想办一场社区活动，但还没想好做什么。 · 方案整理\n## 可以考虑的方向\n\n- 社区野餐：准备简单，受天气影响。\n- 室内手作交流：需要场地，互动更集中。\n\n## 先确认两件事\n\n活动面向谁？大概能花多少钱？\n\n目前人数、预算和场地都是未知信息。建议先比较可行性，不急着安排活动。\n\n```wickrun-plan\n{\"title\":\"社区活动备选方案\",\"goal\":\"比较社区野餐和室内手作两种活动，说明各自需要准备的事。\",\"acceptance\":\"给出两种可选方案，分别说明场地、时间、费用假设和待确认问题。\"}\n```"
+        },
+        {
+          "node": "由你决定下一步",
+          "status": "completed",
+          "visit": 1,
+          "output": "用户已确认"
+        }
+      ],
+      "members": [
+        {
+          "name": "我想办一场社区活动，但还没想好做什么。 · 方案整理",
+          "model": "qa-intuition-model",
+          "tools": [],
+          "skills": [],
+          "failover": {
+            "enabled": false,
+            "routes": []
+          }
+        },
+        {
+          "name": "我想办一场社区活动，但还没想好做什么。 · 方向探索",
+          "model": "qa-intuition-model",
+          "tools": [],
+          "skills": [],
+          "failover": {
+            "enabled": false,
+            "routes": []
+          }
+        }
+      ],
+      "approvalEvents": [
+        {
+          "id": "2115a7f5-f0f6-4585-8f12-19b68c9dc5fc",
+          "at": 1789922485841,
+          "kind": "approval",
+          "approved": true,
+          "text": "用户确认验收",
+          "nodeId": "node-977e66f4-003d-4180-8e35-0d58d1c529d6"
+        }
+      ],
+      "reservations": {}
+    },
+    {
+      "id": "teamrun-e4a216d8-3dc8-441e-bb59-b68646428549",
+      "intent": "explore",
+      "taskId": "teamtask-b5185a7b-651a-481b-948a-c8e4a501cd88",
+      "versionId": "flowversion-c75fb72f-2dc9-43f3-8f36-07888c569b3b",
+      "status": "cancelled",
+      "tokens": 0,
+      "attempts": [],
+      "members": [
+        {
+          "name": "我想办一场社区活动，但还没想好做什么。 · 方案整理",
+          "model": "qa-intuition-model",
+          "tools": [],
+          "skills": [],
+          "failover": {
+            "enabled": false,
+            "routes": []
+          }
+        },
+        {
+          "name": "我想办一场社区活动，但还没想好做什么。 · 方向探索",
+          "model": "qa-intuition-model",
+          "tools": [],
+          "skills": [],
+          "failover": {
+            "enabled": false,
+            "routes": []
+          }
+        }
+      ],
+      "approvalEvents": [],
+      "reservations": {}
+    },
+    {
+      "id": "teamrun-82287656-f4fd-42af-afb9-b7a93b4640ca",
+      "intent": "explore",
+      "taskId": "teamtask-b5185a7b-651a-481b-948a-c8e4a501cd88",
+      "versionId": "flowversion-c75fb72f-2dc9-43f3-8f36-07888c569b3b",
+      "status": "completed",
+      "tokens": 600,
+      "attempts": [
+        {
+          "node": "你的想法",
+          "status": "completed",
+          "visit": 1,
+          "output": "我想办一场社区活动，但还没想好做什么。"
+        },
+        {
+          "node": "探索可选方向",
+          "status": "completed",
+          "visit": 1,
+          "output": "我想办一场社区活动，但还没想好做什么。 · 方向探索\n## 可以考虑的方向\n\n- 社区野餐：准备简单，受天气影响。\n- 室内手作交流：需要场地，互动更集中。\n\n## 先确认两件事\n\n活动面向谁？大概能花多少钱？\n\n已收到补充：预算200元，面向邻居。建议先做一个小规模试办方案。\n\n```wickrun-plan\n{\"title\":\"社区活动备选方案\",\"goal\":\"比较预算200元、面向邻居的两种小规模社区活动。\",\"acceptance\":\"给出两种可选方案，分别说明场地、时间、费用假设和待确认问题。\"}\n```"
+        },
+        {
+          "node": "整理下一步建议",
+          "status": "completed",
+          "visit": 1,
+          "output": "我想办一场社区活动，但还没想好做什么。 · 方案整理\n## 可以考虑的方向\n\n- 社区野餐：准备简单，受天气影响。\n- 室内手作交流：需要场地，互动更集中。\n\n## 先确认两件事\n\n活动面向谁？大概能花多少钱？\n\n已收到补充：预算200元，面向邻居。建议先做一个小规模试办方案。\n\n```wickrun-plan\n{\"title\":\"社区活动备选方案\",\"goal\":\"比较预算200元、面向邻居的两种小规模社区活动。\",\"acceptance\":\"给出两种可选方案，分别说明场地、时间、费用假设和待确认问题。\"}\n```"
+        },
+        {
+          "node": "由你决定下一步",
+          "status": "completed",
+          "visit": 1,
+          "output": "用户已确认"
+        }
+      ],
+      "members": [
+        {
+          "name": "我想办一场社区活动，但还没想好做什么。 · 方案整理",
+          "model": "qa-intuition-model",
+          "tools": [],
+          "skills": [],
+          "failover": {
+            "enabled": false,
+            "routes": []
+          }
+        },
+        {
+          "name": "我想办一场社区活动，但还没想好做什么。 · 方向探索",
+          "model": "qa-intuition-model",
+          "tools": [],
+          "skills": [],
+          "failover": {
+            "enabled": false,
+            "routes": []
+          }
+        }
+      ],
+      "approvalEvents": [
+        {
+          "id": "084ee9f5-7b60-4cd2-9f6c-9765fb3ca7ed",
+          "at": 1789922509883,
+          "kind": "approval",
+          "approved": true,
+          "text": "用户确认验收",
+          "nodeId": "node-977e66f4-003d-4180-8e35-0d58d1c529d6"
+        }
+      ],
+      "reservations": {}
+    }
+  ],
+  "http": [
+    {
+      "at": 1789922174576,
+      "ordinal": 1,
+      "model": "qa-intuition-model",
+      "status": 200,
+      "planning": false,
+      "refined": false,
+      "tools": [
+        "request_user_input"
+      ],
+      "messageCount": 2
+    },
+    {
+      "at": 1789922175159,
+      "ordinal": 2,
+      "model": "qa-intuition-model",
+      "status": 200,
+      "planning": true,
+      "refined": false,
+      "tools": [
+        "request_user_input"
+      ],
+      "messageCount": 2
+    },
+    {
+      "at": 1789922493435,
+      "ordinal": 3,
+      "model": "qa-intuition-model",
+      "status": 200,
+      "planning": true,
+      "refined": true,
+      "tools": [
+        "request_user_input"
+      ],
+      "messageCount": 2
+    },
+    {
+      "at": 1789922494065,
+      "ordinal": 4,
+      "model": "qa-intuition-model",
+      "status": 200,
+      "planning": true,
+      "refined": true,
+      "tools": [
+        "request_user_input"
+      ],
+      "messageCount": 2
+    }
+  ],
+  "knownFixtureTokens": 1200,
+  "selectedPreview": {
+    "source": "version",
+    "versionId": "review-v1",
+    "hasDraftChanges": true,
+    "nodes": [
+      {
+        "title": "输入 / 开始",
+        "memberIds": []
+      },
+      {
+        "title": "Agent 执行",
+        "memberIds": [
+          "example-0"
+        ]
+      },
+      {
+        "title": "质检",
+        "memberIds": [
+          "example-1"
+        ]
+      },
+      {
+        "title": "结束",
+        "memberIds": []
+      }
+    ],
+    "edges": [
+      {
+        "id": "edge-80d2a268-2b5a-4d12-b39b-d4f0c4b8c7d1",
+        "from": "node-b5c47efa-cc14-4416-8e4e-9c4546cc3c29",
+        "to": "node-01fe885b-9400-4c46-b2dc-5c9ebfd461fe",
+        "port": "next",
+        "label": "执行",
+        "loop": false,
+        "maxTraversals": 3,
+        "missingFrom": false,
+        "missingTo": false
+      },
+      {
+        "id": "edge-b48f3e63-7dc8-4e53-8a40-d7d1f9443888",
+        "from": "node-01fe885b-9400-4c46-b2dc-5c9ebfd461fe",
+        "to": "node-4f4696e3-4b79-4c29-982e-3933cd227246",
+        "port": "next",
+        "label": "交给复核",
+        "loop": false,
+        "maxTraversals": 3,
+        "missingFrom": false,
+        "missingTo": false
+      },
+      {
+        "id": "edge-d8840070-768a-4ba9-a91a-812a65a7b8d2",
+        "from": "node-4f4696e3-4b79-4c29-982e-3933cd227246",
+        "to": "node-a4ef6e02-0069-41e1-bc55-2a174e87f460",
+        "port": "pass",
+        "label": "复核通过",
+        "loop": false,
+        "maxTraversals": 3,
+        "missingFrom": false,
+        "missingTo": false
+      },
+      {
+        "id": "edge-c6147184-575a-45e1-8ed1-f39cc70f5b56",
+        "from": "node-4f4696e3-4b79-4c29-982e-3933cd227246",
+        "to": "node-01fe885b-9400-4c46-b2dc-5c9ebfd461fe",
+        "port": "fail",
+        "label": "返工",
+        "loop": true,
+        "maxTraversals": 3,
+        "missingFrom": false,
+        "missingTo": false
+      },
+      {
+        "id": "edge-c4246050-7d8f-4d33-a08c-1259d16be2c6",
+        "from": "node-4f4696e3-4b79-4c29-982e-3933cd227246",
+        "to": "node-a4ef6e02-0069-41e1-bc55-2a174e87f460",
+        "port": "default",
+        "label": "无法核实，交由用户判断",
+        "loop": false,
+        "maxTraversals": 3,
+        "missingFrom": false,
+        "missingTo": false
+      }
+    ]
+  },
+  "limitations": [
+    "Simulated content does not measure model reasoning or planning quality.",
+    "Process restart occurred before dispatch; live long-running process recovery remains a separate requirement.",
+    "New deliver task was saved and existing workflow previewed; its execution was not launched in this trial.",
+    "First blocked continuation was preserved as cancelled with zero dispatched attempts."
+  ],
+  "sourceHashes": {
+    "src/lib/team-discovery.ts": "81a9d938d0162cae2fb2d8b3dcff7fc5c923104cc38dd1db97d898c18f0ef283",
+    "src/lib/team-quick-start.ts": "d851bfa81808e5247fecc7c16809d3f3f25b48ff8a65d03fc0d8e11d6445d8d7",
+    "src/lib/team-flow-preview.ts": "3ce4d3683d0d11f89ae777f3de7b2b9fc0a1058b242ed544d3d2ed968b927aca",
+    "src/lib/team-runtime.ts": "3b6d853af35a311c1796f61e1e9bb05c1dbfd7a70529d3f545030c4c2987eea0",
+    "electron/collaboration-store.cjs": "7e777cb1cbd0605996c9c98ffa8f80b9546aca6b818deaceb8582350aa7f101a",
+    "src/components/collaboration/TeamWorkspace.tsx": "1ac1d1451b59efbdd4cce869da2c16fbf811f046d200c39f3a6fa7f45f2cc3cc",
+    "src/components/collaboration/TeamTaskSetup.tsx": "4f807ad5490ef924eb60cf6710215b2468d931eca38623484af6d48a3be926af",
+    "src/components/collaboration/TeamTaskFields.tsx": "58abc8f23f3db485259d0aa754f097e3ac9a4e36daa10527ac8faff30a144004",
+    "src/components/collaboration/TeamDiscoveryResult.tsx": "e9be938103444ed73e72a7ff0f5de9ae1a1e436b5d7ebe7925ecd3903725de4d",
+    "src/components/collaboration/TeamFlowPreview.tsx": "2f18f0494406561c3a56036ae768ff764ef0df62526654f5d40e36130592dbca",
+    "src/components/collaboration/TeamWorkspace.css": "7a07f3a35bead0f3ddd051d65568658a043a5957f8167dd0b366a6dde074f864"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "taskCount": 1,
+  "goal": "我想办一场社区活动，但还没想好做什么。",
+  "intent": "explore",
+  "members": 4,
+  "flows": 2,
+  "runs": 0,
+  "httpLogExists": false
+}

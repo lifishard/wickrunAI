@@ -7,6 +7,36 @@
 .team-task-setup .team-note{display:block;margin:12px 0}
 .team-task-ready{padding:0 0 24px}
 .team-task-ready p{overflow-wrap:anywhere;line-height:1.6}
+.team-intent,.team-work-styles{border:0;padding:0;margin:0 0 22px;min-width:0}
+.team-intent legend,.team-work-styles legend{font-weight:600;margin-bottom:10px}
+.team-intent label,.team-work-styles label{display:flex;align-items:start;gap:10px;padding:12px 10px;border-radius:8px;cursor:pointer}
+.team-intent label:has(input:checked),.team-work-styles label:has(input:checked){background:var(--bg-sunken)}
+.team-intent input,.team-work-styles input{margin-top:4px;accent-color:var(--accent)}
+.team-intent strong,.team-work-styles strong{display:block;font-size:14px}
+.team-intent small,.team-work-styles small{display:block;color:var(--fg-dim);line-height:1.6;margin-top:4px}
+.team-task-fields details summary{cursor:pointer;margin-bottom:14px}
+.team-task-fields{padding:18px 20px 6px}
+.team-flow-preview{margin:20px 0;min-width:0}
+.team-flow-preview h3{font-size:16px;margin:0 0 8px}
+.team-flow-source{font-size:13px;color:var(--fg-dim);overflow-wrap:anywhere}
+.team-flow-map{max-width:100%;overflow:auto;background:var(--bg-sunken);border-radius:10px;padding:12px;max-height:480px;text-align:center}
+.team-flow-map svg{max-width:none;vertical-align:middle;color:var(--fg-dim);font-family:inherit}
+.team-flow-map rect{fill:var(--bg);stroke:var(--border);stroke-width:1}
+.team-flow-map rect.selected{stroke:var(--accent);stroke-width:2}
+.team-flow-map text{fill:var(--fg);font-size:14px}
+.team-flow-map .team-flow-role,.team-flow-map .team-flow-edge-label{fill:var(--fg-dim);font-size:11px}
+.team-flow-steps{display:flex;flex-wrap:wrap;gap:8px}
+.team-flow-steps button[aria-pressed=true]{background:var(--bg-hover);outline:1px solid var(--accent)}
+.team-flow-step-detail{padding:16px 0 4px;font-size:13px;line-height:1.7}
+.team-flow-step-detail p{white-space:pre-wrap;overflow-wrap:anywhere}
+.team-flow-preview summary{cursor:pointer}
+.team-flow-choice{max-width:720px}
+.team-discovery-result{padding:20px 0;border-block:1px solid var(--border);margin:20px 0;max-width:75ch}
+.team-discovery-result form{margin-top:24px}
+.team-discovery-result form .team-note{margin-left:12px}
+.team-proposed-brief{line-height:1.7;margin:20px 0}
+.team-proposed-brief dt{font-weight:600;margin-top:12px}
+.team-proposed-brief dd{margin:4px 0 0;white-space:pre-wrap;overflow-wrap:anywhere}
 .team-advanced{margin:0 0 28px;padding:16px 0;border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
 .team-advanced>summary{cursor:pointer;font-weight:500}
 .team-advanced .team-actions{margin-top:14px}

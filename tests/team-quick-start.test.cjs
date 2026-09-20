@@ -3,6 +3,18 @@ const {loader}=require('./load-ts.cjs');const load=loader();
 const domain=load(path.resolve('src/lib/collaboration.ts')),{prepareQuickTask}=load(path.resolve('src/lib/team-quick-start.ts'));
 function fixture(){const p=domain.emptyTeamProject('p');p.settings.maxTokens=18000;p.settings.maxMinutes=8;
  p.tasks.push({id:'t',title:'Task',goal:'Deliver exact text.',acceptance:'Include the exact required sentence.',status:'ready',entries:[],createdAt:1});return p;}
+test('a vague idea prepares two distinct planning steps with real dependency and no execution access',()=>{
+ const p=fixture();p.tasks[0].intent='explore';p.tasks[0].goal='Maybe a community event';
+ const before=structuredClone(p);assert.throws(()=>prepareQuickTask(p,'t',{profileId:'api',model:'fixture',style:'direct'},['api']),/匹配/);assert.deepEqual(p,before);
+ prepareQuickTask(p,'t',{profileId:'api',model:'fixture',style:'explore'},['api']);
+ const graph=p.workflows[0].versions[0].graph,[start,explore,plan,end]=graph.nodes;
+ assert.deepEqual(graph.nodes.map(n=>n.type),['start','agent','agent','end']);
+ assert.notEqual(explore.memberId,plan.memberId);assert.deepEqual(plan.inputRefs,[explore.id]);
+ assert.match(plan.instructions,/wickrun-plan/);assert.match(plan.instructions,/不执行/);
+ assert.deepEqual(graph.edges.map(e=>[e.from,e.to]),[[start.id,explore.id],[explore.id,plan.id],[plan.id,end.id]]);
+ assert.deepEqual(domain.validateGraph(graph,p.members),[]);assert.equal(p.runs.length,0);
+ assert.equal(p.tasks[0].goal,'Maybe a community event');assert.ok(p.members.every(m=>!m.tools.length&&!m.skills.length&&!m.failover.enabled));
+});
 test('quick setup creates editable, versioned flows without running or broadening access',()=>{
  for(const style of ['direct','discuss','review']){const p=fixture(),settings=structuredClone(p.settings);
   const prepared=prepareQuickTask(p,'t',{profileId:'api',model:'fixture',style},['api']);

@@ -24,6 +24,7 @@ function appendOnly(before=[],after=[],label) {
  if(!Array.isArray(after)||after.length<before.length||before.some((entry,index)=>!equal(entry,after[index])))throw Error(label+'历史不可改写或删除');
 }
 const WORK_NODES = new Set(['agent','discussion','review','handoff']);
+const EXPLORE_NODES = new Set(['start','agent','discussion','end']);
 function validateRunGraph(run) {
  const graph=run.version?.graph,settings=run.projectSettings;
  if(!graph||!Array.isArray(graph.nodes)||!Array.isArray(graph.edges)||!Array.isArray(run.members)||!settings||!Array.isArray(settings.roots)||settings.roots.some(root=>typeof root!=='string'||!path.isAbsolute(root))||!Array.isArray(settings.allowedConnections)||!Number.isInteger(settings.maxConcurrent)||settings.maxConcurrent<1||settings.maxConcurrent>100||!['ask','auto','all'].includes(settings.approvalMode))throw Error('运行授权或流程快照无效');
@@ -50,14 +51,20 @@ function validateRunGraph(run) {
   }
  }
 }
+function validateExploreRun(run) {
+ if(run.intent!=='explore')return;
+ if(run.version.graph.nodes.some(node=>!EXPLORE_NODES.has(node.type)))throw Error('想法梳理运行包含了可执行或自动判断步骤');
+ if(run.members.some(member=>member.connectionId.startsWith('client:')||(member.tools?.length??0)||(member.skills?.length??0)))throw Error('想法梳理运行不能带入工具、技能或本机客户端授权');
+}
 function validateNewRun(run,source,project) {
  if(!source)throw Error('请先保存项目配置、任务和流程版本，再创建运行');
  const task=source.tasks.find(t=>t.id===run.taskId),flow=source.workflows.find(f=>f.id===run.workflowId),version=flow?.versions.find(v=>v.id===run.version?.id);
  if(!task||typeof task.goal!=='string'||!task.goal.trim()||typeof task.acceptance!=='string'||!task.acceptance.trim()||!version||flow.archived||!equal(version,run.version))throw Error('运行必须引用已保存的真实任务和流程版本');
  const used=new Set(version.graph.nodes.flatMap(n=>[n.memberId,...(n.participants||[])].filter(Boolean)));
  const members=source.members.filter(m=>used.has(m.id)),memories=source.memories.filter(m=>m.status==='adopted');
- if(!equal(run.projectSettings,source.settings)||!equal(project.settings,source.settings)||!equal(run.members,members)||!equal(run.goal,task.goal)||!equal(run.acceptance,task.acceptance)||!equal(run.memorySnapshot,memories)||!equal(run.memoryIds,memories.map(m=>`${m.id}@${m.revision}`)))throw Error('运行配置快照必须来自已保存的项目授权');
+ if(![undefined,'explore','deliver'].includes(task.intent)||!equal(run.intent,task.intent)||!equal(run.projectSettings,source.settings)||!equal(project.settings,source.settings)||!equal(run.members,members)||!equal(run.goal,task.goal)||!equal(run.acceptance,task.acceptance)||!equal(run.memorySnapshot,memories)||!equal(run.memoryIds,memories.map(m=>`${m.id}@${m.revision}`)))throw Error('运行配置快照必须来自已保存的项目授权');
  validateRunGraph(run);
+ validateExploreRun(run);
  const emptyMap=value=>value&&typeof value==='object'&&!Array.isArray(value)&&!Object.keys(value).length;
  if(run.status!=='ready'||run.owner!==undefined||run.tokens!==0||run.attempts.length||!emptyMap(run.reservations)||!emptyMap(run.visits)||!emptyMap(run.traversals)||!emptyMap(run.arrivals)||run.pendingApproval||(run.approvalQueue?.length)||!equal(run.queue,version.graph.nodes.filter(n=>n.type==='start').map(n=>n.id)))throw Error('新运行必须从空执行记录和初始队列开始');
  if(!Number.isFinite(run.createdAt)||run.createdAt<=0||run.updatedAt!==run.createdAt||run.events.length!==1||run.events[0].kind!=='created'||typeof run.events[0].id!=='string'||!run.events[0].id||run.events[0].at!==run.createdAt||typeof run.events[0].text!=='string'||!run.events[0].text.trim())throw Error('新运行只能包含真实创建记录');
@@ -74,7 +81,8 @@ function validateCompletion(previous,next) {
  if(![...latest.values()].some(a=>WORK_NODES.has(nodes.get(a.nodeId)?.type)&&a.status==='completed'&&typeof a.output==='string'&&a.output.trim()))throw Error('缺少实际执行步骤的可验收输出');
 }
 function validateRunUpdate(previous,next) {
- for(const key of ['version','members','config','goal','acceptance','memoryIds','projectSettings','memorySnapshot','createdAt','taskId','workflowId','scheduleKey'])if(!equal(next[key],previous[key]))throw Error('运行配置快照不可改写');
+ for(const key of ['version','members','config','goal','acceptance','intent','memoryIds','projectSettings','memorySnapshot','createdAt','taskId','workflowId','scheduleKey'])if(!equal(next[key],previous[key]))throw Error('运行配置快照不可改写');
+ validateExploreRun(next);
  if((next.tokens??0)<(previous.tokens??0))throw Error('运行用量不可减少');
  for(const key of ['visits','traversals'])for(const [id,count] of Object.entries(previous[key]||{}))if((next[key]?.[id]??0)<count)throw Error('运行执行次数不可减少');
  appendOnly(previous.events,next.events,'运行事件');

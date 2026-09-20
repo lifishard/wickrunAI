@@ -13,6 +13,9 @@ export interface FlowVersion { id: string; number: number; createdAt: number; gr
 export interface Workflow { editorView?:'canvas'|'list'; id: string; name: string; draft: Graph; viewport: {x:number;y:number;zoom:number}; versions: FlowVersion[]; archived: boolean; updatedAt: number }
 export interface DiscussionEntry { id: string; at: number; author: string; kind: 'message'|'decision'|'instruction'|'handoff'; text: string; runId?: string }
 export interface TeamTask { id: string; title: string; goal: string; acceptance: string; workflowId?: string; ownerId?: string; status: string; entries: DiscussionEntry[]; createdAt: number; sourceConversationId?: string }
+/** Exploration is a separate deliverable; its suggested brief is never execution approval. */
+export interface TeamTask { intent?:'explore'|'deliver'; sourceTaskId?:string; sourceRunId?:string }
+export interface TeamRun { intent?:'explore'|'deliver' }
 export type TeamRunStatus = 'ready'|'running'|'pausing'|'paused'|'waiting_user'|'uncertain'|'failed'|'cancelled'|'completed';
 /**
  * routeLog：这次尝试里，每位成员实际用过哪几条路由，以及那一条是失败还是做完。

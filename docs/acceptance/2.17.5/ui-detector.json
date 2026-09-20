@@ -1,0 +1,15 @@
+{
+  "command": "impeccable.cmd detect src/components/collaboration --format json",
+  "exitCode": 0,
+  "formatWarning": "Warning: cannot access json",
+  "note": "Tool emitted human-readable diagnostics, transcribed here rather than represented as native JSON output.",
+  "findings": [
+    {
+      "file": "src/components/collaboration/TeamWorkspace.css",
+      "line": 1,
+      "rule": "side-tab",
+      "value": "border-left:2px solid var(--border)",
+      "status": "pre-existing timeline style, unchanged"
+    }
+  ]
+}
