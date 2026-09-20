@@ -1741,6 +1741,7 @@ export default function App() {
 
   const composer = (
     <Composer
+      layout={turns.length === 0 ? 'home' : 'conversation'}
       barControls={<ConversationControls config={config} profiles={settings.keyProfiles} modelsByProfile={Object.fromEntries(settings.keyProfiles.map(p=>[p.id,[...(settings.cachedModels[p.id]||[]),...(settings.customModels[p.id]||[])]]))} onChange={setConfig}/>}
       controls={active?.messages.filter(m=>m.runState?.userQuestion&&!m.runState.userQuestion.answers).map(m=><button className="btn sm" key={m.id} onClick={()=>document.getElementById(`question-${m.runState!.userQuestion!.request.id}`)?.scrollIntoView({block:'center',behavior:'smooth'})}>{t('Answer Question · 回答问题')}</button>)}
       key={active?.id ?? 'new'}

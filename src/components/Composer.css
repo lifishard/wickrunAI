@@ -25,7 +25,9 @@
 }
 
 .composer-wrap .composer-box { padding: 16px 18px 12px; gap: 14px; border-radius: 16px; container: composer / inline-size; }
-.composer-wrap .composer-box textarea { min-height: 144px; max-height: 320px; padding: 2px 0; font-size: 15px; line-height: 1.65; flex: 0 0 auto; width: 100%; }
+.composer-wrap .composer-box textarea { min-height: calc(1lh + 4px); max-height: none; padding: 2px 0; font-size: 15px; line-height: 1.65; flex: 0 0 auto; width: 100%; }
+.composer-home .composer-box textarea { min-height: calc(2lh + 4px); }
+.composer-conversation .composer-box { padding-top: 12px; gap: 10px; }
 .composer-wrap .composer-bar { flex-wrap: nowrap; gap: 9px; padding-top: 10px; border-top: 1px solid var(--border); }
 .composer-wrap .composer-bar > .menu-anchor:has(.model-btn) { flex: 0 1 220px; min-width: 60px; }
 .composer-wrap .composer-bar .model-btn { max-width: 220px; width: 100%; }

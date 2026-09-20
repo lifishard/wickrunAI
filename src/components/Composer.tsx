@@ -43,6 +43,7 @@ const APPROVAL_OPTIONS: { value: ApprovalMode; label: string; desc: string }[] =
 type SendMode = 'chat' | 'work';
 
 export default function Composer(props: {
+  layout?: 'home' | 'conversation';
   controls?:React.ReactNode;
   /** 会话级设置的入口，放在底栏里，不再占一整行 */
   barControls?:React.ReactNode;
@@ -190,12 +191,33 @@ export default function Composer(props: {
     });
   }
 
-  React.useEffect(() => {
+  const resizeInput = React.useCallback(() => {
     const el = ref.current;
     if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = `${Math.max(144, Math.min(el.scrollHeight, 320))}px`;
-  }, [text]);
+    const style = getComputedStyle(el);
+    const line = parseFloat(style.lineHeight);
+    const padding = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+    const home = props.layout === 'home';
+    const minimum = line * (home ? 2 : 1) + padding;
+    const maximum = home ? Infinity : line * 3 + padding;
+    el.style.height = '0px';
+    el.style.overflowY = 'hidden';
+    const contentHeight = el.scrollHeight;
+    el.style.height = `${Math.max(minimum, Math.min(contentHeight, maximum))}px`;
+    el.style.overflowY = contentHeight > maximum ? 'auto' : 'hidden';
+  }, [props.layout]);
+  React.useLayoutEffect(resizeInput, [text, resizeInput]);
+  React.useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    let width = el.getBoundingClientRect().width;
+    const observer = new ResizeObserver(() => {
+      const next = el.getBoundingClientRect().width;
+      if (next !== width) { width = next; resizeInput(); }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [resizeInput]);
 
   function submit() {
     const t = text.trim();
@@ -337,7 +359,7 @@ export default function Composer(props: {
 
 </>;
   return (
-    <div className="composer-wrap">
+    <div className={`composer-wrap composer-${props.layout === 'home' ? 'home' : 'conversation'}`}>
       <div className="composer">
         <div className={`composer-box${compact ? ' is-compact' : ''}`} ref={boxRef}>
           {props.quotes.length ? (
@@ -452,7 +474,7 @@ export default function Composer(props: {
           {attachmentError?<p role="alert" className="hint">{attachmentError}</p>:null}
           <textarea
             ref={ref}
-            rows={5}
+            rows={props.layout === 'home' ? 2 : 1}
             value={text}
             placeholder={
               props.disabled

@@ -891,8 +891,8 @@ input[type='range'] {
   background: transparent;
   padding: 2px;
   resize: none;
-  min-height: 144px;
-  max-height: 320px;
+  min-height: 0;
+  max-height: none;
   flex: 0 0 auto;
   box-shadow: none;
 }
@@ -1666,11 +1666,13 @@ input[type='range'] {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: safe center;
   padding: 24px;
   gap: 22px;
   overflow-y: auto;
 }
+
+.hero > * { flex-shrink: 0; }
 
 .hero-title {
   font-size: 1.9em;
