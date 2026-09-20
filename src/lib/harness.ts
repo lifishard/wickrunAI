@@ -171,12 +171,25 @@ export function completionIssue(state:RunState,text:string,cfg:GenerationConfig)
   if(push&&!evidence.some(step=>PUSH_COMMAND.test(commandOf(step))))return '目标明确要求推送到 GitHub，但没有成功 git push 的记录。请完成推送，或明确说明阻塞。';
   return;
 }
+/**
+ * 报错时直接把能用的编号列出来。
+ *
+ * 实测：模型在 evidence 里填了文件路径，连撞三次「证据必须引用实际成功执行的工具 callId」，
+ * 每次都要重发整段上下文。报错本身是对的，但它没说"那该填什么"——而这份清单执行器手里就有。
+ * 只报错不给出路，人和模型卡在同一个地方。
+ */
+export function citableHint(state:RunState):string{
+  const usable=(state.steps??[]).filter(s=>s.status==='ok'&&!MANAGEMENT.has(s.name)).slice(-8);
+  if(!usable.length)return ' 这一轮还没有可引用的成功工具步骤：先真正执行一次操作，再来记录完成自查。';
+  return ' 可以填的编号：'+usable.map(s=>`${s.callId||s.id}（${s.name}）`).join('、')+'。填编号本身，不要填文件路径或检查说明。';
+}
 export function recordTaskReview(state:RunState,args:Record<string,unknown>):ToolResult {
   const summary=typeof args.summary==='string'?args.summary.trim():'';
   const checks=typeof args.checks==='string'?args.checks.trim():'';
   const evidence=Array.isArray(args.evidence)?args.evidence.filter((v):v is string=>typeof v==='string'):[];
   if(!summary||summary.length>3000||!checks||checks.length>3000)return {ok:false,content:'',error:'请填写简洁的完成情况与自查/测试结果。'};
-  if(evidence.length>30||evidence.some(id=>!state.steps?.some(s=>(s.callId===id||s.id===id)&&s.status==='ok'&&!MANAGEMENT.has(s.name))))return {ok:false,content:'',error:'证据必须引用实际成功执行的工具 callId，不能使用计划或虚构记录。'};
+  if(evidence.length>30||evidence.some(id=>!state.steps?.some(s=>(s.callId===id||s.id===id)&&s.status==='ok'&&!MANAGEMENT.has(s.name))))
+    return {ok:false,content:'',error:'证据必须引用实际成功执行的工具 callId，不能使用计划或虚构记录。'+citableHint(state)};
   if(state.harness?.action&&!evidence.length)return {ok:false,content:'',error:'操作任务需要至少一条真实执行证据。无法完成时请在最终回复说明阻塞，不要提交完成检查。'};
   if(state.milestones?.some(m=>m.status!=='completed')||state.requirements?.some(r=>!r.verification||r.verification.status!=='passed'))return {ok:false,content:'',error:'仍有未完成里程碑或未通过验收的要求，请先完成或说明无法核验。'};
   if(!state.harness)return {ok:false,content:'',error:'任务状态未初始化'};

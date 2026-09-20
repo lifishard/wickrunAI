@@ -192,7 +192,9 @@ export function runOverview(run:TeamRun):RunOverview{
  const memberName=node?named(node.type==='discussion'?(node.participants??[]):[node.memberId])||'—':'—';
  const cap=run.version.graph.maxTokens||0;
  const base={nodeTitle:node?.title??'—',memberName,tokens:run.tokens,cap,ratio:cap?Math.min(1,run.tokens/cap):0};
- if(run.pendingApproval)return {...base,waitingKind:'approval',waiting:run.pendingApproval.text.split('\n')[0]};
+ // 结束节点的待批不是工具调用，是交付验收。都写成「等你确认工具调用」会把人引到错的地方去看。
+ if(run.pendingApproval)return {...base,waitingKind:pendingNode?.type==='end'?'accept':'approval',
+  waiting:pendingNode?.type==='end'?'':run.pendingApproval.text.split('\n')[0]};
  if(['uncertain','failed'].includes(run.status))return {...base,waitingKind:'verify',
   waiting:attention?.error??[...run.events].reverse().find(e=>['uncertain','failed','paused'].includes(e.kind))?.text??''};
  if(run.status==='waiting_user')return {...base,waitingKind:'accept',waiting:''};

@@ -114,6 +114,14 @@ test('在等人的三种情况各自分开：批工具、核实、验收',()=>{
   const accept=domain.runOverview(baseRun({status:'waiting_user',queue:['n2'],attempts:[attempt({nodeId:'n2',status:'waiting_user'})]}));
   assert.equal(accept.waitingKind,'accept');
   assert.equal(accept.nodeTitle,'交付');
+
+  // 结束节点也走 pendingApproval，但它是交付验收不是工具调用：实测状态条把它写成
+  //「等你确认工具调用」，会把人引到错的地方去找
+  const gate=domain.runOverview(baseRun({status:'waiting_user',attempts:[attempt({nodeId:'n2',status:'waiting_user'})],
+    pendingApproval:{nodeId:'n2',text:'验收交付：1) math100.json 存在…'}}));
+  assert.equal(gate.waitingKind,'accept');
+  assert.equal(gate.nodeTitle,'交付');
+  assert.equal(gate.waiting,'');
 });
 
 test('讨论节点列出全部参与者；已经核实过的步骤不再抢占「当前步骤」',()=>{

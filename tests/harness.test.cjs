@@ -208,3 +208,34 @@ test('本机路径：目标本来就不要求操作，不拦',()=>{
   const state=nativeState([]);state.harness.goal='介绍一下这个仓库的结构';
   assert.equal(harnessLib.nativeCompletionIssue(state,config()),undefined);
 });
+
+/*
+ * 实测（2.16.1 协作空间跑 MATH 100 小任务）：模型在 complete_task 的 evidence 里填了文件路径，
+ * 连撞三次「证据必须引用实际成功执行的工具 callId」。报错本身没错，但它没说该填什么，
+ * 而那份清单执行器手里本来就有 —— 每撞一次就要重发整段上下文，是真金白银。
+ */
+test('证据填错时直接把能用的 callId 列出来，而不是只说「填错了」',()=>{
+  const harness=base(file('src/lib/harness.ts'));
+  const steps=[
+    {id:'s1',callId:'call-write',name:'write_file',args:{},status:'ok',startedAt:1},
+    {id:'s2',callId:'call-edit',name:'edit_file',args:{},status:'ok',startedAt:2},
+    {id:'s3',callId:'call-bad',name:'read_file',args:{},status:'error',startedAt:3},
+    {id:'s4',callId:'call-verify',name:'verify_requirements',args:{},status:'ok',startedAt:4},
+  ];
+  const state={harness:{mode:'guided',goal:'写文件',sourceId:'g',action:true,stage:'verify',continuations:0},steps};
+  const review=harness.recordTaskReview(state,{summary:'已经写好两个文件。',checks:'两项程序核验都通过。',evidence:['C:\\work\\a.json']});
+  assert.equal(review.ok,false);
+  assert.match(review.error,/call-write（write_file）/);
+  assert.match(review.error,/call-edit（edit_file）/);
+  assert.equal(/call-bad/.test(review.error),false,'失败的步骤不能当证据');
+  assert.equal(/call-verify/.test(review.error),false,'交付闸门自己的调用不算执行证据');
+  assert.match(review.error,/不要填文件路径/);
+});
+
+test('一次操作都还没做时，说清楚是「先去做」而不是「换个编号」',()=>{
+  const harness=base(file('src/lib/harness.ts'));
+  const state={harness:{mode:'guided',goal:'写文件',sourceId:'g',action:true,stage:'verify',continuations:0},steps:[]};
+  const review=harness.recordTaskReview(state,{summary:'做完了。',checks:'自查通过。',evidence:['凭空一条']});
+  assert.equal(review.ok,false);
+  assert.match(review.error,/先真正执行一次操作/);
+});
