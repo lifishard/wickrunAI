@@ -1,0 +1,18 @@
+.team-role-settings{margin:20px 0;border-block:1px solid var(--border);padding:16px 0}
+.team-role-settings>summary,.team-preset-save>summary{cursor:pointer;font-weight:600;width:fit-content}
+.team-role-setting{min-width:0;border:0;border-top:1px solid var(--border);padding:18px 0 6px;margin:20px 0 0}
+.team-role-setting legend{font-size:15px;font-weight:600;padding:0 10px 0 0}
+.team-role-setting textarea{max-height:260px}
+.team-preset-controls{display:flex;align-items:flex-end;gap:10px;margin:16px 0;flex-wrap:wrap}
+.team-preset-controls .team-field{flex:1;min-width:180px;margin:0}
+.team-preset-save{margin:18px 0}
+.team-preset-save .team-actions{margin-top:12px}
+.team-preset-save input{flex:1;min-width:160px}
+.team-role-summary{padding-left:20px;line-height:1.8;overflow-wrap:anywhere}
+.team-role-summary li{margin:6px 0}
+.team-file-setup{margin:0 0 24px;padding:0 0 8px;border-bottom:1px solid var(--border);min-width:0}
+.team-file-setup select{min-width:0;width:100%}
+.team-file-path,.team-file-scope-summary{overflow-wrap:anywhere;line-height:1.6}
+.team-file-command{margin:16px 0}
+.team-file-command summary{cursor:pointer;font-weight:600;margin-bottom:12px}
+.team-file-command label{display:flex;align-items:center;gap:8px}

@@ -1,0 +1,26 @@
+✔ 词典没有重复 key (2.7786ms)
+✔ 纯逻辑模块的界面文案都有英文 (1.8102ms)
+✔ 已改造的文件里每个 t() key 都有英文 (18.5928ms)
+✔ t() 里的反斜杠是转义过的 (24.6263ms)
+✔ 已改造的文件里没有漏网的裸中文属性 (20.4821ms)
+✔ role catalogue keeps stable defaults and exploration orders direction before plan (2.6092ms)
+✔ discussion assigns independent routes and duties without losing its two-member exchange (5.7088ms)
+✔ text review uses a distinct reviewer route and retains the evidence protocol (0.9978ms)
+✔ exploration keeps direction then structured planning and cannot edit away the plan contract (0.6875ms)
+✔ copying a member validates its identity but never carries effort, limits or permissions (0.7502ms)
+✔ direct preparation and saved-preset preparation create the same visible member configuration (1.1566ms)
+✔ invalid role sources, routes and text fail atomically (1.8949ms)
+✔ presets expand role defaults, strip source ids, round-trip, and delete without collateral changes (1.0696ms)
+✔ preset validation is strict and atomic, including maximum count (1.0604ms)
+✔ a vague idea prepares two distinct planning steps with real dependency and no execution access (5.1848ms)
+✔ quick setup creates editable, versioned flows without running or broadening access (3.2829ms)
+✔ quick setup rejects missing requirements and disallowed routes without partial writes (1.3109ms)
+✔ preparing twice preserves existing custom configuration and never duplicates a team (0.7596ms)
+ℹ tests 18
+ℹ suites 0
+ℹ pass 18
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1091.5206

@@ -1,0 +1,58 @@
+{
+  "version": "2.17.8",
+  "recordedAt": "2026-09-20T19:04:02.475Z",
+  "gitBaseline": "74cab88",
+  "uncommitted": true,
+  "productionBuild": true,
+  "automatedTests": 740,
+  "syntheticHttpRequests": 2,
+  "syntheticReportedTokens": 600,
+  "sourceHashes": {
+    "package.json": "8f56b5c8ac78aa766665d0fd7af6ae18650abb4be6f4502fc2225029f80d2f27",
+    "package-lock.json": "18bcd2237333ef636238f6e88351ad86787bebec9681ad01f5c368eb72d45aae",
+    "src/lib/version.ts": "a6f8a8e883418b37afd90adbf933b8d97124252aa617e520569484f06e4334b4",
+    "src/lib/collaboration.ts": "5166947b2bf034602635c7b98ef6b14810b49ae3d3761cb36bf7a2a92fde756b",
+    "src/lib/team-quick-start.ts": "4b7961ca0255d7c5df77113a85eebd430a666c44a088ed6726c027dc41c12e99",
+    "src/lib/i18n.ts": "a7d3c2283faff6960f3dfc850585a3ee438bad1151ec7be59b21808d7ab97030",
+    "src/components/collaboration/TeamTaskSetup.tsx": "db0974715f40f68c055552c559dfbe6c2cbbe1f1556699859460d3e8e29bba60",
+    "src/components/collaboration/TeamRoleSettings.tsx": "05f1e115d7a7a650f6b4d2de1f024f3f98b5fec928b88419344aa240aa117902",
+    "src/components/collaboration/TeamRoleSettings.css": "644ed1c6d0d41cfebcb77a67cb2014b732fb64611c7b455ebe2b6cdbc4cbacad",
+    "src/components/collaboration/TeamWorkspace.tsx": "ca7fed8b1fe15b3e326ac2e17ff20f417f43d5731ecc8b6a7ff9d860a8bf130d",
+    "src/components/collaboration/TeamFlowPreview.tsx": "acdec2b196d8bd97658a68660f809c6ed7530ddde343e334f43195612ba45cef",
+    "tests/team-quick-roles.test.cjs": "b5f6fc26541b9b55d01df2afc73a5b1f9e70a186ddb042ebfbe0d6d31cfd7aaf",
+    "tests/team-quick-start.test.cjs": "d3ed3579295ce3d5822465a0e7bff7713e49a638fa0f48f407f0ced0ad24b5d6",
+    "tests/i18n-coverage.test.cjs": "62d57bda1f912bee0d234658c796a3dc39c3e2d59e1a539606e090ee75103f52"
+  },
+  "buildHashes": {
+    "dist/assets/ExportDialog-C5yhGrFC.js": "1c37b0b85d9203b75f7355e4fe6cfb141b13f24c77e8fd4b5f12664e4a1c1c71",
+    "dist/assets/index-B0GToAaR.js": "8da57ac2d037e563fe708367e81afafdaf8973da43fb4e0a108292b38686a8c2",
+    "dist/assets/index-Kd58curu.css": "eed5a90d3b082b50bc38c261a142720185a41ddb41eb076a2e5a3b0b0a6c3406",
+    "dist/assets/ObservationPanel-sf01TcCI.js": "ea9aa6553fe3c0fcc9541e3e9e141be010cef6b61d8343142833ff023411b424",
+    "dist/assets/sync-LnhcBOaD.js": "f5c195850946bbc63bb007b0af529dce1ead61b998098e6dc3444910d7d18d2f",
+    "dist/assets/sync-policy-Uurn36a3.js": "92999dd9341efb5a4e456a3b2fa136d9b1a6d86df10d409263e1fd788a408564",
+    "dist/assets/TeamWorkspace-gSexEkc0.js": "331f845efbd447714868d981c892de13d0a0681a68fe7cf4ebdd31f06541ebc8",
+    "dist/assets/TeamWorkspace-OBXaPp6L.css": "95172d084f949e4ca5f33972acea62250829501825f4c6d5f76cda3023773ed6",
+    "dist/assets/web-YF1bJMXs.js": "c9f6ccaa5f671d7b9a5758169fb3f876e5d1c7e39287395575ece11276b95ea2",
+    "dist/index.html": "b99aa84aa34d8c400e67f480a064c3a4165b6c103b9ccb00f4b88e2eb9d448b4"
+  },
+  "documentHashes": {
+    "PROGRESS.md": "3150698245a8378e22592795a5aac6e6e3fd991536d3f2a6857b19bee5ac5877",
+    "docs/ENGINEERING_ROADMAP.md": "be5d77aad46c2d49fde23e6512eede609573bca13ff46aa02d94e41835934af3",
+    "docs/NEXT_STAGE_ACCEPTANCE.md": "d489ab19d91dfc9855d5c9dc1c99c1a6ae1436343cafca8c2ce31f23a64d639d",
+    "docs/COLLABORATION_USABILITY.md": "803d4869cc268a2447d6e673c8ff8d8e82f07636139825cd6c60f830316987e4"
+  },
+  "uiHarness": {
+    "directory": "C:\\Users\\nowf1\\Documents\\AI_deck\\wickrun-engineering-2178",
+    "hashes": {
+      "desktop-roles.cjs": "3d85cbafcd2edca9506232c31e9870ecf80be1a3a9ba1095e63ceec04b10644b",
+      "check-roles-ui.cjs": "f4f4f069604b396769c2a4deefee3ececd79ec7e247099a08b39df6f58774e71"
+    }
+  },
+  "limits": [
+    "Local synthetic replies only; no provider quality/cost claim",
+    "Real process restart after completion, not mid-run crash",
+    "UI flow covers review; discussion/exploration have automated coverage",
+    "No operation on daily user profile or OpenAI windows",
+    "No commit, packaging, install, GitHub sync or release"
+  ]
+}

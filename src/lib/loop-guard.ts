@@ -1,10 +1,18 @@
 import type { RunState, ToolStep } from '../types';
 
-/** Conservative prose repetition detection. Code and changing list values are not evidence. */
-export function repeatedProse(text:string):boolean {
-  const prose=text.slice(-12000).replace(/```[\s\S]*?(?:```|$)/g,'');
-  // Models also rephrase the same numbered plan without ever emitting a tool call.
-  // Require three multi-step plans, stable numbers, and substantial shared wording.
+const LIGHT_REPHRASE_STAGNATION_HINT = '检测到本次回复用轻度改写重复同一组计划，且本轮没有新增可核验步骤。这只是保守提示，不是已验证的循环结论；请直接执行下一项可验证操作，或说明新的证据与阻塞。';
+
+function proseWithoutCode(text:string):string {
+  return text.slice(-12000).replace(/```[\s\S]*?(?:```|$)/g,'');
+}
+
+/**
+ * Heuristic only: recognize three substantially overlapping multi-step plans with at least two
+ * distinct phrasings. Callers must independently establish that no new evidence was produced and
+ * must never use this result as an automatic stop condition.
+ */
+export function lightRephraseStagnationHint(text:string):string|undefined {
+  const prose=proseWithoutCode(text);
   const plans=prose.split(/\n\s*\n/).filter(p=>/(?:^|\n)\s*1[.)]/.test(p) && /\n\s*2[.)]/.test(p))
     .map(p=>p.slice(p.search(/(?:^|\n)\s*1[.)]/)).replace(/^\s*\d+[.)]/gm,'').replace(/[\s`"“”'，。；：、（）()]/g,''))
     .filter(p=>p.length>=40).slice(-8);
@@ -16,8 +24,14 @@ export function repeatedProse(text:string):boolean {
       const b=grams(other),shared=[...a].filter(g=>b.has(g)).length;
       return shared/Math.min(a.size,b.size)>=0.7 && Math.min(a.size,b.size)/Math.max(a.size,b.size)>=0.6;
     });
-    if(similar.length>=3 && similar.reduce((n,p)=>n+p.length,0)>=120)return true;
+    if(similar.length>=3 && new Set(similar).size>=2 && similar.reduce((n,p)=>n+p.length,0)>=120)return LIGHT_REPHRASE_STAGNATION_HINT;
   }
+  return;
+}
+
+/** Exact prose repetition detection. Code and changing list values are not evidence. */
+export function repeatedProse(text:string):boolean {
+  const prose=proseWithoutCode(text);
   const parts=prose.split(/\n\s*\n|\n(?=\s*\d+[.)])/).slice(-16)
     .map(p=>p.replace(/\s+/g,'').replace(/^[\d.)*#\-]+/,'')).filter(p=>p.length>=20);
   const counts=new Map<string,number>();for(const p of parts)counts.set(p,(counts.get(p)||0)+1);
@@ -38,6 +52,21 @@ export function repeatedProse(text:string):boolean {
 export function repetitionWatchdog() {
   let text='',checked=0;
   return {push(delta:string){text=(text+delta).slice(-12000);checked+=delta.length;if(checked<96)return false;checked=0;return repeatedProse(text);}};
+}
+
+export function lightRephraseStagnationWatchdog() {
+  let text='',checked=0,hinted=false;
+  const check=()=>{const hint=lightRephraseStagnationHint(text);if(hint)hinted=true;return hint;};
+  return {push(delta:string){
+    if(hinted)return;
+    text=(text+delta).slice(-12000);checked+=delta.length;if(checked<96)return;
+    checked=0;return check();
+  },finish(){return hinted?undefined:check();}};
+}
+
+/** Add the heuristic only when an independent completion check already requires another round. */
+export function withLightRephraseStagnationHint(baseIssue:string|undefined,hint:string|undefined):string|undefined {
+  return baseIssue&&hint?`${hint} ${baseIssue}`:baseIssue;
 }
 
 function stable(value:unknown):string {

@@ -1,0 +1,37 @@
+✔ Record check accepts all top-level keys on one line and ignores nested syntax (321.7554ms)
+✔ Record check reports a genuinely missing top-level key (336.975ms)
+✔ Record check skips objects with top-level spread keys (311.937ms)
+✔ Record check skips objects with computed keys (347.8438ms)
+✔ Record check starts at the initializer when the value type contains braces (245.5384ms)
+✔ Record check skips quoted keys that require escape decoding (205.9852ms)
+✔ Record check skips template values with interpolation (152.994ms)
+✔ runtime freezes accepted inputs and sends exact dependency text to the member prompt and contract (1792.7515ms)
+✔ runtime create blocks an unaccepted latest source run and start preserves prepared snapshots (1357.7458ms)
+✔ a newer accepted source run does not replace a prepared frozen snapshot (760.0256ms)
+✔ store accepts an authenticated dependency snapshot and claim revalidates it (164.7744ms)
+✔ store rejects forged new snapshots and makes saved dependency fields immutable (130.5769ms)
+✔ claim keeps the prepared snapshot when source title and contract later change (159.6469ms)
+✔ store validates dependency graphs on every update (121.7329ms)
+✔ restart and claim preserve compatibility for legacy runs without dependency fields (52.1581ms)
+✔ dependency graph rejects unknown, self, duplicate, explore, excessive and cyclic edges (9.4085ms)
+✔ capture requires the newest created run to be completed and explicitly accepted (8.9237ms)
+✔ text-only limits reject file artifacts and oversized snapshots without truncation (1.3981ms)
+✔ frozen snapshots are immutable but remain valid after a newer source run (3.0622ms)
+✔ dependencyBlockers returns readable errors and never throws (1.2552ms)
+✔ TypeScript and Electron helpers remain behaviorally identical (6.0461ms)
+✔ multi-task advice and legacy briefs are read without importing executable settings (9.1203ms)
+✔ malformed, ambiguous, oversized and cyclic plans fail as a whole (3.7027ms)
+✔ selection cannot omit an uncreated prerequisite or select competing alternatives (3.4973ms)
+✔ saving chosen tasks atomically maps prerequisites and retains only editable content and provenance (3.2365ms)
+✔ later adoption can depend on an already-created suggestion without duplicating it (1.6789ms)
+✔ invalid edited selection or incomplete source cannot partially persist tasks (2.6188ms)
+✔ waiting exploration can be edited but must be accepted before tasks are saved (1.3788ms)
+✔ legacy adopted single-task advice is not duplicated after upgrade (1.1684ms)
+ℹ tests 29
+ℹ suites 0
+ℹ pass 29
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 4802.5791

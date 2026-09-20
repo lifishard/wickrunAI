@@ -1,0 +1,14 @@
+{
+  "passed": true,
+  "failures": [],
+  "summary": {
+    "passed": true,
+    "passedCases": 4,
+    "falseKnowledgeCases": 0,
+    "providerReportedUsage": {
+      "input": 1024,
+      "output": 183,
+      "total": 1207
+    }
+  }
+}

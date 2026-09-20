@@ -1,0 +1,31 @@
+{
+  "version": "2.17.7",
+  "method": "Actual Electron UI, isolated profile and local synthetic HTTP",
+  "checks": [
+    "discard draft removes it durably without changing tasks or source output; original advice can be reopened",
+    "missing prerequisite selection is blocked; edited draft survives reload; batch save creates two tasks and zero runs/requests",
+    "dependent run is blocked before prerequisite; prerequisite executes once and completes only after UI approval",
+    "accepted text is previewed, frozen and actually included in dependent HTTP prompt; dependent finishes with separate UI acceptance",
+    "saved dependency relation and completed results survive reload; 720px relation view stays within viewport",
+    "own Electron process closes and relaunches with the same isolated profile; completed runs and frozen input persist without a new request"
+  ],
+  "errors": [],
+  "console": [],
+  "title": "灯芯AI · wickrunAI",
+  "url": "file:///C:/Users/nowf1/Documents/AI_deck/sensenova-chat/dist/index.html",
+  "bounds": {
+    "left": 18,
+    "right": 692,
+    "width": 720,
+    "client": 674,
+    "scroll": 674
+  },
+  "saved": {
+    "tasks": 3,
+    "runs": 3,
+    "completed": 3,
+    "childRunId": "teamrun-5c979c49-bed0-4934-ac27-bdd06db8727a",
+    "dependencyRunId": "teamrun-e9638e50-d14f-431b-ab76-d3163ca40a9c"
+  },
+  "ok": true
+}

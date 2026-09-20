@@ -3,8 +3,18 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 
+const WINDOWS_RENAME_RETRY_DELAYS_MS = [10, 20, 40, 80, 100];
+const WINDOWS_RENAME_RETRY_CODES = new Set(['EPERM', 'EBUSY', 'EACCES']);
+const defaultSleep = ms => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+
 /** One main-process writer. Never treat an existing unreadable file as new data. */
-function createDurableJson(file, { initial, validate = () => {}, io = fs } = {}) {
+function createDurableJson(file, {
+  initial,
+  validate = () => {},
+  io = fs,
+  platform = process.platform,
+  sleep = defaultSleep,
+} = {}) {
   let cache;
   let loadedHash;
   const hash=text=>crypto.createHash('sha256').update(text).digest('hex');
@@ -31,6 +41,30 @@ function createDurableJson(file, { initial, validate = () => {}, io = fs } = {})
   function read() {
     return structuredClone(load());
   }
+  function rejectChangedPrimary() {
+    let current;
+    try { current = hash(io.readFileSync(file, 'utf8')); }
+    catch (error) {
+      if (error.code === 'ENOENT' && loadedHash === undefined) return;
+      cache = undefined; loadedHash = undefined;
+      throw error;
+    }
+    if (current === loadedHash) return;
+    cache = undefined; loadedHash = undefined;
+    throw new Error('数据文件被其他程序改动，已停止覆盖；请重新读取后合并修改。');
+  }
+  function renameWithRetry(from, to, retryState) {
+    for (;;) {
+      try { return io.renameSync(from, to); }
+      catch (error) {
+        const delay = WINDOWS_RENAME_RETRY_DELAYS_MS[retryState.nextDelay];
+        if (platform !== 'win32' || !WINDOWS_RENAME_RETRY_CODES.has(error.code) || delay === undefined) throw error;
+        retryState.nextDelay += 1;
+        sleep(delay);
+        rejectChangedPrimary();
+      }
+    }
+  }
   function write(value) {
     validate(value);
     const text = JSON.stringify(value);
@@ -43,6 +77,7 @@ function createDurableJson(file, { initial, validate = () => {}, io = fs } = {})
     }
     io.mkdirSync(path.dirname(file), { recursive: true });
     const tmp = file + '.' + crypto.randomUUID() + '.tmp';
+    const retryState = { nextDelay: 0 };
     let fd;
     try {
       fd = io.openSync(tmp, 'wx', 0o600);
@@ -52,9 +87,12 @@ function createDurableJson(file, { initial, validate = () => {}, io = fs } = {})
         io.copyFileSync(file,prevTmp);
         const backupFd=io.openSync(prevTmp,'r+');
         try{io.fsyncSync(backupFd);}finally{io.closeSync(backupFd);}
-        io.renameSync(prevTmp,file+'.prev');
+        renameWithRetry(prevTmp,file+'.prev',retryState);
       }
-      io.renameSync(tmp, file);
+      // Backup preparation can itself be retried, so close that window before
+      // replacing the primary even when the first primary rename succeeds.
+      rejectChangedPrimary();
+      renameWithRetry(tmp, file,retryState);
       cache = JSON.parse(text);
       loadedHash = hash(text);
     } finally {

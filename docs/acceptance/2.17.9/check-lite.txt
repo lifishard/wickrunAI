@@ -1,0 +1,8 @@
+
+> wickrunai@2.17.9 check:lite
+> node scripts/check-lite.mjs
+
+
+✓ 130 个文件，七项低级错误检查通过
+（导入解析、未声明赋值、Record 键完整性、重复声明、props 字段、未定义的调用、IPC 可克隆性 —— 真正的类型检查仍然要 npm run typecheck）
+

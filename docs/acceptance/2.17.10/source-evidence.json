@@ -1,0 +1,38 @@
+{
+  "version": "2.17.10",
+  "at": "2026-09-20T21:13:20.898Z",
+  "tests": 789,
+  "uncommitted": true,
+  "sourceHashes": {
+    "src/lib/agent.ts": "4a778210f2dc75ec8dc8da7477a7abeee28147a3615af8f5aa7ad1fcaaedf140",
+    "src/lib/team-runtime.ts": "ec73c0b3905ac585b996e1e573e5b9a25b8f38ad77419523d43326ad0306e9d1",
+    "src/lib/team-run-guidance.ts": "94a9b24da0415ee77c034d8e3c7291951f46c539694323fabed8c0eff870a449",
+    "src/lib/loop-guard.ts": "f49b243f300604d5f641efe1052bdfd292263b1e83d43977015de0e58d5d1dc7",
+    "src/lib/team-memory.ts": "74a292cdfb8f9bbec47c18b8a9456e7292719e278a731ed271cb6bc976ac5d76",
+    "src/lib/skills.ts": "afe285aba89836ce237b3f4ec7f496d13a7a2230a8e1b9e4da9df64a1acead64",
+    "src/components/collaboration/TeamWorkspace.tsx": "7518d5c66165eff1bd4e039eeb9ee875a2a1715195ea958c2aebbbd6529c34a7",
+    "src/components/collaboration/TeamRunGuidance.tsx": "9eb68cf80d43798adef961588821536394af6ce5664da60b05e1f42fa4f22a13",
+    "tests/team-long-lifecycle.test.cjs": "78b9c4a5f0fc9da4e69bb17515aa74878e39b6b90a20ed6a2161b187fddc085d",
+    "tests/fixtures/team-long-worker.cjs": "f0fc738c0bb9ecb7b119175aac19ee6ceb228955e318aa7fda1dce3c5c1e7739",
+    "tests/team-question-resume.test.cjs": "78b46669f2ecc60816f4b657f8bbcd858176040073ad4cd65e9f06de6aa81295",
+    "tests/team-run-guidance.test.cjs": "ebac48c0dfb14f87c75631689427dd55fbe568c1506d17d73c5aab8e9a49fa0e"
+  },
+  "buildHashes": {
+    "dist/assets/ExportDialog-BY_1I2W_.js": "4de488a0da5969034dd78fb7e93cb364b1ee1c42ef048516bea1b2b8362187d2",
+    "dist/assets/index-BjlMy_mz.js": "3fb4d77de3fe9abc1554352334d77bf9de6ef510377dbd0a6b5166b384bd5e49",
+    "dist/assets/index-Kd58curu.css": "eed5a90d3b082b50bc38c261a142720185a41ddb41eb076a2e5a3b0b0a6c3406",
+    "dist/assets/ObservationPanel-BDpsCOaT.js": "083aa6d66c78f0d3eb14d8165e8fa864eb896690f4721038141fb4e0f9b2ba6e",
+    "dist/assets/sync-CUxEG2Zs.js": "e955959afa1dc4581f78f368ca61bc2346008ba30e5d5820de00aa157358ea9a",
+    "dist/assets/sync-policy-Uurn36a3.js": "92999dd9341efb5a4e456a3b2fa136d9b1a6d86df10d409263e1fd788a408564",
+    "dist/assets/TeamWorkspace-99wBQJd1.css": "9e5d4661fcad15bed0007d5a800deb9490c6075ead2d8807e77845a6b355616c",
+    "dist/assets/TeamWorkspace-COlVv-Pn.js": "dd49810cecf6b1525b8033cf66e997a3d30660f92cda7812e7cb8a5dc9a77202",
+    "dist/assets/web-CDezOBRK.js": "e57bb739eedbdaeb982c243ac6ebe384dd592bcaa4c67b1d84c462490c94fa7e",
+    "dist/index.html": "9c2c921c8ed939339452d910173006a48a54c2a53c2ad4c2e6dceea2247be4af"
+  },
+  "documentHashes": {
+    "PROGRESS.md": "d5ad07f43b74f4367f39460039749564bde349e4817b8f4f53356d9bd587020d",
+    "docs/NEXT_STAGE_ACCEPTANCE.md": "626f3b805951c13e1c8b9b4515edce87b6e317959bc3c0dc7eda7578071d7d63",
+    "docs/ENGINEERING_ROADMAP.md": "b65ba59281634811ef79af2af9153c53df5dbb95a4e2e7125a6e9d0b2803d906",
+    "docs/COLLABORATION_USABILITY.md": "df278753238b90036cd3378b315f983c8580849825a7500ee55281268eb239be"
+  }
+}

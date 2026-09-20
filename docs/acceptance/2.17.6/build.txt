@@ -1,0 +1,25 @@
+
+> wickrunai@2.17.6 build
+> node scripts/build-native-mcp.mjs && tsc --noEmit && vite build
+
+vite v6.4.3 building for production...
+transforming...
+✓ 208 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                               0.79 kB │ gzip:   0.47 kB
+dist/assets/TeamWorkspace-9NjsD6bU.css       23.78 kB │ gzip:   4.79 kB
+dist/assets/index-Kd58curu.css               65.45 kB │ gzip:  12.91 kB
+dist/assets/web-BdL_X97E.js                   1.25 kB │ gzip:   0.58 kB
+dist/assets/sync-policy-Uurn36a3.js           2.54 kB │ gzip:   1.59 kB
+dist/assets/sync-oKt2n5_n.js                  3.79 kB │ gzip:   1.71 kB
+dist/assets/ExportDialog-BIx8EPR3.js          6.20 kB │ gzip:   2.85 kB
+dist/assets/ObservationPanel-D6bOovEP.js     26.53 kB │ gzip:  10.87 kB
+dist/assets/TeamWorkspace-DZTBWu91.js       112.01 kB │ gzip:  33.26 kB
+dist/assets/index-BwJ10oyC.js             2,285.30 kB │ gzip: 880.36 kB
+
+(!) Some chunks are larger than 1200 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 8.93s

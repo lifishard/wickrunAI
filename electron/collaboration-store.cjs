@@ -2,6 +2,8 @@
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { createDurableJson } = require('./durable-json.cjs');
+const { validateTaskDependencies, captureTaskDependencies, validateFrozenDependencies } = require('./team-dependencies.cjs');
+const { validateTeamFileScope, validateTeamFileSnapshot } = require('./team-file-scope.cjs');
 const equal = (a,b) => JSON.stringify(a) === JSON.stringify(b);
 const STATES = new Set(['ready','running','pausing','paused','waiting_user','uncertain','failed','cancelled','completed']);
 const ATTEMPTS = { running: ['running','completed','failed','uncertain','waiting_user'], waiting_user: ['waiting_user','completed','failed','uncertain'], uncertain: ['uncertain','completed','failed'], failed: ['failed','completed'], completed: ['completed'] };
@@ -12,12 +14,17 @@ function validate(data) {
   if(p.id!==id)throw Error('项目 ID 不一致');
   for(const key of ['members','workflows','tasks','runs','memories','schedules','files'])if(!Array.isArray(p[key])||new Set(p[key].map(x=>x.id)).size!==p[key].length)throw Error(`项目 ${id} 的 ${key} 格式无效`);
   if(!p.preferences||!p.settings)throw Error('项目设置缺失');
-  for(const r of p.runs) {
+  for(const task of p.tasks)validateTeamFileScope(task.fileScope,p.settings.roots);
+  validateTaskDependencies(p);
+   for(const r of p.runs) {
    if(!STATES.has(r.status)||!Array.isArray(r.attempts)||!Array.isArray(r.events))throw Error('运行状态或执行历史无效');
    if(r.tokens!==undefined&&!finiteCount(r.tokens))throw Error('运行用量无效');
    for(const key of ['visits','traversals','reservations'])if(r[key]!==undefined&&(!r[key]||typeof r[key]!=='object'||Array.isArray(r[key])||Object.values(r[key]).some(x=>!finiteCount(x))))throw Error('运行次数或预留用量无效');
-   if(new Set(r.attempts.map(a=>a.id)).size!==r.attempts.length||r.attempts.some(a=>!ATTEMPTS[a.status]))throw Error('步骤记录重复或状态无效');
+    if(new Set(r.attempts.map(a=>a.id)).size!==r.attempts.length||r.attempts.some(a=>!ATTEMPTS[a.status]))throw Error('步骤记录重复或状态无效');
+    validateTeamFileScope(r.fileScope,r.projectSettings?.roots);
+    validateTeamFileSnapshot(r.fileScope,r.intent,r.version?.graph,r.members);
   }
+  for(const r of p.runs)validateFrozenDependencies(p,r);
  }
 }
 function appendOnly(before=[],after=[],label) {
@@ -62,9 +69,14 @@ function validateNewRun(run,source,project) {
  if(!task||typeof task.goal!=='string'||!task.goal.trim()||typeof task.acceptance!=='string'||!task.acceptance.trim()||!version||flow.archived||!equal(version,run.version))throw Error('运行必须引用已保存的真实任务和流程版本');
  const used=new Set(version.graph.nodes.flatMap(n=>[n.memberId,...(n.participants||[])].filter(Boolean)));
  const members=source.members.filter(m=>used.has(m.id)),memories=source.memories.filter(m=>m.status==='adopted');
- if(![undefined,'explore','deliver'].includes(task.intent)||!equal(run.intent,task.intent)||!equal(run.projectSettings,source.settings)||!equal(project.settings,source.settings)||!equal(run.members,members)||!equal(run.goal,task.goal)||!equal(run.acceptance,task.acceptance)||!equal(run.memorySnapshot,memories)||!equal(run.memoryIds,memories.map(m=>`${m.id}@${m.revision}`)))throw Error('运行配置快照必须来自已保存的项目授权');
+ if(![undefined,'explore','deliver'].includes(task.intent)||!equal(run.intent,task.intent)||!equal(run.fileScope,task.fileScope)||!equal(run.projectSettings,source.settings)||!equal(project.settings,source.settings)||!equal(run.members,members)||!equal(run.goal,task.goal)||!equal(run.acceptance,task.acceptance)||!equal(run.memorySnapshot,memories)||!equal(run.memoryIds,memories.map(m=>`${m.id}@${m.revision}`)))throw Error('运行配置快照必须来自已保存的项目授权');
  validateRunGraph(run);
  validateExploreRun(run);
+ validateTeamFileScope(run.fileScope,run.projectSettings.roots);
+ validateTeamFileSnapshot(run.fileScope,run.intent,run.version.graph,run.members);
+ const dependencies=captureTaskDependencies(source,run.taskId);
+ if((run.dependencyTaskIds!==undefined||run.dependencyInputs!==undefined||dependencies.dependencyTaskIds.length)&&(!equal(run.dependencyTaskIds??[],dependencies.dependencyTaskIds)||!equal(run.dependencyInputs??[],dependencies.dependencyInputs)))throw Error('运行的前置任务快照必须来自已保存的已验收运行');
+ validateFrozenDependencies(source,run);
  const emptyMap=value=>value&&typeof value==='object'&&!Array.isArray(value)&&!Object.keys(value).length;
  if(run.status!=='ready'||run.owner!==undefined||run.tokens!==0||run.attempts.length||!emptyMap(run.reservations)||!emptyMap(run.visits)||!emptyMap(run.traversals)||!emptyMap(run.arrivals)||run.pendingApproval||(run.approvalQueue?.length)||!equal(run.queue,version.graph.nodes.filter(n=>n.type==='start').map(n=>n.id)))throw Error('新运行必须从空执行记录和初始队列开始');
  if(!Number.isFinite(run.createdAt)||run.createdAt<=0||run.updatedAt!==run.createdAt||run.events.length!==1||run.events[0].kind!=='created'||typeof run.events[0].id!=='string'||!run.events[0].id||run.events[0].at!==run.createdAt||typeof run.events[0].text!=='string'||!run.events[0].text.trim())throw Error('新运行只能包含真实创建记录');
@@ -81,8 +93,10 @@ function validateCompletion(previous,next) {
  if(![...latest.values()].some(a=>WORK_NODES.has(nodes.get(a.nodeId)?.type)&&a.status==='completed'&&typeof a.output==='string'&&a.output.trim()))throw Error('缺少实际执行步骤的可验收输出');
 }
 function validateRunUpdate(previous,next) {
- for(const key of ['version','members','config','goal','acceptance','intent','memoryIds','projectSettings','memorySnapshot','createdAt','taskId','workflowId','scheduleKey'])if(!equal(next[key],previous[key]))throw Error('运行配置快照不可改写');
+ for(const key of ['version','members','config','goal','acceptance','intent','fileScope','memoryIds','projectSettings','memorySnapshot','dependencyTaskIds','dependencyInputs','createdAt','taskId','workflowId','scheduleKey'])if(!equal(next[key],previous[key]))throw Error('运行配置快照不可改写');
  validateExploreRun(next);
+ validateTeamFileScope(next.fileScope,next.projectSettings.roots);
+ validateTeamFileSnapshot(next.fileScope,next.intent,next.version.graph,next.members);
  if((next.tokens??0)<(previous.tokens??0))throw Error('运行用量不可减少');
  for(const key of ['visits','traversals'])for(const [id,count] of Object.entries(previous[key]||{}))if((next[key]?.[id]??0)<count)throw Error('运行执行次数不可减少');
  appendOnly(previous.events,next.events,'运行事件');
@@ -135,12 +149,12 @@ function createCollaborationStore(root) {
   if(old){
    for(const f of old.workflows){const next=project.workflows.find(x=>x.id===f.id);if(f.versions.length&&!next)throw Error('已保存版本的流程只能归档');for(const v of f.versions)if(!equal(next?.versions.find(x=>x.id===v.id),v))throw Error('流程历史版本不可改写');}
    for(const r of old.runs){const next=project.runs.find(x=>x.id===r.id);if(!next)throw Error('运行历史不可删除');validateRunUpdate(r,next);}
-   for(const task of old.tasks){const next=project.tasks.find(t=>t.id===task.id);if(!next&&old.runs.some(r=>r.taskId===task.id))throw Error('已有运行的任务不可删除');if(next)appendOnly(task.entries,next.entries,'任务讨论');}
+   for(const task of old.tasks){const next=project.tasks.find(t=>t.id===task.id);if(!next&&old.runs.some(r=>r.taskId===task.id))throw Error('已有运行的任务不可删除');if(next){appendOnly(task.entries,next.entries,'任务讨论');if(old.runs.some(r=>r.taskId===task.id)&&!equal(task.dependsOn??[],next.dependsOn??[]))throw Error('已有运行的任务不可修改前置关系');}}
   }
   for(const run of project.runs)if(!old?.runs.some(r=>r.id===run.id))validateNewRun(run,old,project);
   d.projects[project.id]=structuredClone(project);d.revision++;d.updatedAt=Date.now();return doc.write(d);
  }
- function claim(projectId,runId){const d=read(),p=d.projects[projectId],r=p?.runs.find(x=>x.id===runId);if(!r||!['ready','paused'].includes(r.status))throw Error('运行尚未就绪或需要核实');const cap=p.settings.maxConcurrent;if(!Number.isInteger(cap)||cap<1||cap>100)throw Error('项目并行数量设置无效');if(p.runs.filter(x=>['running','pausing','waiting_user'].includes(x.status)).length>=cap)throw Error('项目同时运行数量已达上限');r.owner=owner;r.status='running';r.updatedAt=Date.now();d.revision++;return doc.write(d);}
+ function claim(projectId,runId){const d=read(),p=d.projects[projectId],r=p?.runs.find(x=>x.id===runId);if(!r||!['ready','paused'].includes(r.status))throw Error('运行尚未就绪或需要核实');validateTeamFileScope(r.fileScope,r.projectSettings?.roots);validateTeamFileSnapshot(r.fileScope,r.intent,r.version?.graph,r.members);validateFrozenDependencies(p,r);const cap=p.settings.maxConcurrent;if(!Number.isInteger(cap)||cap<1||cap>100)throw Error('项目并行数量设置无效');if(p.runs.filter(x=>['running','pausing','waiting_user'].includes(x.status)).length>=cap)throw Error('项目同时运行数量已达上限');r.owner=owner;r.status='running';r.updatedAt=Date.now();d.revision++;return doc.write(d);}
  return {read,update,claim,file:doc.file};
 }
 module.exports={createCollaborationStore,validate,validateRunUpdate};

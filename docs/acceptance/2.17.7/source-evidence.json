@@ -1,0 +1,71 @@
+{
+  "version": "2.17.7",
+  "recordedAt": "2026-09-20T18:37:38.439Z",
+  "gitBaseline": "74cab88",
+  "uncommitted": true,
+  "productionBuild": true,
+  "uiMethod": "Actual Electron UI, isolated profile and local synthetic HTTP",
+  "automatedTests": 731,
+  "requests": 2,
+  "syntheticReportedTokens": 600,
+  "sourceHashes": {
+    "package.json": "6b4c0f09ed6a8ee7522ca34b85c855fca5dd868c7411fcbdba627db08aa4f13f",
+    "package-lock.json": "6fa20c031bfdc0f56966c49fc8c065138e472e267da8706583a6d3c596a7c86d",
+    "src/lib/version.ts": "2daf22d1362a4368ee0e8a907e90529e59a5434ee768d6ee9cb03c9318fac7c4",
+    "scripts/check-lite.mjs": "0497c75824de4a69139c076ec2ba5e76d877436b061344ede62cdb64f5532f3c",
+    "src/lib/collaboration.ts": "36c75c2bfa692c65c91f11aa5ac20f8802509da4c7c1d328b8c7f7fc29f04e57",
+    "src/lib/team-discovery.ts": "07383d1120379cc1aac1a4f3dd4f72f5164f946194494bb1cf281208b91ddd9a",
+    "src/lib/team-discovery-plan.ts": "6fc5b61cefa4798359bc70034515c2dfdc2b8b89f52c40898e04fb5fad31f306",
+    "src/lib/team-dependencies.ts": "9c21018205ebf8552afb17d68a1798adf2974c953077d63ecf8438c0007e0aec",
+    "src/lib/team-runtime.ts": "8a86fd2dbc2e3699a2db34a9a9fe37b3af348d0209130ae544c5e2b97bc0f4e9",
+    "src/lib/team-contract.ts": "202ba35e5d7a6c7bb4daaaeb401f63ae064a09c3cfd5d7634a98dc0fb0ff6eed",
+    "src/lib/team-project-progress.ts": "a0334771fd518e9127423fc7fc9fc2f3b57e9fd3619e05260aad88ae46ec8c81",
+    "electron/collaboration-store.cjs": "f7f3b89b62ef1e1e9ac638929034a11a6af9b59d99fa9a7a301dc22f5d2a5e71",
+    "electron/team-dependencies.cjs": "7e9ac49d9d64e2a1eef75fb85e16aca59296e5e43ff4b8d3f2c93a371377a25a",
+    "src/components/collaboration/TeamWorkspace.tsx": "7f3f66b4eed1f6562e4fd9941756bb14ac87383a5d4a07ca48de46fc50f4ab1f",
+    "src/components/collaboration/TeamPlanEditor.tsx": "6dd91daaedbe52b727680f4818a8ac2510b0f869204e3a17cdc8710cff28cc75",
+    "src/components/collaboration/TeamTaskDependencies.tsx": "bab8ebd1f36b06fdcb9a0307d959aaefd55cc4c9341700a4a7e0cad6504dbba1",
+    "src/components/collaboration/TeamTaskDependencies.css": "cb66d13724ef5562311edc7b1f9c2b911bb2d2584c7dac403931a81d3b5f1fe5",
+    "src/components/collaboration/TeamDiscoveryResult.tsx": "9222f0af36b87ae6d10621d6970143d1b282c236f478fbef094ab26d51d08887",
+    "src/components/collaboration/TeamProjectProgress.tsx": "7b70b013d6f97be1d666ede98363463f43d7e6ebe7d10aefdf25b7d2ef05bff8",
+    "src/components/collaboration/TeamProjectProgress.css": "5a03b23fdfe96a0d9557f8c051d669e687bfa09ee637a0e5d79e93e0fdde18aa",
+    "src/lib/i18n.ts": "4684c14c554532cb205dfed9de0cae5f77813bb19d5f7cec790ec612f599dff0",
+    "tests/check-lite.test.cjs": "460c9552c9d8f693e98b818be5930b6af8d95b6938daaffe9e916fbbdce687a5",
+    "tests/team-discovery-plan.test.cjs": "f27ce3e129c51d23aa7c27e08e066ba9fd751a59ef1c8a1248e0a26274bc365b",
+    "tests/team-dependencies.test.cjs": "e179b4a3568452a61dcdc8eff2b8769356d8d94fcbf9e873f2e4ebe41976f1fe",
+    "tests/team-dependencies-store.test.cjs": "3da3b3f44f13cd8018f278bc2be18035e4a12f002959ecb6844c6855510845e4",
+    "tests/team-dependencies-runtime.test.cjs": "15b6c092b873b9defeb506db996f0225bde75b89b04c4acf3220a67b9ed89585",
+    "tests/i18n-coverage.test.cjs": "2675a071d42d3b8a11154e800a276e9cc8827b86dbc627364a8a884702a72d37"
+  },
+  "buildHashes": {
+    "dist/assets/ExportDialog-nXn1UNfB.js": "085d199b26041d58753dde1cfed5d459d31e2f4f2d3e9cfc0aff2570fb8db122",
+    "dist/assets/index-Kd58curu.css": "eed5a90d3b082b50bc38c261a142720185a41ddb41eb076a2e5a3b0b0a6c3406",
+    "dist/assets/index-Qz2wMDyL.js": "f2af02bfb6e4f969d88770ef929ecf328a6454d21c004562593ff42cc5e6a88b",
+    "dist/assets/ObservationPanel-Bs4M28qN.js": "159cf0b285bba8bbd8b388614ab840e3317dc17fd0c963216872d4b99c166995",
+    "dist/assets/sync-MhwUekLY.js": "1bd93160eb4f7920f0ccc5dc6847ef0e2d731d4bae541caa0b00a5c1f7d9584b",
+    "dist/assets/sync-policy-Uurn36a3.js": "92999dd9341efb5a4e456a3b2fa136d9b1a6d86df10d409263e1fd788a408564",
+    "dist/assets/TeamWorkspace-Dj3q8AoC.js": "7c639bea4f531f8203aabc47c76903a5e9337866ff4d7b99cdf1eb8cf782aa58",
+    "dist/assets/TeamWorkspace-VhEI8kBf.css": "928729953e0f0767a9c167731b16a30e070a15b70c87e66c701217fe6692cbe8",
+    "dist/assets/web-BPLDuvfg.js": "255160816425fce4fa33af61ecb83f561c740400cb184be707d38068b6d590a3",
+    "dist/index.html": "7176e9655fc83873dbc153d9997c3824d7279cf74483b221cce6bb967d41fd4a"
+  },
+  "documentHashes": {
+    "PROGRESS.md": "86eddc9d3530159ded4d280ed6db95bcf8a1ede7cef4c99aaaf4960172bd967b",
+    "docs/ENGINEERING_ROADMAP.md": "977682d99c1f0df89790095cac51ab5caec77312193ca78594fed57bbc8c1acd",
+    "docs/NEXT_STAGE_ACCEPTANCE.md": "f841c12fb659b8b328d33d573b5162713491b875a1a12721672c24324799a06e",
+    "docs/COLLABORATION_USABILITY.md": "6c541c2f2993c46bdc359eafe525223bd99d67409c4823a20fa03b5154c98887"
+  },
+  "uiHarness": {
+    "directory": "C:\\Users\\nowf1\\Documents\\AI_deck\\wickrun-engineering-2177",
+    "hashes": {
+      "desktop-plan.cjs": "05506cc01865c734d072606b9173ed54324b7077540e8cee47573519a23fd11e",
+      "check-plan-ui.cjs": "d9984b54a3435fc7c20f1e7e4a8ecf4c517f01f441a6ce85bbdcf462c09fe004"
+    }
+  },
+  "limits": [
+    "Only local synthetic HTTP; no provider quality or cost conclusion",
+    "Actual process restart was after completion, not mid-run failure",
+    "No user daily profile or OpenAI window operated",
+    "No commit, packaging, upload or publication in this turn"
+  ]
+}

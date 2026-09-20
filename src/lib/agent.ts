@@ -44,7 +44,7 @@ import { calibratedTokens, capabilities, dispatchBudget, nearContextSuggestion, 
 import { compressionCandidate, memoryInstructions, memoryView, readContext, recentOutputFiles, updatePlan, validateCompaction } from './context-memory';
 import { handoffInfo, repeatedWithoutProgress, type ConversationMemory } from './handoff';
 import { foldedSkillNames, readSkill, type Skill } from './skills';
-import { repeatedReadCycle, repetitionWatchdog } from './loop-guard';
+import { repeatedReadCycle, repetitionWatchdog, lightRephraseStagnationWatchdog, withLightRephraseStagnationHint } from './loop-guard';
 import { addRunInput, deliveryReport, recoveryInfo, updateRequirements, verifyRequirements } from './delivery';
 import {taskSeed,harnessInstructions,harnessMode,completionIssue,completionBlocker,recordTaskReview,layeredMemoryView} from './harness';
 import {createSubagentRuntime} from './subagent-runtime';
@@ -85,6 +85,8 @@ export interface AgentEvents {
 }
 
 export interface RunAgentArgs {
+  /** Trusted task goal supplied by an orchestrator, without protocol and permission help text. */
+  taskGoal?: string;
   requestId: string;
   profile: KeyProfile;
   apiKey: string;
@@ -366,7 +368,7 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
     }
   }
   const startingTokens = state.spentTokens ?? 0;
-  state.harness=taskSeed([...scopedWorking,...(state.pendingInputMessages??[])],cfg,quoteBoundary>0?undefined:resume?.harness);
+  state.harness=taskSeed([...scopedWorking,...(state.pendingInputMessages??[])],cfg,quoteBoundary>0?undefined:resume?.harness,args.taskGoal);
   const maxRound = state.round + Math.max(1, Math.min(1000, cfg.maxToolRounds || 30)) - 1;
   let requestSerial = 0;
   let overflowRetries = 0;
@@ -825,6 +827,7 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
         let resultContent = '', resultReasoning = '', calls: ToolCall[] = [];
         let stop: StopInfo = { reason: null, droppedCalls: 0 };
         let requestSucceeded = false;
+        let lightRephraseHint:string|undefined;
         for (;;) {
           if (control.signal.aborted) throw abortError();
           attempts++;
@@ -884,7 +887,9 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
           await save();
           let recordedWait = 0;
           const loopWatch=repetitionWatchdog();
+          const lightRephraseWatch=lightRephraseStagnationWatchdog();
           let loopDetected=false;
+          lightRephraseHint=undefined;
           await transport.chat({ requestId, runId: state.runId, round: state.round, attempt: attempts,
             purpose: final ? 'final' : 'agent', url: endpoint(args.profile.baseUrl, 'chat/completions'),
             headers: buildHeaders(args.apiKey, args.profile), body, stream: cfg.stream, timeoutMs: args.timeoutMs,
@@ -895,6 +900,7 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
             onContent(d) {
               if(loopDetected)return;
               dispatched = true; resultContent += d; events.onContentDelta(d);
+              if(cfg.runtime?.loopGuard!==false)lightRephraseHint??=lightRephraseWatch.push(d);
               if(cfg.toolsEnabled && !final && cfg.runtime?.loopGuard!==false && loopWatch.push(d)){
                 loopDetected=true;void transport.abort(requestId).catch(()=>{});
               }
@@ -932,6 +938,7 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
             onDone() {}, onError(message, status) { failure.message = message; failure.status = status; },
           });
           activeRequest = null;
+          if(cfg.runtime?.loopGuard!==false)lightRephraseHint??=lightRephraseWatch.finish();
           account(stat,usage,resultContent+resultReasoning,!!failure.message || control.signal.aborted,dispatched,failure.status);
           stat.detail = failure.message;
           observeInput(body,args.profile,cfg,usage?.prompt_tokens);
@@ -1045,7 +1052,10 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
         }
         const blocker=completionBlocker(state,resultContent,cfg);
         if(blocker){state.harness!.completion={status:'needs_work',reason:blocker,evidence:[],at:Date.now()};await finishPause(blocker);return;}
-        const issue=completionIssue(state,resultContent,cfg);
+        const baseIssue=completionIssue(state,resultContent,cfg);
+        // Similar phrasing only modifies a pre-existing evidence-based completion issue.
+        // It never stops a task or adds another round on its own.
+        const issue=withLightRephraseStagnationHint(baseIssue,lightRephraseHint);
         if(issue){
           state.harness!.completion={status:'needs_work',reason:issue,evidence:[],at:Date.now()};
           if(state.harness!.continuations>=2||state.round>=maxRound){await finishPause('尚未确认任务完成：'+issue);return;}

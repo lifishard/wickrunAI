@@ -27,9 +27,18 @@ const TRANSLATED=[
   'components/UserQuestionCard.tsx',
   'components/collaboration/TeamWorkspace.tsx',
   'components/collaboration/TeamTaskSetup.tsx',
+  'components/collaboration/TeamRoleSettings.tsx',
+  'components/collaboration/TeamFileSetup.tsx',
+  'components/collaboration/TeamRunGuidance.tsx',
+  'lib/team-file-scope.ts',
+  'lib/team-quick-start.ts',
   'components/collaboration/TeamFlowPreview.tsx',
   'components/collaboration/TeamDiscoveryResult.tsx',
   'components/collaboration/TeamTaskFields.tsx',
+  'components/collaboration/TeamProjectProgress.tsx',
+  'components/collaboration/TeamPlanEditor.tsx',
+  'components/collaboration/TeamTaskDependencies.tsx',
+  'lib/team-discovery-plan.ts',
   'components/collaboration/WorkflowDesigner.tsx',
   'components/collaboration/WorkflowCanvas.tsx',
   'components/GrantDialog.tsx',
@@ -62,7 +71,7 @@ const TRANSLATED=[
 ];
 
 /** 纯逻辑模块：整份文件里的中文字符串都是给界面翻的 key。 */
-const KEY_SOURCES=['lib/errors.ts'];
+const KEY_SOURCES=['lib/errors.ts','lib/team-project-progress.ts','lib/team-run-guidance.ts'];
 
 const dict=fs.readFileSync(path.join(root,'lib','i18n.ts'),'utf8');
 const entries=[...dict.matchAll(/^\s+'((?:[^'\\]|\\.)+)':/gm)].map(m=>m[1]);
@@ -73,7 +82,7 @@ test('词典没有重复 key', () => {
   assert.deepEqual(dupes,[],`重复的 key 会让后一条静默覆盖前一条：${dupes.join('、')}`);
 });
 
-test('errors.ts 的诊断文案都有英文', () => {
+test('纯逻辑模块的界面文案都有英文', () => {
   const known=new Set(entries);
   const missing=[];
   for(const file of KEY_SOURCES){

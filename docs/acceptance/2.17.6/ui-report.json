@@ -1,0 +1,36 @@
+{
+  "version": "2.17.6",
+  "method": "Playwright Electron, isolated app and synthetic persisted records, no provider credentials",
+  "checks": [
+    "actual production Electron UI loaded; eight seeded tasks; no framework overlay",
+    "decision filter includes planning and actual delivery acceptance; next action opens the exact pending approval",
+    "startup recovery becomes attention; next action opens verification instead of starting another run",
+    "completed exploration links to its saved follow-up; follow-up returns to exact source task",
+    "original-suggestion link opens the exact frozen discovery result",
+    "missing provenance is explicit; keyboard operates stage filter; empty stage recovers to all tasks",
+    "reload preserves actual saved task/run state",
+    "720px viewport board has no horizontal overflow or clipping after the existing drawer transition settles"
+  ],
+  "errors": [],
+  "console": [],
+  "screenshots": [
+    "project-overview.png",
+    "source-links.png",
+    "project-overview-narrow.png"
+  ],
+  "title": "灯芯AI · wickrunAI",
+  "url": "file:///C:/Users/nowf1/Documents/AI_deck/sensenova-chat/dist/index.html",
+  "geometry": {
+    "client": 674,
+    "scroll": 674,
+    "viewport": 720,
+    "left": 18,
+    "right": 692
+  },
+  "ok": true,
+  "saved": {
+    "tasks": 8,
+    "runs": 5,
+    "recoveredStatus": "uncertain"
+  }
+}

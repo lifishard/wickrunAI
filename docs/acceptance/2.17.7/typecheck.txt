@@ -1,0 +1,4 @@
+
+> wickrunai@2.17.7 typecheck
+> tsc --noEmit
+

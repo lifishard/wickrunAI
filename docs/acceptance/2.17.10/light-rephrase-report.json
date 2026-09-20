@@ -1,0 +1,86 @@
+{
+  "samples": 15,
+  "truePositive": 3,
+  "trueNegative": 11,
+  "falsePositive": [],
+  "falseNegative": [
+    "tp-cn-review-light-paraphrase"
+  ],
+  "rows": [
+    {
+      "id": "tp-cn-light-paraphrase",
+      "expected": true,
+      "predicted": true
+    },
+    {
+      "id": "tp-en-light-paraphrase",
+      "expected": true,
+      "predicted": true
+    },
+    {
+      "id": "tp-cn-review-light-paraphrase",
+      "expected": true,
+      "predicted": false
+    },
+    {
+      "id": "tp-en-review-light-paraphrase",
+      "expected": true,
+      "predicted": true
+    },
+    {
+      "id": "tn-similar-but-completion-check-passed",
+      "expected": false,
+      "predicted": false
+    },
+    {
+      "id": "tn-english-similar-but-new-evidence-passed",
+      "expected": false,
+      "predicted": false
+    },
+    {
+      "id": "tn-exact-repeat-is-hard-evidence",
+      "expected": false,
+      "predicted": false
+    },
+    {
+      "id": "tn-changing-values",
+      "expected": false,
+      "predicted": false
+    },
+    {
+      "id": "tn-code-block",
+      "expected": false,
+      "predicted": false
+    },
+    {
+      "id": "tn-only-two-rephrasings",
+      "expected": false,
+      "predicted": false
+    },
+    {
+      "id": "tn-normal-stage-progression",
+      "expected": false,
+      "predicted": false
+    },
+    {
+      "id": "tn-same-template-different-goals",
+      "expected": false,
+      "predicted": false
+    },
+    {
+      "id": "tn-short-acknowledgements",
+      "expected": false,
+      "predicted": false
+    },
+    {
+      "id": "tn-one-plan-plus-evidence",
+      "expected": false,
+      "predicted": false
+    },
+    {
+      "id": "tn-distinct-plans",
+      "expected": false,
+      "predicted": false
+    }
+  ]
+}

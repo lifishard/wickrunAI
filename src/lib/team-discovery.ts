@@ -1,8 +1,8 @@
 import type { TeamTask, TeamRun, TeamProject } from './collaboration';
 import { uid } from './store';
 
-export const DISCOVERY_ACCEPTANCE='给出至少两个可选方向及取舍、最多三个需要用户决定的问题，以及一份可修改的下一步任务建议。明确区分已知信息和假设。本轮只梳理想法，不执行建议中的实际任务。';
-export const DISCOVERY_PLAN_INSTRUCTIONS='依据用户的原始想法、前一步探索和补充回答，整理可读的建议。先用日常语言解释可选方向、取舍、假设、需要用户决定的问题，再建议一个范围较小的下一步及步骤。不要把假设当成用户已经同意的要求，不执行建议中的任务。最后附一个 ```wickrun-plan 代码块，内含 JSON {"title":"建议任务名称","goal":"建议目标","acceptance":"建议的完成标准"}。这只是可编辑建议，用户确认后才成为另一项任务。';
+export const DISCOVERY_ACCEPTANCE='给出至少两个可选方向及取舍、最多三个需要用户决定的问题，以及一至八项可修改的文本任务建议和必要的先后关系。明确区分已知信息和假设、互斥方向与可共同完成的任务。本轮只梳理想法，不执行建议中的实际任务。';
+export const DISCOVERY_PLAN_INSTRUCTIONS='依据用户的原始想法、前一步探索和补充回答，整理可读的建议。先解释可选方向、取舍、假设和最多三个待决定问题，再推荐一个范围较小的方向，拆成一至八项文本任务。任务可以独立，也可以等待另一项文本任务的已验收产出。不要把备选方向都当成必须同时执行的工作，不把假设当成用户已同意的要求，不执行任务。最后只附一个 ```wickrun-plan 代码块，内含 JSON {"version":1,"tasks":[{"id":"compare","title":"比较方案","goal":"整理方案取舍","acceptance":"明确未知信息与比较依据","dependsOn":[]},{"id":"draft","title":"撰写草案","goal":"依据已验收比较写草案","acceptance":"草案符合用户选择","dependsOn":["compare"]}]}。id 为唯一英数字短标识，dependsOn 只能引用同组任务，不得循环；若确需列互斥备选项，给它们相同 choiceGroup（英数字短标识），同组最多采用一项。不建议本轮跨任务传递文件，只接续文本。不在 JSON 中加入工具、成员、模型、授权或工作流。这些都是可编辑建议，用户选择并保存后才成为任务，之后仍须确认运行。';
 
 export function normalizeTaskDraft(task:TeamTask):TeamTask {
  const draft=structuredClone(task);

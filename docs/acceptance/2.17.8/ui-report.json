@@ -1,0 +1,30 @@
+{
+  "version": "2.17.8",
+  "method": "Actual Electron UI; isolated profile; local synthetic HTTP; Browser plugin unavailable",
+  "checks": [
+    "changing the shared model after loading a preset updates every role and the actual preview; custom duties remain; individual reviewer connection can then be restored",
+    "per-role source member, model and responsibility edits; missing model blocks preparation; saved setup survives reload; no requests or members created by save",
+    "preparation makes text-only task copies and real role-specific graph; execution uses each selected connection/model and custom instructions; review cites actual text; UI acceptance completes run",
+    "reuse and save a separate setup; delete saved copy without changing current choices or old members/runs; narrow role editor fits; preparing next task sends no request",
+    "own process restart preserves saved setup, prepared next task and original completed frozen run without rerunning"
+  ],
+  "errors": [],
+  "console": [],
+  "title": "灯芯AI · wickrunAI",
+  "url": "file:///C:/Users/nowf1/Documents/AI_deck/sensenova-chat/dist/index.html",
+  "bounds": {
+    "left": 18,
+    "right": 692,
+    "width": 720,
+    "client": 674,
+    "scroll": 674
+  },
+  "saved": {
+    "tasks": 2,
+    "members": 6,
+    "workflows": 2,
+    "runs": 1,
+    "presets": 1
+  },
+  "ok": true
+}

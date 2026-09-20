@@ -1,0 +1,35 @@
+{
+  "passed": true,
+  "failures": [],
+  "selected": {
+    "family": "SenseNova",
+    "model": "deepseek-v4-flash",
+    "fixed": true
+  },
+  "comparisons": {
+    "single": {
+      "passed": true,
+      "falseCompletion": false,
+      "elapsedMs": 5759,
+      "totalTokens": 3832,
+      "elapsedVsSingle": 1,
+      "tokensVsSingle": 1
+    },
+    "discussion": {
+      "passed": true,
+      "falseCompletion": false,
+      "elapsedMs": 20103,
+      "totalTokens": 11393,
+      "elapsedVsSingle": 3.49,
+      "tokensVsSingle": 2.97
+    },
+    "review": {
+      "passed": true,
+      "falseCompletion": false,
+      "elapsedMs": 42651,
+      "totalTokens": 10860,
+      "elapsedVsSingle": 7.41,
+      "tokensVsSingle": 2.83
+    }
+  }
+}

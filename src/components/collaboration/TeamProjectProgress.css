@@ -1,0 +1,26 @@
+.team-project-progress{margin:28px 0 36px;max-width:1040px}
+.team-progress-heading h2{margin:0 0 8px;font-size:21px}
+.team-progress-heading>p{margin:0 0 18px;line-height:1.65;color:var(--fg-dim)}
+.team-stage-filters{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px}
+.team-stage-filters button{min-height:34px}
+.team-stage-filters button[aria-pressed=true]{background:var(--bg-hover);border-color:var(--accent);color:var(--fg)}
+.team-stage-filters span{font-variant-numeric:tabular-nums;margin-left:5px}
+.team-progress-list{list-style:none;padding:0;margin:0;border-top:1px solid var(--border)}
+.team-progress-list>li{display:flex;align-items:flex-start;justify-content:space-between;gap:22px;padding:22px 0;border-bottom:1px solid var(--border)}
+.team-progress-main{flex:1;min-width:0}
+.team-progress-task-heading{display:flex;align-items:baseline;flex-wrap:wrap;gap:8px 14px}
+.team-progress-title{font:inherit;font-weight:600;font-size:16px;border:0;padding:0;background:transparent;color:var(--fg);text-align:left;cursor:pointer;overflow-wrap:anywhere}
+.team-progress-title:hover{text-decoration:underline;text-underline-offset:3px}
+.team-progress-stage{font-size:12px;color:var(--fg-dim);white-space:nowrap}
+.team-progress-stage.attention,.team-progress-stage.decision{font-weight:600;color:var(--fg)}
+.team-progress-reason{margin:9px 0 0;font-size:14px;line-height:1.65;max-width:70ch}
+.team-progress-next{flex-shrink:0;max-width:230px;white-space:normal;text-align:center}
+.team-progress-origin{display:flex;gap:4px 10px;align-items:baseline;flex-wrap:wrap;margin-top:10px;font-size:12px;line-height:1.7;color:var(--fg-dim)}
+.team-progress-link{font:inherit;border:0;padding:0;background:transparent;color:var(--fg);cursor:pointer;text-align:left;text-decoration:underline;text-underline-offset:3px;overflow-wrap:anywhere;max-width:100%}
+.team-progress-link:hover{color:var(--accent)}
+.team-progress-evidence{margin-top:10px;font-size:12px;line-height:1.7;color:var(--fg-dim)}
+.team-progress-evidence summary{cursor:pointer;width:fit-content}
+.team-progress-evidence p{white-space:pre-wrap;overflow-wrap:anywhere;max-height:180px;overflow:auto;color:var(--fg)}
+.team-progress-evidence ul{padding-left:20px}
+.team-progress-empty{padding:20px 0;font-size:14px;line-height:1.8;color:var(--fg-dim)}
+@media(max-width:760px){.team-progress-list>li{flex-direction:column;gap:14px}.team-progress-next{max-width:100%}.team-stage-filters{gap:6px}.team-progress-heading h2{font-size:19px}}

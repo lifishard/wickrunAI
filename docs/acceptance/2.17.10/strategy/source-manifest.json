@@ -1,0 +1,10 @@
+{
+  "version": "2.17.9",
+  "sha256": {
+    "package.json": "ddb625415507cdc5d81126387d930dba254af891ac7b9ee260fb601d1d1662a6",
+    "src/lib/team-runtime.ts": "973d3895784ce6a612e667be576f6b687de306812d3bf3bca7cdc4741da65fa0",
+    "src/lib/agent.ts": "bb030ffa730c6c2461d4423d7215046312631998abbc0c170d4f2f0e4e8dfeb7",
+    "src/lib/collaboration.ts": "df9aeb3629bf36c4495c0186386e8df63825c286dade809196b427502b445a2a",
+    "tests/fixtures/team-strategy-case.cjs": "de487581739308af15a9ba151d9357e29a2fd90d97da1b7749c44fb36836e663"
+  }
+}

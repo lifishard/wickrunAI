@@ -5,7 +5,7 @@ import type { FailoverConfig } from './failover';
 
 export type NodeKind = 'start' | 'agent' | 'discussion' | 'condition' | 'parallel' | 'join' | 'review' | 'approval' | 'handoff' | 'end';
 /** skills：这位成员要带的技能名单。刻意由用户勾选，不按指令自动匹配 —— 自动塞技能等于替用户改了他没写的要求。 */
-export interface Member { id: string; name: string; instructions: string; connectionId: string; model: string; effort: string; enabled: boolean; tools: string[]; maxTokens: number; maxMinutes: number; skills?: string[]; failover?: FailoverConfig }
+export interface Member { id: string; name: string; instructions: string; connectionId: string; model: string; effort: string; enabled: boolean; tools: string[]; maxTokens: number; maxMinutes: number; skills?: string[]; failover?: FailoverConfig; fileScope?:TeamFileScope }
 export interface FlowNode { id: string; title: string; type: NodeKind; x: number; y: number; memberId?: string; participants?: string[]; instructions: string; inputRefs: string[]; outputRequirement: string; maxVisits: number; join: 'all' | 'any'; condition?: { source: string; contains: string }; ports?: { id: string; label: string }[] }
 export interface FlowEdge { id: string; from: string; to: string; port?: string; label: string; loop?: boolean; maxTraversals: number }
 export interface Graph { nodes: FlowNode[]; edges: FlowEdge[]; maxSteps: number; maxMinutes: number; maxTokens: number }
@@ -14,8 +14,10 @@ export interface Workflow { editorView?:'canvas'|'list'; id: string; name: strin
 export interface DiscussionEntry { id: string; at: number; author: string; kind: 'message'|'decision'|'instruction'|'handoff'; text: string; runId?: string }
 export interface TeamTask { id: string; title: string; goal: string; acceptance: string; workflowId?: string; ownerId?: string; status: string; entries: DiscussionEntry[]; createdAt: number; sourceConversationId?: string }
 /** Exploration is a separate deliverable; its suggested brief is never execution approval. */
-export interface TeamTask { intent?:'explore'|'deliver'; sourceTaskId?:string; sourceRunId?:string }
-export interface TeamRun { intent?:'explore'|'deliver' }
+export interface TeamFileScope { root:string; capability:'read'|'edit'|'command' }
+export interface TeamTask { intent?:'explore'|'deliver'; sourceTaskId?:string; sourceRunId?:string; sourceProposalId?:string; dependsOn?:string[]; fileScope?:TeamFileScope }
+export interface TeamDependencyInput { taskId:string; runId:string; title:string; goal:string; acceptance:string; outputs:{attemptId:string;nodeId:string;text:string}[] }
+export interface TeamRun { intent?:'explore'|'deliver'; dependencyTaskIds?:string[]; dependencyInputs?:TeamDependencyInput[]; fileScope?:TeamFileScope }
 export type TeamRunStatus = 'ready'|'running'|'pausing'|'paused'|'waiting_user'|'uncertain'|'failed'|'cancelled'|'completed';
 /**
  * routeLog：这次尝试里，每位成员实际用过哪几条路由，以及那一条是失败还是做完。
@@ -38,7 +40,7 @@ export interface MemoryEntry { id: string; title: string; text: string; applicab
 export interface TeamSchedule { id:string; name:string; workflowId:string; versionId:string; goal:string; acceptance:string; timezone:string; hour:number; minute:number; catchUp:boolean; overlap:'skip'|'queue'; enabled:boolean; nextAt:number; triggers:{key:string;at:number;runId?:string;reason?:string}[] }
 export interface FileChange { path:string; beforeHash:string|null; afterHash:string|null; status:string }
 export interface FileSession { recoveryRequired?:boolean; recoveryReason?:string; id:string; taskId:string; memberId:string; root:string; isolatedRoot:string; status:'isolated'|'pending'|'conflict'|'merged'; files:FileChange[]; createdAt:number }
-export interface TeamProject { drafts?:{member?:Member;task?:TeamTask;memory?:MemoryEntry;schedule?:TeamSchedule;message?:string}; id:string; members:Member[]; workflows:Workflow[]; tasks:TeamTask[]; runs:TeamRun[]; memories:MemoryEntry[]; schedules:TeamSchedule[]; files:FileSession[]; preferences:{mode:'single'|'team';page:string;workflowId?:string;taskId?:string;runId?:string;draft:string}; settings:{roots:string[];allowedConnections:string[];maxConcurrent:number;maxTokens:number;maxMinutes:number;approvalMode:'ask'|'auto'|'all'} }
+export interface TeamProject { drafts?:{member?:Member;task?:TeamTask;memory?:MemoryEntry;schedule?:TeamSchedule;message?:string;plan?:import('./team-discovery-plan').DiscoveryPlanDraft}; quickPresets?:import('./team-quick-start').QuickTeamPreset[]; id:string; members:Member[]; workflows:Workflow[]; tasks:TeamTask[]; runs:TeamRun[]; memories:MemoryEntry[]; schedules:TeamSchedule[]; files:FileSession[]; preferences:{mode:'single'|'team';page:string;workflowId?:string;taskId?:string;runId?:string;draft:string}; settings:{roots:string[];allowedConnections:string[];maxConcurrent:number;maxTokens:number;maxMinutes:number;approvalMode:'ask'|'auto'|'all'} }
 export interface CollaborationData { schemaVersion:1; revision:number; updatedAt:number; projects:Record<string,TeamProject> }
 export function emptyTeamProject(id:string):TeamProject { return {id,members:[],workflows:[],tasks:[],runs:[],memories:[],schedules:[],files:[],preferences:{mode:'single',page:'overview',draft:''},settings:{roots:[],allowedConnections:[],maxConcurrent:1,maxTokens:100000,maxMinutes:60,approvalMode:'ask'}}; }
 export function newNode(type:NodeKind,x=100,y=100):FlowNode { return {id:uid('node'),type,title:nodeLabels[type],x,y,instructions:'',inputRefs:[],outputRequirement:'',maxVisits:3,

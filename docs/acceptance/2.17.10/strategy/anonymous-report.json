@@ -1,0 +1,288 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-09-20T20:57:24.854Z",
+  "fixture": "latest-revision-v1",
+  "inputSha256": "af93c93e71f372e6a440840bc0f0d3b535bb43152d562cef02acd7e8a0feb1a2",
+  "engineSnapshot": {
+    "version": "2.17.9",
+    "sourceManifest": "source-manifest.json",
+    "note": "The isolated production-engine snapshot predates the main repository's 2.17.10 UI/answer-entry update; that later change does not alter the three strategy runtime paths exercised here."
+  },
+  "policy": {
+    "syntheticInputOnly": true,
+    "paidRoutesAllowed": false,
+    "automaticFailover": false,
+    "probeLimit": 4,
+    "sameModelRequired": true,
+    "workflowBudgetTokens": 60000,
+    "memberBudgetTokens": 20000
+  },
+  "usageInterpretation": "requestUsage contains provider-reported token counts; workflow and member token fields are ceilings, not bills; no monetary cost is inferred.",
+  "probes": [
+    {
+      "family": "SenseNova",
+      "model": "deepseek-v4-flash",
+      "fixed": true,
+      "configured": true,
+      "ok": true,
+      "httpStatus": 200,
+      "elapsedMs": 1827,
+      "usage": {
+        "input": 92,
+        "output": 8,
+        "total": 100
+      },
+      "hasContent": false,
+      "finishReason": "length",
+      "error": null
+    }
+  ],
+  "selected": {
+    "family": "SenseNova",
+    "model": "deepseek-v4-flash",
+    "fixed": true
+  },
+  "runs": [
+    {
+      "strategy": "single",
+      "label": "单助手",
+      "status": "waiting_user",
+      "elapsedMs": 5759,
+      "workflowBudgetTokens": 60000,
+      "memberBudgetTokens": 20000,
+      "runtimeAccountedTokens": 3832,
+      "requestUsage": {
+        "requests": 1,
+        "input": 3479,
+        "output": 353,
+        "total": 3832,
+        "missingUsageRequests": 0
+      },
+      "requestOutcomes": [
+        {
+          "purpose": "agent",
+          "httpStatus": 200,
+          "elapsedMs": 4437,
+          "usage": {
+            "input": 3479,
+            "output": 353,
+            "total": 3832
+          },
+          "finishReason": "stop",
+          "ok": true
+        }
+      ],
+      "programCheck": {
+        "passed": true,
+        "failures": []
+      },
+      "reportedComplete": true,
+      "falseCompletion": false,
+      "outputSha256": "14ae549f5961028e0ecba38e3ccc0c1ba46ad3bd6b2cf24e1b3157340a001e34",
+      "outputBytes": 57,
+      "attempts": [
+        {
+          "nodeType": "start",
+          "status": "completed",
+          "elapsedMs": 68,
+          "reviewVerdict": null,
+          "error": null
+        },
+        {
+          "nodeType": "agent",
+          "status": "completed",
+          "elapsedMs": 5186,
+          "reviewVerdict": null,
+          "error": null
+        },
+        {
+          "nodeType": "end",
+          "status": "waiting_user",
+          "elapsedMs": null,
+          "reviewVerdict": null,
+          "error": null
+        }
+      ]
+    },
+    {
+      "strategy": "discussion",
+      "label": "讨论后执行",
+      "status": "waiting_user",
+      "elapsedMs": 20103,
+      "workflowBudgetTokens": 60000,
+      "memberBudgetTokens": 20000,
+      "runtimeAccountedTokens": 11393,
+      "requestUsage": {
+        "requests": 3,
+        "input": 9789,
+        "output": 1604,
+        "total": 11393,
+        "missingUsageRequests": 0
+      },
+      "requestOutcomes": [
+        {
+          "purpose": "agent",
+          "httpStatus": 200,
+          "elapsedMs": 4599,
+          "usage": {
+            "input": 3059,
+            "output": 416,
+            "total": 3475
+          },
+          "finishReason": "stop",
+          "ok": true
+        },
+        {
+          "purpose": "agent",
+          "httpStatus": 200,
+          "elapsedMs": 8140,
+          "usage": {
+            "input": 3099,
+            "output": 775,
+            "total": 3874
+          },
+          "finishReason": "stop",
+          "ok": true
+        },
+        {
+          "purpose": "agent",
+          "httpStatus": 200,
+          "elapsedMs": 4934,
+          "usage": {
+            "input": 3631,
+            "output": 413,
+            "total": 4044
+          },
+          "finishReason": "stop",
+          "ok": true
+        }
+      ],
+      "programCheck": {
+        "passed": true,
+        "failures": []
+      },
+      "reportedComplete": true,
+      "falseCompletion": false,
+      "outputSha256": "14ae549f5961028e0ecba38e3ccc0c1ba46ad3bd6b2cf24e1b3157340a001e34",
+      "outputBytes": 57,
+      "attempts": [
+        {
+          "nodeType": "start",
+          "status": "completed",
+          "elapsedMs": 46,
+          "reviewVerdict": null,
+          "error": null
+        },
+        {
+          "nodeType": "discussion",
+          "status": "completed",
+          "elapsedMs": 13905,
+          "reviewVerdict": null,
+          "error": null
+        },
+        {
+          "nodeType": "agent",
+          "status": "completed",
+          "elapsedMs": 5617,
+          "reviewVerdict": null,
+          "error": null
+        },
+        {
+          "nodeType": "end",
+          "status": "waiting_user",
+          "elapsedMs": null,
+          "reviewVerdict": null,
+          "error": null
+        }
+      ]
+    },
+    {
+      "strategy": "review",
+      "label": "执行后复核",
+      "status": "waiting_user",
+      "reviewOutcome": "pass",
+      "elapsedMs": 42651,
+      "workflowBudgetTokens": 60000,
+      "memberBudgetTokens": 20000,
+      "runtimeAccountedTokens": 10860,
+      "requestUsage": {
+        "requests": 2,
+        "input": 6710,
+        "output": 4150,
+        "total": 10860,
+        "missingUsageRequests": 0
+      },
+      "requestOutcomes": [
+        {
+          "purpose": "agent",
+          "httpStatus": 200,
+          "elapsedMs": 7116,
+          "usage": {
+            "input": 3224,
+            "output": 611,
+            "total": 3835
+          },
+          "finishReason": "stop",
+          "ok": true
+        },
+        {
+          "purpose": "agent",
+          "httpStatus": 200,
+          "elapsedMs": 33115,
+          "usage": {
+            "input": 3486,
+            "output": 3539,
+            "total": 7025
+          },
+          "finishReason": "stop",
+          "ok": true
+        }
+      ],
+      "programCheck": {
+        "passed": true,
+        "failures": []
+      },
+      "reportedComplete": true,
+      "falseCompletion": false,
+      "outputSha256": "d586e71e761db1313467d3ebf037874f85b901e230eb845289601220c17cf7c1",
+      "outputBytes": 52,
+      "attempts": [
+        {
+          "nodeType": "start",
+          "status": "completed",
+          "elapsedMs": 72,
+          "reviewVerdict": null,
+          "error": null
+        },
+        {
+          "nodeType": "agent",
+          "status": "completed",
+          "elapsedMs": 7808,
+          "reviewVerdict": null,
+          "error": null
+        },
+        {
+          "nodeType": "review",
+          "status": "completed",
+          "elapsedMs": 34183,
+          "reviewVerdict": "pass",
+          "error": null
+        },
+        {
+          "nodeType": "end",
+          "status": "waiting_user",
+          "elapsedMs": null,
+          "reviewVerdict": null,
+          "error": null
+        }
+      ]
+    }
+  ],
+  "blocker": null,
+  "limitations": [
+    "One deterministic synthetic case per strategy; this is not a general quality ranking.",
+    "The production TeamRuntime and runAgent are used headlessly, while Electron IPC byte transport is replaced by an in-process fetch adapter.",
+    "Provider-reported usage can be missing; missing values are null and are never treated as zero.",
+    "Elapsed time is wall-clock time and includes local persistence plus provider latency."
+  ]
+}

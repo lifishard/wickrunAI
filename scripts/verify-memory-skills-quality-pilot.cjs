@@ -1,0 +1,21 @@
+'use strict';
+const fs = require('node:fs');
+const path = require('node:path');
+const file = path.resolve(process.argv[2] || path.join(__dirname, '..', 'artifacts', 'memory-skills-quality', 'anonymous-report.json'));
+const raw = fs.readFileSync(file, 'utf8');
+const report = JSON.parse(raw);
+const failures = [];
+const ids = ['no-context', 'adopted-memory-and-enabled-skill', 'current-user-correction-wins', 'revoked-expired-disabled-omitted'];
+if (report.engineSnapshot?.version !== '2.17.10') failures.push('engine_version');
+if (report.route?.model !== 'deepseek-v4-flash' || report.route?.automaticFailover !== false || report.route?.paidRoutesAllowed !== false) failures.push('route_policy');
+if (report.callLimit !== 4 || report.callsMade !== 4) failures.push('call_bound');
+if (report.results?.map(row => row.id).join(',') !== ids.join(',')) failures.push('case_set');
+if (report.results?.some(row => !row.check?.passed)) failures.push('objective_check');
+if (report.results?.[0]?.injection.selectedMemoryIds.length || report.results?.[0]?.injection.skillBlockBytes) failures.push('empty_baseline_injection');
+if (report.results?.[1]?.injection.selectedMemoryIds.join(',') !== 'launch-current@1' || !report.results?.[1]?.injection.skillReadOk) failures.push('enabled_injection');
+if (report.results?.[2]?.check.actual !== 'cobalt-732') failures.push('current_correction_priority');
+if (report.results?.[3]?.injection.selectedMemoryIds.length || report.results?.[3]?.injection.memoryBlockBytes || report.results?.[3]?.injection.skillBlockBytes || report.results?.[3]?.injection.skillReadOk) failures.push('revoked_expired_disabled_filter');
+if (/authorization|bearer|api[_-]?key|extraHeaders|secret|profileId/i.test(raw)) failures.push('sensitive_field');
+process.stdout.write(JSON.stringify({ passed: failures.length === 0, failures, summary: report.summary }, null, 2) + '\n');
+if (failures.length) process.exitCode = 1;
+

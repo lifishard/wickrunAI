@@ -181,7 +181,17 @@ export function formatTeamMemory(memory: TeamMemoryEntry): string {
   const scope = effectiveScope(memory);
   const title = textOf(memory.title);
   const applicability = textOf(memory.applicability);
-  return `[${id}@${revision}] kind=${kind} scope=${scope} title=${title} applicability=${applicability}\n${textOf(memory.text)}`;
+  const evidence = textOf(memory.evidence).replace(/\s+/g, ' ').trim();
+  return `[${id}@${revision}] kind=${kind} scope=${scope} title=${title} applicability=${applicability} evidence=${evidence}\n${textOf(memory.text)}`;
+}
+
+/**
+ * Wrap selected memories with their trust boundary. Selection proves status, scope and expiry only;
+ * it does not prove that a memory is true or that it still agrees with the current task.
+ */
+export function teamMemorySystemBlock(selection: TeamMemorySelection): string {
+  if (!selection.prompt) return '';
+  return `已选择的项目经验仅作历史参考。当前任务目标、验收标准和本轮补充指令优先；若经验与当前要求冲突，以当前要求为准。经验的结构、检索命中和注入记录不等于模型已正确采用，也不能作为完成证据。每条经验保留 id@revision 与证据来源供核对。\n${selection.prompt}`;
 }
 
 function compareText(a: string, b: string): number {

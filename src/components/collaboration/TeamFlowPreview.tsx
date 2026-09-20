@@ -31,6 +31,8 @@ export default function TeamFlowPreview({workflow,members,versionId,compact=fals
   <div className="team-flow-steps">{preview.nodes.map(node=><button type="button" className="btn sm" key={node.id} aria-pressed={node.id===selected} onClick={()=>setSelected(node.id===selected?undefined:node.id)}>{title(node)}</button>)}</div>
   {chosen&&<div className="team-flow-step-detail">
    <strong>{title(chosen)}</strong><p>{tr('负责人')}：{chosen.members.map(m=>m.missing?tr('成员已不存在'):m.name).join('、')||tr(['end','approval'].includes(chosen.type)?'你':'系统安排')}{chosen.hasMissingMember&&<span role="alert"> · {tr('需要配置成员')}</span>}</p>
+   {!!chosen.members.length&&<ul>{chosen.members.map(person=>{const member=members.find(m=>m.id===person.id);const tools=chosen.type==='review'?(chosen.reviewMode==='text'?[]:member?.tools?.filter(name=>['read_file','read_document','list_dir','list_directory','search_files'].includes(name))):member?.tools;return member?<li key={member.id}>{member.name} · {tr('模型')}：{member.model} · {tr(tools?.length?'本步骤启用 {n} 项工具能力':'未配置额外工具',{n:tools?.length??0})}</li>:null;})}</ul>}
+   {chosen.type==='review'&&chosen.reviewMode==='text'&&<p>{tr('本步骤只复核文本，不调用文件工具。')}</p>}
    {chosen.instructions&&<p>{tr('要做什么')}：{chosen.instructions}</p>}{chosen.outputs&&<p>{tr('你会得到')}：{chosen.outputs}</p>}
    {chosen.type==='parallel'&&<p>{tr('满足预算与并发限制时，各分支可分头进行。')}</p>}
    {chosen.type==='join'&&<p>{tr(chosen.join==='all'?'所有前置步骤到齐后继续。':'有前置结果到达即可继续。')}</p>}

@@ -52,3 +52,11 @@
 .team-runbar.approval,.team-runbar.verify,.team-runbar.accept{background:#b77d250f;border-color:#b77d2550}
 .team-runbar.approval strong,.team-runbar.verify strong,.team-runbar.accept strong{color:#9a6226}
 @media(max-width:760px){.team-runbar{gap:10px 18px}.team-runbar progress{width:120px}}
+
+.team-run-guidance { padding:18px; border:1px solid var(--border); border-radius:12px; margin:16px 0; background:var(--bg-elev); }
+.team-run-guidance h3 { margin-top:0; }
+.team-run-guidance pre { white-space:pre-wrap; overflow-wrap:anywhere; max-height:360px; overflow:auto; }
+.team-run-details { margin:16px 0; }
+.team-run-details>summary,.team-nav-advanced>summary { cursor:pointer; padding:10px 4px; }
+.team-nav-advanced { width:100%; }
+.team-nav-advanced>summary { font-size:13px; padding-left:18px; }

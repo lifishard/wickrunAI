@@ -19,8 +19,9 @@ export function teamInputs(run:TeamRun,node:FlowNode):NodeAttempt[] {
 export function teamTaskContract(run:TeamRun,node:FlowNode,memberId:string,inputs:NodeAttempt[],roots:string[]=[]) {
  return {version:1,taskId:run.taskId,runId:run.id,workflowVersion:run.version.id,nodeId:node.id,memberId,
   goal:run.goal,acceptance:run.acceptance,scope:node.instructions,deliverable:node.outputRequirement,
+  dependencyInputs:run.dependencyInputs??[],
   inputs:inputs.map(a=>({attemptId:a.id,nodeId:a.nodeId,visit:a.visit,outcome:a.outcome,artifacts:a.artifacts??[]})),
-  permission:{roots,readOnly:node.type==='review'},
+  permission:{roots,readOnly:node.type==='review'||run.fileScope?.capability==='read',capability:run.fileScope?.capability},
   limits:{memberTokens:run.members.find(m=>m.id===memberId)?.maxTokens,totalTokens:run.version.graph.maxTokens,maxVisits:node.maxVisits},
   stopConditions:['用户暂停或撤销','未知外部结果','预算或执行次数用尽'],
   completion:'返回产物、实际检查证据与未解决事项；执行结束不代表用户验收'};

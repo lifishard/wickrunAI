@@ -1,0 +1,40 @@
+{
+  "recordedAt": "2026-09-20T17:42:45.299Z",
+  "baseline": "74cab88",
+  "installedVersion": "2.17.5",
+  "sourceVersion": "2.17.6",
+  "hashes": {
+    "src/components/collaboration/TeamProjectProgress.tsx": "24c8ba24012e20f65a796ed6ba554f38a7c30768a7bf36d5a15d466219540067",
+    "src/components/collaboration/TeamProjectProgress.css": "5a03b23fdfe96a0d9557f8c051d669e687bfa09ee637a0e5d79e93e0fdde18aa",
+    "src/components/collaboration/TeamWorkspace.tsx": "a1eca2aa4e178e6f3e104c65d0ad83080c9099eb9ad88091dafa790acc015d45",
+    "src/lib/team-project-progress.ts": "a0334771fd518e9127423fc7fc9fc2f3b57e9fd3619e05260aad88ae46ec8c81",
+    "src/lib/i18n.ts": "0da874e0299c31b6833f7c97cc8d0843a721ee497e6c0cde8df9f04542873cb4",
+    "src/lib/version.ts": "ffa8dc7f1345b5eccb6b99a9aed313c5e568e5976907a64007034b19d40d1b77",
+    "tests/team-project-progress.test.cjs": "05f63363da4b472fc6199c8332ecb0f5ff8762ced47f0d7e24a1c4d2e69c47c3",
+    "tests/i18n-coverage.test.cjs": "faf5f53ef46ca61416787785bf3a10254b8b16939f4dc016bfccdaa9b62d8b45",
+    "dist/index.html": "a12c9ffdd3c9a6278c8ebcecb5cd5c888fa7c8092f3cf4612cbd307dabc8a66f"
+  },
+  "automatedTests": {
+    "passed": 702,
+    "failed": 0
+  },
+  "ui": {
+    "method": "Playwright Electron with isolated synthetic persisted records",
+    "tasks": 8,
+    "runs": 5,
+    "viewports": [
+      {
+        "width": 1280,
+        "height": 800
+      },
+      {
+        "width": 720,
+        "height": 800
+      }
+    ]
+  },
+  "realProviderTrial": "not run; native window control failed",
+  "noviceStudy": "not performed",
+  "packaged": false,
+  "published": false
+}

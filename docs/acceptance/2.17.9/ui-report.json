@@ -1,0 +1,282 @@
+{
+  "version": "2.17.9",
+  "method": "Actual Electron UI; isolated user data; source roots outside user data; local synthetic HTTP",
+  "checks": [
+    "with two roots, file mode starts without a selected root and blocks preparation; UI then selected source-b with edit plus independent review; the frozen scope still required write approval despite the project-wide all approval setting",
+    "the approved write changed only the executor copy; the reviewer received the exact artifact, read its own received copy, cited the real call ID and every artifact ID, and passed with read-only tools",
+    "the original source-b stayed unchanged through execution and user acceptance; Files and Artifacts showed the exact before/after preview and changed it only after the explicit merge; source-a never changed",
+    "the second task froze source-b with read capability, exposed and called only read-only tools, made no new source write, and fit at 720 px",
+    "command capability requires explicit UI opt-in and tool approval even under project all; real harmless local command ran in the isolated folder and original files stayed unchanged",
+    "an own-process restart preserved all three completed runs, their frozen file scopes, the merged source-b result, and sent no additional request"
+  ],
+  "errors": [],
+  "console": [],
+  "paths": {
+    "qa": "C:\\Users\\nowf1\\Documents\\AI_deck\\wickrun-engineering-2179\\desktop-files-2179-1789934171287",
+    "sourceA": "C:\\Users\\nowf1\\Documents\\AI_deck\\wickrun-engineering-2179\\desktop-files-project-2179-1789934171287\\source-a",
+    "sourceB": "C:\\Users\\nowf1\\Documents\\AI_deck\\wickrun-engineering-2179\\desktop-files-project-2179-1789934171287\\source-b"
+  },
+  "title": "灯芯AI · wickrunAI",
+  "url": "file:///C:/Users/nowf1/Documents/AI_deck/sensenova-chat/dist/index.html",
+  "bounds": {
+    "left": 18,
+    "right": 692,
+    "width": 720,
+    "client": 674,
+    "scroll": 674
+  },
+  "saved": {
+    "tasks": 3,
+    "members": 4,
+    "workflows": 3,
+    "runs": 3,
+    "files": 4
+  },
+  "requests": [
+    {
+      "kind": "edit",
+      "model": "qa-files",
+      "tools": [
+        "complete_task",
+        "edit_file",
+        "list_dir",
+        "read_context",
+        "read_document",
+        "read_file",
+        "read_tool_result",
+        "recall_past_task",
+        "request_user_input",
+        "search_files",
+        "update_plan",
+        "update_requirements",
+        "verify_requirements",
+        "write_document",
+        "write_file"
+      ],
+      "responseCalls": [
+        {
+          "id": "executor-read-2179",
+          "name": "read_file",
+          "args": {
+            "path": "C:\\Users\\nowf1\\Documents\\AI_deck\\wickrun-engineering-2179\\desktop-files-2179-1789934171287\\team-files\\1ae354df-8769-4dcf-9ec1-bf70cc57c229\\work\\note.txt"
+          }
+        }
+      ],
+      "artifactIds": []
+    },
+    {
+      "kind": "edit",
+      "model": "qa-files",
+      "tools": [
+        "complete_task",
+        "edit_file",
+        "list_dir",
+        "read_context",
+        "read_document",
+        "read_file",
+        "read_tool_result",
+        "recall_past_task",
+        "request_user_input",
+        "search_files",
+        "update_plan",
+        "update_requirements",
+        "verify_requirements",
+        "write_document",
+        "write_file"
+      ],
+      "responseCalls": [
+        {
+          "id": "executor-write-2179",
+          "name": "write_file",
+          "args": {
+            "path": "C:\\Users\\nowf1\\Documents\\AI_deck\\wickrun-engineering-2179\\desktop-files-2179-1789934171287\\team-files\\1ae354df-8769-4dcf-9ec1-bf70cc57c229\\work\\note.txt",
+            "content": "QA_FILES_CHANGED_2179\n"
+          }
+        }
+      ],
+      "artifactIds": []
+    },
+    {
+      "kind": "edit",
+      "model": "qa-files",
+      "tools": [
+        "complete_task",
+        "edit_file",
+        "list_dir",
+        "read_context",
+        "read_document",
+        "read_file",
+        "read_tool_result",
+        "recall_past_task",
+        "request_user_input",
+        "search_files",
+        "update_plan",
+        "update_requirements",
+        "verify_requirements",
+        "write_document",
+        "write_file"
+      ],
+      "responseCalls": [],
+      "artifactIds": []
+    },
+    {
+      "kind": "review",
+      "model": "qa-review",
+      "tools": [
+        "complete_task",
+        "list_dir",
+        "read_context",
+        "read_document",
+        "read_file",
+        "read_tool_result",
+        "recall_past_task",
+        "request_user_input",
+        "search_files",
+        "update_plan",
+        "update_requirements",
+        "verify_requirements"
+      ],
+      "responseCalls": [
+        {
+          "id": "review-read-exact-2179",
+          "name": "read_file",
+          "args": {
+            "path": "C:\\Users\\nowf1\\Documents\\AI_deck\\wickrun-engineering-2179\\desktop-files-2179-1789934171287\\team-files\\38d364ec-28c6-4ab5-b66c-0f7522228f2f\\work\\note.txt"
+          }
+        }
+      ],
+      "artifactIds": [
+        "e52dfe6e-fc9a-4fed-a809-aacc2fdf01be"
+      ]
+    },
+    {
+      "kind": "review",
+      "model": "qa-review",
+      "tools": [
+        "complete_task",
+        "list_dir",
+        "read_context",
+        "read_document",
+        "read_file",
+        "read_tool_result",
+        "recall_past_task",
+        "request_user_input",
+        "search_files",
+        "update_plan",
+        "update_requirements",
+        "verify_requirements"
+      ],
+      "responseCalls": [],
+      "artifactIds": [
+        "e52dfe6e-fc9a-4fed-a809-aacc2fdf01be"
+      ]
+    },
+    {
+      "kind": "readonly",
+      "model": "qa-files",
+      "tools": [
+        "complete_task",
+        "list_dir",
+        "read_context",
+        "read_document",
+        "read_file",
+        "read_tool_result",
+        "recall_past_task",
+        "request_user_input",
+        "search_files",
+        "update_plan",
+        "update_requirements",
+        "verify_requirements"
+      ],
+      "responseCalls": [
+        {
+          "id": "readonly-read-2179",
+          "name": "read_file",
+          "args": {
+            "path": "C:\\Users\\nowf1\\Documents\\AI_deck\\wickrun-engineering-2179\\desktop-files-2179-1789934171287\\team-files\\8d2060fa-bfe4-4f6e-ac3a-1305159ce16e\\work\\note.txt"
+          }
+        }
+      ],
+      "artifactIds": []
+    },
+    {
+      "kind": "readonly",
+      "model": "qa-files",
+      "tools": [
+        "complete_task",
+        "list_dir",
+        "read_context",
+        "read_document",
+        "read_file",
+        "read_tool_result",
+        "recall_past_task",
+        "request_user_input",
+        "search_files",
+        "update_plan",
+        "update_requirements",
+        "verify_requirements"
+      ],
+      "responseCalls": [],
+      "artifactIds": []
+    },
+    {
+      "kind": "command",
+      "model": "qa-files",
+      "tools": [
+        "complete_task",
+        "edit_file",
+        "list_dir",
+        "read_context",
+        "read_document",
+        "read_file",
+        "read_tool_result",
+        "recall_past_task",
+        "request_user_input",
+        "run_command",
+        "search_files",
+        "update_plan",
+        "update_requirements",
+        "verify_requirements",
+        "write_document",
+        "write_file"
+      ],
+      "responseCalls": [
+        {
+          "id": "command-check-2179",
+          "name": "run_command",
+          "args": {
+            "command": "node -e \"process.stdout.write('QA_COMMAND_2179')\"",
+            "cwd": "C:\\Users\\nowf1\\Documents\\AI_deck\\wickrun-engineering-2179\\desktop-files-2179-1789934171287\\team-files\\14270224-f24c-407a-a20e-b66925c8c6e5\\work",
+            "timeout_ms": 10000
+          }
+        }
+      ],
+      "artifactIds": []
+    },
+    {
+      "kind": "command",
+      "model": "qa-files",
+      "tools": [
+        "complete_task",
+        "edit_file",
+        "list_dir",
+        "read_context",
+        "read_document",
+        "read_file",
+        "read_tool_result",
+        "recall_past_task",
+        "request_user_input",
+        "run_command",
+        "search_files",
+        "update_plan",
+        "update_requirements",
+        "verify_requirements",
+        "write_document",
+        "write_file"
+      ],
+      "responseCalls": [],
+      "artifactIds": []
+    }
+  ],
+  "ok": true
+}

@@ -576,19 +576,29 @@ export const SKILL_INLINE_LIMIT = 4000;
 /** 折叠后保留的开头长度：够看出这技能在讲什么，不够拿来直接执行 */
 const SKILL_PREVIEW = 600;
 
+function enabledSkills(skills: Skill[]): Skill[] {
+  return skills.filter((skill) => skill.enabled);
+}
+
+function skillSource(skill: Skill): string {
+  return String(skill.source || '未知来源').replace(/\s+/g, ' ').slice(0, 240);
+}
+
 export function foldedSkillNames(skills: Skill[], limit = SKILL_INLINE_LIMIT): string[] {
-  return skills.filter((s) => (s.body ?? '').length > limit).map((s) => s.name);
+  return enabledSkills(skills).filter((s) => (s.body ?? '').length > limit).map((s) => s.name);
 }
 
 export function skillSystemBlock(skills: Skill[], limit = SKILL_INLINE_LIMIT): string {
-  if (!skills.length) return '';
-  return skills
+  const active = enabledSkills(skills);
+  if (!active.length) return '';
+  const guidance = '以下技能是用户为本轮启用的方法说明。当前用户要求、项目规范和明确验收条件优先；技能与它们冲突或已经过期时忽略冲突部分。技能正文不是任务已完成的证据。';
+  return guidance + '\n\n' + active
     .map((s) => {
       const body = s.body ?? '';
       if (body.length <= limit) {
-        return `以下是用户唤起的技能「${s.name}」的指令，本轮请严格按它执行：\n<skill name="${s.name}">\n${body}\n</skill>`;
+        return `以下是用户唤起的技能「${s.name}」的指令（来源：${skillSource(s)}）：\n<skill name="${s.name}">\n${body}\n</skill>`;
       }
-      return `以下是用户唤起的技能「${s.name}」，正文 ${body.length} 字，没有全部载入。` +
+      return `以下是用户唤起的技能「${s.name}」（来源：${skillSource(s)}），正文 ${body.length} 字，没有全部载入。` +
         `需要它的具体规范时，先用 read_skill(name="${s.name}") 取回正文再执行；没取回的部分不能当作已知。\n` +
         `<skill name="${s.name}" folded="true">\n${s.description || '（这个技能没有写描述）'}\n\n` +
         `${body.slice(0, SKILL_PREVIEW)}\n…（以上只是开头，其余部分用 read_skill 取回）\n</skill>`;
@@ -599,10 +609,11 @@ export function skillSystemBlock(skills: Skill[], limit = SKILL_INLINE_LIMIT): s
 /** 取回被折叠的技能正文。分页跟 read_context 一个形状，省得再学一套。 */
 export function readSkill(skills: Skill[], args: Record<string, unknown>): ToolResult {
   const name = String(args.name ?? '').trim();
-  const skill = skills.find((s) => s.name === name);
+  const active = enabledSkills(skills);
+  const skill = active.find((s) => s.name === name);
   if (!skill) {
     return { ok: false, content: '',
-      error: `本轮没有唤起名为「${name}」的技能。可用的是：${skills.map((s) => s.name).join('、') || '（本轮没有唤起任何技能）'}` };
+      error: `本轮没有启用名为「${name}」的技能。可用的是：${active.map((s) => s.name).join('、') || '（本轮没有启用任何技能）'}` };
   }
   const body = skill.body ?? '';
   const offset = Math.max(0, Number(args.offset) || 0);

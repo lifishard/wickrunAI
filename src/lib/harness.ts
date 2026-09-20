@@ -7,7 +7,7 @@ export interface HarnessCheckpoint {
   context?:{inputMessages:number;visibleMessages:number;foldedMessages:number};
 }
 const MANAGEMENT=new Set(['update_plan','update_requirements','verify_requirements','complete_task','request_user_input','read_context','read_tool_result','read_skill','recall_past_task','spawn_subagent','list_subagents','wait_subagents']);
-const ACTION=/(?:修复|修好|修改|编辑|替换|重命名|部署|发布|实现|重构|安装|提交|推送|执行|运行|测试|导出|制作|生成.{0,15}(?:文件|文档|报告|表格)|创建.{0,15}(?:文件|应用|网站)|\b(?:fix|implement|refactor|edit|install|commit|push|execute|run tests|build|export)\b)/i;
+const ACTION=/(?:读取|阅读文件|搜索文件|修复|修好|修改|编辑|替换|重命名|部署|发布|实现|重构|安装|提交|推送|执行|运行|测试|导出|制作|生成.{0,15}(?:文件|文档|报告|表格)|创建.{0,15}(?:文件|应用|网站)|\b(?:read files?|fix|implement|refactor|edit|install|commit|push|execute|run tests|build|export)\b)/i;
 const EXPLAIN=/^(?:请)?(?:解释|介绍|说明|什么是|如何|怎么|为什么|分析一下|帮我理解)|^(?:what|why|how|explain|describe)\b/i;
 const CONTINUE=/^(?:请|please\s*)?(?:继续|接着|continue|resume|go on)[\s。.!！]*$/i;
 const MUTATION=new Set(['write_document','write_file','edit_file','run_command','claude_code','project_memory_write','project_doc_write','skill_write','computer_click','computer_type','computer_key','chrome_click','chrome_eval']);
@@ -18,12 +18,17 @@ const TEST_COMMAND=/(?:^|[\s;&|])(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?test\b|\b(?:
 const QA_SCRIPT=/(?:^|[\s;&|])(?:node|python(?:3)?|pwsh|powershell|bash|sh)?\s*["']?[^\s"']*(?:test|spec|e2e|qa|check)[^\s"']*\.(?:js|cjs|mjs|ts|py|ps1|sh|bat)(?:["']?(?:\s|$))/i;
 const PUSH_COMMAND=/(?:^|[\s;&|])git\s+push(?:\s|$)/i;
 export function harnessMode(cfg:GenerationConfig){return cfg.runtime?.harness==='off'?'off':'guided';}
-export function taskSeed(history:ChatMessage[],cfg:GenerationConfig,old?:HarnessCheckpoint):HarnessCheckpoint {
+/** A negative boundary must not cancel a positive action in another clause. */
+function positiveTaskText(goal:string):string {
+  return goal.replace(/(?:不要|不得|无需|不必|禁止|请勿|不需要|\bdo not\b|\bdon't\b|\bno need to\b|\bwithout\b)[^，,。；\n;.!?]*?(?=[，,。；\n;.!?]|但是|但|改为|而是|\bbut\b|\binstead\b|$)/gi,'');
+}
+export function taskSeed(history:ChatMessage[],cfg:GenerationConfig,old?:HarnessCheckpoint,taskGoal?:string):HarnessCheckpoint {
   if(old)return {...structuredClone(old),mode:harnessMode(cfg)};
   const users=history.filter(m=>m.role==='user'&&!m.contextKind);
   const last=users.at(-1);const source=last&&CONTINUE.test(last.content.trim())?[...users].reverse().find(m=>!CONTINUE.test(m.content.trim()))??last:last;
-  const goal=source?.content.trim() || '';
-  const actionable=goal.replace(/(?:不要|无需|不必|禁止|请勿|不需要|\bdo not\b|\bdon't\b|\bno need to\b)[^，。；\n;.!?]*?(?=[，。；\n;.!?]|但是|但|改为|而是|\bbut\b|\binstead\b|$)/gi,'');
+  // An orchestrator can supply its actual task goal separately from transport instructions.
+  const goal=taskGoal??source?.content.trim()??'';
+  const actionable=positiveTaskText(goal);
   return {mode:harnessMode(cfg),goal:goal.slice(0,24000),sourceId:source?.id || '',action:cfg.toolsEnabled&&ACTION.test(actionable)&&!onlyExplains(actionable),stage:'understand',continuations:0};
 }
 /**
@@ -109,12 +114,8 @@ export function taskKind(goal:string):TaskKind {
  * 两边共用同一套目标解析，各用各的证据，才不会一边判得严一边判不到。
  */
 export function goalDemands(goal:string):{modify:boolean;test:boolean;push:boolean} {
-  const negative="(?:不要|无需|不必|禁止|请勿|不需要|do not|don't|no need to|without)";
-  return {
-    modify:MODIFY.test(goal)&&!new RegExp(negative+'.{0,12}(?:修改|编辑|改动|创建|制作|生成|安装|删除|清理|fix|edit|change|create|build|install|delete|remove)','i').test(goal),
-    test:TEST.test(goal)&&!new RegExp(negative+'.{0,12}(?:测试|验证|test|verify)','i').test(goal),
-    push:PUSH.test(goal)&&!new RegExp(negative+'.{0,12}(?:推送|git\\s+push|push)','i').test(goal),
-  };
+  const positive=positiveTaskText(goal);
+  return {modify:MODIFY.test(positive),test:TEST.test(positive),push:PUSH.test(positive)};
 }
 
 /**

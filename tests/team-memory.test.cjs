@@ -31,7 +31,7 @@ test('legacy adopted entries keep project-wide behavior while non-adopted entrie
   assert.deepEqual(result.snapshots.map((item) => item.id), ['a-legacy', 'c-adopted']);
   assert.equal(Object.prototype.hasOwnProperty.call(result.snapshots[0], 'scope'), false);
   assert.match(result.prompt, /\[a-legacy@2\] kind=experience scope=project/);
-  assert.match(result.prompt, /title=Default memory applicability=This project/);
+  assert.match(result.prompt, /title=Default memory applicability=This project evidence=reviewed/);
   assert.ok(result.audit.every((item) => item.id && Number.isInteger(item.revision) && item.reason));
   assert.equal(result.audit.find((item) => item.id === 'b-candidate').reason, 'omitted: status is not adopted');
 });
@@ -121,4 +121,37 @@ test('selection is pure, snapshots are detached, and audit stays bounded to meta
   assert.deepEqual(second, baseline);
   assert.ok(JSON.stringify(second.audit).length < 1000);
   assert.doesNotMatch(JSON.stringify(second.audit), /A-|B-/);
+});
+
+test('system block preserves source identity and makes current requirements authoritative', () => {
+  const selection = memory.selectTeamMemories([
+    entry({ id: 'rule', revision: 7, evidence: 'manual check 42', text: 'Always use the retired endpoint.' }),
+  ], { goal: 'Use the current endpoint', acceptance: 'Current endpoint is verified' }, { now: 1000 });
+  const block = memory.teamMemorySystemBlock(selection);
+  assert.match(block, /当前任务目标、验收标准和本轮补充指令优先/);
+  assert.match(block, /不等于模型已正确采用/);
+  assert.match(block, /\[rule@7\]/);
+  assert.match(block, /evidence=manual check 42/);
+});
+
+test('frozen run memory stays detached while revocation affects later runs and projects stay isolated', () => {
+  const projectA = [
+    entry({ id: 'a-live', revision: 3, scope: 'task', keywords: ['release'], text: 'A only' }),
+    entry({ id: 'a-expired', expiresAt: 900, text: 'expired A' }),
+  ];
+  const projectB = [entry({ id: 'b-private', text: 'B only' })];
+  const frozen = structuredClone(projectA.filter(item => item.status === 'adopted'));
+  projectA[0].status = 'invalid';
+  projectA[0].text = 'revoked replacement';
+
+  const existingRun = memory.selectTeamMemories(frozen, { goal: 'release', acceptance: '' }, { now: 1000 });
+  assert.deepEqual(existingRun.snapshots.map(item => item.id), ['a-live']);
+  assert.match(existingRun.prompt, /A only/);
+  assert.doesNotMatch(existingRun.prompt, /B only|expired A|revoked replacement/);
+
+  const laterRun = memory.selectTeamMemories(projectA, { goal: 'release', acceptance: '' }, { now: 1000 });
+  assert.deepEqual(laterRun.snapshots, []);
+  assert.match(laterRun.audit.find(item => item.id === 'a-live').reason, /status is not adopted/);
+  assert.match(laterRun.audit.find(item => item.id === 'a-expired').reason, /expired/);
+  assert.equal(memory.selectTeamMemories(projectB, { goal: '', acceptance: '' }, { now: 1000 }).snapshots[0].id, 'b-private');
 });

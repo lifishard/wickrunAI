@@ -1,0 +1,196 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-09-20T21:10:21.687Z",
+  "engineSnapshot": {
+    "version": "2.17.10",
+    "sourceSha256": {
+      "package.json": "95025bb47bb32c22af4eb9887646f1721befc34970ed2ef9d3d72daf3d51d7a1",
+      "src/lib/team-memory.ts": "74a292cdfb8f9bbec47c18b8a9456e7292719e278a731ed271cb6bc976ac5d76",
+      "src/lib/skills.ts": "afe285aba89836ce237b3f4ec7f496d13a7a2230a8e1b9e4da9df64a1acead64",
+      "src/lib/api.ts": "cb8570104a18bf2b903563b0e69689431799607dfb8faff90d0b0817a440ca12"
+    }
+  },
+  "route": {
+    "family": "SenseNova",
+    "model": "deepseek-v4-flash",
+    "fixed": true,
+    "automaticFailover": false,
+    "paidRoutesAllowed": false
+  },
+  "callLimit": 4,
+  "callsMade": 4,
+  "maxOutputTokensPerCall": 2000,
+  "syntheticInputOnly": true,
+  "results": [
+    {
+      "id": "no-context",
+      "expected": "unknown",
+      "provider": {
+        "ok": true,
+        "httpStatus": 200,
+        "elapsedMs": 2417,
+        "usage": {
+          "input": 144,
+          "output": 48,
+          "total": 192
+        },
+        "finishReason": "stop",
+        "error": null
+      },
+      "check": {
+        "passed": true,
+        "failures": [],
+        "actual": "unknown"
+      },
+      "injection": {
+        "selectedMemoryIds": [],
+        "memoryAudit": [],
+        "memoryBlockBytes": 0,
+        "memoryBlockSha256": null,
+        "skillBlockBytes": 0,
+        "skillBlockSha256": null,
+        "skillReadOk": false
+      },
+      "responseSha256": "13f2ba54b67a7d6a17e61ddb87afb101b917df7d99e2c56728910e82690a412c",
+      "responseBytes": 20
+    },
+    {
+      "id": "adopted-memory-and-enabled-skill",
+      "expected": "zephyr-417",
+      "provider": {
+        "ok": true,
+        "httpStatus": 200,
+        "elapsedMs": 1750,
+        "usage": {
+          "input": 367,
+          "output": 31,
+          "total": 398
+        },
+        "finishReason": "stop",
+        "error": null
+      },
+      "check": {
+        "passed": true,
+        "failures": [],
+        "actual": "zephyr-417"
+      },
+      "injection": {
+        "selectedMemoryIds": [
+          "launch-current@1"
+        ],
+        "memoryAudit": [
+          {
+            "id": "launch-current",
+            "revision": 1,
+            "reason": "selected: matching task keyword"
+          }
+        ],
+        "memoryBlockBytes": 528,
+        "memoryBlockSha256": "8a0574b92140dafff6339fe7d311ca35b1bd10441f6534f150bc42201b074031",
+        "skillBlockBytes": 534,
+        "skillBlockSha256": "4faae3aa38289fa2290050e6b8697c3031d2097b1986ad02d36901a48e87982b",
+        "skillReadOk": true
+      },
+      "responseSha256": "62bc068d1884c749467bae088c89b0e2c83ed583b0d6250f1ea656b55a2058ad",
+      "responseBytes": 23
+    },
+    {
+      "id": "current-user-correction-wins",
+      "expected": "cobalt-732",
+      "provider": {
+        "ok": true,
+        "httpStatus": 200,
+        "elapsedMs": 1578,
+        "usage": {
+          "input": 369,
+          "output": 51,
+          "total": 420
+        },
+        "finishReason": "stop",
+        "error": null
+      },
+      "check": {
+        "passed": true,
+        "failures": [],
+        "actual": "cobalt-732"
+      },
+      "injection": {
+        "selectedMemoryIds": [
+          "launch-old@1"
+        ],
+        "memoryAudit": [
+          {
+            "id": "launch-old",
+            "revision": 1,
+            "reason": "selected: matching task keyword"
+          }
+        ],
+        "memoryBlockBytes": 523,
+        "memoryBlockSha256": "3c43c3a5bda5c577ea47554de0c39382726b5b33d5ff4bda8439aee37e1df5a9",
+        "skillBlockBytes": 534,
+        "skillBlockSha256": "4faae3aa38289fa2290050e6b8697c3031d2097b1986ad02d36901a48e87982b",
+        "skillReadOk": true
+      },
+      "responseSha256": "8f9abe0bf2d2e89067587dcd065baa6d3aff5f57a70257f264b984a281463467",
+      "responseBytes": 23
+    },
+    {
+      "id": "revoked-expired-disabled-omitted",
+      "expected": "unknown",
+      "provider": {
+        "ok": true,
+        "httpStatus": 200,
+        "elapsedMs": 2069,
+        "usage": {
+          "input": 144,
+          "output": 53,
+          "total": 197
+        },
+        "finishReason": "stop",
+        "error": null
+      },
+      "check": {
+        "passed": true,
+        "failures": [],
+        "actual": "unknown"
+      },
+      "injection": {
+        "selectedMemoryIds": [],
+        "memoryAudit": [
+          {
+            "id": "launch-expired",
+            "revision": 1,
+            "reason": "omitted: expired at or before selection time"
+          },
+          {
+            "id": "launch-revoked",
+            "revision": 1,
+            "reason": "omitted: status is not adopted"
+          }
+        ],
+        "memoryBlockBytes": 0,
+        "memoryBlockSha256": null,
+        "skillBlockBytes": 0,
+        "skillBlockSha256": null,
+        "skillReadOk": false
+      },
+      "responseSha256": "23ebeca8ff18379f9ef49683408617318944704741e585be408cb386270c652c",
+      "responseBytes": 21
+    }
+  ],
+  "summary": {
+    "passed": true,
+    "passedCases": 4,
+    "falseKnowledgeCases": 0,
+    "providerReportedUsage": {
+      "input": 1024,
+      "output": 183,
+      "total": 1207
+    }
+  },
+  "limitations": [
+    "Four single-turn synthetic cases test prompt injection behavior, not the complete agent or team lifecycle.",
+    "The pilot does not establish general model quality, long-horizon memory quality, retrieval recall, or skill tool execution quality.",
+    "Provider token counts are usage telemetry, not a monetary bill."
+  ]
+}

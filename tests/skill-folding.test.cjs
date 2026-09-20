@@ -4,7 +4,7 @@ const assert=require('node:assert/strict');
 const path=require('node:path');
 const {loader}=require('./load-ts.cjs');
 const file=p=>path.resolve(__dirname,'..',p);
-const s=loader()(file('src/lib/skills.ts'));
+const s=loader({'./transport':{getTransport(){throw Error('not used');}},'./store':{uid:()=> 'fixture-id'},'./i18n':{tr:text=>text}})(file('src/lib/skills.ts'));
 
 const skill=(name,len,description='把交付写成清单')=>({id:name,name,description,
   body:`# ${name}\n开头这段说明这个技能是干什么的。\n`+'规范正文。'.repeat(Math.max(0,Math.ceil(len/5))),
@@ -64,6 +64,22 @@ test('多个技能时折叠只影响超限的那个',()=>{
   assert.ok(block.includes(short.body),'短的仍然整份在');
   assert.ok(!block.includes(long.body));
   assert.deepEqual(s.foldedSkillNames([short,long]),['stop-slop']);
+});
+
+test('停用技能不注入也不能按本轮技能读取',()=>{
+  const disabled={...short,enabled:false};
+  assert.equal(s.skillSystemBlock([disabled]),'');
+  assert.deepEqual(s.foldedSkillNames([{...long,enabled:false}]),[]);
+  const read=s.readSkill([disabled],{name:disabled.name});
+  assert.equal(read.ok,false);assert.match(read.error,/没有启用/);
+});
+
+test('技能块标明来源，并声明当前要求和验收优先',()=>{
+  const sourced={...short,source:'github:owner/repo/skills/tiny'};
+  const block=s.skillSystemBlock([sourced]);
+  assert.match(block,/来源：github:owner\/repo\/skills\/tiny/);
+  assert.match(block,/当前用户要求、项目规范和明确验收条件优先/);
+  assert.match(block,/不是任务已完成的证据/);
 });
 
 /* ---- 压缩后重新读回正在改的文件（2.5.1） ---- */

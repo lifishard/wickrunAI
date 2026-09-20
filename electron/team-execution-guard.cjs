@@ -1,5 +1,6 @@
 'use strict';
 const path = require('node:path');
+const { teamFileTools, validateTeamFileScope, validateTeamFileSnapshot } = require('./team-file-scope.cjs');
 const WORK = new Set(['agent','discussion','review','handoff']);
 /*
  * 交付闸门自己要用的两件只读工具，不受成员工具白名单限制。
@@ -13,13 +14,15 @@ const WORK = new Set(['agent','discussion','review','handoff']);
  * 已经存下来的结果。工作目录仍然受隔离区约束，没有放宽任何范围。
  */
 const HARNESS_TOOLS = new Set(['inspect_deliverable','read_tool_result']);
-const REVIEW_TOOLS = new Set(['read_file','read_document','list_directory','search_files','inspect_deliverable','read_tool_result']);
+const REVIEW_TOOLS = new Set(['read_file','read_document','list_dir','list_directory','search_files','inspect_deliverable','read_tool_result']);
 function createTeamExecutionGuard({ collaboration, teamFiles }) {
   const normalized = value => process.platform === 'win32' ? path.resolve(value).toLowerCase() : path.resolve(value);
   function identity(projectId, runId, memberId, attemptId) {
     if ([projectId,runId,memberId].some(v => typeof v !== 'string' || !v)) throw Error('协作执行身份无效');
     const project = collaboration.read().projects[projectId], run = project?.runs.find(r => r.id === runId), member = run?.members.find(m => m.id === memberId);
     if (!run || run.status !== 'running' || !member?.enabled || !Array.isArray(run.projectSettings?.allowedConnections) || (run.projectSettings.allowedConnections.length && !run.projectSettings.allowedConnections.includes(member.connectionId))) throw Error('协作执行已停止或接入尚未授权');
+    validateTeamFileScope(run.fileScope,run.projectSettings.roots);
+    validateTeamFileSnapshot(run.fileScope,run.intent,run.version?.graph,run.members);
     const owns = attempt => {
       const node = run.version?.graph?.nodes?.find(n => n.id === attempt.nodeId);
       return attempt.status === 'running' && WORK.has(node?.type) && (node.type === 'discussion' ? node.participants?.includes(memberId) : node.memberId === memberId);
@@ -31,7 +34,8 @@ function createTeamExecutionGuard({ collaboration, teamFiles }) {
   }
   function authorizedFile(id, current) {
     const { project, run, member } = current, session = teamFiles.get(id);
-    if (!project.files.some(f => f.id === id) || session.projectId !== project.id || session.taskId !== run.id || session.memberId !== member.id || !['isolated','pending'].includes(session.status) || session.recoveryRequired || !path.isAbsolute(session.root || '') || !path.isAbsolute(session.isolatedRoot || '') || !run.projectSettings.roots.some(root => normalized(root) === normalized(session.root))) throw Error('文件隔离范围未获授权或需要恢复核实');
+    const roots=run.fileScope?[run.fileScope.root]:run.projectSettings.roots;
+    if (!project.files.some(f => f.id === id) || session.projectId !== project.id || session.taskId !== run.id || session.memberId !== member.id || !['isolated','pending'].includes(session.status) || session.recoveryRequired || !path.isAbsolute(session.root || '') || !path.isAbsolute(session.isolatedRoot || '') || !roots.some(root => normalized(root) === normalized(session.root))) throw Error('文件隔离范围未获授权或需要恢复核实');
     return session;
   }
   function tool(name, ctx) {
@@ -40,6 +44,7 @@ function createTeamExecutionGuard({ collaboration, teamFiles }) {
     const current = identity(scope.projectId, scope.runId, scope.memberId, scope.attemptId), { run, member } = current;
     const node=run.version.graph.nodes.find(n=>n.id===current.attempt.nodeId);
     if(node.type==='review'&&!REVIEW_TOOLS.has(name))throw Error('质检步骤只允许读取和检查产物；修改请交回执行成员');
+    if(run.fileScope&&!HARNESS_TOOLS.has(name)&&!new Set(teamFileTools(run.fileScope.capability,node.type==='review')).has(name))throw Error('工具超出本次任务选择的文件权限');
     if (!Array.isArray(member.tools) || (!member.tools.includes(name) && !(HARNESS_TOOLS.has(name) && member.tools.length))) throw Error('工具不在当前成员授权范围');
     const amount = run.reservations?.[scope.attemptId + ':' + scope.memberId], reserved = Object.values(run.reservations || {}).reduce((sum,n) => sum + n,0);
     if (!Number.isFinite(amount) || amount <= 0 || amount > member.maxTokens || !Number.isFinite(reserved) || !Number.isFinite(run.version.graph.maxTokens) || (run.tokens || 0) + reserved > run.version.graph.maxTokens) throw Error('工具派发缺少有效的本次用量预留');
@@ -47,7 +52,7 @@ function createTeamExecutionGuard({ collaboration, teamFiles }) {
     return { ...ctx, projectId: scope.projectId, workspaceRoots: roots, grants: { extraRoots: [], screen: false, admin: false } };
   }
   function createFileSession(args = {}) {
-    const current = identity(args.projectId,args.taskId,args.memberId), roots = current.run.projectSettings.roots;
+    const current = identity(args.projectId,args.taskId,args.memberId), roots = current.run.fileScope?[current.run.fileScope.root]:current.run.projectSettings.roots;
     if (typeof args.root !== 'string' || !path.isAbsolute(args.root) || !roots.some(root => normalized(root) === normalized(args.root))) throw Error('复制目录不在本次运行的冻结授权范围');
     return teamFiles.create({ projectId: current.project.id, taskId: current.run.id, memberId: current.member.id, root: args.root }, roots);
   }

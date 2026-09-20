@@ -144,23 +144,175 @@ for (const [file, t] of src) {
   }
 }
 
+/** 跳过字符串或模板串；这里只关心对象的结构，模板插值里的标点也不参与计数。 */
+function skipQuoted(t, start) {
+  const quote = t[start];
+  let i = start + 1;
+  while (i < t.length) {
+    if (t[i] === '\\') i += 2;
+    else if (quote === '`' && t.startsWith('${', i)) return -1;
+    else if (t[i] === quote) return i + 1;
+    else i++;
+  }
+  return t.length;
+}
+
+/** 跳过空白和注释。返回 -1 表示块注释没有闭合。 */
+function skipTrivia(t, start) {
+  let i = start;
+  while (i < t.length) {
+    if (/\s/.test(t[i])) {
+      i++;
+    } else if (t.startsWith('//', i)) {
+      const end = t.indexOf('\n', i + 2);
+      i = end === -1 ? t.length : end + 1;
+    } else if (t.startsWith('/*', i)) {
+      const end = t.indexOf('*/', i + 2);
+      if (end === -1) return -1;
+      i = end + 2;
+    } else {
+      break;
+    }
+  }
+  return i;
+}
+
+/**
+ * 取 Record 对象字面量的顶层键。
+ *
+ * 这不是 TypeScript 解析器，所以遇到顶层展开或计算属性就返回 null：这两种
+ * 写法的真实键集合无法静态确定，漏检比把一次正常发布误拦下来更合适。
+ */
+function recordObjectKeys(t, openIdx) {
+  const keys = new Set();
+  let i = openIdx + 1;
+  const regexPrefixWords = new Set([
+    'await', 'case', 'delete', 'do', 'else', 'in', 'instanceof', 'of', 'return', 'throw',
+    'typeof', 'void', 'yield',
+  ]);
+
+  const regexStartsHere = (before) => {
+    const trimmed = before.replace(/\s+$/, '');
+    if (trimmed === '') return true;
+    if (!/[A-Za-z0-9_$)\]]/.test(trimmed.slice(-1))) return true;
+    const word = trimmed.match(/([A-Za-z_$][A-Za-z0-9_$]*)$/)?.[1];
+    return Boolean(word && regexPrefixWords.has(word));
+  };
+
+  const skipRegex = (start) => {
+    let j = start + 1;
+    let inClass = false;
+    for (; j < t.length; j++) {
+      if (t[j] === '\\') j++;
+      else if (t[j] === '[') inClass = true;
+      else if (t[j] === ']') inClass = false;
+      else if (t[j] === '/' && !inClass) {
+        j++;
+        while (/[A-Za-z]/.test(t[j] ?? '')) j++;
+        return j;
+      } else if (t[j] === '\n') {
+        return start + 1;
+      }
+    }
+    return start + 1;
+  };
+
+  const skipValue = (start) => {
+    let curly = 0;
+    let square = 0;
+    let paren = 0;
+    let j = start;
+    for (; j < t.length; j++) {
+      const c = t[j];
+      if (c === '"' || c === "'" || c === '`') {
+        const next = skipQuoted(t, j);
+        if (next === -1) return null;
+        j = next - 1;
+      } else if (t.startsWith('//', j) || t.startsWith('/*', j)) {
+        const next = skipTrivia(t, j);
+        if (next === -1) return null;
+        j = next - 1;
+      } else if (c === '/') {
+        if (!regexStartsHere(t.slice(start, j))) return null;
+        j = skipRegex(j) - 1;
+      } else if (c === '{') {
+        curly++;
+      } else if (c === '}') {
+        if (curly === 0 && square === 0 && paren === 0) return {next: j, done: true};
+        curly--;
+        if (curly < 0) return null;
+      } else if (c === '[') {
+        square++;
+      } else if (c === ']') {
+        square--;
+        if (square < 0) return null;
+      } else if (c === '(') {
+        paren++;
+      } else if (c === ')') {
+        paren--;
+        if (paren < 0) return null;
+      } else if (c === ',' && curly === 0 && square === 0 && paren === 0) {
+        return {next: j + 1, done: false};
+      }
+    }
+    return null;
+  };
+
+  while (i < t.length) {
+    i = skipTrivia(t, i);
+    if (i === -1 || i >= t.length) return null;
+    if (t[i] === '}') return keys;
+    if (t.startsWith('...', i) || t[i] === '[') return null;
+
+    let key;
+    if (t[i] === '"' || t[i] === "'") {
+      const end = skipQuoted(t, i);
+      if (end === -1 || end > t.length || t[end - 1] !== t[i]) return null;
+      if (t.slice(i + 1, end - 1).includes('\\')) return null;
+      key = t.slice(i + 1, end - 1);
+      i = end;
+    } else {
+      const match = t.slice(i).match(/^([A-Za-z_$][A-Za-z0-9_$-]*)/);
+      if (!match) return null;
+      key = match[1];
+      i += match[0].length;
+    }
+
+    i = skipTrivia(t, i);
+    if (i === -1) return null;
+    if (t[i] === ':') {
+      keys.add(key);
+      const boundary = skipValue(i + 1);
+      if (!boundary) return null;
+      if (boundary.done) return keys;
+      i = boundary.next;
+    } else if (t[i] === ',' || t[i] === '}') {
+      // 对象属性简写也是一个真实的顶层键。
+      keys.add(key);
+      if (t[i] === '}') return keys;
+      i++;
+    } else if (t[i] === '(') {
+      // 方法简写：key(args) { ... }
+      keys.add(key);
+      const boundary = skipValue(i);
+      if (!boundary) return null;
+      if (boundary.done) return keys;
+      i = boundary.next;
+    } else {
+      return null;
+    }
+  }
+  return null;
+}
+
 for (const [file, t] of src) {
   for (const m of t.matchAll(/:\s*Record<\s*([A-Za-z0-9_$]+)\s*,[^>]*>\s*=\s*\{/g)) {
     const union = unions.get(`${file}|${m[1]}`);
     if (!union) continue;
 
-    // 取出这个对象字面量（从 { 开始数括号）
-    let depth = 0;
-    let i = t.indexOf('{', m.index);
-    const start = i;
-    for (; i < t.length; i++) {
-      if (t[i] === '{') depth++;
-      else if (t[i] === '}' && --depth === 0) break;
-    }
-    const body = t.slice(start + 1, i);
-    const keys = new Set(
-      [...body.matchAll(/(?:^|\n)\s*['"]?([A-Za-z0-9_$-]+)['"]?\s*:/g)].map((x) => x[1]),
-    );
+    const open = m.index + m[0].length - 1;
+    const keys = recordObjectKeys(t, open);
+    if (!keys) continue;
     const missing = union.filter((k) => !keys.has(k));
     const line = t.slice(0, m.index).split('\n').length;
     if (missing.length) {
