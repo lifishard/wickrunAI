@@ -21,6 +21,12 @@ export type TeamRunStatus = 'ready'|'running'|'pausing'|'paused'|'waiting_user'|
  * 记到接手的那条路由头上，失败的那条反而干干净净 —— 记分表从此是错的。
  */
 export interface RouteAttempt { memberId:string; profileId:string; model:string; at:number; status:'failed'|'done' }
+export interface TeamArtifact { id:string;sessionId:string;projectId:string;taskId:string;memberId:string;nodeId:string;attemptId:string;version:number;createdAt:number;digest:string;files:{path:string;beforeHash:string|null;afterHash:string|null}[] }
+export interface TeamTextArtifact { id:string;attemptId:string;nodeId:string;version:number;digest:string;text:string }
+export interface FlowNode { reviewMode?:'files'|'text' }
+export interface MemoryEntry { kind?:'fact'|'preference'|'experience';scope?:'project'|'task';keywords?:string[];expiresAt?:number }
+export interface NodeAttempt { inputTexts?:TeamTextArtifact[];textReview?:{verdict:'pass'|'fail'|'unverifiable';artifactIds:string[];textEvidence:{artifactId:string;quote:string}[];changes:string;method:'model'} }
+export interface NodeAttempt { artifacts?:TeamArtifact[];inputArtifacts?:TeamArtifact[];review?:{verdict:'pass'|'fail'|'unverifiable';evidence:string[];changes:string;method:'model';artifactIds:string[]} }
 export interface NodeAttempt { notice?:string; routeLog?:RouteAttempt[]; memberStates?:Record<string,RunState>; memberOutputs?:Record<string,string>; resolution?:string; id: string; nodeId: string; visit: number; status: 'running'|'completed'|'failed'|'uncertain'|'waiting_user'; startedAt: number; endedAt?: number; output: string; steps: ToolStep[]; state?: RunState; error?: string; outcome?: string }
 export interface RunEvent { approved?:boolean; id: string; at: number; kind: string; text: string; nodeId?: string }
 export interface TeamRun { approvalQueue?:{nodeId:string;text:string}[]; projectSettings:TeamProject["settings"]; memorySnapshot:MemoryEntry[]; reservations:Record<string,number>; id: string; taskId: string; workflowId: string; version: FlowVersion; members: Member[]; config: GenerationConfig; status: TeamRunStatus; goal: string; acceptance: string; queue: string[]; arrivals: Record<string,string[]>; visits: Record<string,number>; traversals: Record<string,number>; attempts: NodeAttempt[]; events: RunEvent[]; tokens: number; createdAt: number; updatedAt: number; owner?: string; pendingApproval?: { nodeId:string; text:string }; scheduleKey?: string; memoryIds: string[] }
@@ -60,6 +66,8 @@ export function validateGraph(graph:Graph,members:Member[],allowedConnections?:s
  const reach=(seeds:string[],reverse=false)=>{const seen=new Set(seeds),q=[...seeds];while(q.length){const id=q.shift()!;for(const e of graph.edges){if((reverse?e.to:e.from)!==id)continue;const next=reverse?e.from:e.to;if(!seen.has(next)){seen.add(next);q.push(next);}}}return seen;};
  const reachable=reach(starts.map(n=>n.id)),exits=reach(ends.map(n=>n.id),true);
  for(const n of graph.nodes){
+  if(n.type==='review'&&n.reviewMode!==undefined&&!['files','text'].includes(n.reviewMode))error('复核范围无效，请选择文件或文本',n.id);
+  if(n.type==='review'&&members.find(m=>m.id===n.memberId)?.connectionId.startsWith('client:'))error('质检步骤需要可提供读取证据的 API 成员；本机客户端暂不支持自动复核',n.id);
   if(!reachable.has(n.id))error('这一步从开始节点走不到：从上一步拉一条线过来，或删掉它',n.id); if(!exits.has(n.id))error('这一步没有通向结束的路：补一条出线，最终要能走到结束节点',n.id);
   if(!Number.isInteger(n.maxVisits)||n.maxVisits<1)error('这一步缺少执行次数上限：右侧属性里的「最多执行几次」填 1 以上',n.id);
   if(['agent','review','handoff','discussion'].includes(n.type)){
@@ -162,6 +170,22 @@ export function freeFlowGraph(
  end.x=chain.length>3?810:570;
  flow.draft.nodes=chain;
  flow.draft.edges=chain.slice(0,-1).map((a,i)=>({id:newId('edge'),from:a.id,to:chain[i+1].id,port:'next',label:'继续',maxTraversals:3}));
+ return flow;
+}
+
+/** Explicit alternative to discussion: execute, independently review, bounded rework. */
+export function reviewFlowGraph(task:Pick<TeamTask,'title'|'goal'|'acceptance'|'ownerId'>,members:Member[],name:string,reviewMode:'files'|'text'='files'):Workflow {
+ const enabled=members.filter(m=>m.enabled),executor=enabled.find(m=>m.id===task.ownerId)??enabled[0];
+ const reviewer=enabled.find(m=>m.id!==executor?.id&&!m.connectionId.startsWith('client:')&&(reviewMode==='text'||m.tools.some(t=>['read_file','read_document'].includes(t))));
+ if(!executor||!reviewer)throw Error(reviewMode==='text'?'文本复核需要两位成员，复核成员须使用 API 接入。':'执行与复核需要两位成员，复核成员须使用 API 接入并启用文件读取。');
+ const flow=newWorkflow(name),[start,end]=flow.draft.nodes,execute=newNode('agent',310,120),review=newNode('review',560,120);
+ execute.memberId=executor.id;execute.instructions=task.goal;execute.outputRequirement=task.acceptance;execute.inputRefs=[review.id];
+ review.memberId=reviewer.id;review.reviewMode=reviewMode;review.instructions=reviewMode==='text'?'核对本次文本产物和任务验收条件，引用具体原文；发现缺陷列明返工项。文件、外部事实与执行结果无法仅凭文本核实。':'读取收到的产物，按任务验收条件逐项复核；发现缺陷列明返工项。';review.outputRequirement=task.acceptance;review.inputRefs=[execute.id];
+ end.x=830;end.outputRequirement=task.acceptance;flow.draft.nodes=[start,execute,review,end];
+ flow.draft.edges=[{from:start.id,to:execute.id,port:'next',label:'执行'},{from:execute.id,to:review.id,port:'next',label:'交给复核'},
+ {from:review.id,to:end.id,port:'pass',label:'复核通过'},
+ {from:review.id,to:execute.id,port:'fail',label:'返工',loop:true},
+ {from:review.id,to:end.id,port:'default',label:'无法核实，交由用户判断'}].map(e=>({...e,id:uid('edge'),maxTraversals:3}));
  return flow;
 }
 

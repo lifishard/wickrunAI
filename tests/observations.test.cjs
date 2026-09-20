@@ -41,6 +41,15 @@ test('analysis exports whitelist data, keep source distinctions, and preserve st
   assert.equal(JSON.parse(other['manifest.json']).exportEpoch,store.epoch);
 });
 
+test('analysis export preserves route aggregates without reintroducing model names or prompts',()=>{
+ const t=o.projectObservation(undefined,record(),'route-alias'),store=o.emptyObservations();
+ t.routeRequests={'route-alias':{...t.requests,actualInput:120,actualOutput:60}};
+ t.unassignedRequests={...t.requests,actualInput:10,actualOutput:5};
+ const files=exportsApi.buildAnalysisFiles(store,[t],{},true,now),row=JSON.parse(files['tasks.jsonl']);
+ assert.deepEqual(row.routeRequests,t.routeRequests);assert.deepEqual(row.unassignedRequests,t.unassignedRequests);
+ assert.doesNotMatch(JSON.stringify(files),/qa-model|PRIVATE_|private-profile|secret\.test|api_key|SECRET/);
+});
+
 test('selected diagnostic redaction removes common credentials and private keys',()=>{
   const text='Bearer SECRET_AUTH api_key="SECRET_API" password=PASS sk-abcdefghijklmnop ghp_abcdefghijklmnop '+['-----BEGIN','PRIVATE KEY-----'].join(' ')+'\nKEYDATA\n-----END PRIVATE KEY-----';
   assert.doesNotMatch(exportsApi.redactSelectedText(text),/SECRET_AUTH|SECRET_API|PASS|abcdefghijklmnop|KEYDATA/);

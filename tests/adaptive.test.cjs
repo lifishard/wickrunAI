@@ -265,6 +265,11 @@ test('agent performs same-route compaction, accounts its usage and keeps unfinis
   assert.ok(h.log.requests.some(r=>r.purpose==='compaction'),JSON.stringify({reason:h.log.reason,error:h.log.error}));
   assert.ok(h.log.states.at(-1).compactions.length>=1);
   assert.equal(h.log.states.at(-1).spentTokens,h.log.requests.length*150);
+  const requestStats=h.log.states.at(-1).requestStats;
+  assert.deepEqual(requestStats.map(r=>r.requestId),h.log.requests.map(r=>r.requestId));
+  assert.equal(new Set(requestStats.map(r=>r.requestId)).size,requestStats.length);
+  assert.ok(requestStats.some(r=>r.purpose==='compaction'));
+  assert.ok(requestStats.some(r=>r.purpose==='agent'));
   assert.equal(h.log.done,1);
   const pending=longState();pending.working=[pending.working[0]];pending.steps=[];
   const blocked=harness(async(_,e)=>response(e,'Finished!'),{resume:pending});

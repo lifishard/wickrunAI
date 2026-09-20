@@ -112,6 +112,7 @@ function createLocalClients({ userData, collaboration, teamFiles, getSettings, o
     if (['projectId', 'runId', 'attemptId', 'memberId'].some(k => typeof scope[k] !== 'string' || !scope[k])) throw Error('本机执行身份不完整');
     if (typeof args.prompt !== 'string' || !args.prompt.trim() || args.prompt.length > 2000000) throw Error('本机执行提示无效');
     const { run: snapshot, member, cwd: authorizedCwd, node } = authorized(scope); scope.nodeId = node.id;
+    if(node.type === 'review')throw Error('本机客户端尚不提供可核验的逐工具读取证据；请为质检步骤选择 API 成员。');
     const key = JSON.stringify([scope.projectId, scope.runId, scope.attemptId, scope.memberId]);
     if (active.has(key) || snapshot.events.some(e => e.kind === 'client_dispatch' && e.clientKey === key)) throw Error('本机客户端调用已派发；请核实结果后创建新尝试');
     if ([...active.values()].filter(job => job.scope.projectId === scope.projectId && job.scope.runId === scope.runId).length >= snapshot.projectSettings.maxConcurrent) throw Error('本机客户端已达到本次运行的并发上限');

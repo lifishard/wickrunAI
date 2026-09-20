@@ -1,0 +1,59 @@
+{
+  "source": "team",
+  "status": "completed",
+  "feedback": {
+    "outcome": "usable",
+    "at": 1789888421090,
+    "attemptId": "attempt-379b7b0a-9c55-458c-8bdb-58ce5b05d376:reviewer:0"
+  },
+  "requests": {
+    "total": 4,
+    "accepted": 4,
+    "failed": 0,
+    "rejected": 0,
+    "cancelled": 0,
+    "pending": 0,
+    "actualInput": 480,
+    "actualOutput": 240,
+    "missingInput": 0,
+    "missingOutput": 0,
+    "estimatedInput": 8504,
+    "reservedOutput": 32768,
+    "requestMs": 297,
+    "missingDispatch": 0
+  },
+  "routeRequests": {
+    "route-39a490c14acb1f73": {
+      "total": 2,
+      "accepted": 2,
+      "failed": 0,
+      "rejected": 0,
+      "cancelled": 0,
+      "pending": 0,
+      "actualInput": 240,
+      "actualOutput": 120,
+      "missingInput": 0,
+      "missingOutput": 0,
+      "estimatedInput": 3919,
+      "reservedOutput": 16384,
+      "requestMs": 182,
+      "missingDispatch": 0
+    },
+    "route-2de3b2f9ebf6dca6": {
+      "total": 2,
+      "accepted": 2,
+      "failed": 0,
+      "rejected": 0,
+      "cancelled": 0,
+      "pending": 0,
+      "actualInput": 240,
+      "actualOutput": 120,
+      "missingInput": 0,
+      "missingOutput": 0,
+      "estimatedInput": 4585,
+      "reservedOutput": 16384,
+      "requestMs": 115,
+      "missingDispatch": 0
+    }
+  }
+}

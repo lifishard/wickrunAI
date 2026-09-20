@@ -520,7 +520,7 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
         if (input > dispatchBudget(cap,reserve) || budgetExceeded(input+reserve)) return false;
         const requestId = `${args.requestId}-compact-${++requestSerial}`;
         let text = '', summaryReasoning = '', error = '', reason: string | null = null, usage: Usage | undefined, failedStatus: number | undefined, dispatched = false;
-        const stat: RunRequestStat = { route:routeKey(args.profile,cfg.model),effort:cfg.effortLevel,purpose:'compaction',estimatedInput:input,reservedOutput:reserve,at:Date.now(),outcome:'pending' };
+        const stat: RunRequestStat = { requestId,profileId:args.profile.id,model:cfg.model,route:routeKey(args.profile,cfg.model),effort:cfg.effortLevel,purpose:'compaction',estimatedInput:input,reservedOutput:reserve,at:Date.now(),outcome:'pending' };
         state.requestStats!.push(stat);
         activeRequest = requestId;
         let compressionWaitStarted = 0;
@@ -876,7 +876,7 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
           const committedReasoning = state.reasoning ?? '';
           events.onContentReplace?.(committedContent, committedReasoning);
           const requestId = `${args.requestId}-r${state.round}-a${++requestSerial}`;
-          const stat: RunRequestStat = { route:routeKey(args.profile,cfg.model),effort:cfg.effortLevel,purpose:final ? 'final' : 'agent',estimatedInput:bodyTokens,reservedOutput:outputAllowance,at:Date.now(),outcome:'pending' };
+          const stat: RunRequestStat = { requestId,profileId:args.profile.id,model:cfg.model,route:routeKey(args.profile,cfg.model),effort:cfg.effortLevel,purpose:final ? 'final' : 'agent',estimatedInput:bodyTokens,reservedOutput:outputAllowance,at:Date.now(),outcome:'pending' };
           state.requestStats!.push(stat);
           let dispatched = false;
           activeRequest = requestId;

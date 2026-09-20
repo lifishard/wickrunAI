@@ -15,6 +15,9 @@ import { nextRoute, resolveFailover, type RouteRef } from './failover';
 import type { ErrorInfo } from '../types';
 import { emptyTeamProject, loadCollaboration, teamBridge, validateGraph, type CollaborationData, type TeamProject, type TeamRun, type Member, type FlowNode, type FlowVersion } from './collaboration';
 import { tr } from './i18n';
+import { teamInputs, teamTaskContract, verifyTeamReview } from './team-contract';
+import { textReviewInputs, verifyTextReview, TEXT_REVIEW_INSTRUCTIONS } from './team-text-review';
+import { selectTeamMemories } from './team-memory';
 
 type Listener = () => void;
 /**
@@ -33,6 +36,13 @@ export const MAX_AUTO_CONTINUE = 3;
  * 用绝对下限挡住注定跑不动的残额，小预算按比例缩放，仍然留得下后续几段。
  */
 export function stageFloor(cap:number):number{return Math.max(1,Math.min(MIN_STAGE_TOKENS,Math.floor(cap*0.2)));}
+/** The stage target is advisory; a member's explicit limit is always hard. */
+export function stageReservation(cap:number,memberCap:number,available:number,slots:number):number {
+ if(![cap,memberCap,available,slots].every(Number.isFinite)||cap<=0||memberCap<=0||available<0||slots<1)throw Error('阶段预算配置无效');
+ const floor=Math.min(stageFloor(cap),memberCap);
+ if(available<floor)throw Error(tr('本次运行还剩 {left} tokens（上限 {cap}），不足以再开一段（至少要 {min}）。请调整预算或保留已有成果。',{left:String(available),cap:String(cap),min:String(floor)}));
+ return Math.min(memberCap,available,Math.max(floor,Math.floor(available/slots)));
+}
 /** 由内容派生的短标识：跨派发稳定，又短到模型能原样抄回来。 */
 function shortKey(value:string):string{
  let h=2166136261;
@@ -67,7 +77,7 @@ export class TeamRuntime {
     if(s.nextAt&&s.nextAt<=now){
      const day=new Intl.DateTimeFormat('en-CA',{timeZone:s.timezone,year:'numeric',month:'2-digit',day:'2-digit'}).format(s.nextAt);
      const key=`${s.id}:${day}`;
-     await this.update(original.id,p=>{const item=p.schedules.find(x=>x.id===s.id)!;if(!item.enabled||item.nextAt>now)return;item.nextAt=nextTeamTrigger(item.timezone,item.hour,item.minute,now);if(item.triggers.some(t=>t.key===key))return;const busy=p.runs.some(r=>['ready','running','pausing','waiting_user'].includes(r.status)&&r.workflowId===s.workflowId);const reason=!item.catchUp&&now-s.nextAt>60000?'设备关闭期间错过，按规则跳过':busy&&item.overlap==='skip'?'前次运行未结束，按规则跳过':'准备运行';item.triggers.push({key,at:s.nextAt,reason});});
+     await this.update(original.id,p=>{const item=p.schedules.find(x=>x.id===s.id)!;if(!item.enabled||item.nextAt>now)return;item.nextAt=nextTeamTrigger(item.timezone,item.hour,item.minute,now);if(item.triggers.some(t=>t.key===key))return;const busy=p.runs.some(r=>['ready','running','pausing','waiting_user','paused','uncertain'].includes(r.status)&&r.workflowId===s.workflowId);const reason=!item.catchUp&&now-s.nextAt>60000?'设备关闭期间错过，按规则跳过':busy&&item.overlap==='skip'?'前次运行未结束，按规则跳过':'准备运行';item.triggers.push({key,at:s.nextAt,reason});});
     }
     const pending=this.project(original.id).schedules.find(x=>x.id===s.id)?.triggers.filter(t=>t.reason==='准备运行'||(t.runId&&this.project(original.id).runs.some(r=>r.id===t.runId&&r.status==='ready')))??[];
     for(const trigger of pending){
@@ -189,7 +199,9 @@ export class TeamRuntime {
   //「执行次数上限」而不是一次莫名其妙的失败。
   const node=run.version.graph.nodes.find(n=>n.id===nodeId);
   if(!node||(run.visits[nodeId]??0)>=node.maxVisits)return false;
-  if(run.version.graph.maxTokens-run.tokens<stageFloor(run.version.graph.maxTokens))return false;
+  const members=node.type==='discussion'?run.members.filter(m=>node.participants?.includes(m.id)):run.members.filter(m=>m.id===node.memberId);
+  const floor=Math.min(stageFloor(run.version.graph.maxTokens),...members.map(m=>m.maxTokens));
+  if(run.version.graph.maxTokens-run.tokens-Object.values(run.reservations).reduce((n,v)=>n+v,0)<floor)return false;
   await this.runUpdate(projectId,runId,r=>{
    const a=[...r.attempts].reverse().find(x=>x.nodeId===nodeId&&['running','failed'].includes(x.status));
    if(!a)return;
@@ -283,7 +295,9 @@ export class TeamRuntime {
    }catch(error){return tr('无法核对本机成员的隔离区文件变化：{error}',{error:String(error)});}
   }
   if(demands.modify&&!changed)return tr('这一步要求改动文件，但本机客户端的隔离区里没有任何文件变化。请核实它实际做了什么，再决定接受或重试。');
-  return tr('这一步要求测试或推送。本机客户端在它自己那边执行，wickrunAI 看不到执行记录，无法程序核验；请核实后再决定。');
+  if(demands.test||demands.push)return tr('这一步要求测试或推送。本机客户端在它自己那边执行，wickrunAI 看不到执行记录，无法程序核验；请核实后再决定。');
+  // A diff proves a modification occurred; final content acceptance remains a separate gate.
+  return;
  }
  private route(r:TeamRun,n:FlowNode,outcome:string){
   const graph=r.version.graph;
@@ -321,7 +335,20 @@ export class TeamRuntime {
   const text=output.join('\n\n');
   // A reviewer must provide a structured verdict and evidence; unknown results route explicitly.
   let outcome='next';
-  if(node.type==='review'){try{const raw=text.slice(text.indexOf('{'),text.lastIndexOf('}')+1);const v=JSON.parse(raw);outcome=v.evidence&&v.verdict==='pass'?'pass':v.evidence&&v.verdict==='fail'?'fail':'default';}catch{outcome='default';}}
+  if(node.type==='review'){
+   const attempt=this.project(projectId).runs.find(r=>r.id===runId)!.attempts.find(a=>a.id===attemptId)!;
+   if(node.reviewMode==='text'){
+    const current=await textReviewInputs(this.project(projectId).runs.find(r=>r.id===runId)!,node);
+    const review=verifyTextReview(text,attempt,current);outcome=review.verdict==='unverifiable'?'default':review.verdict;
+    await this.runUpdate(projectId,runId,run=>{run.attempts.find(a=>a.id===attemptId)!.textReview=review;});
+   }else{
+    if(attempt.inputArtifacts?.length)await teamBridge().teamArtifactsValidate({projectId,runId,attemptId,memberId:members[0].id},attempt.inputArtifacts.map(a=>a.id));
+    const receiverRoots=this.project(projectId).files.filter(f=>f.taskId===runId&&f.memberId===members[0].id&&f.status!=='merged').map(f=>f.isolatedRoot);
+    const review=verifyTeamReview(text,attempt,receiverRoots);
+    outcome=review.verdict==='unverifiable'?'default':review.verdict;
+    await this.runUpdate(projectId,runId,run=>{run.attempts.find(a=>a.id===attemptId)!.review=review;});
+   }
+  }
   if(['agent','handoff'].includes(node.type)){
    const issue=await this.clientEvidenceIssue(projectId,runId,node,members);
    if(issue){
@@ -332,6 +359,14 @@ export class TeamRuntime {
     });
     this.observe(projectId,runId);return;
    }
+  }
+  if(['agent','handoff'].includes(node.type)){
+   const artifacts:import('./collaboration').TeamArtifact[]=[];
+   for(const member of members){
+    const session=this.project(projectId).files.find(f=>f.taskId===runId&&f.memberId===member.id&&f.status!=='merged');
+    if(session){const artifact=await teamBridge().teamArtifactsPublish({projectId,runId,attemptId,memberId:member.id},session.id);artifacts.push(artifact);}
+   }
+   if(artifacts.length)await this.runUpdate(projectId,runId,run=>{run.attempts.find(a=>a.id===attemptId)!.artifacts=artifacts;});
   }
   await finish(text,outcome);
   this.observe(projectId,runId);
@@ -396,8 +431,21 @@ export class TeamRuntime {
    fileSessionId=session.id;roots=[session.isolatedRoot];
   }
   const chosen=member.skills?.length?(await loadSkills()).filter((x:Skill)=>x.enabled&&member.skills!.includes(x.name)):[];
-  const sources=r.attempts.filter(a=>a.status==='completed'&&(node.inputRefs.length?node.inputRefs.includes(a.nodeId):true)).map(a=>`${a.nodeId} 第${a.visit}次\n${a.output}`).join('\n\n');
-  const memories=r.memorySnapshot.map(m=>`${m.title}（${m.applicability}）\n${m.text}`).join('\n\n');
+  const inputs=teamInputs(r,node);
+  const textMode=node.type==='review'&&node.reviewMode==='text';
+  const inputTexts=textMode?await textReviewInputs(r,node):[];
+  if(textMode)await this.runUpdate(projectId,runId,run=>{run.attempts.find(a=>a.id===attemptId)!.inputTexts=inputTexts;});
+  const latestArtifacts=new Map<string,import('./collaboration').TeamArtifact>();
+  for(const artifact of inputs.flatMap(a=>a.artifacts??[])){const previous=latestArtifacts.get(artifact.sessionId);if(artifact.memberId!==member.id&&(!previous||artifact.version>previous.version))latestArtifacts.set(artifact.sessionId,artifact);}
+  const inputArtifacts=[...latestArtifacts.values()];
+  if(inputArtifacts.length&&!textMode){
+   if(!fileSessionId)throw Error('此步骤需要上游文件产物，请为成员启用文件读取并选择项目目录');
+   const session=await teamBridge().teamArtifactsReceive({projectId,runId,attemptId,memberId:member.id},fileSessionId,inputArtifacts.map(a=>a.id));
+   await this.runUpdate(projectId,runId,(run,p)=>{const i=p.files.findIndex(f=>f.id===session.id);p.files[i]=session;run.attempts.find(a=>a.id===attemptId)!.inputArtifacts=inputArtifacts;});
+  }
+  const sources=textMode?'':inputs.map(a=>`${a.nodeId} 第${a.visit}次\n${a.output}`).join('\n\n');
+  const reviewInstructions=textMode?TEXT_REVIEW_INSTRUCTIONS:'仅可读取/检查，不得修改文件或运行命令。以 JSON 返回 {"verdict":"pass 或 fail 或 unverifiable","evidence":["本次成功读取或检查的 callId"],"changes":"检查覆盖与需要修改项","artifactIds":["已接收的全部产物版本 id"]}。编号必须来自真实执行；无法核实用 unverifiable，不能猜测。不得声称执行了没有执行的测试。';
+  const memories=selectTeamMemories(r.memorySnapshot,r,{now:r.createdAt}).prompt;
   const task=p.tasks.find(t=>t.id===r.taskId);
   // 隔离副本按设计排除了 .git 等目录。不先说，模型第一反应就是 git status，
   // 白烧一轮拿到退出码 128 —— 这一轮的上下文和预算都是真金白银。
@@ -413,7 +461,7 @@ export class TeamRuntime {
   const evidenceNote=citable.length
    ? `\n可引用的证据编号（verify_requirements 的 review 类型要用）：${citable.join('、')}。也可以用 text: 加上你已输出答复里的原文片段。`
    : `\nreview 类验收的证据：填你本轮发起那次工具调用的 id，或 text: 加上你已输出答复里的原文片段；空着或写理由都不算证据。`;
-  const prompt=`目标：${r.goal}\n验收：${r.acceptance}\n步骤：${node.instructions}\n输出要求：${node.outputRequirement}\n允许工作目录：${roots.join('、')||'无'}${isolationNote}\n声明验收要求（update_requirements）时：sourceId 必须写 ${taskMessageId}，sourceQuote 必须是上面「目标」或「验收」里的原文片段；文件类检查（file_exists / file_contains / json）的 path 必须是绝对路径，以上面的允许工作目录开头。verify_requirements 的 ids 是你自己起的要求 id，不是文件名。${evidenceNote}\n前置记录：\n${sources}\n本轮讨论：\n${discussion}\n补充指令：\n${task?.entries.filter(e=>e.kind==='instruction'&&(e.author==='你 → 所有成员'||e.author==='你 → '+member.name)).map(e=>e.text).join('\n')??''}`;
+  const prompt=`${textMode?TEXT_REVIEW_INSTRUCTIONS+'\n':node.type==='review'?'本步骤只读复核。不要修改文件，不要运行测试；读取产物并给出复核结论。\n':''}任务契约：${JSON.stringify(teamTaskContract(r,node,member.id,inputs,roots))}\n已接收产物版本：${JSON.stringify(inputArtifacts)}\n${textMode?`文本产物快照：${JSON.stringify(inputTexts)}\n`:``}目标：${r.goal}\n验收：${r.acceptance}\n步骤：${node.instructions}\n输出要求：${node.outputRequirement}\n允许工作目录：${roots.join('、')||'无'}${isolationNote}\n声明验收要求（update_requirements）时：sourceId 必须写 ${taskMessageId}，sourceQuote 必须是上面「目标」或「验收」里的原文片段；文件类检查（file_exists / file_contains / json）的 path 必须是绝对路径，以上面的允许工作目录开头。verify_requirements 的 ids 是你自己起的要求 id，不是文件名。${evidenceNote}\n前置记录：\n${sources}\n本轮讨论：\n${discussion}\n补充指令：\n${task?.entries.filter(e=>e.kind==='instruction'&&(e.author==='你 → 所有成员'||e.author==='你 → '+member.name)).map(e=>e.text).join('\n')??''}`;
 
   let output=resume?.content??'',state:RunState|undefined=resume,usage=resume?.spentTokens??0,handle:AgentHandle|undefined;
   const persist=()=>this.runUpdate(projectId,runId,run=>{const a=run.attempts.find(x=>x.id===attemptId)!;a.output=output;a.state=state;if(state)(a.memberStates??={})[member.id]=state;});
@@ -429,24 +477,24 @@ export class TeamRuntime {
     * 每段比上一段更短，最后一段只前进了一步。所以下限卡在这里，并且把具体数字和
     * 该调哪个设置一起说清楚，而不是让人对着「预算不足」猜。
     */
-   const floor=stageFloor(run.version.graph.maxTokens);
+   const floor=Math.min(stageFloor(run.version.graph.maxTokens),member.maxTokens);
    if(available<floor)throw Error(tr(
     '本次运行还剩 {left} tokens（上限 {cap}，已用 {used}），不足以再开一段（至少要 {min}）。提高这个流程的总用量上限、或项目设置里的每次运行上限，然后新建运行；也可以就此接受已有结果。',
     {left:String(Math.max(0,available)),cap:String(run.version.graph.maxTokens),used:String(run.tokens),min:String(floor)}));
    const slots=Math.max(1,run.projectSettings.maxConcurrent-Object.keys(run.reservations).length);
-   remaining=Math.max(floor,Math.min(member.maxTokens||available,Math.floor(available/slots)));
+   remaining=stageReservation(run.version.graph.maxTokens,member.maxTokens,available,slots);
    run.reservations[reservationKey]=remaining;
   });
   const routeKeyOf=(profileId:string,model:string,baseUrl:string)=>limitKey(profileId,model,baseUrl);
   const learn=(profileId:string,model:string,baseUrl:string,value:LearnedLimit)=>this.saveSettings?.(prev=>({...prev,
     modelLimits:{...(prev.modelLimits??{}),[routeKeyOf(profileId,model,baseUrl)]:mergeLearnedLimit(prev.modelLimits?.[routeKeyOf(profileId,model,baseUrl)],value)}}));
-  const config:GenerationConfig={...r.config,model:member.model,effortLevel:member.effort as GenerationConfig['effortLevel'],reasoningEffort:member.effort as GenerationConfig['reasoningEffort'],toolsEnabled:member.tools.length>0,enabledTools:member.tools,approvalMode:r.projectSettings.approvalMode,runtime:{...runtimePolicy(r.config),maxTokens:remaining,maxMinutes:Math.min(member.maxMinutes||30,r.version.graph.maxMinutes)}};
+  const config:GenerationConfig={...r.config,model:member.model,effortLevel:member.effort as GenerationConfig['effortLevel'],reasoningEffort:member.effort as GenerationConfig['reasoningEffort'],toolsEnabled:!textMode&&member.tools.length>0,enabledTools:textMode?[]:node.type==='review'?member.tools.filter(name=>['read_file','read_document','list_directory','search_files'].includes(name)):member.tools,approvalMode:r.projectSettings.approvalMode,runtime:{...runtimePolicy(r.config),maxTokens:remaining,maxMinutes:Math.min(member.maxMinutes||30,r.version.graph.maxMinutes)}};
   if(isClient){
    const timer=setInterval(()=>void this.load(),600);
    try{
     const result=await teamBridge().clientRun({projectId,runId,attemptId,memberId:member.id,prompt:[
      projectSystemBlock(this.projects().find(x=>x.id===projectId)??null),
-     `${node.type==='review'?'以 JSON 返回 {"verdict":"pass 或 fail","evidence":"具体检查证据","changes":"需要修改项"}。':''}\n成员职责：${member.instructions}\n项目经验：${memories}\n${prompt}`,
+     `${node.type==='review'?'仅可读取/检查，不得修改文件或运行命令。以 JSON 返回 {"verdict":"pass 或 fail 或 unverifiable","evidence":["本次成功读取或检查的 callId"],"changes":"检查覆盖与需要修改项","artifactIds":["已接收的全部产物版本 id"]}。编号必须来自真实执行；无法核实用 unverifiable，不能猜测。':''}\n成员职责：${member.instructions}\n项目经验：${memories}\n${prompt}`,
      skillSystemBlock(chosen),
     ].filter(Boolean).join('\n\n'),fileSessionId});
     await this.load();
@@ -486,7 +534,7 @@ export class TeamRuntime {
     limits:{get:(profileId,model,baseUrl)=>this.settings()?.modelLimits?.[routeKeyOf(profileId,model,baseUrl)],learn},
     // 默认零关联：成员想不起来时才显式查，而且只查同一个项目
     recallTasks:async(query,limit)=>recallFrom(await loadRuns(),await observationSnapshot(),{query,limit,projectId}),toolCtx:()=>({...toolContextOf(settings,projectId),teamExecution:{projectId,runId,attemptId,memberId:member.id,fileSessionId},workspaceRoots:roots,grants:{extraRoots:[],screen:false,admin:false}}),effortMappings:settings.effortMappings,extraSystem:[projectSystemBlock(this.projects().find(x=>x.id===projectId)??null),
-    `你是项目成员 ${member.name}。\n${member.instructions}\n已采用项目经验：\n${memories}\n${node.type==='review'?'以 JSON 返回 {"verdict":"pass 或 fail","evidence":"具体检查证据","changes":"需要修改项"}。不得声称执行了没有执行的测试。':''}`,
+    `你是项目成员 ${member.name}。\n${member.instructions}\n已采用项目经验：\n${memories}\n${node.type==='review'?reviewInstructions:''}`,
     skillSystemBlock(chosen)].filter(Boolean).join('\n\n'),timeoutMs:settings.requestTimeoutMs,canRunHostTools:true,autoRetry:settings.autoRetry,confirm,grantAccess:async()=>({ok:false,content:'',error:'协作运行权限固定；请暂停后在项目设置调整并创建新运行。'}),events:{
     onContentDelta(text){output+=text;},onContentReplace(text){output=text;},onReasoningDelta(){},onSources(){},onRound(){},
     /*

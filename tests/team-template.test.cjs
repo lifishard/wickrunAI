@@ -18,10 +18,13 @@ test('导入的模板换新编号、先停用，并且不覆盖现有配置',()=
   assert.equal(agents.every(x=>[...byName.values()].includes(x.memberId)),true,'节点上的成员引用必须指向导入后的成员');
 });
 
-test('试点流程本身是可运行的：启用成员后校验不报错',()=>{
+test('历史试点模板需将复核席位改为 API 后才可运行',()=>{
   const raw=JSON.parse(fs.readFileSync(path.resolve(__dirname,'../docs/templates/readinglog-pilot.json'),'utf8'));
   const {members,workflows}=domain.importTemplate(raw,newId);
-  const live=members.map(m=>({...m,enabled:true}));
+  const enabled=members.map(m=>({...m,enabled:true}));
+  assert.ok(domain.validateGraph(workflows[0].draft,enabled).some(x=>/质检.*API/.test(x.message)));
+  const reviewers=new Set(workflows[0].draft.nodes.filter(n=>n.type==='review').map(n=>n.memberId));
+  const live=enabled.map(m=>reviewers.has(m.id)?{...m,connectionId:'api-reviewer',tools:['read_file']}:m);
   assert.deepEqual(domain.validateGraph(workflows[0].draft,live).filter(x=>x.severity==='error'),[]);
   // 只授权 omni 时，用本机 Claude Code 的席位必须被拦下来
   const restricted=domain.validateGraph(workflows[0].draft,live,[live[1].connectionId]);

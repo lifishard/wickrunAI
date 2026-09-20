@@ -23,6 +23,7 @@ export interface TaskFeedback {
 }
 export interface ObservationEvent { id:string;key:string;seq:number;at:number;attemptId:string;type:string;data:Record<string,string|number|boolean|null> }
 export interface AttemptObservation {id:string;sourceId:string;startedAt:number;lastAt:number;endedAt?:number;model:string;effort:string;route:string;appVersion:string;runtimeVersion:string;status:string;waitMs:number;humanWaitMs:number;activeMs:number;lastPhase:string;lastObservedAt:number;contextWindow?:number;workingBudget?:number}
+export interface RequestObservationSummary {total:number;accepted:number;failed:number;rejected:number;cancelled:number;pending:number;actualInput:number;actualOutput:number;missingInput:number;missingOutput:number;estimatedInput:number;reservedOutput:number;requestMs:number;missingDispatch:number}
 export interface TaskObservation {
   /** 任务粗分类。旧记录没有，按 unknown 处理，不能假装它属于某一类 */
   kind?:TaskKind;
@@ -36,7 +37,11 @@ export interface TaskObservation {
   id:string;recordId:string;conversationId:string;answerId:string;startedAt:number;lastAt:number;status:string;appVersion:string;runtimeVersion:string;
   acceptance:{coverage:string;total:number;passed:number;failed:number;unverifiable:number;unchecked:number;program:number;model:number};
   feedback?:TaskFeedback;attempts:AttemptObservation[];droppedAttempts:number;events:ObservationEvent[];nextSeq:number;droppedEvents:number;seenEvents:Record<string,boolean>;detailLimitReached?:boolean;
-  requests:{total:number;accepted:number;failed:number;rejected:number;cancelled:number;pending:number;actualInput:number;actualOutput:number;missingInput:number;missingOutput:number;estimatedInput:number;reservedOutput:number;requestMs:number;missingDispatch:number};
+  requests:RequestObservationSummary;
+  /** Privacy-safe route aliases to request usage. Absent on records written before this projection existed. */
+  routeRequests?:Record<string,RequestObservationSummary>;
+  /** Identified requests whose old checkpoint lacks dispatch-time provider/model identity. */
+  unassignedRequests?:RequestObservationSummary;
   tools:{total:number;ok:number;failed:number;denied:number;elapsedMs:number};
   compactions:{total:number;latestBeforeTokens:number|null;latestAfterTokens:number|null};
   requirementStates:Record<string,string>;

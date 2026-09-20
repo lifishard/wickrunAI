@@ -1,0 +1,11 @@
+{
+  "workflowId": "flow-badcc231-9112-4edd-b364-c43f7b12bb00",
+  "project": {
+    "maxMinutes": 10,
+    "maxTokens": 100000
+  },
+  "generated": {
+    "maxMinutes": 10,
+    "maxTokens": 50000
+  }
+}

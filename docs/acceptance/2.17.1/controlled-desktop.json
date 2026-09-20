@@ -1,0 +1,166 @@
+{
+  "version": "2.17.1",
+  "runId": "teamrun-03791a2f-549c-4710-9d4d-e355b7eb01ad",
+  "status": "completed",
+  "startedAt": 1789886599237,
+  "reviews": [
+    {
+      "attemptId": "attempt-7aa29b04-b613-4292-902c-609f64ef18a7",
+      "verdict": "fail",
+      "evidence": [
+        "qa-read-229ab9c4-5ce4-4501-aab2-9615de79de81"
+      ],
+      "changes": "已读取交付版本，status 为 draft；返工要求：改为 ready。",
+      "method": "model",
+      "artifactIds": [
+        "6eee4c45-3441-4b28-82ba-2ea84358e29b"
+      ]
+    },
+    {
+      "attemptId": "attempt-06766034-20b6-4636-b3ca-2185cdf935c6",
+      "verdict": "pass",
+      "evidence": [
+        "qa-read-34f20192-6767-4264-8c10-fb099c2b1455"
+      ],
+      "changes": "已读取新版本，status 为 ready，字段符合验收条件。",
+      "method": "model",
+      "artifactIds": [
+        "69b3f5d4-9d1f-41cc-8130-a193825577a5"
+      ]
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "6eee4c45-3441-4b28-82ba-2ea84358e29b",
+      "sessionId": "e405c304-20df-44d0-9a2f-72d87f225a2e",
+      "projectId": "p-c8eaf7ac-f0dd-4cdb-9b1f-388fabfc0fe8",
+      "taskId": "teamrun-03791a2f-549c-4710-9d4d-e355b7eb01ad",
+      "memberId": "executor",
+      "nodeId": "node-da68bf01-dba5-4a76-a684-152d6d6c53c0",
+      "attemptId": "attempt-e99831f6-3d26-480b-aee3-caf4392e2e6a",
+      "version": 1,
+      "createdAt": 1789886600807,
+      "digest": "2730fea77facb68eeefd4a2e207f0c04f29832e5d8d9fee951fcce064c20b063",
+      "files": [
+        {
+          "path": "result.json",
+          "beforeHash": "f5b4f381244d5d29f670041423e7c17715fb52e2502f64cf498570c153417c62",
+          "afterHash": "ad7b29ea7180bc3f97362bc50ad5043646d18eea1102e3c62e6c0ec001243036"
+        }
+      ]
+    },
+    {
+      "id": "69b3f5d4-9d1f-41cc-8130-a193825577a5",
+      "sessionId": "e405c304-20df-44d0-9a2f-72d87f225a2e",
+      "projectId": "p-c8eaf7ac-f0dd-4cdb-9b1f-388fabfc0fe8",
+      "taskId": "teamrun-03791a2f-549c-4710-9d4d-e355b7eb01ad",
+      "memberId": "executor",
+      "nodeId": "node-da68bf01-dba5-4a76-a684-152d6d6c53c0",
+      "attemptId": "attempt-3e941c4e-146a-44b0-8bfe-82ebfaa9c739",
+      "version": 2,
+      "createdAt": 1789886603809,
+      "digest": "430322ea301e09d4a58aaaff961b40153bc6f15224269779a888926a2e21149c",
+      "files": [
+        {
+          "path": "result.json",
+          "beforeHash": "f5b4f381244d5d29f670041423e7c17715fb52e2502f64cf498570c153417c62",
+          "afterHash": "406e4129854ce13c1c72378d5ee9214392bccfdd359411d221bd6825aade157f"
+        }
+      ]
+    }
+  ],
+  "requests": [
+    {
+      "id": "teamrequest-ec37ef5e-e0a9-4866-8c27-358c6f5a0e08-r1-a1",
+      "profileId": "desktop-fixture",
+      "model": "qa-executor",
+      "purpose": "agent",
+      "input": 100,
+      "output": 50
+    },
+    {
+      "id": "teamrequest-ec37ef5e-e0a9-4866-8c27-358c6f5a0e08-r2-a2",
+      "profileId": "desktop-fixture",
+      "model": "qa-executor",
+      "purpose": "agent",
+      "input": 100,
+      "output": 50
+    },
+    {
+      "id": "teamrequest-88c7fbe4-2df1-4d4f-b7e7-f17cf4b3b884-r1-a1",
+      "profileId": "desktop-fixture",
+      "model": "qa-reviewer",
+      "purpose": "agent",
+      "input": 100,
+      "output": 50
+    },
+    {
+      "id": "teamrequest-88c7fbe4-2df1-4d4f-b7e7-f17cf4b3b884-r2-a2",
+      "profileId": "desktop-fixture",
+      "model": "qa-reviewer",
+      "purpose": "agent",
+      "input": 100,
+      "output": 50
+    },
+    {
+      "id": "teamrequest-4e2c67b5-e339-4c69-962b-fdebc618ef4c-r1-a1",
+      "profileId": "desktop-fixture",
+      "model": "qa-executor",
+      "purpose": "agent",
+      "input": 100,
+      "output": 50
+    },
+    {
+      "id": "teamrequest-4e2c67b5-e339-4c69-962b-fdebc618ef4c-r2-a2",
+      "profileId": "desktop-fixture",
+      "model": "qa-executor",
+      "purpose": "agent",
+      "input": 100,
+      "output": 50
+    },
+    {
+      "id": "teamrequest-e5519272-68ac-401d-b78f-4973d5019f72-r1-a1",
+      "profileId": "desktop-fixture",
+      "model": "qa-reviewer",
+      "purpose": "agent",
+      "input": 100,
+      "output": 50
+    },
+    {
+      "id": "teamrequest-e5519272-68ac-401d-b78f-4973d5019f72-r2-a2",
+      "profileId": "desktop-fixture",
+      "model": "qa-reviewer",
+      "purpose": "agent",
+      "input": 100,
+      "output": 50
+    }
+  ],
+  "approvals": [
+    {
+      "id": "172b9bc5-f242-4f76-a1ff-f0775c038c89",
+      "at": 1789886669579,
+      "kind": "approval",
+      "approved": true,
+      "text": "用户确认验收",
+      "nodeId": "node-2d1eb59d-e3a4-4b63-ae17-58876d937f82"
+    }
+  ],
+  "files": [
+    {
+      "memberId": "executor",
+      "sessionId": "e405c304-20df-44d0-9a2f-72d87f225a2e",
+      "content": {
+        "status": "ready"
+      },
+      "sha256": "406e4129854ce13c1c72378d5ee9214392bccfdd359411d221bd6825aade157f"
+    },
+    {
+      "memberId": "reviewer",
+      "sessionId": "12845b1e-3135-42db-b626-f113b4e1e261",
+      "content": {
+        "status": "ready"
+      },
+      "sha256": "406e4129854ce13c1c72378d5ee9214392bccfdd359411d221bd6825aade157f"
+    }
+  ]
+}

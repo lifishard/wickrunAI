@@ -18,6 +18,9 @@ function task({route='r1',model='kimi-k3',kind='modify',status='completed',feedb
 }
 const store=tasks=>({version:1,epoch:'e',createdAt:1,tasks,droppedTasks:0,writeFailures:0,ignoredRecordIds:[]});
 const passed=k=>({total:k,passed:k,program:k});
+const usage=(actualInput,actualOutput,over={})=>({total:1,accepted:1,failed:0,rejected:0,cancelled:0,pending:0,
+  actualInput,actualOutput,missingInput:0,missingOutput:0,estimatedInput:actualInput,reservedOutput:actualOutput,
+  requestMs:1,missingDispatch:0,...over});
 
 test('用户反馈最硬，有就听它的',()=>{
   assert.equal(rm.verdictOf(task({feedback:'usable',acc:{total:1,failed:1}})),'done');
@@ -63,6 +66,47 @@ test('成本门槛更高，且用量有缺口就不给',()=>{
   const [s]=rm.routeScores(store(gap));
   assert.equal(s.tokensPerDone,null);
   assert.equal(s.costIncomplete,true,'缺口要说出来，不是悄悄算');
+});
+
+test('多路由只消费自己的精确用量，模型标签也跟该路由走',()=>{
+  const tasks=[...Array(20)].map(()=>{
+    const t=task({feedback:'usable'});
+    t.attempts=[{...t.attempts[0],route:'route-a',model:'model-a'},
+      {...t.attempts[0],id:`${t.attempts[0].id}-b`,route:'route-b',model:'model-b'}];
+    t.requests=usage(240,60,{total:2,accepted:2});
+    t.routeRequests={'route-a':usage(80,20),'route-b':usage(160,40)};
+    return t;
+  });
+  const rows=rm.routeScores(store(tasks));
+  const a=rows.find(row=>row.route==='route-a'),b=rows.find(row=>row.route==='route-b');
+  assert.equal(a.tokensPerDone,100);assert.equal(b.tokensPerDone,200);
+  assert.equal(a.tokensPerDone+b.tokensPerDone,300,'两路由之和是任务实际用量，不是把 300 各记一次');
+  assert.equal(a.costIncomplete,false);assert.equal(b.costIncomplete,false);
+  assert.equal(a.model,'model-a');assert.equal(b.model,'model-b','不得用最后一条路由的模型覆盖别的路由');
+  assert.equal(a.done,20);assert.equal(b.done,20,'质量结果仍是任务共享证据，不表示因果归功');
+});
+
+test('旧多路由记录只有任务总量时保持未知，不重复分摊',()=>{
+  const tasks=[...Array(20)].map(()=>{
+    const t=task({feedback:'usable'});
+    t.attempts=[{...t.attempts[0],route:'legacy-a',model:'model-a'},
+      {...t.attempts[0],id:`${t.attempts[0].id}-b`,route:'legacy-b',model:'model-b'}];
+    return t;
+  });
+  const rows=rm.routeScores(store(tasks));
+  for(const row of rows){assert.equal(row.tokensPerDone,null);assert.equal(row.costIncomplete,true);}
+});
+
+test('新记录有未分配请求时，各路由成本明确为不完整',()=>{
+  const tasks=[...Array(20)].map(()=>{
+    const t=task({feedback:'usable'});
+    t.routeRequests={r1:usage(800,200)};
+    t.unassignedRequests=usage(50,10);
+    t.requests=usage(850,210,{total:2,accepted:2});
+    return t;
+  });
+  const [row]=rm.routeScores(store(tasks));
+  assert.equal(row.tokensPerDone,null);assert.equal(row.costIncomplete,true);
 });
 
 test('同一个模型挂在两份凭据下算两条路由',()=>{

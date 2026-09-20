@@ -134,6 +134,12 @@ export interface ContextCompaction {
 }
 
 export interface RunRequestStat {
+  /** Stable across persisted cumulative checkpoints so projections can deduplicate retries and resumes. */
+  requestId?: string;
+  /** Dispatch-time credential/profile identity. Optional because older checkpoints do not contain it. */
+  profileId?: string;
+  /** Dispatch-time model identity. Optional because older checkpoints do not contain it. */
+  model?: string;
   route: string;
   effort: string;
   purpose: string;

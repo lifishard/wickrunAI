@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "fixture": "latest-revision-v1",
+  "inputHash": "af93c93e71f372e6a440840bc0f0d3b535bb43152d562cef02acd7e8a0feb1a2",
+  "usageSource": "gateway_reported_or_missing",
+  "sampleLimit": "One synthetic case per strategy; no quality ranking or monetary inference.",
+  "runs": [
+    {
+      "runId": "teamrun-c3861be9-2c2a-4be5-85b1-698672e5db95",
+      "strategy": "single",
+      "status": "uncertain",
+      "programCheck": {
+        "passed": false,
+        "failures": [
+          "no_output"
+        ]
+      },
+      "elapsedExecutionMs": 2159,
+      "modelRoutes": [
+        {
+          "model": "dva/gpt-5-6-luna-max",
+          "requests": 1,
+          "input": 0,
+          "output": 0,
+          "missingInput": 1,
+          "missingOutput": 1
+        }
+      ],
+      "tokensReservedOrSpent": 3659,
+      "reviews": [],
+      "artifacts": [],
+      "approvals": [],
+      "failures": [
+        {
+          "nodeType": "agent",
+          "status": "failed",
+          "error": "Error: [500]: DEVIN_AGENTIC_HOME must be an absolute path inside the bridge sandbox (code internal_server_error)"
+        }
+      ],
+      "requestOutcomes": [
+        {
+          "id": "teamrequest-522bc828-f2cf-449c-b07a-40f21de0686c-r1-a1",
+          "model": "dva/gpt-5-6-luna-max",
+          "purpose": "agent",
+          "outcome": "failed",
+          "httpStatus": 500,
+          "failureKind": "model_broken"
+        }
+      ]
+    }
+  ]
+}

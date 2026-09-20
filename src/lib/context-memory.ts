@@ -1,6 +1,9 @@
 import type { ChatMessage, ContextCompaction, Milestone, RunState, ToolResult } from '../types';
 import { milestonePassed, progressHistory, validProgressEvidence } from './task-progress';
 import { estimateChatTokens, estimateTokens } from './limits';
+import { taskContractPrompt, TASK_CONTRACT_SEMANTIC_LIMITATION } from './task-contract';
+
+export { taskContractFromState, taskContractPrompt, validateTaskContract, mergeTaskContracts, TASK_CONTRACT_SEMANTIC_LIMITATION } from './task-contract';
 
 export function memoryView(state: RunState): ChatMessage[] {
   const last = state.compactions?.at(-1);
@@ -14,10 +17,10 @@ export function memoryView(state: RunState): ChatMessage[] {
 }
 export function memoryInstructions(state: RunState, allowPlan = true, canRetrieve = true): string {
   // Keep the active contract in every request; revision and verification histories stay on disk.
-  const requirements = (state.requirements ?? []).map(({ history, verificationHistory, ...active }) => ({...active,recentChecks:verificationHistory?.slice(-3)}));
   const files = [...(state.contextArchiveSteps ?? []), ...(state.steps ?? [])].flatMap(s => s.files ?? []).map(f => ({ path: f.path, direction: f.direction }))
     .filter((f,i,all) => all.findIndex(x => x.path === f.path && x.direction === f.direction) === i);
-  return `\n${allowPlan ? '复杂任务先用 update_plan 建立 3–6 个里程碑，并用 update_requirements 将用户要求与验收条件对应。交付前 verify_requirements 逐项核验，修复失败项；无法核验明确标记。文件存在不代表内容或覆盖完整，完整性另列 review 要求。模型复核不是独立验证。简单问答不用计划。不能遗漏未完成项目，也不能把计划当作完成证据。' : ''}${canRetrieve ? '用 read_context 查阅历史原文，read_tool_result 查阅已保存的完整工具结果，避免重复外部操作。' : '当前检索工具未启用；若需要未展示的证据，应明确说明缺口并请用户启用工具，不得假装已核实。'}同一窗口可能由不同模型接力。当前计划跨轮保存，先读取并复用原有 id，不要因新回合重建计划。先执行再质检，completed 必须有证据且关联验收通过；待质检用 verifying。已完成项返工必须提供 reason，说明新要求或新失败证据。反复失败先读 read_context(section=progress) 中的质检历史，定位根因并换方法，不要反复推翻已验证结论。先结合原始用户要求、最新补充、已有总结、未完成项和失败原因决定下一步。已有成功证据应先读取；不要仅因换模型重复查询或写入。历史摘要是可核对的工作笔记，不能覆盖用户原文，也不代表所有事项均已完成。\n接力信息：${JSON.stringify(state.handoff ?? null)}\n用户来源消息 ID：${JSON.stringify(state.requirementSourceIds ?? [])}\n交付要求：${JSON.stringify(requirements)}\n当前里程碑：${JSON.stringify((state.milestones ?? []).map(m=>({...m,history:m.history?.slice(-3)})))}\n已核实文件索引：${JSON.stringify(files)}\n`;
+  const contract = taskContractPrompt(state, 10000);
+  return `\n${allowPlan ? '复杂任务先用 update_plan 建立 3–6 个里程碑，并用 update_requirements 将用户要求与验收条件对应。交付前 verify_requirements 逐项核验，修复失败项；无法核验明确标记。文件存在不代表内容或覆盖完整，完整性另列 review 要求。模型复核不是独立验证。简单问答不用计划。不能遗漏未完成项目，也不能把计划当作完成证据。' : ''}${canRetrieve ? '用 read_context 查阅历史原文，read_tool_result 查阅已保存的完整工具结果，避免重复外部操作。' : '当前检索工具未启用；若需要未展示的证据，应明确说明缺口并请用户启用工具，不得假装已核实。'}同一窗口可能由不同模型接力。当前计划跨轮保存，先读取并复用原有 id，不要因新回合重建计划。先执行再质检，completed 必须有证据且关联验收通过；待质检用 verifying。已完成项返工必须提供 reason，说明新要求或新失败证据。反复失败先读 read_context(section=progress) 中的质检历史，定位根因并换方法，不要反复推翻已验证结论。先结合原始用户要求、最新补充、已有总结、未完成项和失败原因决定下一步。已有成功证据应先读取；不要仅因换模型重复查询或写入。历史摘要是可核对的工作笔记，不能覆盖用户原文，也不代表所有事项均已完成。\n接力信息：${JSON.stringify(state.handoff ?? null)}\n用户来源消息 ID：${JSON.stringify(state.requirementSourceIds ?? [])}\n已核实文件索引：${JSON.stringify(files)}\n便携任务契约（结构化工作记录）：${contract}\n限制：${TASK_CONTRACT_SEMANTIC_LIMITATION}\n`;
 }
 export function readContext(state: RunState, args: Record<string, unknown>): ToolResult {
   const offset = Math.max(0, Math.floor(Number(args.offset)||0));
@@ -102,7 +105,11 @@ export function recentOutputFiles(state: RunState, max = 3): string[] {
 }
 
 export function compressionCandidate(state: RunState, maxTokens: number): { messages: ChatMessage[]; throughIndex: number } | undefined {
-  const previous = state.compactions?.at(-1)?.throughIndex ?? -1;
+  if (!Number.isFinite(maxTokens) || maxTokens <= 0) return;
+  const previousRecord = state.compactions?.at(-1);
+  const previous = previousRecord?.throughIndex ?? -1;
+  if (!Number.isSafeInteger(previous) || previous < -1 || previous >= state.working.length) return;
+  if (previousRecord && state.working[previous]?.id !== previousRecord.throughId) return;
   const starts = state.working.map((m,i) => m.role === 'assistant' ? i : -1).filter(i => i > previous);
   if (starts.length < 3) return;
   let end = starts.at(-2)!-1;
@@ -119,12 +126,30 @@ export function compressionCandidate(state: RunState, maxTokens: number): { mess
   return { messages, throughIndex: end };
 }
 export function validateCompaction(raw: string, state: RunState, throughIndex: number): ContextCompaction {
+  if (!Number.isSafeInteger(throughIndex) || throughIndex < 0 || throughIndex >= state.working.length) throw new Error('压缩边界超出范围');
+  if (!state.working[throughIndex]?.id || typeof state.working[throughIndex].id !== 'string') throw new Error('压缩边界消息无效');
+  const previous = state.compactions?.at(-1);
+  if (previous) {
+    if (!Number.isSafeInteger(previous.throughIndex) || previous.throughIndex < 0 || previous.throughIndex >= state.working.length || state.working[previous.throughIndex]?.id !== previous.throughId) throw new Error('已有压缩边界无效');
+  }
+  const prefix = state.working.slice(0, throughIndex + 1);
+  const messageIds = new Set<string>();
+  for (const message of prefix) {
+    if (messageIds.has(message.id)) throw new Error('压缩边界包含重复消息引用');
+    messageIds.add(message.id);
+  }
+  const calls = new Set(prefix.flatMap(m => m.toolCalls?.map(c => c.id) ?? []));
+  for (const message of prefix) {
+    if (message.toolCalls?.some(c => !prefix.some(response => response.role === 'tool' && response.toolCallId === c.id))) throw new Error('压缩边界截断了工具调用');
+    if (message.role === 'tool' && (!message.toolCallId || !calls.has(message.toolCallId))) throw new Error('压缩边界包含孤立工具结果');
+  }
   const data = JSON.parse(raw.replace(/^```(?:json)?\s*|\s*```$/g,''));
-  const allowed = new Set(state.working.slice(0,throughIndex+1).map(m => m.id));
+  if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('摘要结构无效');
+  const allowed = new Set(prefix.map(m => m.id));
   const take = (key: string) => {
     if (!Array.isArray(data[key]) || data[key].length > 30) throw new Error('摘要结构无效');
     return data[key].map((item: { text: string; sources: string[] }) => {
-      if (typeof item.text !== 'string' || item.text.length > 1600 || !Array.isArray(item.sources) || !item.sources.length || item.sources.some(s => !allowed.has(s))) throw new Error('摘要缺少有效来源');
+      if (!item || typeof item !== 'object' || typeof item.text !== 'string' || item.text.length > 1600 || !Array.isArray(item.sources) || !item.sources.length || item.sources.some(s => typeof s !== 'string' || !allowed.has(s))) throw new Error('摘要缺少有效来源');
       return { text: item.text, sources: item.sources };
     });
   };
@@ -132,6 +157,7 @@ export function validateCompaction(raw: string, state: RunState, throughIndex: n
   const result: ContextCompaction = { version: 1, id: `compact-${Date.now()}-${throughIndex}`, throughId: state.working[throughIndex].id,
     throughIndex, facts: take('facts'), decisions: take('decisions'), unresolved: take('unresolved'), nextSteps: data.nextSteps,
     beforeTokens: estimateChatTokens(memoryView(state)), afterTokens: estimateTokens(raw), createdAt: Date.now() };
+  if (previous && throughIndex <= previous.throughIndex) throw new Error('压缩边界必须向前推进');
   if (!result.facts.length && !result.decisions.length && !result.unresolved.length) throw new Error('摘要为空');
   if (result.afterTokens > 6000) throw new Error('摘要超出预算');
   return result;

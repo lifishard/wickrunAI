@@ -1,0 +1,173 @@
+{
+  "version": "2.17.2",
+  "runId": "teamrun-182d1731-32e1-433b-bd06-142b8391ae1b",
+  "status": "completed",
+  "workflowVersion": 2,
+  "budget": {
+    "minutes": 10,
+    "tokens": 50000
+  },
+  "reviews": [
+    {
+      "attemptId": "attempt-7c8e3440-5de6-459f-9288-63416b887b0e",
+      "visit": 1,
+      "inputTexts": [
+        {
+          "id": "text:attempt-7323df26-7fd7-4c63-b9fb-f981dfab26e2",
+          "attemptId": "attempt-7323df26-7fd7-4c63-b9fb-f981dfab26e2",
+          "nodeId": "node-8c8a30f3-a9e8-449f-963d-4fcdf4c514f9",
+          "version": 1,
+          "text": "文本执行成员\n已完成：形成发布说明草稿。",
+          "digest": "b8500b7bfe41471a0194b5c1e16b43d3ec4cc7027981f3c625c33654fbfe0c57"
+        }
+      ],
+      "textReview": {
+        "verdict": "fail",
+        "artifactIds": [
+          "text:attempt-7323df26-7fd7-4c63-b9fb-f981dfab26e2"
+        ],
+        "textEvidence": [
+          {
+            "artifactId": "text:attempt-7323df26-7fd7-4c63-b9fb-f981dfab26e2",
+            "quote": "文本执行成员\n已完成：形成发布说明草稿。"
+          }
+        ],
+        "changes": "缺少待核实部分。请返工，说明模型复核不能证明事实。",
+        "method": "model"
+      }
+    },
+    {
+      "attemptId": "attempt-379b7b0a-9c55-458c-8bdb-58ce5b05d376",
+      "visit": 2,
+      "inputTexts": [
+        {
+          "id": "text:attempt-1cbc3806-e99a-4747-9553-11918c784cc2",
+          "attemptId": "attempt-1cbc3806-e99a-4747-9553-11918c784cc2",
+          "nodeId": "node-8c8a30f3-a9e8-449f-963d-4fcdf4c514f9",
+          "version": 2,
+          "text": "文本执行成员\n已完成：形成发布说明草稿。\n待核实：真实模型效果尚未验证；模型复核不是事实证明。",
+          "digest": "4f157e59a06469e69dbe307b722cd39ae0eba25b556ec40e61210546a40a8a80"
+        }
+      ],
+      "textReview": {
+        "verdict": "pass",
+        "artifactIds": [
+          "text:attempt-1cbc3806-e99a-4747-9553-11918c784cc2"
+        ],
+        "textEvidence": [
+          {
+            "artifactId": "text:attempt-1cbc3806-e99a-4747-9553-11918c784cc2",
+            "quote": "文本执行成员\n已完成：形成发布说明草稿。\n待核实：真实模型效果尚未验证；模型复核不是事实证明。"
+          }
+        ],
+        "changes": "当前版本包含已完成与待核实两个部分。原文核对通过不代表外部事实已验证。",
+        "method": "model"
+      }
+    }
+  ],
+  "memory": {
+    "frozenIds": [
+      "a-project@1",
+      "b-match@1",
+      "c-miss@1",
+      "d-expired@1",
+      "e-large@1"
+    ],
+    "selectedIds": [
+      "a-project",
+      "b-match"
+    ],
+    "audit": [
+      {
+        "id": "a-project",
+        "revision": 1,
+        "reason": "selected: project scope"
+      },
+      {
+        "id": "b-match",
+        "revision": 1,
+        "reason": "selected: matching task keyword"
+      },
+      {
+        "id": "c-miss",
+        "revision": 1,
+        "reason": "omitted: no task keyword match"
+      },
+      {
+        "id": "d-expired",
+        "revision": 1,
+        "reason": "omitted: expired at or before selection time"
+      },
+      {
+        "id": "e-large",
+        "revision": 1,
+        "reason": "omitted: memory exceeds context limit"
+      }
+    ],
+    "totalChars": 173
+  },
+  "files": 0,
+  "approvalEvents": [
+    {
+      "id": "3f65a8ef-f008-4d66-940c-1429ced20e9e",
+      "at": 1789888421090,
+      "kind": "approval",
+      "approved": true,
+      "text": "用户确认验收",
+      "nodeId": "node-084c51f9-3da2-4b74-b189-cd4290f58c3f"
+    }
+  ],
+  "usage": {
+    "requests": {
+      "total": 4,
+      "accepted": 4,
+      "failed": 0,
+      "rejected": 0,
+      "cancelled": 0,
+      "pending": 0,
+      "actualInput": 480,
+      "actualOutput": 240,
+      "missingInput": 0,
+      "missingOutput": 0,
+      "estimatedInput": 8504,
+      "reservedOutput": 32768,
+      "requestMs": 297,
+      "missingDispatch": 0
+    },
+    "routeRequests": {
+      "route-executor": {
+        "total": 2,
+        "accepted": 2,
+        "failed": 0,
+        "rejected": 0,
+        "cancelled": 0,
+        "pending": 0,
+        "actualInput": 240,
+        "actualOutput": 120,
+        "missingInput": 0,
+        "missingOutput": 0,
+        "estimatedInput": 3919,
+        "reservedOutput": 16384,
+        "requestMs": 182,
+        "missingDispatch": 0
+      },
+      "route-reviewer": {
+        "total": 2,
+        "accepted": 2,
+        "failed": 0,
+        "rejected": 0,
+        "cancelled": 0,
+        "pending": 0,
+        "actualInput": 240,
+        "actualOutput": 120,
+        "missingInput": 0,
+        "missingOutput": 0,
+        "estimatedInput": 4585,
+        "reservedOutput": 16384,
+        "requestMs": 115,
+        "missingDispatch": 0
+      }
+    },
+    "missing": []
+  }
+}

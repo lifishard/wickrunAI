@@ -1,6 +1,7 @@
 import type { TeamRun, NodeAttempt, FlowNode } from './collaboration';
+import type { RunRequestStat, RunState } from '../types';
 import { mutateObservations, observationEvent, routeAliasOf, observationStore,
-  type TaskObservation, type AttemptObservation } from './observations';
+  type TaskObservation, type AttemptObservation, type RequestObservationSummary } from './observations';
 import { taskKind } from './harness';
 import { APP_VERSION as appVersion } from './version';
 
@@ -21,8 +22,9 @@ import { APP_VERSION as appVersion } from './version';
  *    能算数的只有人在结束节点上点的那一下：批准 = 做成，拒绝 = 部分做成，
  *    失败或取消 = 没做成，跑到一半停着 = 说不清。
  *
- * C. **用量不按成员拆**。一次运行只有一个 tokens 合计，多成员时无法归因到某条路由；
- *    宁可标成「用量有缺口」不给成本数字，也不造一个看起来精确的假数。
+ * C. **请求按稳定编号去重**。成员检查点是累积快照，续跑和 attempt.state 会重复包含
+ *    同一批请求。新记录用 requestId 去重；旧记录没有稳定编号就不猜，明确标成缺口。
+ *    每条稳定请求按派发时身份归到路由；无法归属的旧请求另记为未分配用量。
  * ------------------------------------------------------------------ */
 
 const RUN_STATUS:Record<string,string>={ready:'unknown',running:'running',pausing:'running',paused:'paused',
@@ -90,6 +92,51 @@ function acceptanceOf(run:TeamRun){
     program:all.filter(v=>v.method==='program').length,model:all.filter(v=>v.method==='model').length};
 }
 
+interface TeamCheckpoint {attempt:NodeAttempt;memberId?:string;state:RunState}
+function checkpointsOf(run:TeamRun):TeamCheckpoint[]{
+  const out:TeamCheckpoint[]=[];
+  for(const attempt of run.attempts){
+    const node=run.version.graph.nodes.find(n=>n.id===attempt.nodeId);
+    // attempt.state mirrors the last member for compatibility. Put it first so the explicit
+    // member checkpoint wins when both contain a newer copy of the same request.
+    if(attempt.state)out.push({attempt,memberId:membersOf(node).length===1?membersOf(node)[0]:undefined,state:attempt.state});
+    for(const [memberId,state] of Object.entries(attempt.memberStates??{}))out.push({attempt,memberId,state});
+  }
+  return out;
+}
+
+interface TeamRequest {stat:RunRequestStat;attemptId:string;route?:string}
+function requestEvidence(run:TeamRun,rows:AttemptObservation[],routes:Map<string,string>){
+  const identified=new Map<string,TeamRequest>();
+  const compactions=new Map<string,{beforeTokens:number;afterTokens:number;createdAt:number}>();
+  let legacy=false;
+  for(const {attempt,memberId,state} of checkpointsOf(run)){
+      const candidates=rows.filter(row=>row.id.startsWith(memberId?`${attempt.id}:${memberId}:`:`${attempt.id}:`));
+      for(const stat of state.requestStats??[]){
+        const route=stat.profileId&&stat.model?routes.get(routeKeyOf(stat.profileId,stat.model)):undefined;
+        const matching=route?candidates.filter(row=>row.route===route):[];
+        const timed=matching.find(row=>stat.at>=row.startedAt&&stat.at<=row.lastAt);
+        const candidate=memberId?(timed??matching.at(-1)??candidates[0]):matching.length===1?matching[0]:undefined;
+        const attemptId=candidate?.id??'unknown';
+        if(stat.requestId)identified.set(stat.requestId,{stat,attemptId,route});
+        else legacy=true;
+      }
+      for(const item of state.compactions??[])compactions.set(item.id,{beforeTokens:item.beforeTokens,afterTokens:item.afterTokens,createdAt:item.createdAt});
+  }
+  return {requests:[...identified.values()].sort((a,b)=>a.stat.at-b.stat.at),legacy,compactions:[...compactions.values()].sort((a,b)=>a.createdAt-b.createdAt)};
+}
+
+function requestSummary(items:TeamRequest[],legacyGap=0):RequestObservationSummary{
+  const stats=items.map(item=>item.stat);
+  const sum=(key:'actualInput'|'output'|'estimatedInput'|'reservedOutput'|'elapsedMs')=>stats.reduce((n,r)=>n+(typeof r[key]==='number'?r[key]!:0),0);
+  return {total:stats.length,accepted:stats.filter(r=>r.outcome==='accepted').length,failed:stats.filter(r=>r.outcome==='failed').length,
+    rejected:stats.filter(r=>r.outcome==='rejected').length,cancelled:stats.filter(r=>r.outcome==='cancelled').length,
+    pending:stats.filter(r=>r.outcome==='pending'||!r.outcome).length,actualInput:sum('actualInput'),actualOutput:sum('output'),
+    missingInput:stats.filter(r=>r.actualInput===undefined).length+legacyGap,missingOutput:stats.filter(r=>r.output===undefined).length+legacyGap,
+    estimatedInput:sum('estimatedInput'),reservedOutput:sum('reservedOutput'),requestMs:sum('elapsedMs'),
+    missingDispatch:stats.filter(r=>!r.dispatchedAt).length+legacyGap};
+}
+
 function endVerdict(run:TeamRun):{outcome:'usable'|'partial'|'unresolved';at:number}|undefined{
   const ends=new Set(run.version.graph.nodes.filter(n=>n.type==='end').map(n=>n.id));
   const rejected=run.attempts.find((a:NodeAttempt)=>ends.has(a.nodeId)&&a.outcome==='fail');
@@ -102,6 +149,16 @@ function endVerdict(run:TeamRun):{outcome:'usable'|'partial'|'unresolved';at:num
 /** 纯投影：同一个 run 投影两次结果相同，正文、标题、路径和报错都不进索引。 */
 export function projectTeamObservation(previous:TaskObservation|undefined,run:TeamRun,routes:Map<string,string>):TaskObservation{
   const {rows,split,handedOff}=attemptRows(run,routes);
+  const evidence=requestEvidence(run,rows,routes);
+  const stats=evidence.requests.map(item=>item.stat);
+  const requestRouteIncomplete=evidence.requests.some(item=>!item.route);
+  const noRequestEvidence=!stats.length;
+  const evidenceGap=(evidence.legacy||noRequestEvidence)?1:0;
+  const routeRequests:Record<string,RequestObservationSummary>={};
+  for(const route of new Set(evidence.requests.flatMap(item=>item.route?[item.route]:[])))
+    routeRequests[route]=requestSummary(evidence.requests.filter(item=>item.route===route));
+  const unassigned=evidence.requests.filter(item=>!item.route);
+  const latestCompaction=evidence.compactions.at(-1);
   const steps=run.attempts.flatMap(a=>a.steps??[]);
   const verdict=endVerdict(run);
   const t:TaskObservation={
@@ -113,16 +170,17 @@ export function projectTeamObservation(previous:TaskObservation|undefined,run:Te
     acceptance:acceptanceOf(run),
     attempts:rows.slice(-100),droppedAttempts:Math.max(0,rows.length-100),
     events:[],nextSeq:0,droppedEvents:0,seenEvents:{},
-    requests:{total:0,accepted:0,failed:0,rejected:0,cancelled:0,pending:0,actualInput:0,actualOutput:0,
-      // 只有整次运行的合计，拆不到成员头上：标成缺口，成本一栏就不会出数字
-      missingInput:1,missingOutput:1,estimatedInput:0,reservedOutput:0,requestMs:0,missingDispatch:0},
+    requests:requestSummary(evidence.requests,evidenceGap),routeRequests,
+    ...(unassigned.length||evidenceGap?{unassignedRequests:requestSummary(unassigned,evidenceGap)}:{}),
     tools:{total:steps.length,ok:steps.filter(s=>s.status==='ok').length,failed:steps.filter(s=>s.status==='error').length,
       denied:steps.filter(s=>s.status==='denied').length,elapsedMs:steps.reduce((n,s)=>n+(s.elapsedMs??0),0)},
-    compactions:{total:0,latestBeforeTokens:null,latestAfterTokens:null},
+    compactions:{total:evidence.compactions.length,latestBeforeTokens:latestCompaction?.beforeTokens??null,latestAfterTokens:latestCompaction?.afterTokens??null},
     requirementStates:{},
     pauseCount:run.events.filter(e=>['pause','paused','failed','uncertain','limit'].includes(e.kind)).length,
     resumeCount:0,pauseReasons:{},supplements:0,recoveredWrites:0,
-    missing:['协作空间只有整次运行的用量合计，无法按成员或路由拆分',
+    missing:[...(noRequestEvidence?['协作成员没有逐请求用量记录，无法计算 token 成本']:[]),
+      ...(evidence.legacy?['旧检查点的请求缺少稳定编号，未计入用量以避免续跑重复计算']:[]),
+      ...(requestRouteIncomplete?['部分请求的旧检查点缺少派发时的连接或模型，无法精确归到路由']:[]),
       ...(split?['同一步骤由多位成员完成，每位的耗时无法分离']:[]),
       ...(handedOff?['本次运行中途按名单换过路由；做成与否按整次运行计，换下来的那条也会计入这一次']:[])],
   };
@@ -136,6 +194,13 @@ export function projectTeamObservation(previous:TaskObservation|undefined,run:Te
   }
   for(const e of run.events)if(EVENT_KINDS.has(e.kind))
     observationEvent(t,`event:${e.id}`,'team_event',e.at,first,{kind:e.kind,...(typeof e.approved==='boolean'?{approved:e.approved}:{})});
+  for(const {stat,attemptId,route} of evidence.requests)observationEvent(t,`request:${stat.requestId}`,'request',stat.at,attemptId,{
+    purpose:['agent','final','compaction'].includes(stat.purpose)?stat.purpose:'other',outcome:stat.outcome??'unknown',
+    route:route??null,
+    httpStatus:stat.httpStatus??null,failureKind:stat.failureKind??null,actualInput:stat.actualInput??null,
+    actualOutput:stat.output??null,estimatedInput:stat.estimatedInput,reservedOutput:stat.reservedOutput,
+    elapsedMs:stat.elapsedMs??null,queueMs:stat.dispatchedAt?Math.max(0,stat.dispatchedAt-stat.at):null,
+  });
   if(verdict)observationEvent(t,`verdict:${run.id}:${verdict.outcome}`,'user_feedback',verdict.at,t.attempts.at(-1)?.id??first,
     {outcome:verdict.outcome,reason:'none',from:'team_approval'});
   return t;
@@ -151,7 +216,8 @@ export async function observeTeamRun(run:TeamRun):Promise<void>{
   const store=await observationStore();
   const routes=new Map<string,string>();
   const seen=[...run.members.map(m=>({profileId:m.connectionId,model:m.model})),
-    ...run.attempts.flatMap(a=>(a.routeLog??[]).map(x=>({profileId:x.profileId,model:x.model})))];
+    ...run.attempts.flatMap(a=>(a.routeLog??[]).map(x=>({profileId:x.profileId,model:x.model}))),
+    ...checkpointsOf(run).flatMap(({state})=>(state.requestStats??[]).flatMap(stat=>stat.profileId&&stat.model?[{profileId:stat.profileId,model:stat.model}]:[]))];
   for(const route of seen){
     const key=routeKeyOf(route.profileId,route.model);
     if(!routes.has(key))routes.set(key,await routeAliasOf(route.model,route.profileId,'',store.epoch));

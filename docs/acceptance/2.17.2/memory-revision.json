@@ -1,0 +1,19 @@
+{
+  "current": {
+    "id": "b-match",
+    "status": "candidate",
+    "revision": 2,
+    "keywords": [
+      "发布",
+      "验收"
+    ]
+  },
+  "frozen": {
+    "id": "b-match",
+    "status": "adopted",
+    "revision": 1,
+    "keywords": [
+      "发布"
+    ]
+  }
+}

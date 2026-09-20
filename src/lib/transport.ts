@@ -75,6 +75,9 @@ interface ElectronBridge {
   collaborationClaim(projectId:string,runId:string): Promise<import('./collaboration').CollaborationData>;
   teamFilesCreate(projectId:string,taskId:string,memberId:string,root:string): Promise<import('./collaboration').FileSession>;
   teamFilesDiff(id:string): Promise<import('./collaboration').FileSession>;
+  teamArtifactsPublish(scope:{projectId:string;runId:string;attemptId:string;memberId:string},sessionId:string):Promise<import('./collaboration').TeamArtifact>;
+  teamArtifactsReceive(scope:{projectId:string;runId:string;attemptId:string;memberId:string},sessionId:string,ids:string[]):Promise<import('./collaboration').FileSession>;
+  teamArtifactsValidate(scope:{projectId:string;runId:string;attemptId:string;memberId:string},ids:string[]):Promise<import('./collaboration').TeamArtifact[]>;
   teamFilesRecover(id:string):Promise<import('./collaboration').FileSession>;
   teamFilesPreview(id:string,path:string): Promise<{path:string;before:string|null;after:string|null}>;
   teamFilesMerge(id:string,files:{path:string;beforeHash:string|null;afterHash:string|null}[]): Promise<import('./collaboration').FileSession>;

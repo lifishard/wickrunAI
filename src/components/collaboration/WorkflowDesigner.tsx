@@ -854,6 +854,12 @@ export default function WorkflowDesigner({
                   />
                 </label>
 
+                {activeNode.type === 'review' && <label>复核范围
+                  <select className="workflow-designer-select" value={activeNode.reviewMode??'files'} onChange={event=>updateNode(activeNode.id,{reviewMode:event.target.value as 'files'|'text'})}>
+                    <option value="files">文件产物</option><option value="text">文本答复</option>
+                  </select>
+                  <small>文本复核会核对当前答复版本和原文引用；文件修改和外部执行结果需要相应证据。</small>
+                </label>}
                 {(activeNode.type === 'agent' || activeNode.type === 'review' || activeNode.type === 'handoff') && (
                   <label>
                     {t('成员')}

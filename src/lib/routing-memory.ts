@@ -1,4 +1,4 @@
-import type { ObservationStore, TaskObservation } from './observations';
+import type { ObservationStore, TaskObservation, RequestObservationSummary } from './observations';
 import type { TaskKind } from './harness';
 
 /* ------------------------------------------------------------------ *
@@ -90,6 +90,34 @@ const median = (xs: number[]): number | null => {
   return s.length % 2 ? s[m] : Math.round((s[m - 1] + s[m]) / 2);
 };
 
+const unknownUsage=():RequestObservationSummary=>({total:0,accepted:0,failed:0,rejected:0,cancelled:0,pending:0,
+  actualInput:0,actualOutput:0,missingInput:1,missingOutput:1,estimatedInput:0,reservedOutput:0,requestMs:0,missingDispatch:1});
+
+/**
+ * New team records carry bounded route aggregates. Old records only have one task total: that is
+ * safe for a single-route task, but a multi-route task must remain unknown rather than charging the
+ * same total to every route. Unassigned identified requests make every route's cost incomplete.
+ */
+function usageForRoute(t:TaskObservation,route:string):RequestObservationSummary{
+  if(t.routeRequests!==undefined){
+    const own=t.routeRequests[route];
+    if(!own)return unknownUsage();
+    const unassigned=t.unassignedRequests;
+    const gap=unassigned&&(unassigned.total>0||unassigned.missingInput>0||unassigned.missingOutput>0)?1:0;
+    return gap?{...own,missingInput:own.missingInput+1,missingOutput:own.missingOutput+1}:own;
+  }
+  const routes=new Set(t.attempts.map(a=>a.route));
+  return routes.size===1&&routes.has(route)?t.requests:unknownUsage();
+}
+
+function modelForRoute(tasks:TaskObservation[],route:string):string{
+  for(let ti=tasks.length-1;ti>=0;ti--){
+    const attempts=tasks[ti].attempts;
+    for(let ai=attempts.length-1;ai>=0;ai--)if(attempts[ai].route===route)return attempts[ai].model;
+  }
+  return route;
+}
+
 function score(route: string, kind: RouteScore['kind'], source: ScoreSource, tasks: TaskObservation[]): RouteScore {
   const verdicts = tasks.map(verdictOf);
   const done = verdicts.filter((v) => v === 'done').length;
@@ -97,13 +125,15 @@ function score(route: string, kind: RouteScore['kind'], source: ScoreSource, tas
   const judged = done + notDone;
   const completed = tasks.filter((t) => t.status === 'completed');
   const active = tasks.flatMap((t) => t.attempts.map((a) => a.activeMs)).filter((n) => n > 0);
-  const tokens = tasks.reduce((n, t) => n + t.requests.actualInput + t.requests.actualOutput, 0);
-  const costIncomplete = tasks.some((t) => t.requests.missingInput > 0 || t.requests.missingOutput > 0);
+  const usage=tasks.map(t=>usageForRoute(t,route));
+  const tokens = usage.reduce((n, r) => n + r.actualInput + r.actualOutput, 0);
+  const costIncomplete = usage.some(r=>r.missingInput>0||r.missingOutput>0);
   const tools = tasks.reduce((n, t) => n + t.tools.total, 0);
   const toolFails = tasks.reduce((n, t) => n + t.tools.failed, 0);
   const rankable = judged >= MIN_RANK_SAMPLES;
   return {
-    route, kind, source, model: tasks.at(-1)?.attempts.at(-1)?.model ?? route,
+    // Outcome remains task-shared evidence: appearing in a successful task is not causal credit.
+    route, kind, source, model:modelForRoute(tasks,route),
     samples: tasks.length, done, notDone, unknown: verdicts.filter((v) => v === 'unknown').length,
     doneRate: rankable ? done / judged : null,
     medianActiveMs: median(active),

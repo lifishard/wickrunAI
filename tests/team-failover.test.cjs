@@ -162,7 +162,7 @@ test('用户按的暂停不算「轮次用完」，绝不自动续',async t=>{
 
 test('剩余预算开不了一段就直说剩多少、该调哪个设置，而不是派一段注定跑不动的',async t=>{
   const f=fixture(t,async args=>{args.events.onContentDelta('ok');args.events.onDone();});
-  const id=await setup(f,{},{maxTokens:400000});
+  const id=await setup(f,{maxTokens:30000},{maxTokens:400000});
   await f.runtime.update('p',p=>{const r=p.runs.find(x=>x.id===id);r.tokens=395000;});
   await f.runtime.start('p',id);
   const run=f.runtime.project('p').runs[0];
@@ -179,6 +179,29 @@ test('小预算流程按比例缩放下限，不会因为绝对下限一次都�
   assert.equal(stageFloor(400000),MIN_STAGE_TOKENS);
   assert.equal(stageFloor(10000),2000);
   assert.equal(stageFloor(1),1);
+});
+
+test('large task budget never raises a small member cap and real tool guard accepts the reservation',async t=>{
+  let f;f=fixture(t,async args=>{
+    const run=f.runtime.project('p').runs[0],attempt=run.attempts.find(a=>a.status==='running');
+    assert.equal(args.config.runtime.maxTokens,4000);
+    const {createTeamExecutionGuard}=require('../electron/team-execution-guard.cjs');
+    const guard=createTeamExecutionGuard({collaboration:{read:()=>f.store.read()},teamFiles:{}});
+    assert.deepEqual(guard.tool('read_file',{teamExecution:{projectId:'p',runId:run.id,attemptId:attempt.id,memberId:'a'}}).workspaceRoots,[]);
+    args.events.onContentDelta('done');args.events.onDone();
+  });
+  const id=await setup(f,{tools:['read_file']},{maxTokens:400000});
+  await f.runtime.start('p',id);
+  assert.equal(f.calls.length,1);assert.equal(f.runtime.project('p').runs[0].status,'waiting_user');
+});
+
+test('stage allocation respects remaining and member caps across competing slots',t=>{
+ const f=fixture(t,async()=>{}),{stageReservation}=f.runtimeModule;
+ assert.equal(stageReservation(400000,4000,400000,2),4000);
+ assert.equal(stageReservation(400000,100000,25000,2),20000);
+ assert.equal(stageReservation(400000,4000,5000,3),4000);
+ assert.throws(()=>stageReservation(400000,30000,5000,1),/至少要 20000/);
+ assert.throws(()=>stageReservation(400000,0,5000,1),/无效/);
 });
 
 // ---- R2：review 类验收要引用的证据编号，直接列进提示 ----
@@ -212,4 +235,3 @@ test('隔离副本没有 .git 这件事要先告诉成员，别让它白撞一�
   // 这次夹具没有配工作目录，所以不该出现这段；有隔离副本时才提示
   assert.equal(/不含 \.git/.test(prompt),false);
 });
-

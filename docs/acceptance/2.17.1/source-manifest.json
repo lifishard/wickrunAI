@@ -1,0 +1,16 @@
+{
+  "version": "2.17.1",
+  "files": {
+    "src/lib/team-contract.ts": "cd3ec50e610736c8a7e3e7f9f5ed73a38e0fb1725d42386f39a73180722e3218",
+    "src/lib/team-runtime.ts": "da6ecd7a769be9e1c00e886b5b90bc742108066b4607967ecada360af2163831",
+    "src/lib/agent.ts": "8541fcd52b164b7487f72ef59b020012cf38f46f90d14c020c95744816364d38",
+    "src/lib/team-observations.ts": "a117db13d5ef98f2a6f6bd41e559baa3d3d6f73d9a3914e76f8bab80bba4d195",
+    "src/types.ts": "dc0635333c087231f56a3835b330b43461c3ba4c3cd4f028cfd29065b7cba10b",
+    "tests/context-lifecycle.test.cjs": "f765d3de61efbb4d5119cc99b17e4e22a6f25d7228998a65b1d802acd9211d32",
+    "tests/team-review-scope.test.cjs": "554be8fbd238586c358f7c814faaed112f86841d6f38f98b4b95fdd338229208",
+    "tests/request-attribution.test.cjs": "1dbe36003bd5c5285c866e3ca6e7ad9cd9b675c3a3ff56c1fe19603557520c91",
+    "tests/fixtures/team-strategy-case.cjs": "de487581739308af15a9ba151d9357e29a2fd90d97da1b7749c44fb36836e663",
+    "scripts/report-team-strategy-pilot.cjs": "7831eea8fdabf4db243409e6519281c6b8fbaf9355acc0e0010cfd16ff16e2e4",
+    "dist/index.html": "e0f46f3b9be766da1b8d2616e6b2fa1355649ecfb87c20080e994fdbdfcd6108"
+  }
+}

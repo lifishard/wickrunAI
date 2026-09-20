@@ -371,6 +371,10 @@ function registerIpc() {
   ipcMain.handle('snc:clientApprove',(_e,{id,approved})=>localClients.approve(id,approved));
   ipcMain.handle('snc:teamFilesCreate', (_e,args) => { dataAvailable();return require('./team-execution-guard.cjs').createTeamExecutionGuard({collaboration,teamFiles}).createFileSession(args); });
   ipcMain.handle('snc:teamFilesDiff', (_e,id) => {dataAvailable();return teamFiles.diff(id);});
+  const artifactGuard=()=>require('./team-execution-guard.cjs').createTeamExecutionGuard({collaboration,teamFiles});
+  ipcMain.handle('snc:teamArtifactsPublish',(_e,{scope,sessionId})=>{dataAvailable();return artifactGuard().publishArtifact(scope,sessionId);});
+  ipcMain.handle('snc:teamArtifactsReceive',(_e,{scope,sessionId,ids})=>{dataAvailable();return artifactGuard().receiveArtifacts(scope,sessionId,ids);});
+  ipcMain.handle('snc:teamArtifactsValidate',(_e,{scope,ids})=>{dataAvailable();return artifactGuard().validateArtifacts(scope,ids);});
   ipcMain.handle('snc:teamFilesRecover', (_e,id) => {dataAvailable();return teamFiles.recover(id);});
   ipcMain.handle('snc:teamFilesPreview', (_e,{id,path}) => teamFiles.preview(id,path));
   ipcMain.handle('snc:teamFilesMerge', (_e,{id,files}) => {dataAvailable();return teamFiles.merge(id,files);});

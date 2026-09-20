@@ -1,0 +1,7 @@
+{
+  "model": "oc/gpt-5.6-luna",
+  "status": 402,
+  "errorCode": "payment_required",
+  "hasContent": false,
+  "usage": null
+}

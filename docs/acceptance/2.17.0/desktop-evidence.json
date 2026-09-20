@@ -1,0 +1,335 @@
+{
+  "kind": "native Electron desktop + controlled localhost model",
+  "baseline": "cf70b1b",
+  "supplierModel": false,
+  "runs": [
+    {
+      "id": "teamrun-c61380de-3523-4309-8c43-daeaa3bd6845",
+      "status": "completed",
+      "tokens": 1200,
+      "createdAt": 1789883566956,
+      "updatedAt": 1789883822609,
+      "requestIds": [],
+      "attempts": [
+        {
+          "id": "attempt-182d459f-007b-4d1d-b511-3d0e0ff1c15b",
+          "node": "start",
+          "visit": 1,
+          "status": "completed",
+          "steps": []
+        },
+        {
+          "id": "attempt-6541d0b0-26a1-4d8a-8a88-bdfdac149967",
+          "node": "agent",
+          "visit": 1,
+          "status": "completed",
+          "artifacts": [
+            {
+              "id": "a4e0ac6d-eb08-48d4-80d8-87b2a271f8cb",
+              "version": 1,
+              "digest": "07830bb3f075444eedbb97fe3d94b5f55aaa98e6b344983568d80e5422228853",
+              "files": [
+                {
+                  "path": "result.json",
+                  "beforeHash": null,
+                  "afterHash": "ad7b29ea7180bc3f97362bc50ad5043646d18eea1102e3c62e6c0ec001243036"
+                }
+              ]
+            }
+          ],
+          "steps": [
+            {
+              "callId": "qa-write-1e0ab558-223e-4b8d-9ff6-2f6cfa46798c",
+              "name": "write_file",
+              "status": "ok"
+            }
+          ]
+        },
+        {
+          "id": "attempt-ff4989f5-946f-44bf-b594-dce4481a904a",
+          "node": "review",
+          "visit": 1,
+          "status": "completed",
+          "review": {
+            "verdict": "fail",
+            "evidence": [
+              "qa-read-3fc0cba5-b387-49e7-bf08-3b22f7400e7f"
+            ],
+            "changes": "已读取交付版本，status 为 draft；返工要求：改为 ready。",
+            "method": "model",
+            "artifactIds": [
+              "a4e0ac6d-eb08-48d4-80d8-87b2a271f8cb"
+            ]
+          },
+          "inputArtifacts": [
+            {
+              "id": "a4e0ac6d-eb08-48d4-80d8-87b2a271f8cb",
+              "version": 1
+            }
+          ],
+          "steps": [
+            {
+              "callId": "qa-read-3fc0cba5-b387-49e7-bf08-3b22f7400e7f",
+              "name": "read_file",
+              "status": "ok"
+            }
+          ]
+        },
+        {
+          "id": "attempt-1d406451-02b0-4547-942a-c0d374a03d0b",
+          "node": "agent",
+          "visit": 2,
+          "status": "completed",
+          "artifacts": [
+            {
+              "id": "1d982bae-c231-4c40-90a9-0478a83c2a76",
+              "version": 2,
+              "digest": "1d5f226e499cbb54c4b628d754a9a9205ed99c9ce37c5a98c6e3a110d7172bb6",
+              "files": [
+                {
+                  "path": "result.json",
+                  "beforeHash": null,
+                  "afterHash": "406e4129854ce13c1c72378d5ee9214392bccfdd359411d221bd6825aade157f"
+                }
+              ]
+            }
+          ],
+          "steps": [
+            {
+              "callId": "qa-write-48b77e8b-d1a9-47a8-a23c-dc602ae3ea8a",
+              "name": "write_file",
+              "status": "ok"
+            }
+          ]
+        },
+        {
+          "id": "attempt-12b9a48e-1a55-48c9-9d3c-becb627a9b46",
+          "node": "review",
+          "visit": 2,
+          "status": "completed",
+          "review": {
+            "verdict": "pass",
+            "evidence": [
+              "qa-read-a4974f84-72d9-4d7b-ace4-f0ab97e34a71"
+            ],
+            "changes": "已读取新版本，status 为 ready，字段符合验收条件。",
+            "method": "model",
+            "artifactIds": [
+              "1d982bae-c231-4c40-90a9-0478a83c2a76"
+            ]
+          },
+          "inputArtifacts": [
+            {
+              "id": "1d982bae-c231-4c40-90a9-0478a83c2a76",
+              "version": 2
+            }
+          ],
+          "steps": [
+            {
+              "callId": "qa-read-a4974f84-72d9-4d7b-ace4-f0ab97e34a71",
+              "name": "read_file",
+              "status": "ok"
+            }
+          ]
+        },
+        {
+          "id": "attempt-989552b4-8777-48f2-a99d-ef1351757578",
+          "node": "end",
+          "visit": 1,
+          "status": "completed",
+          "steps": []
+        }
+      ],
+      "approval": [
+        {
+          "id": "f9ded0e3-43e6-436c-b594-4bb8ce0242ae",
+          "at": 1789883822609,
+          "kind": "approval",
+          "approved": true,
+          "text": "用户确认验收",
+          "nodeId": "node-50b427de-25a7-4e1d-8432-7bb63cd05e7a"
+        }
+      ]
+    },
+    {
+      "id": "teamrun-294eb0cc-a9a9-4b17-958a-29c25248bbb6",
+      "status": "completed",
+      "tokens": 1200,
+      "createdAt": 1789884458601,
+      "updatedAt": 1789884716729,
+      "requestIds": [
+        "teamrequest-98aedf30-6e07-48dd-b8b1-578b24d3e20f-r1-a1",
+        "teamrequest-98aedf30-6e07-48dd-b8b1-578b24d3e20f-r2-a2",
+        "teamrequest-496eb6a0-71e1-4266-8c54-bbdf244f2e79-r1-a1",
+        "teamrequest-496eb6a0-71e1-4266-8c54-bbdf244f2e79-r2-a2",
+        "teamrequest-10d4ecee-cc92-4ce9-b309-ced032eb2876-r1-a1",
+        "teamrequest-10d4ecee-cc92-4ce9-b309-ced032eb2876-r2-a2",
+        "teamrequest-bd5540b3-6b89-4388-842f-32ae768487e0-r1-a1",
+        "teamrequest-bd5540b3-6b89-4388-842f-32ae768487e0-r2-a2"
+      ],
+      "attempts": [
+        {
+          "id": "attempt-cce27f4d-db40-4da9-9468-bb97de60975c",
+          "node": "start",
+          "visit": 1,
+          "status": "completed",
+          "steps": []
+        },
+        {
+          "id": "attempt-0682cf44-0214-4474-bad7-1f7ee0b73335",
+          "node": "agent",
+          "visit": 1,
+          "status": "completed",
+          "artifacts": [
+            {
+              "id": "14f7a821-8aa5-45d3-be23-4aae7cb7561b",
+              "version": 1,
+              "digest": "d9c17a5c073b803764b8f0ab32dbb6f1973528c84fcd96601dafbf5bd5600522",
+              "files": [
+                {
+                  "path": "result.json",
+                  "beforeHash": "406e4129854ce13c1c72378d5ee9214392bccfdd359411d221bd6825aade157f",
+                  "afterHash": "ad7b29ea7180bc3f97362bc50ad5043646d18eea1102e3c62e6c0ec001243036"
+                }
+              ]
+            }
+          ],
+          "steps": [
+            {
+              "callId": "qa-write-49e788a3-ee73-4987-abf5-06dca0aa4b3a",
+              "name": "write_file",
+              "status": "ok"
+            }
+          ]
+        },
+        {
+          "id": "attempt-e1c0a5c3-38d8-4633-a56b-a7b43ec45ec5",
+          "node": "review",
+          "visit": 1,
+          "status": "completed",
+          "review": {
+            "verdict": "fail",
+            "evidence": [
+              "qa-read-884415a4-821c-40ed-854f-b9e8f1363e80"
+            ],
+            "changes": "已读取交付版本，status 为 draft；返工要求：改为 ready。",
+            "method": "model",
+            "artifactIds": [
+              "14f7a821-8aa5-45d3-be23-4aae7cb7561b"
+            ]
+          },
+          "inputArtifacts": [
+            {
+              "id": "14f7a821-8aa5-45d3-be23-4aae7cb7561b",
+              "version": 1
+            }
+          ],
+          "steps": [
+            {
+              "callId": "qa-read-884415a4-821c-40ed-854f-b9e8f1363e80",
+              "name": "read_file",
+              "status": "ok"
+            }
+          ]
+        },
+        {
+          "id": "attempt-09cd7a71-9cd0-4495-a7b9-9798f0fbbfd0",
+          "node": "agent",
+          "visit": 2,
+          "status": "completed",
+          "artifacts": [
+            {
+              "id": "9d19310b-ca22-46eb-a564-62902f3f4ef3",
+              "version": 2,
+              "digest": "ebfb1e437b7bf12080f5538b38e187cf234bb33804135181d4b4731a91e3b908",
+              "files": []
+            }
+          ],
+          "steps": [
+            {
+              "callId": "qa-write-24f86ebc-58ca-4ce9-81bf-a33f8b960b6c",
+              "name": "write_file",
+              "status": "ok"
+            }
+          ]
+        },
+        {
+          "id": "attempt-0c02d2c1-ec44-4731-9068-a28bfb9d3a79",
+          "node": "review",
+          "visit": 2,
+          "status": "completed",
+          "review": {
+            "verdict": "pass",
+            "evidence": [
+              "qa-read-88518293-83d0-4dcc-8256-f55e337b343d"
+            ],
+            "changes": "已读取新版本，status 为 ready，字段符合验收条件。",
+            "method": "model",
+            "artifactIds": [
+              "9d19310b-ca22-46eb-a564-62902f3f4ef3"
+            ]
+          },
+          "inputArtifacts": [
+            {
+              "id": "9d19310b-ca22-46eb-a564-62902f3f4ef3",
+              "version": 2
+            }
+          ],
+          "steps": [
+            {
+              "callId": "qa-read-88518293-83d0-4dcc-8256-f55e337b343d",
+              "name": "read_file",
+              "status": "ok"
+            }
+          ]
+        },
+        {
+          "id": "attempt-42e2eaaf-9238-49fb-ad19-81aae9839f5d",
+          "node": "end",
+          "visit": 1,
+          "status": "completed",
+          "steps": []
+        }
+      ],
+      "approval": [
+        {
+          "id": "380267d7-ce20-412d-ac4e-ced3e7edd5d7",
+          "at": 1789884716729,
+          "kind": "approval",
+          "approved": true,
+          "text": "用户确认验收",
+          "nodeId": "node-2d1eb59d-e3a4-4b63-ae17-58876d937f82"
+        }
+      ]
+    }
+  ],
+  "sessions": [
+    {
+      "id": "f2e7f155-e25b-4da6-8fde-0e37b55c7db4",
+      "member": "executor",
+      "status": "merged"
+    },
+    {
+      "id": "93c830a3-cedb-4e7a-9822-f086a596f0cf",
+      "member": "reviewer",
+      "status": "pending"
+    },
+    {
+      "id": "1bb29e34-f374-4715-9ae2-433c90e45122",
+      "member": "executor",
+      "status": "isolated"
+    },
+    {
+      "id": "d2a11285-a3dc-4dfc-b548-8511a39c652f",
+      "member": "reviewer",
+      "status": "pending"
+    }
+  ],
+  "mergedFile": {
+    "name": "result.json",
+    "content": {
+      "status": "ready"
+    },
+    "sha256": "406e4129854ce13c1c72378d5ee9214392bccfdd359411d221bd6825aade157f"
+  }
+}

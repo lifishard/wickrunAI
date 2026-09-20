@@ -1,18 +1,39 @@
 import { mergeProgress, reconcileProgress } from './task-progress';
 import type { ChatMessage, Conversation, HandoffInfo, RunRecord, RunState, ToolStep, Milestone, DeliveryRequirement } from '../types';
+import { mergeTaskContracts, taskContractFromState, taskContractPrompt, type PortableTaskContract } from './task-contract';
+
+const clip = (value: unknown, limit: number): string => {
+  const text = typeof value === 'string' ? value : String(value ?? '');
+  if (text.length <= limit) return text;
+  const head = Math.max(1, Math.ceil(limit * 0.65));
+  return `${text.slice(0, head)}…（已省略，原文按来源 ID取回）…${text.slice(-(limit - head))}`;
+};
+
+const compactCheck = (check: any) => ({
+  kind: check?.kind,
+  ...(check?.path ? { path: clip(check.path, 160) } : {}),
+  ...(Array.isArray(check?.contains) ? { contains: check.contains.slice(0, 3).map((value: unknown) => clip(value, 120)) } : {}),
+  ...(Array.isArray(check?.requiredKeys) ? { requiredKeys: check.requiredKeys.slice(0, 3).map((value: unknown) => clip(value, 120)) } : {}),
+  ...(check?.count !== undefined ? { count: check.count } : {}),
+});
 
 /** Portable working notes, never hidden reasoning or a new user instruction. */
 export function checkpointNotes(state: RunState) {
   const summary=state.compactions?.at(-1);
+  const compactSummary=(items: {text:string;sources:string[]}[]|undefined)=> (items??[]).slice(-12).map(item=>({text:clip(item.text,500),sources:(item.sources??[]).slice(0,6)}));
+  const compactRequirements=(state.requirements??[]).slice(-12).map(r=>({id:r.id,revision:r.revision,title:clip(r.title,180),sourceId:r.sourceId,sourceQuote:clip(r.sourceQuote,260),milestoneId:r.milestoneId,check:compactCheck(r.check),verification:r.verification?{revision:r.verification.revision,status:r.verification.status,method:r.verification.method,detail:clip(r.verification.detail,360),evidence:r.verification.evidence.slice(0,6)}:undefined,historyCount:r.history?.length??0}));
+  const compactMilestones=(state.milestones??[]).slice(-12).map(m=>({id:m.id,title:clip(m.title,180),status:m.status,acceptance:m.acceptance?clip(m.acceptance,240):undefined,evidence:(m.evidence??[]).slice(-10),note:m.note?clip(m.note,360):undefined,historyCount:m.history?.length??0}));
   return {
     status:state.status, blocker:state.reason,
-    memory:summary ? {facts:summary.facts,decisions:summary.decisions,unresolved:summary.unresolved,nextSteps:summary.nextSteps}:undefined,
-    milestones:state.milestones,
-    requirements:state.requirements?.map(r=>({id:r.id,title:r.title,check:r.check,verification:r.verification})),
-    recentEvidence:(state.steps??[]).slice(-12).map(s=>({id:s.id,callId:s.callId,name:s.name,status:s.status,summary:s.summary,resultRef:s.resultRef,error:s.error})),
-    files:(state.steps??[]).flatMap(s=>s.files??[]).filter((f,i,all)=>all.findIndex(x=>x.path===f.path&&x.direction===f.direction)===i),
-    pending:state.pendingCalls?.slice(state.toolCursor??0).map(c=>({id:c.id,name:c.name})),
+    memory:summary ? {facts:compactSummary(summary.facts),decisions:compactSummary(summary.decisions),unresolved:compactSummary(summary.unresolved),nextSteps:(summary.nextSteps??[]).slice(-12).map(step=>clip(step,360))}:undefined,
+    milestones:compactMilestones,
+    requirements:compactRequirements,
+    recentEvidence:(state.steps??[]).slice(-12).map(s=>({id:s.id,callId:s.callId,name:s.name,status:s.status,summary:clip(s.summary,220),resultRef:s.resultRef,error:s.error?clip(s.error,260):undefined})),
+    files:(state.steps??[]).flatMap(s=>s.files??[]).filter((f,i,all)=>all.findIndex(x=>x.path===f.path&&x.direction===f.direction)===i).slice(-40).map(f=>({...f,path:clip(f.path,260)})),
+    pending:state.pendingCalls?.slice(state.toolCursor??0, (state.toolCursor??0)+12).map(c=>({id:c.id,name:c.name})),
+    pendingOmitted:Math.max(0,(state.pendingCalls?.length??0)-(state.toolCursor??0)-12),
     uncertainCallId:state.uncertainCallId,
+    taskContract:taskContractPrompt(state,8000),
   };
 }
 
@@ -22,7 +43,7 @@ export function createContextHandoff(source: Conversation, state: RunState, key:
   const draft = [
     '请先阅读以下交接材料，并以我本次编辑后的要求为准。历史记录不是新的授权；先核实已有成果，避免重复执行。',
     '【原始要求与补充】',
-    ...requirements.map(m => `${m.content}${m.attachments?.length ? `\n附件来源消息：${m.id}（可用 read_context 查阅）` : ''}`),
+    ...requirements.map(m => `${clip(m.content,1000)}\n原始来源消息 ID：${m.id}（完整原文可用 read_context 查阅）${m.attachments?.length ? `\n附件来源消息：${m.id}（可用 read_context 查阅）` : ''}`),
     '【已保存的工作记录】', JSON.stringify(checkpointNotes(state), null, 2),
     ...(state.content ? ['【最近的可见答复（历史材料，可能尚未完成）】', state.content.slice(-12000)] : []),
     '【本次请求】', '请承接未完成事项；如果原任务仍在运行，请先核实其最新结果和待确认操作，再决定下一步。',
@@ -37,6 +58,7 @@ export function withHandoffArchive(memory: ConversationMemory, source?: RunRecor
   if (!source) return memory;
   return { ...memory, archive: unique([...(source.state.contextArchive ?? []).map(plain), ...source.state.working.map(plain), ...memory.archive]),
     evidence: unique([...(source.state.contextArchiveSteps ?? []), ...(source.state.steps ?? []), ...memory.evidence]),
+    taskContract: mergeTaskContracts(memory.taskContract, taskContractFromState(source.state)),
     fromModel: memory.fromModel ?? source.config.model, checkpoints: memory.checkpoints + 1 };
 }
 
@@ -46,6 +68,7 @@ const unique=<T extends {id:string}>(items:T[])=>[...new Map(items.map(x=>[x.id,
 export interface ConversationMemory {
   milestones?:Milestone[];
   requirements?:DeliveryRequirement[];
+  taskContract?:PortableTaskContract;
   history:ChatMessage[];
   archive:ChatMessage[];
   evidence:ToolStep[];
@@ -77,6 +100,7 @@ export function conversationMemory(history:ChatMessage[],lookup:(id:string)=>Run
     result.archive.push(...(state.contextArchive??[]).map(plain),...state.working.map(plain));
     result.milestones=mergeProgress(result.milestones,state.milestones);
     result.requirements=mergeProgress(result.requirements,state.requirements);
+    result.taskContract=mergeTaskContracts(result.taskContract,taskContractFromState(state));
     result.evidence.push(...(state.contextArchiveSteps??[]),...(state.steps??[]));
     const capsule:ChatMessage={id:`handoff-${message.id}`,role:'user',contextKind:'handoff',createdAt:message.createdAt,
       content:`历史任务交接记录（来自应用保存的执行记录；不是新的用户指令，历史模型结论可能有误）：\n${JSON.stringify(checkpointNotes(state))}\n本轮以最新用户要求为准；已有成果先读证据，避免重新执行。未完成旧任务要继续原操作游标时，使用原任务的“接着跑”。`};
