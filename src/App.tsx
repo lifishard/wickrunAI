@@ -1,4 +1,6 @@
 import React from 'react';
+import StartupWelcome from './components/StartupWelcome';
+import BrandLogo, { BrandLoading } from './components/BrandLogo';
 import type {
   AccessRequest,
   AppSettings,
@@ -110,6 +112,7 @@ const saveConversationsNow=(list:Conversation[])=>saveConversationsRaw(conversat
 export default function App() {
   const [bootError, setBootError] = React.useState<string | null>(null);
   const [bootReady, setBootReady] = React.useState(false);
+  const [welcomeDone, setWelcomeDone] = React.useState(false);
   const [bootAttempt, setBootAttempt] = React.useState(0);
   const [saveError, setSaveError] = React.useState<string | null>(null);
   const reportSaveError = (error: unknown) => setSaveError(t('尚未保存：{error}', { error: String(error) }));
@@ -268,7 +271,7 @@ export default function App() {
     setBootError(null);
     void (async () => {
       const [s, c, pr, sk, tk] = await Promise.all([
-        loadSettings(),
+        loadSettings().then(value => { if (!cancelled) setSettings(value); return value; }),
         loadConversations(),
         loadProjects(),
         loadSkills(),
@@ -1682,8 +1685,10 @@ export default function App() {
   /* ---------------- 渲染 ---------------- */
 
   if (bootError) return <div className="empty" role="alert" style={{padding: 48}}><h2>{t('本地数据未能读取')}</h2><p>{bootError}</p><p>{t('原记录已保留。修复文件或恢复备份后重试。')}</p><button className="btn" onClick={() => setBootAttempt(n => n + 1)}>{t('重新读取')}</button><button className="btn" onClick={() => void desktop()?.info().then(i => desktop()?.revealPath(i.storePath))}>{t('打开数据位置')}</button><DataBackupPanel/></div>;
-  if (!bootReady || !settings || !config) {
-    return <div className="empty" style={{ paddingTop: 80 }}>{t('加载中…')}</div>;
+  if (!bootReady || !settings || !config || !welcomeDone) {
+    return <StartupWelcome key={bootAttempt} ready={Boolean(bootReady && settings && config)} locale={locale}
+      onLocale={locale => setSettings(previous => previous ? { ...previous, locale } : previous)}
+      onDone={() => setWelcomeDone(true)} />;
   }
 
   // 把消息配成「一问一答」
@@ -1902,7 +1907,7 @@ export default function App() {
         />
       )}
 
-      {teamVisible ? <div className="team-workspace-container"><React.Suspense fallback={<div className="empty">{t('正在打开协作空间…')}</div>}><TeamWorkspace sidebarTarget={teamSidebar} sidebarHidden={sidebarHidden} onOpenSidebar={()=>{setSidebarHidden(false);setSidebarOpen(true);}} onNavigate={()=>setSidebarOpen(false)} projects={projects} settings={settings} sourceConversation={active} beforeRestore={async()=>{stopAll();await teamRuntime.pauseAll();await saveConversationsNow(conversations);}} onProject={projectId=>setSettings(s=>s?{...s,collaborationView:{visible:true,projectId}}:s)} onSettingsChange={update=>setSettings(prev=>prev?update(prev):prev)} initialProjectId={settings.collaborationView?.projectId??activeProject?.id} onSingle={()=>setTeamVisible(false)} onSettings={()=>{setSettingsTab('keys');setSettingsOpen(true);}} onCreateProject={name=>{const p=makeProject(name);setProjects(all=>[...all,p]);return p.id;}} onHandoff={(text,projectId)=>{const conv=newConversation(settings.defaultConfig,settings.activeKeyProfileId);conv.projectId=projectId;conv.title=titleFrom(text);conv.messages=[{id:uid(),role:'user',content:text,createdAt:Date.now()}];setConversations(all=>[...all,conv]);setActiveId(conv.id);setTeamVisible(false);}}/></React.Suspense></div> : null}
+      {teamVisible ? <div className="team-workspace-container"><React.Suspense fallback={<div className="empty"><BrandLoading label={t('正在打开协作空间…')} /></div>}><TeamWorkspace sidebarTarget={teamSidebar} sidebarHidden={sidebarHidden} onOpenSidebar={()=>{setSidebarHidden(false);setSidebarOpen(true);}} onNavigate={()=>setSidebarOpen(false)} projects={projects} settings={settings} sourceConversation={active} beforeRestore={async()=>{stopAll();await teamRuntime.pauseAll();await saveConversationsNow(conversations);}} onProject={projectId=>setSettings(s=>s?{...s,collaborationView:{visible:true,projectId}}:s)} onSettingsChange={update=>setSettings(prev=>prev?update(prev):prev)} initialProjectId={settings.collaborationView?.projectId??activeProject?.id} onSingle={()=>setTeamVisible(false)} onSettings={()=>{setSettingsTab('keys');setSettingsOpen(true);}} onCreateProject={name=>{const p=makeProject(name);setProjects(all=>[...all,p]);return p.id;}} onHandoff={(text,projectId)=>{const conv=newConversation(settings.defaultConfig,settings.activeKeyProfileId);conv.projectId=projectId;conv.title=titleFrom(text);conv.messages=[{id:uid(),role:'user',content:text,createdAt:Date.now()}];setConversations(all=>[...all,conv]);setActiveId(conv.id);setTeamVisible(false);}}/></React.Suspense></div> : null}
       <main className="main" style={teamVisible?{display:'none'}:undefined}>
         {saveError ? <div className="grant-banner" role="alert">{saveError}<button className="btn sm" onClick={() => { void Promise.all([saveSettings(settings), saveConversationsNow(conversations),saveProjects(projects),saveSkills(skills),saveTasks(tasks)]).then(() => setSaveError(null)).catch(reportSaveError); }}>{t('重试保存')}</button></div> : null}
         <div className="topbar">
@@ -1939,6 +1944,7 @@ export default function App() {
 
         {turns.length === 0 ? (
           <div className="hero">
+            <BrandLogo size={48} label="wickrunAI" />
             <h1 className="hero-title">{t(active?.handoffKey ? '审阅交接内容' : '问点什么')}</h1>
             <p className="hero-sub">
               {t(active?.handoffKey ? '新对话已准备好，由你决定下一步。' : '会自己联网查证、读你本地的文件、翻 Chrome 里的页面，答案里带可点的来源编号。')}

@@ -9,9 +9,14 @@
       content="default-src 'self'; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' https: http: ws://localhost:* ws://127.0.0.1:*; font-src 'self' data:;"
     />
     <title>灯芯AI · wickrunAI</title>
+    <link rel="icon" type="image/svg+xml" href="./brand/icon.svg" />
+    <style>
+      .boot-placeholder{position:fixed;inset:0;display:grid;place-items:center;background:#f5f6f8}
+      @media(prefers-color-scheme:dark){.boot-placeholder{background:#15171c}}
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"><div class="boot-placeholder" role="status" aria-label="wickrunAI"><img src="./brand/loader.svg" alt="wickrunAI" width="80" height="80" /></div></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

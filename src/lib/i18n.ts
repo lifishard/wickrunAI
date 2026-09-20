@@ -16,6 +16,11 @@ export const LOCALES: { value: Locale; label: string; label2: string; lang: stri
  * 英文查词典，查不到就退回简体原文 —— 半翻译的界面也比缺字的界面好用。
  */
 const EN: Record<string, string> = {
+  '欢迎来到灯芯：你的创造中心': 'wickrunAI: Where ideas spark and grow',
+  '进入应用': 'Enter app',
+  '灯芯正在思考': 'wickrunAI is thinking',
+  '更多': 'More',
+  '输入设置': 'Input settings',
   '高级设置': 'Advanced settings',
   '当前无需操作；可以查看已有结果，或暂停后调整下一步。': "No action is needed now. View existing results, or pause to adjust the next step.",
   '助手正在处理任务': "The assistant is working",

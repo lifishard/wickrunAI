@@ -141,6 +141,19 @@ export default function Composer(props: {
     attachments:props.attachments, quotes:props.quotes, quoteOnly:props.quoteOnly && props.quotes.length > 0 }),[text,props.attachments,props.quotes,props.quoteOnly]);
   const [plusOpen, setPlusOpen] = React.useState(false);
   const [approvalOpen, setApprovalOpen] = React.useState(false);
+  const [compact, setCompact] = React.useState(true);
+  const [moreOpen, setMoreOpen] = React.useState(false);
+  const boxRef = React.useRef<HTMLDivElement>(null);
+  const optionsId = React.useId();
+  React.useLayoutEffect(() => {
+    const box = boxRef.current;
+    if (!box) return;
+    const update = () => setCompact(box.getBoundingClientRect().width < (props.busy ? 1160 : 930));
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(box);
+    return () => observer.disconnect();
+  }, [props.busy]);
   const [caret, setCaret] = React.useState(0);
   const [slashIndex, setSlashIndex] = React.useState(0);
   const ref = React.useRef<HTMLTextAreaElement>(null);
@@ -181,7 +194,7 @@ export default function Composer(props: {
     const el = ref.current;
     if (!el) return;
     el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, 220)}px`;
+    el.style.height = `${Math.max(144, Math.min(el.scrollHeight, 320))}px`;
   }, [text]);
 
   function submit() {
@@ -269,10 +282,64 @@ export default function Composer(props: {
   const current = APPROVAL_OPTIONS.find((o) => o.value === props.approvalMode) ?? APPROVAL_OPTIONS[0];
   const canSend = Boolean(text.trim()) || props.attachments.length > 0;
 
+  const secondaryControls = <>            <div className="menu-anchor" ref={approvalRef}>
+              <button
+                className={`btn sm ghost approval-${props.approvalMode}`}
+                aria-expanded={approvalOpen}
+                aria-haspopup="dialog"
+                title={t(current.desc)}
+                onClick={() => {
+                  setApprovalOpen((v) => !v);
+                  setPlusOpen(false);
+                }}
+              >
+                {props.approvalMode === 'all' ? '⚡' : props.approvalMode === 'auto' ? '◐' : '🔒'}{' '}
+                {t(current.label)}
+              </button>
+              {approvalOpen ? (
+                <AnchoredPopover anchorRef={approvalRef} onClose={() => setApprovalOpen(false)} className="popup wide" label={t('操作确认方式')}>
+                  {APPROVAL_OPTIONS.map((o) => (
+                    <button
+                      key={o.value}
+                      className={`popup-item${o.value === props.approvalMode ? ' on' : ''}`}
+                      onClick={() => {
+                        props.onApprovalMode(o.value);
+                        setApprovalOpen(false);
+                      }}
+                    >
+                      <span className="popup-icon">
+                        {o.value === 'all' ? '⚡' : o.value === 'auto' ? '◐' : '🔒'}
+                      </span>
+                      <span>
+                        <strong>{t(o.label)}</strong>
+                        <small>{t(o.desc)}</small>
+                      </span>
+                    </button>
+                  ))}
+                </AnchoredPopover>
+              ) : null}
+            </div>
+
+            {props.barControls}
+
+            {props.contextPreview ? <ContextMeter preview={props.contextPreview} draft={contextDraft} /> : null}
+            {!props.stream ? <span className="chip">{t('非流式')}</span> : null}
+
+            {props.client ? <span className="chip" title={t('在模型选择器中调整官方客户端提供的思考强度')}>{props.client.effort || t('官方默认强度')}</span> : <EffortPicker
+              level={props.effortLevel}
+              onLevel={props.onEffortLevel}
+              model={props.model}
+              mappings={props.effortMappings}
+              route={props.contextPreview?.profile.routeProfiles?.[routeKey(props.contextPreview.profile,props.model)]}
+              manual={props.effortManual}
+              onOpenMappings={props.onOpenMappings}
+            />}
+
+</>;
   return (
     <div className="composer-wrap">
       <div className="composer">
-        <div className="composer-box">
+        <div className={`composer-box${compact ? ' is-compact' : ''}`} ref={boxRef}>
           {props.quotes.length ? (
             <div className="quote-draft">
               {props.quotes.map((q) => (
@@ -385,7 +452,7 @@ export default function Composer(props: {
           {attachmentError?<p role="alert" className="hint">{attachmentError}</p>:null}
           <textarea
             ref={ref}
-            rows={1}
+            rows={5}
             value={text}
             placeholder={
               props.disabled
@@ -405,6 +472,9 @@ export default function Composer(props: {
             onPaste={onPaste}
           />
 
+          {compact && moreOpen ? <div className="composer-options" id={optionsId} role="group" aria-label={t('输入设置')}>
+            {secondaryControls}
+          </div> : null}
           <div className="composer-bar">
             {/* ---- 左下角 ---- */}
             <div className="menu-anchor" ref={plusRef}>
@@ -475,46 +545,6 @@ export default function Composer(props: {
               ) : null}
             </div>
 
-            <div className="menu-anchor" ref={approvalRef}>
-              <button
-                className={`btn sm ghost approval-${props.approvalMode}`}
-                aria-expanded={approvalOpen}
-                aria-haspopup="dialog"
-                title={t(current.desc)}
-                onClick={() => {
-                  setApprovalOpen((v) => !v);
-                  setPlusOpen(false);
-                }}
-              >
-                {props.approvalMode === 'all' ? '⚡' : props.approvalMode === 'auto' ? '◐' : '🔒'}{' '}
-                {t(current.label)}
-              </button>
-              {approvalOpen ? (
-                <AnchoredPopover anchorRef={approvalRef} onClose={() => setApprovalOpen(false)} className="popup wide" label={t('操作确认方式')}>
-                  {APPROVAL_OPTIONS.map((o) => (
-                    <button
-                      key={o.value}
-                      className={`popup-item${o.value === props.approvalMode ? ' on' : ''}`}
-                      onClick={() => {
-                        props.onApprovalMode(o.value);
-                        setApprovalOpen(false);
-                      }}
-                    >
-                      <span className="popup-icon">
-                        {o.value === 'all' ? '⚡' : o.value === 'auto' ? '◐' : '🔒'}
-                      </span>
-                      <span>
-                        <strong>{t(o.label)}</strong>
-                        <small>{t(o.desc)}</small>
-                      </span>
-                    </button>
-                  ))}
-                </AnchoredPopover>
-              ) : null}
-            </div>
-
-            {props.barControls}
-
             <ModelPicker
               clientSlot={props.connectionSettings && props.onClient && props.onConnectionSettings ? <ClientConnections selection={props.client} onSelect={props.onClient} settings={props.connectionSettings} onSettings={props.onConnectionSettings}/> : undefined}
               displayModel={props.client ? `${CLIENT_LABELS[props.client.kind]} · ${props.client.model==='default'?t('默认'):props.client.model}` : undefined}
@@ -537,12 +567,11 @@ export default function Composer(props: {
               onClearHealth={props.onClearHealth}
             />
 
+            {!compact ? secondaryControls : <button className="btn sm ghost composer-more" aria-expanded={moreOpen} aria-controls={optionsId}
+              title={t(current.desc)} onClick={() => setMoreOpen(value => !value)}>{props.approvalMode === 'all' ? '⚡' : props.approvalMode === 'auto' ? '◐' : '🔒'} {t('更多')}</button>}
             <span className="spacer" />
 
             {/* ---- 右下角 ---- */}
-            {props.contextPreview ? <ContextMeter preview={props.contextPreview} draft={contextDraft} /> : null}
-            {!props.stream ? <span className="chip">{t('非流式')}</span> : null}
-
             <div className="composer-mode-switch" role="group" aria-label={t('请求模式')} title={t('沿用同一段对话和附件；Chat 讨论，Work 接着执行。切换后对下一条消息生效。')}>
               <button
                 type="button"
@@ -576,31 +605,22 @@ export default function Composer(props: {
               </button>
             </div>
 
-            {props.client ? <span className="chip" title={t('在模型选择器中调整官方客户端提供的思考强度')}>{props.client.effort || t('官方默认强度')}</span> : <EffortPicker
-              level={props.effortLevel}
-              onLevel={props.onEffortLevel}
-              model={props.model}
-              mappings={props.effortMappings}
-              route={props.contextPreview?.profile.routeProfiles?.[routeKey(props.contextPreview.profile,props.model)]}
-              manual={props.effortManual}
-              onOpenMappings={props.onOpenMappings}
-            />}
-
             {props.busy ? (
-              /* 编成一组：换行时三个按钮一起走，不会把「立即送出」单独甩到第二行 */
+              /* 运行期间三项操作保持同一组，窄屏以图标显示。 */
               <div className="composer-send-group">
-                <button className="btn sm danger" onClick={props.onStop}>
+                <button className="btn sm danger" data-short-label="■" title={t('停止')} onClick={props.onStop}>
                   {t('停止')}
                 </button>
                 <button
                   className="btn sm"
+                  data-short-label="↥"
                   onClick={submit}
                   disabled={props.disabled || !canSend}
                   title={t('排到队尾，这一轮结束后自动发出')}
                 >
                   {t('排队发送')}
                 </button>
-                {props.onSendNow?<button className="btn sm primary" disabled={props.disabled||!canSend} title={t('保存当前执行现场，立即处理这条新要求')} onClick={()=>{if(props.onSendNow?.(text.trim()))setText('');}}>{t('立即送出')}</button>:null}
+                {props.onSendNow?<button className="btn sm primary" data-short-label="↗" disabled={props.disabled||!canSend} title={t('保存当前执行现场，立即处理这条新要求')} onClick={()=>{if(props.onSendNow?.(text.trim()))setText('');}}>{t('立即送出')}</button>:null}
               </div>
             ) : (
               <button className="btn sm primary" onClick={submit} disabled={props.disabled || !canSend}>

@@ -1,0 +1,13 @@
+.wickrun-mark { display: inline-block; flex-shrink: 0; overflow: visible; color: var(--fg); vertical-align: middle; }
+.wickrun-wick { color: #b8751a; }
+:root[data-theme='dark'] .wickrun-wick { color: #e8b45b; }
+.wickrun-orbit { transform-origin: 50px 50px; }
+.wickrun-mark.is-loading .wickrun-orbit { animation: wickrun-orbit 5.6s linear infinite; }
+.wickrun-mark.is-loading .wickrun-wick { animation: wickrun-breathe 2.4s ease-in-out infinite; }
+.wickrun-loading { display: flex; align-items: center; gap: 10px; padding: 6px 0; color: var(--fg-dim); font-size: 12px; }
+@keyframes wickrun-orbit { to { transform: rotate(360deg); } }
+@keyframes wickrun-breathe { 50% { opacity: .7; } }
+@media (prefers-reduced-motion: reduce) {
+  .wickrun-mark.is-loading .wickrun-orbit { animation: none; }
+  .wickrun-mark.is-loading .wickrun-wick { animation-duration: 4s; }
+}

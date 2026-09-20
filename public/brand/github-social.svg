@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640">
+<rect width="1280" height="640" fill="#20282b"/><style>.wick{color:#e8b45b}text{font-family:'Segoe UI',Arial,sans-serif}</style>
+<g transform="translate(108 170) scale(2.5)" color="#f0f2ed"><g class="orbit"><path d="M75.46 75.46A36 36 0 1 1 85.09 41.96" fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round"/><circle cx="84.77" cy="59.32" r="4" fill="currentColor"/></g><path class="wick" d="M33 42C37 53 38 62 42 62S47 48 50 48S54 62 58 62S63 53 67 42" fill="none" stroke="currentColor" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></g>
+<text x="425" y="293" fill="#f0f2ed" font-size="87" font-weight="600" letter-spacing="-3">wickrunAI</text>
+<text x="431" y="368" fill="#e8b45b" font-size="30">Where ideas spark and grow</text>
+<text x="432" y="464" fill="#b5bfbc" font-size="23" letter-spacing="5">灯芯 AI</text></svg>

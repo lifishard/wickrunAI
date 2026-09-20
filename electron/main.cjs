@@ -101,6 +101,7 @@ function createWindow() {
   const saved = savedBounds();
   mainWindow = new BrowserWindow({
     title: '灯芯AI · wickrunAI',
+    icon: path.join(__dirname, '..', 'dist', 'brand', 'icon.png'),
     width: saved?.width ?? 1280,
     height: saved?.height ?? 860,
     ...(saved && 'x' in saved ? { x: saved.x, y: saved.y } : {}),

@@ -1,4 +1,5 @@
 import React from 'react';
+import { BrandLoading } from './BrandLogo';
 import type { Artifact, ChatMessage, ErrorInfo, MessageAnnotation, SourceRef, ToolStep } from '../types';
 import type { UserQuestionAnswers } from '../lib/user-questions';
 import { typeOfPath } from '../lib/artifacts';
@@ -440,11 +441,7 @@ export default function AnswerBlock(props: {
           {answer.content ? (
             <Markdown text={answer.content} sources={sources} />
           ) : live && !steps.length ? (
-            <div className="thinking-dots">
-              <span />
-              <span />
-              <span />
-            </div>
+            <BrandLoading label={t('灯芯正在思考')} />
           ) : null}
           {live && answer.content ? <span className="caret" /> : null}
         </div>

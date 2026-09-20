@@ -297,7 +297,7 @@ button {
 }
 
 .composer {
-  max-width: 820px;
+  max-width: 1080px;
   margin: 0 auto;
   padding: 0 20px;
 }
@@ -891,7 +891,9 @@ input[type='range'] {
   background: transparent;
   padding: 2px;
   resize: none;
-  max-height: 220px;
+  min-height: 144px;
+  max-height: 320px;
+  flex: 0 0 auto;
   box-shadow: none;
 }
 
@@ -902,9 +904,8 @@ input[type='range'] {
 
 .composer-bar {
   display: flex;
-  /* 优先一行过：配置侧栏展开把输入框挤窄时别急着折成两行。
-     但真的塞不下时要换行 —— 溢出到圆角框外面比换成两行更糟。 */
-  flex-wrap: wrap;
+  /* 主操作保持一行；较窄的输入框由 Composer 收起次要设置。 */
+  flex-wrap: nowrap;
   row-gap: 6px;
   align-items: center;
   gap: var(--bar-gap);
@@ -1690,7 +1691,7 @@ input[type='range'] {
 
 .hero-box {
   width: 100%;
-  max-width: 640px;
+  max-width: 1040px;
 }
 
 .hero-examples {
