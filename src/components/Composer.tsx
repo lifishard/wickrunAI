@@ -132,6 +132,13 @@ export default function Composer(props: {
   draftSink.current = props.onDraftChange;
   const latestDraft = React.useRef(text); latestDraft.current = text;
   React.useEffect(() => {
+    const flush = () => draftSink.current?.(latestDraft.current);
+    window.addEventListener('wickrun:flush-draft', flush);
+    return () => window.removeEventListener('wickrun:flush-draft', flush);
+  }, []);
+  // A reviewed cloud version can replace the draft without changing the chat id.
+  React.useEffect(() => { setText(props.initialDraft ?? ''); }, [props.initialDraft]);
+  React.useEffect(() => {
     if (!text) { draftSink.current?.(text); return; }
     const timer = setTimeout(() => draftSink.current?.(text), 600);
     return () => clearTimeout(timer);

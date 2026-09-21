@@ -1,4 +1,5 @@
 import React from 'react';
+import { flushSync } from 'react-dom';
 import { Modal } from './ui';
 import { useT } from '../lib/i18n';
 import { getTransport } from '../lib/transport';
@@ -33,7 +34,12 @@ export default function CloudSyncControl(props:Props){
     return()=>clearInterval(timer);
   },[native?.pending?.code]);
 
-  const collect=async():Promise<CloudLocal>=>({...current.current.local,observations:await readCloudObservations(),archives:await readCloudArchives()});
+  const collect=async():Promise<CloudLocal>=>{
+    // Composer debounces draft persistence. Publish the visible text before a
+    // snapshot so a fast Sync click cannot miss the user's latest keystrokes.
+    flushSync(()=>window.dispatchEvent(new Event('wickrun:flush-draft')));
+    return {...current.current.local,observations:await readCloudObservations(),archives:await readCloudArchives()};
+  };
   async function sync(importGuest=false,choice?:'local'|'remote'){
     if(lock.current||current.current.isBlocked())return;
     const account=statusRef.current;
