@@ -194,7 +194,7 @@ export default function Composer(props: {
   const resizeInput = React.useCallback(() => {
     const el = ref.current;
     if (!el) return;
-    const style = getComputedStyle(el);
+    const style = window.getComputedStyle(el);
     const line = parseFloat(style.lineHeight);
     const padding = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
     const home = props.layout === 'home';
