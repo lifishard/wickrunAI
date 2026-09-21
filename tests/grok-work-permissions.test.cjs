@@ -38,6 +38,60 @@ function fixture(t,makeCall,kind='grok'){
 }
 const edit=(root,variant='SearchReplace')=>({toolCallId:'edit-1',kind:'edit',title:'Edit fixture',rawInput:{variant,file_path:path.join(root,'README.md'),...(variant==='Write'?{content:'# New\n'}:{old_string:'# Old',new_string:'# New',replace_all:false})},_meta:{'x.ai/tool':{version:1,input:{path:path.join(root,'README.md')}}}});
 
+const command=()=>({toolCallId:'command-1',kind:'execute',title:'Execute command',rawInput:{variant:'Bash',command:'Get-ChildItem -Name | Select-String -Pattern README',description:'List matching files',is_background:false},_meta:{'x.ai/tool':{version:1,name:'run_terminal_command',input:{command:'Get-ChildItem -Name | Select-String -Pattern README'}}}});
+
+test('captured Grok terminal command waits for explicit approval and grants only allow_once',async t=>{
+  const f=fixture(t,command);
+  let pending;
+  const run=f.run(event=>{pending=event;});
+  while(!pending)await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(f.wire.some(message=>message.id===900&&message.result),false);
+  assert.equal(pending.event.requiresExplicitApproval,true);
+  assert.deepEqual(pending.event.execution,{cwd:f.root,scope:'host'});
+  assert.deepEqual(pending.event.toolCall.rawInput,command().rawInput);
+  f.host.approve('request',pending.id,true);
+  assert.equal((await run).status,'completed');
+  assert.equal(f.wire.find(message=>message.id===900&&message.result).result.outcome.optionId,'allow-once');
+  assert.equal(f.store.job('run','approval-'+pending.id).approved,true);
+});
+
+test('Grok command rejection and cancellation cannot authorize execution',async t=>{
+  for(const cancel of [false,true]){
+    const f=fixture(t,command);
+    const result=await f.run(event=>cancel?f.host.close():f.host.approve('request',event.id,false));
+    assert.notEqual(result.status,'completed');
+    assert.equal(f.wire.some(message=>message.id===900&&message.result?.outcome?.optionId==='allow-once'),false);
+  }
+});
+
+test('Grok background and timeout parameters are preserved for command review',async t=>{
+  for(const timeout of [null,0,60000,36000000]){
+    const f=fixture(t,()=>{const call=command();call.rawInput.is_background=true;call.rawInput.timeout=timeout;return call;});
+    assert.equal((await f.run()).status,'completed');
+    assert.equal(f.notifications[0].event.toolCall.rawInput.timeout,timeout);
+    assert.equal(f.notifications[0].event.toolCall.rawInput.is_background,true);
+  }
+});
+
+test('unknown, conflicting, missing or truncated Grok commands are rejected before approval',async t=>{
+  const invalid=[
+    call=>{delete call.rawInput;}, call=>{call.rawInput.command='';},
+    call=>{call.rawInput.command='x'.repeat(20001);delete call._meta;},
+    call=>{call.rawInput.command+='\0';delete call._meta;},
+    call=>{call.rawInput.env={SECRET:'hidden'};},
+    call=>{call.rawInput.cwd='outside';},
+    call=>{call.rawInput.variant='Unknown';},
+    call=>{call.rawInput.is_background='true';},
+    call=>{call.rawInput.timeout=-1;},call=>{call.rawInput.timeout=36000001;},call=>{call.rawInput.timeout='60000';},
+    call=>{call._meta['x.ai/tool'].input.command='different command';},
+  ];
+  for(const change of invalid){
+    const f=fixture(t,()=>{const call=command();change(call);return call;});
+    assert.equal((await f.run()).status,'permission_required');assert.equal(f.notifications.length,0);
+  }
+  const kimi=fixture(t,command,'kimi');assert.equal((await kimi.run()).status,'permission_required');assert.equal(kimi.notifications.length,0);
+});
+
 test('real Grok Write and SearchReplace request shapes reach host approval without locations',async t=>{
   for(const variant of ['Write','SearchReplace']){
     const f=fixture(t,root=>edit(root,variant));

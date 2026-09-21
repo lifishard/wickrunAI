@@ -1245,13 +1245,14 @@ export default function App() {
         canRunHostTools,
         grantAccess,
         confirm: (step) => {
-          // 这两类永远要人点头，连「全部放行」都不例外：
+          // 提权、权限申请和未隔离的本机命令始终逐次确认：
           //   - 提权：它越过的是工作目录白名单之外的一切
           //   - 权限申请：一个「一律放行」的档位如果连「要不要给权限」都替人答了，
           //     那这个档位就等于把授权体系整个关掉
           const args = (step.args ?? {}) as Record<string, unknown>;
           const alwaysAsk =
-            step.name === 'request_access' || (step.name === 'run_command' && Boolean(args.elevated));
+            step.name === 'request_access' || (step.name === 'run_command' && Boolean(args.elevated)) ||
+            (step.name === 'native_client_operation' && args.requiresExplicitApproval === true);
           if (alwaysAsk) {
             return requestApproval(step);
           }

@@ -16,6 +16,12 @@ export const LOCALES: { value: Locale; label: string; label2: string; lang: stri
  * 英文查词典，查不到就退回简体原文 —— 半翻译的界面也比缺字的界面好用。
  */
 const EN: Record<string, string> = {
+  '确认本机命令': 'Confirm local command',
+  'Grok 请求在本机运行以下命令。': 'Grok requests to run this command on your computer.',
+  '命令使用你的本机权限运行，可能访问工作目录以外的文件或网络。每条命令都需单独确认。': 'The command runs with your local permissions and may access files outside the working directory or the network. Each command requires separate confirmation.',
+  '此命令将在后台运行，可能在本轮对话结束后继续。': 'This command will run in the background and may continue after this turn ends.',
+  '超时参数（毫秒）': 'Timeout parameter (milliseconds)',
+  '允许只对本次命令生效。拒绝或关闭窗口会阻止本次执行；已有进度会保留。': 'Approval applies only to this command. Rejecting or closing this dialog prevents execution and keeps your progress.',
   '账号与云同步': 'Account and cloud sync',
   '同步需要处理': 'Sync needs attention',
   '云端同步': 'Cloud sync',

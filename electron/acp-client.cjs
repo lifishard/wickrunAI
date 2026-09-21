@@ -427,6 +427,24 @@ function createAcpClient({
       }
     }
     if (locationsUnsafe) result.locationsUnsafe = true;
+    // Commands cannot be path-sandboxed by the host. Keep the complete,
+    // recognized input for an explicit one-command approval; never approve
+    // a truncated command, a title-derived command, or unknown extra inputs.
+    if (label === 'Grok ACP' && result.kind === 'execute') {
+      const input = value.rawInput;
+      const keys = ['variant', 'command', 'description', 'is_background', 'timeout'];
+      const valid = input && typeof input === 'object' && !Array.isArray(input)
+        && input.variant === 'Bash' && Object.keys(input).every(key => keys.includes(key))
+        && typeof input.command === 'string' && input.command.trim().length > 0
+        && input.command.length <= 20000 && !/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(input.command)
+        && (input.description === undefined || (typeof input.description === 'string' && input.description.length <= 2000))
+        && (input.timeout === undefined || input.timeout === null || (Number.isInteger(input.timeout) && input.timeout >= 0 && input.timeout <= 36000000))
+        && (input.is_background === undefined || typeof input.is_background === 'boolean');
+      const declared = value._meta?.['x.ai/tool']?.input?.command;
+      if (valid && (declared === undefined || declared === input.command)) {
+        result.rawInput = Object.fromEntries(keys.filter(key => input[key] !== undefined).map(key => [key, input[key]]));
+      } else result.commandUnsafe = true;
+    }
     return result;
   }
 

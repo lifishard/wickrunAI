@@ -15,7 +15,7 @@ const GROK_FALLBACK_MODELS = [
 ];
 const KIMI_WORK_SCOPE_MESSAGE = 'Kimi Work 已禁用：ACP 未提供可验证的文件编辑范围；只允许在授权工作目录内的一次性文件编辑，执行、终端、网络和未知操作均被拒绝。';
 const KIMI_WORK_PATH_MESSAGE = 'Kimi Work 已禁用：ACP 请求的文件路径不在授权工作目录内，或存在符号链接越界；无法安全批准此操作。';
-const GROK_WORK_SCOPE_MESSAGE = '本次 Grok 操作未执行：客户端未提供可核实的文件编辑范围，或请求的是尚未接入的命令、终端或网络操作。已有进度已保留；可继续使用文件编辑工具。';
+const GROK_WORK_SCOPE_MESSAGE = '本次 Grok 操作未执行：客户端未提供完整的命令内容或可核实的文件编辑范围，或请求了尚未支持的工具类型。已有进度和被拒绝的请求已保留。';
 const GROK_WORK_PATH_MESSAGE = '本次 Grok 文件编辑未执行：目标路径不在授权工作目录内，或符号链接指向目录外。请检查工作目录后继续。';
 
 function acpKind(kind) { return kind === 'kimi' || kind === 'grok'; }
@@ -50,6 +50,20 @@ function validateKimiWorkPermission(event, root, messages = workMessages('kimi')
     return { ok: false, message: messages.path };
   }
   return { ok: true, paths };
+}
+
+function validateWorkPermission(event, root, clientKind) {
+  if (clientKind === 'grok' && event?.toolCall?.kind === 'execute') {
+    const call = event.toolCall, input = call.rawInput;
+    // Only the Grok adapter's complete Bash input reaches this branch.
+    // cwd is the starting directory, not an OS sandbox or a path guarantee.
+    if (!call.commandUnsafe && input?.variant === 'Bash'
+      && typeof input.command === 'string' && input.command.trim() && input.command.length <= 20000) {
+      return { ok: true, requiresExplicitApproval: true };
+    }
+    return { ok: false, message: workMessages(clientKind).scope };
+  }
+  return validateKimiWorkPermission(event, root, workMessages(clientKind));
 }
 
 function createConversationClients({ userData, getSettings, store, openExternal, deps = {} }) {
@@ -166,19 +180,22 @@ function createConversationClients({ userData, getSettings, store, openExternal,
       if(!work || controller.signal.aborted)return Promise.resolve('decline');
       let scopedPaths;
       if(acpKind(selection.kind)){
-        const scope=validateKimiWorkPermission(event,cwd,workMessages(selection.kind));
+        const scope=validateWorkPermission(event,cwd,selection.kind);
         if(!scope.ok){
           acpWorkCapabilityFailure=scope.message;
+          try { store.saveJob(args.runId,'rejected-'+randomUUID(),{at:Date.now(),requestId:args.requestId,event,status:'rejected',reason:scope.message}); }
+          catch { controller.abort(); }
           return Promise.resolve('decline');
         }
         scopedPaths=scope.paths;
+        if(scope.requiresExplicitApproval)event={...event,requiresExplicitApproval:true,execution:{cwd,scope:'host'}};
       }
       return new Promise(resolve=>{
         const id=randomUUID();
         const finish=approved=>{if(!approvals.has(id))return;approvals.delete(id);clearTimeout(timer);controller.signal.removeEventListener('abort',stop);
           // Recheck after the user has reviewed the request: a directory may
           // have become a junction/symlink while the approval card was open.
-          const scopeStillValid=!acpKind(selection.kind)||validateKimiWorkPermission(event,cwd,workMessages(selection.kind)).ok;
+          const scopeStillValid=!acpKind(selection.kind)||validateWorkPermission(event,cwd,selection.kind).ok;
           const permitted=approved===true&&scopeStillValid&&!controller.signal.aborted&&active.get(args.runId)===job;
           try{store.saveJob(args.runId,'approval-'+id,{at:Date.now(),requestId:args.requestId,event,...(scopedPaths?{scopedPaths}:{}),approved:permitted});resolve(permitted?'accept':'decline');}catch{controller.abort();resolve('decline');}};
         const stop=()=>finish(false),timer=setTimeout(stop,180000);
