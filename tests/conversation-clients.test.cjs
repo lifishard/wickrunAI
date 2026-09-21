@@ -51,6 +51,27 @@ test('durable dispatch and terminal outcome deduplicate requests, including afte
   assert.equal((await f.host.run(args)).text,'saved output');assert.equal((await f.host.run(args)).status,'completed');assert.equal(f.calls.length,1);
   assert.equal(f.calls[0].sandbox,'readOnly');assert.equal(f.calls[0].isolateTools,true);assert.equal(f.host.recover('run-1','native-request-1').text,'saved output');
 });
+
+test('conversation host forwards image bytes through every native route without adding them to job records',async t=>{
+  const images=['data:image/png;base64,aGVsbG8='];
+  for(const kind of ['codex','claude','grok','kimi']){
+    const received=[];
+    const f=fixture(t,{createCodexClient:()=>({run:async options=>{received.push(options);return {status:'completed',text:'image read'};},close(){}}),
+      claudeCode:async options=>{received.push(options);return {ok:true,content:'image read'};},
+      createAcpClient:()=>({run:async options=>{received.push(options);return {status:'completed',text:'image read'};},close(){}})});
+    f.record.config.client.kind=kind;f.store.save(f.record);
+    const args={runId:'run-1',requestId:'image-request',prompt:'Inspect image',images};
+    assert.equal((await f.host.run(args)).status,'completed');assert.deepEqual(received[0].images,images);
+    assert.doesNotMatch(JSON.stringify(f.store.job('run-1','native-image-request')),/base64/);
+    await f.host.run(args);assert.equal(received.length,1);
+  }
+});
+
+test('invalid image payload is rejected before creating a dispatched job',async t=>{
+  const f=fixture(t);
+  await assert.rejects(f.host.run({runId:'run-1',requestId:'bad-image',prompt:'Inspect',images:['file:///private.png']}),/图片/);
+  assert.equal(f.calls.length,0);assert.ok(!f.store.job('run-1','native-bad-image'));
+});
 test('dispatched request without a terminal record is never silently replayed',async t=>{
   const f=fixture(t);f.store.saveJob('run-1','native-request-1',{status:'dispatched'});
   await assert.rejects(f.host.run({runId:'run-1',requestId:'request-1',prompt:'hello'}),/不会重复执行/);assert.equal(f.calls.length,0);assert.equal(f.host.recover('run-1','native-request-1').status,'unknown');

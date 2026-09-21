@@ -6,6 +6,7 @@ const { randomUUID } = require('node:crypto');
 const { StringDecoder } = require('node:string_decoder');
 const { ok, fail, guardPath, firstRoot, clip } = require('./common.cjs');
 const { readClaudeConnection } = require('../claude-connection.cjs');
+const { normalizeImages } = require('../client-images.cjs');
 
 // Clean base environment; the user's allowlisted connection settings are merged separately.
 function localLoginEnvironment(source) {
@@ -47,11 +48,12 @@ function createClaudeCode(deps = {}) {
   const launch = deps.spawn || spawn, platform = deps.platform || process.platform;
   const environment = deps.env || process.env, later = deps.setTimeout || setTimeout, clear = deps.clearTimeout || clearTimeout;
   return function claudeCode(args = {}, ctx = {}) {
-    let cwd, command, extra, connection;
+    let cwd, command, extra, connection, images;
     try {
       cwd = guardPath(args.cwd || firstRoot(ctx.workspaceRoots), ctx.workspaceRoots, { mustExist: true });
       if (!fs.statSync(cwd).isDirectory()) throw Error('Claude Code 工作目录必须是文件夹');
       if (!String(args.prompt || '').trim()) throw Error('prompt 不能为空');
+      images = normalizeImages(args.images);
       extra = safeExtraArgs(ctx.claudeExtraArgs);
       command = resolveNative(ctx.claudeBin, environment, platform, deps.exists);
       (deps.validateBinary || require('../claude-program.cjs').assertClaudeCodeBinary)(command);
@@ -81,7 +83,7 @@ function createClaudeCode(deps = {}) {
       };
       const cancel = () => stop('cancelled');
       try {
-        child = launch(command, ['-p', '--output-format', 'json', '--permission-mode', 'dontAsk', '--setting-sources', '', '--settings', '{"disableAllHooks":true}', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', ...(ctx.chatOnly ? ['--tools', '', '--disallowedTools', 'mcp__*'] : []), ...extra], {
+        child = launch(command, ['-p', '--output-format', images.length ? 'stream-json' : 'json', ...(images.length ? ['--input-format', 'stream-json', '--verbose'] : []), '--permission-mode', 'dontAsk', '--setting-sources', '', '--settings', '{"disableAllHooks":true}', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', ...(ctx.chatOnly ? ['--tools', '', '--disallowedTools', 'mcp__*'] : []), ...extra], {
           cwd, shell: false, windowsHide: true, detached: platform !== 'win32', stdio: ['pipe', 'pipe', 'pipe'], env: {...localLoginEnvironment(environment),...connection.env},
         });
       } catch { finish({ ...fail('无法启动 Claude Code 客户端'), execution: record('launch_failed') }); return; }
@@ -95,7 +97,13 @@ function createClaudeCode(deps = {}) {
         if (reason) return finish(stopped(code, signal));
         stdout += decoder.end();
         let result;
-        try { result = JSON.parse(stdout); } catch {}
+        try {
+          if (images.length) {
+            const messages=stdout.split(/\r?\n/).filter(line=>line.trim()).map(line=>JSON.parse(line));
+            const results=messages.filter(message=>message.type==='result');
+            if(results.length===1 && messages.at(-1)===results[0])result=results[0];
+          } else result = JSON.parse(stdout);
+        } catch {}
         const sessionId = typeof result?.session_id === 'string' && /^[a-zA-Z0-9_-]{1,160}$/.test(result.session_id) ? result.session_id : null;
         const details = { exitCode: code ?? null, signal: signal || null, sessionId };
         if (signal || code === null) return finish({ ...fail('Claude Code 进程中断，执行结果需要核实'), uncertain: true, execution: record('interrupted', details) });
@@ -112,7 +120,10 @@ function createClaudeCode(deps = {}) {
       });
       ctx.signal?.addEventListener('abort', cancel, { once: true });
       if (ctx.signal?.aborted) cancel();
-      if (!reason) child.stdin.end(String(args.prompt));
+      if (!reason) child.stdin.end(images.length ? JSON.stringify({type:'user',message:{role:'user',content:[
+        {type:'text',text:String(args.prompt)},
+        ...images.map(image=>({type:'image',source:{type:'base64',media_type:image.mimeType,data:image.data}})),
+      ]}})+'\n' : String(args.prompt));
     });
   };
 }

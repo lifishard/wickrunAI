@@ -133,6 +133,25 @@ async function waitFor(predicate, timeoutMs = 500) {
   assert.fail('Timed out waiting for fake ACP request');
 }
 
+test('ACP sends inline image content only when the agent advertises image support',async()=>{
+  for(const label of ['Grok ACP','Kimi ACP']){
+    const f=fixture({options:{label},handlers:{'session/prompt':(request,{respond})=>respond(request,{stopReason:'end_turn'})}});
+    const result=await f.client.run({prompt:'Compare images',images:['data:image/png;base64,aGVsbG8=']});
+    assert.equal(result.status,'completed');
+    assert.deepEqual(f.requests.find(r=>r.method==='session/prompt').params.prompt,[{type:'text',text:'Compare images'},{type:'image',mimeType:'image/png',data:'aGVsbG8='}]);
+    await f.client.close();
+  }
+  for(const image of [false,undefined]){
+    const f=fixture({initialize:{agentCapabilities:{promptCapabilities:{image}}}});
+    const result=await f.client.run({prompt:'Inspect image',images:['data:image/png;base64,aGVsbG8=']});
+    assert.equal(result.status,'failed');assert.match(result.error,/图片输入能力/);
+    assert.equal(f.requests.some(r=>r.method==='session/prompt'),false);await f.client.close();
+  }
+  const grok=fixture({options:{label:'Grok ACP'},initialize:{agentCapabilities:{promptCapabilities:{image:false}}},handlers:{'session/prompt':(request,{respond})=>respond(request,{stopReason:'end_turn'})}});
+  assert.equal((await grok.client.run({prompt:'Inspect',images:['data:image/png;base64,aGVsbG8=']})).status,'completed');
+  assert.equal(grok.requests.find(r=>r.method==='session/prompt').params.prompt[1].type,'image');await grok.client.close();
+});
+
 test('safe environment and executable validation keep the native launch narrow', () => {
   assert.deepEqual(safeEnvironment({
     PATH: 'safe', HOME: 'home', KIMI_API_KEY: 'secret', OPENAI_API_KEY: 'secret', NODE_OPTIONS: 'secret', HTTPS_PROXY: 'secret',

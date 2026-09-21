@@ -66,7 +66,7 @@ interface ElectronBridge extends CloudBridge {
   claudeRepair():Promise<import('./connections').ClientStatus>;
   conversationClientCheck(kind:import('./connections').ClientKind):Promise<import('./connections').ClientStatus>;
   conversationClientConnect(kind:import('./connections').ClientKind):Promise<import('./connections').ClientStatus>;
-  conversationClientRun(args:{runId:string;requestId:string;prompt:string;cwd?:string}):Promise<import('./connections').ClientTurnResult>;
+  conversationClientRun(args:{runId:string;requestId:string;prompt:string;images?:string[];cwd?:string}):Promise<import('./connections').ClientTurnResult>;
   conversationClientApprove(requestId:string,id:string,approved:boolean):Promise<void>;
   conversationClientRecover(runId:string,callId:string):Promise<import('./connections').ClientTurnResult|null>;
   onClientEvent(cb:(event:{requestId:string;type:string;id?:string;text?:string;event?:Record<string,unknown>})=>void):()=>void;

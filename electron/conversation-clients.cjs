@@ -7,6 +7,7 @@ const { createCodexClient, subscriptionEnvironment } = require('./codex-client.c
 const { claudeCode } = require('./tools/claudecode.cjs');
 const { readClaudeConnection, describeConnection } = require('./claude-connection.cjs');
 const { guardPath } = require('./tools/common.cjs');
+const { normalizeImages } = require('./client-images.cjs');
 
 const GROK_FALLBACK_MODELS = [
   { id: 'grok-4.6', label: 'Grok 4.6', efforts: ['low', 'medium', 'high', 'xhigh'], defaultEffort: 'high' },
@@ -148,6 +149,7 @@ function createConversationClients({ userData, getSettings, store, openExternal,
     if(typeof args.prompt!=='string'||!args.prompt.trim()||args.prompt.length>2000000)throw Error('上下文为空或过长');
     const jobId='native-'+args.requestId, prior=store.job(args.runId,jobId);
     if(prior){if(prior.result)return prior.result;throw Error('此调用已派发但结果未确认，请先核实，不会重复执行。');}
+    const images=normalizeImages(args.images).map(image=>image.dataUrl);
     if(active.has(args.runId))throw Error('当前会话正在执行');
     const settings=getSettings(), work=record.config.toolsEnabled===true;
     let cwd=scratch;
@@ -187,13 +189,13 @@ function createConversationClients({ userData, getSettings, store, openExternal,
       if(selection.kind==='codex'){
         job.client=codex(binary,{turnTimeoutMs:Math.min(3600000,Math.max(10000,(record.config.runtime?.maxMinutes || 30)*60000))});
         let partial='',lastSave=0;
-        const raw=await job.client.run({prompt:args.prompt,model:selection.model==='default'?undefined:selection.model,effort:selection.effort||undefined,cwd,sandbox:work?'workspaceWrite':'readOnly',signal:controller.signal,onApproval,isolateTools:true,
+        const raw=await job.client.run({prompt:args.prompt,images,model:selection.model==='default'?undefined:selection.model,effort:selection.effort||undefined,cwd,sandbox:work?'workspaceWrite':'readOnly',signal:controller.signal,onApproval,isolateTools:true,
           onEvent:event=>{if(event.type==='thread/ready')store.saveJob(args.runId,jobId,{status:'running',threadId:event.threadId,at:Date.now(),kind:selection.kind,cwd});
             if(event.type==='item/agentMessage/delta' && typeof event.delta==='string'){partial=(partial+event.delta).slice(-2000000);if(Date.now()-lastSave>500){store.saveJob(args.runId,jobId,{status:'running',partial,at:Date.now(),kind:selection.kind,cwd});lastSave=Date.now();}notify({type:'delta',requestId:args.requestId,text:event.delta});}}});
         result={status:raw.status,text:raw.text,error:raw.error,sessionId:raw.threadId};
       }else if(selection.kind==='claude'){
         const extra=[selection.model==='default'?'':`--model ${selection.model}`,selection.effort?`--effort ${selection.effort}`:''].filter(Boolean).join(' ');
-        const raw=await (deps.claudeCode || claudeCode)({prompt:args.prompt,cwd},{workspaceRoots:[cwd],claudeBin:binary,claudeExtraArgs:extra,claudeTimeoutMs:Math.min(3600000,(record.config.runtime?.maxMinutes || 10)*60000),signal:controller.signal,chatOnly:!work});
+        const raw=await (deps.claudeCode || claudeCode)({prompt:args.prompt,images,cwd},{workspaceRoots:[cwd],claudeBin:binary,claudeExtraArgs:extra,claudeTimeoutMs:Math.min(3600000,(record.config.runtime?.maxMinutes || 10)*60000),signal:controller.signal,chatOnly:!work});
         result={status:raw.uncertain?'unknown':raw.ok?'completed':'failed',text:raw.content||'',error:raw.error,sessionId:raw.execution?.sessionId};
       }else{
         job.client=acp(binary, selection.kind, cwd);
@@ -207,7 +209,7 @@ function createConversationClients({ userData, getSettings, store, openExternal,
           }
           notify({type:'delta',requestId:args.requestId,text:event.delta});
         };
-        result=await job.client.run({prompt:args.prompt,model:selection.model==='default'?undefined:selection.model,effort:selection.effort && selection.effort!=='default'?selection.effort:undefined,mode:work?'work':'chat',signal:controller.signal,onEvent,onApproval});
+        result=await job.client.run({prompt:args.prompt,images,model:selection.model==='default'?undefined:selection.model,effort:selection.effort && selection.effort!=='default'?selection.effort:undefined,mode:work?'work':'chat',signal:controller.signal,onEvent,onApproval});
         if(acpWorkCapabilityFailure){
           result={...result,status:result?.status==='unknown'?'unknown':'permission_required',error:acpWorkCapabilityFailure};
         }

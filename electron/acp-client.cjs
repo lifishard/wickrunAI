@@ -1,4 +1,5 @@
 'use strict';
+const { normalizeImages } = require('./client-images.cjs');
 
 const { spawn: nativeSpawn } = require('node:child_process');
 const path = require('node:path');
@@ -731,6 +732,7 @@ function createAcpClient({
   }
 
   async function run(options = {}) {
+    const images = normalizeImages(options.images);
     if (active) throw Error(tagged('A Kimi ACP turn is already active.'));
     if (typeof options.prompt !== 'string' || !options.prompt.trim()) throw Error('A prompt is required.');
     if (options.mode !== undefined && options.mode !== 'chat' && options.mode !== 'work') throw Error(tagged('Kimi ACP mode must be "chat" or "work".'));
@@ -789,12 +791,15 @@ function createAcpClient({
       try {
         const info = await inspect();
         if (state.settled) return;
+        // Grok's published prompt_parser accepts Image blocks despite its stale
+        // image:false advertisement. Keep this exception specific to Grok.
+        if (images.length && !info.capabilities?.prompt?.image && label !== 'Grok ACP') throw Error(tagged('当前客户端未声明图片输入能力。图片已保留，请更新官方客户端或选择支持图片的连接后继续。'));
         state.sessionId = info.sessionId;
         await configure(state, options);
         if (state.settled) return;
         if (state.cancelRequested) { settleActive(state.cancelReason === 'user' ? 'cancelled' : 'unknown', state.cancelReason === 'timeout' ? 'Kimi ACP turn timed out.' : null); return; }
         state.promptStarted = true;
-        const response = await request('session/prompt', { sessionId: state.sessionId, prompt: [{ type: 'text', text: options.prompt }] }, {
+        const response = await request('session/prompt', { sessionId: state.sessionId, prompt: [{ type: 'text', text: options.prompt }, ...images.map(image => ({ type: 'image', mimeType: image.mimeType, data: image.data }))] }, {
           timeoutMs: turnTimeout + cancelTimeout,
           kind: 'session/prompt',
           onId: id => { state.promptRequestId = id; },

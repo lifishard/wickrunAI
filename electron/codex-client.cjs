@@ -1,4 +1,5 @@
 'use strict';
+const { normalizeImages } = require('./client-images.cjs');
 const { spawn: nativeSpawn } = require('node:child_process');
 const path = require('node:path');
 const { StringDecoder } = require('node:string_decoder');
@@ -184,6 +185,7 @@ function createCodexClient({ binary, cwd, spawn = nativeSpawn, env = process.env
     const project = options.cwd || cwd, sandbox = options.sandbox || 'readOnly';
     if (!path.isAbsolute(project) || !['readOnly', 'workspaceWrite'].includes(sandbox)) throw Error('Codex requires a project directory and a supported sandbox.');
     if (typeof options.prompt !== 'string' || !options.prompt.trim()) throw Error('A prompt is required.');
+    const images = normalizeImages(options.images);
     if (options.signal?.aborted) return { status: 'cancelled', threadId: options.threadId || null, turnId: null, text: '', error: null, pendingApprovals: [] };
     let resolve;
     const outcome = new Promise(done => { resolve = done; });
@@ -207,8 +209,13 @@ function createCodexClient({ binary, cwd, spawn = nativeSpawn, env = process.env
           const effective=await request('config/read',{includeLayers:false,cwd:project});
           if(!effective.config || typeof effective.config!=='object')throw Error('Cannot verify local tool configuration for this connection.');
           isolatedConfig={'features.apps':false,'features.hooks':false,'features.codex_hooks':false,'features.multi_agent':false,'features.skill_mcp_dependency_install':false,'features.browser_use':false,'features.computer_use':false,'web_search':'disabled'};
-          for(const name of Object.keys(effective.config.mcp_servers || {}))isolatedConfig[`mcp_servers.${JSON.stringify(name)}.enabled`]=false;
-          for(const name of Object.keys(effective.config.plugins || {}))isolatedConfig[`plugins.${JSON.stringify(name)}.enabled`]=false;
+          // App-server override paths split on dots; quoting a name creates a
+          // different, incomplete MCP entry instead of disabling the real one.
+          // config/read includes null optionals; JSON null cannot round-trip
+          // through TOML overrides (it becomes an invalid empty string).
+          const omitNull=value=>Array.isArray(value)?value.map(omitNull):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).filter(([,v])=>v!==null).map(([k,v])=>[k,omitNull(v)])):value;
+          isolatedConfig.mcp_servers=Object.fromEntries(Object.entries(effective.config.mcp_servers || {}).map(([name,value])=>[name,{...omitNull(value),enabled:false}]));
+          isolatedConfig.plugins=Object.fromEntries(Object.entries(effective.config.plugins || {}).map(([name,value])=>[name,{...omitNull(value),enabled:false}]));
           if(sandbox==='readOnly')Object.assign(isolatedConfig,{'features.shell_tool':false,'features.unified_exec':false,'features.apply_patch_freeform':false});
         }
         const config = { cwd: project, modelProvider: 'openai', approvalPolicy: 'untrusted', approvalsReviewer: 'user', sandbox: sandbox === 'readOnly' ? 'read-only' : 'workspace-write', ...(options.model ? { model: options.model } : {}),...(isolatedConfig?{config:isolatedConfig}:{}) };
@@ -219,7 +226,7 @@ function createCodexClient({ binary, cwd, spawn = nativeSpawn, env = process.env
         emit(state, { type: 'thread/ready', threadId: state.threadId });
         if (state.settled) return;
         state.starting = true;
-        const reply = await request('turn/start', { threadId: state.threadId, cwd: project, approvalPolicy: 'untrusted', approvalsReviewer: 'user', sandboxPolicy: sandbox === 'workspaceWrite' ? { type: sandbox, writableRoots: [project], networkAccess: false, excludeTmpdirEnvVar: true, excludeSlashTmp: true } : { type: sandbox, networkAccess: false }, input: [{ type: 'text', text: options.prompt }], ...(options.model ? { model: options.model } : {}), ...(options.effort ? { effort: options.effort } : {}) });
+        const reply = await request('turn/start', { threadId: state.threadId, cwd: project, approvalPolicy: 'untrusted', approvalsReviewer: 'user', sandboxPolicy: sandbox === 'workspaceWrite' ? { type: sandbox, writableRoots: [project], networkAccess: false, excludeTmpdirEnvVar: true, excludeSlashTmp: true } : { type: sandbox, networkAccess: false }, input: [{ type: 'text', text: options.prompt }, ...images.map(image => ({ type: 'image', url: image.dataUrl }))], ...(options.model ? { model: options.model } : {}), ...(options.effort ? { effort: options.effort } : {}) });
         if (state.settled) return;
         if (typeof reply.turn?.id !== 'string' || !reply.turn.id) throw Error('Codex did not identify the started turn.');
         state.turnId = reply.turn.id;

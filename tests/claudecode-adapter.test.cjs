@@ -36,6 +36,28 @@ test('untrusted prompt travels verbatim over stdin with native shell:false and f
   assert.equal(f.calls[0].args.includes('dontAsk'), true);
 });
 
+test('Claude receives actual image blocks through JSON stdin while Chat tools remain disabled',async()=>{
+  const f=fixture(),image='data:image/png;base64,aGVsbG8=';
+  const result=await f.run({prompt:'Inspect image',images:[image]},{...ctx,chatOnly:true});
+  assert.equal(result.ok,true);
+  assert.equal(f.calls[0].args[f.calls[0].args.indexOf('--input-format')+1],'stream-json');
+  assert.equal(f.calls[0].args[f.calls[0].args.indexOf('--output-format')+1],'stream-json');assert.ok(f.calls[0].args.includes('--verbose'));
+  assert.deepEqual(JSON.parse(f.calls[0].input),{type:'user',message:{role:'user',content:[{type:'text',text:'Inspect image'},{type:'image',source:{type:'base64',media_type:'image/png',data:'aGVsbG8='}}]}});
+  assert.equal(f.calls[0].args[f.calls[0].args.indexOf('--tools')+1],'');
+  assert.equal(f.calls[0].args.includes(image),false);
+});
+
+test('Claude image stream requires exactly one final terminal result, not an assistant delta',async()=>{
+  const start=JSON.stringify({type:'system',subtype:'init'}),partial=JSON.stringify({type:'assistant',message:{content:[{type:'text',text:'partial'}]}}),end=JSON.stringify(success);
+  for(const output of [start+'\n'+partial+'\n'+end+'\n',start+'\r\n'+end+'\r\n']){
+    assert.equal((await fixture({output}).run({prompt:'Inspect',images:['data:image/png;base64,aGVsbG8=']},ctx)).ok,true);
+  }
+  for(const output of [partial,start+'\n'+end+'\n'+end,end+'\n'+partial,start+'\ninvalid\n'+end]){
+    const result=await fixture({output}).run({prompt:'Inspect',images:['data:image/png;base64,aGVsbG8=']},ctx);
+    assert.equal(result.ok,false);assert.equal(result.uncertain,true);
+  }
+});
+
 test('a compatible gateway model ID with a provider path reaches Claude Code verbatim',async()=>{
  const f=fixture(),result=await f.run({prompt:'fixture'},{...ctx,claudeExtraArgs:'--model company/model-v1'});
  assert.equal(result.ok,true);const args=f.calls[0].args;assert.equal(args[args.indexOf('--model')+1],'company/model-v1');
