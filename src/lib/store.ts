@@ -9,6 +9,7 @@ import type {
 import { defaultGenerationConfig, mergeParamDefaults } from './paramSchema';
 import { BAKED_IN_PATTERN, defaultEffortMappings } from './effort';
 import { getTransport } from './transport';
+import { cloudCall, usesCloudKey } from './cloud-api';
 
 const K_SETTINGS = 'snc:settings:v1';
 const K_CONVS = 'snc:conversations:v1';
@@ -251,12 +252,26 @@ export function titleFrom(text: string): string {
 
 /* --------- 密钥读写（走各平台的安全存储） --------- */
 
-export function secretGet(id: string) {
-  return getTransport().secretGet(id);
+export async function secretGet(id: string) {
+  const transport=getTransport();
+  if(usesCloudKey(id)){
+    try{
+      const result=await cloudCall<{value:string|null}>('keyGet',{id});
+      if(result.value)await transport.secretSet(id,result.value);else await transport.secretDelete(id);
+      return result.value;
+    }catch(error){
+      if((error as {status?:number}).status===401)throw error;
+      const local=await transport.secretGet(id);if(local)return local;
+      throw error;
+    }
+  }
+  return transport.secretGet(id);
 }
-export function secretSet(id: string, value: string) {
+export async function secretSet(id: string, value: string) {
+  if(usesCloudKey(id))await cloudCall('keySet',{id,value});
   return getTransport().secretSet(id, value);
 }
-export function secretDelete(id: string) {
+export async function secretDelete(id: string) {
+  if(usesCloudKey(id))await cloudCall('keyDelete',{id});
   return getTransport().secretDelete(id);
 }

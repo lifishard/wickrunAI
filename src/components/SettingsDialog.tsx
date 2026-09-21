@@ -1,3 +1,4 @@
+import { usesCloudKey } from '../lib/cloud-api';
 import React from 'react';
 import { useT, LOCALES } from '../lib/i18n';
 import type { AppSettings, KeyProfile, SearchProvider } from '../types';
@@ -668,7 +669,7 @@ export default function SettingsDialog(props: {
               {t('wickrunAI 与该清单的作者、以及清单内任何 API 供应商之间均无关联关系；本应用不对其作出任何认可或推荐，亦未获其认可或赞助。额度与条款由各供应商自行订立并可随时变更。')}
             </p>
 
-            <Field label="API Key" hint={t('保存后就只留在本机的安全存储里，界面上不再回显。')}>
+            <Field label="API Key" hint={usesCloudKey(p.id) ? t('此账号的 API 密钥会加密保存到云端，并在已登录的设备上使用。') : t('保存后就只留在本机的安全存储里，界面上不再回显。')}>
               <SecretInput
                 secretId={p.id}
                 placeholder={t('粘贴 API Key')}

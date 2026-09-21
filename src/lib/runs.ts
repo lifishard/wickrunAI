@@ -77,6 +77,7 @@ export function recoverConversations(original: Conversation[], saved: RunRecord[
     }
     const index = conv.messages.findIndex((m) => m.id === r.answerId);
     const existing = index >= 0 ? conv.messages[index] : undefined;
+    if(existing?.cloudImported)continue;
     // The journal is authoritative for this run; ordinary chat saves may lag behind it.
     if ((existing?.runState?.at ?? 0) > state.at) continue;
     const completed = state.status === 'completed';

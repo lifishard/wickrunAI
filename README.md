@@ -8,7 +8,7 @@
 
 Open or closed, paid or free. Bring your own keys; they never leave your machine.
 
-[![Version](https://img.shields.io/badge/version-2.17.13-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
+[![Version](https://img.shields.io/badge/version-2.18.0-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-lightgrey)](#install)
 [![CI](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml/badge.svg)](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml)
@@ -240,3 +240,8 @@ Connecting to a provider requires your own account and credentials with that pro
 ## License
 
 [Apache License 2.0](LICENSE). Keep the [NOTICE](NOTICE) file when you redistribute.
+
+
+## Google account and cloud sync
+
+Desktop and web keep separate repositories and share one backend. Chats, projects, skills, task history and model API keys can follow the same Google account. [Setup, import and limits](docs/cloud-accounts.md).

@@ -17,6 +17,7 @@ import {
   type ToolCallDelta,
 } from './sse';
 import { tr } from './i18n';
+import type { CloudBridge } from './cloud-api';
 import { beginExchange, recordRaw, recordResponse, endExchange, type Exchange } from './wiretap';
 import {
   isRateLimited,
@@ -52,7 +53,7 @@ interface NativeEvent {
   status?: number;
 }
 
-interface ElectronBridge {
+interface ElectronBridge extends CloudBridge {
   notifyTask(input:TaskNotificationInput):Promise<boolean>;
   onTaskNotificationClick(cb:(event:TaskNotificationClick)=>void):()=>void;
   nativeAiState():Promise<import('./native-ai').NativeAiState>;

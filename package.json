@@ -1,6 +1,6 @@
 {
   "name": "wickrunai",
-  "version": "2.17.13",
+  "version": "2.18.0",
   "description": "灯芯AI（wickrunAI）：使用自己的 API Key，在同一任务中切换模型，查资料、处理文件、运行本地工具。",
   "private": true,
   "type": "module",
@@ -22,7 +22,7 @@
     "android:apk": "npm run cap:sync && cd android && gradlew.bat assembleDebug",
     "setup": "npm install && npm run dist:win",
     "typecheck": "tsc --noEmit",
-    "test": "node --test tests/*.test.cjs",
+    "test": "node --test --test-concurrency=4 tests/*.test.cjs",
     "check:lite": "node scripts/check-lite.mjs",
     "sync": "node scripts/sync-github.mjs",
     "build:fast": "node scripts/build-native-mcp.mjs && vite build",

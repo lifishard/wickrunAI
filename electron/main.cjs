@@ -1,8 +1,9 @@
 'use strict';
 
 const path = require('node:path');
-const { app, BrowserWindow, ipcMain, shell, Menu, nativeTheme, dialog, Notification } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, Menu, nativeTheme, dialog, Notification, safeStorage } = require('electron');
 require('./app-identity.cjs').configureIdentity(app);
+const cloudAccount = require('./cloud-account.cjs').createCloudAccount({ app, safeStorage, openExternal: url => shell.openExternal(url) });
 const store = require('./store.cjs');
 const { extractErrorMessage } = require('./sse.cjs');
 const { runTool } = require('./tools/index.cjs');
@@ -309,6 +310,18 @@ async function handleGetJson(_evt, { url, headers, timeoutMs }) {
  * ------------------------------------------------------------------ */
 
 function registerIpc() {
+  ipcMain.handle('snc:cloudState', () => cloudAccount.state());
+  ipcMain.handle('snc:cloudLogin', () => cloudAccount.login());
+  ipcMain.handle('snc:cloudPoll', () => cloudAccount.poll());
+  ipcMain.handle('snc:cloudCall', (_e, { action, input }) => cloudAccount.call(action, input));
+  ipcMain.handle('snc:cloudGuestData', () => cloudAccount.guestData());
+  ipcMain.handle('snc:cloudSwitch', async (_e, logout) => {
+    dataAvailable();
+    if (inflight.size || activeToolControllers.size) throw new Error('Stop running tasks before switching accounts.');
+    await store.flush();
+    if (logout) await cloudAccount.logout(); else cloudAccount.activate();
+    app.relaunch(); app.quit();
+  });
   const { activateTaskNotification, createTaskNotifier } = require('./task-notifications.cjs');
   taskNotifier = createTaskNotifier({
     Notification,

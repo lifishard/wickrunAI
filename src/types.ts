@@ -336,6 +336,8 @@ export interface Usage {
 }
 
 export interface ChatMessage {
+  /** Synced history is readable but is not a portable local execution checkpoint. */
+  cloudImported?: boolean;
   harness?: import('./lib/harness').HarnessCheckpoint;
   subagents?: import('./lib/subagents').SubagentJob[];
   contextKind?: 'handoff';

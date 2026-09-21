@@ -7,6 +7,12 @@ const { contextBridge, ipcRenderer } = require('electron');
  * 渲染进程拿不到 Node，也拿不到任何明文密钥。
  */
 contextBridge.exposeInMainWorld('snc', {
+  cloudState: () => ipcRenderer.invoke('snc:cloudState'),
+  cloudLogin: () => ipcRenderer.invoke('snc:cloudLogin'),
+  cloudPoll: () => ipcRenderer.invoke('snc:cloudPoll'),
+  cloudCall: (action, input) => ipcRenderer.invoke('snc:cloudCall', { action, input }),
+  cloudGuestData: () => ipcRenderer.invoke('snc:cloudGuestData'),
+  cloudSwitch: (logout) => ipcRenderer.invoke('snc:cloudSwitch', logout),
   platform: 'electron',
   nativeAiState: () => ipcRenderer.invoke('snc:nativeAiState'),
   nativeAiConfigure: () => ipcRenderer.invoke('snc:nativeAiConfigure'),

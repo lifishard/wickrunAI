@@ -88,6 +88,8 @@ import SelectionActions from './components/SelectionActions';
 import Composer from './components/Composer';
 import ConfigPanel from './components/ConfigPanel';
 import SettingsDialog from './components/SettingsDialog';
+import CloudSyncControl from './components/CloudSyncControl';
+import { applyCloudLocal, recoverCloudApply } from './lib/cloud-local';
 import Sidebar from './components/Sidebar';
 import WorkspaceHeader from './components/WorkspaceHeader';
 import ArtifactPanel from './components/ArtifactPanel';
@@ -270,6 +272,7 @@ export default function App() {
     let cancelled = false;
     setBootError(null);
     void (async () => {
+      await recoverCloudApply();
       const [s, c, pr, sk, tk] = await Promise.all([
         loadSettings().then(value => { if (!cancelled) setSettings(value); return value; }),
         loadConversations(),
@@ -1926,6 +1929,16 @@ export default function App() {
           ) : null}
           <span className="page-title" title={active ? conversationTitle(active.title, t) : undefined}>{active ? conversationTitle(active.title, t) : t('新对话')}</span>
           <span className="spacer" />
+          <CloudSyncControl local={{settings,conversations,projects,skills,tasks}}
+            blocked={Object.values(runs).some(Boolean)||Object.values(teamRuntime.data?.projects??{}).some(p=>p.runs.some(r=>['running','waiting_approval','waiting_user'].includes(r.status)))}
+            isBlocked={()=>runningRef.current.size>0||startingRef.current.size>0||Object.values(teamRuntime.data?.projects??{}).some(p=>p.runs.some(r=>['running','pausing','waiting_approval','waiting_user'].includes(r.status)))}
+            beforeSwitch={async()=>{stopAll();await teamRuntime.pauseAll();await Promise.all([saveSettings(settings),saveConversationsNow(conversationsForStorage(conversations)),saveProjects(projects),saveSkills(skills),saveTasks(tasks)]);}}
+            onApply={async next=>{
+              for(const old of conversations){const incoming=next.conversations.find(c=>c.id===old.id);if(!incoming)await forgetRuns(old.id);else{const removed=new Set(old.messages.filter(m=>!incoming.messages.some(n=>n.id===m.id)).map(m=>m.id));if(removed.size)await forgetRuns(old.id,removed);}}
+              await applyCloudLocal(next);
+              setSettings(next.settings);setConversations(next.conversations);setProjects(next.projects);setSkills(next.skills);setTasks(next.tasks);
+              if(!next.conversations.some(c=>c.id===activeId))setActiveId(next.conversations[0]?.id??null);
+            }}/>
           {!profile ? <span className="chip warn">{t('未配置凭据')}</span> : null}
           <span className="chip">{config.model || t('未选模型')}</span>
           <LocaleSwitch onChange={(locale) => setSettings((prev) => (prev ? { ...prev, locale } : prev))} />

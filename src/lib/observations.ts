@@ -59,6 +59,11 @@ export const emptyObservations=():ObservationStore=>({version:1,epoch:newid(),cr
 let data:ObservationStore|undefined, loading:Promise<ObservationStore>|undefined, chain=Promise.resolve();
 const routes = new Map<string,string>();
 const changed=()=>{ if (typeof window !== 'undefined') window.dispatchEvent(new Event('anyai:observations')); };
+export async function reloadCloudObservations():Promise<void> {
+  await chain;
+  data=undefined;loading=undefined;routes.clear();
+  await observationStore();changed();
+}
 export async function observationStore():Promise<ObservationStore> {
   if(data)return data;
   if(!loading)loading=(async()=>{
