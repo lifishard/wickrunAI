@@ -1,7 +1,8 @@
 'use strict';
 const fs = require('node:fs'), path = require('node:path'), crypto = require('node:crypto');
-const KINDS = ['codex', 'claude', 'kimi'];
+const KINDS = ['codex', 'claude', 'kimi', 'grok'];
 const STATE_VERSION = 1;
+const KIND_NAMES = { codex: 'Codex', claude: 'Claude Code', kimi: 'Kimi Code', grok: 'Grok Desktop' };
 
 function stateFile(userData) { return path.join(path.resolve(userData), 'conversation-clients', 'connections.json'); }
 function readClientState(userData) {
@@ -34,6 +35,13 @@ function rememberClientState(userData, kind, update) {
 // Only inspect bounded, known installation directories. Never launch shell shims.
 function children(dir) {
   try { return fs.readdirSync(dir, { withFileTypes: true }).filter(e => e.isDirectory()).map(e => e.name).sort((a,b) => b.localeCompare(a, undefined, { numeric:true })).slice(0,32); } catch { return []; }
+}
+function grokDesktopHints(env, platform) {
+  if (platform === 'win32' && env.LOCALAPPDATA) {
+    return ['Grok', 'Grok Desktop', 'xAI Grok', 'Grok Build'].map(name => path.join(env.LOCALAPPDATA, 'Programs', name));
+  }
+  if (platform === 'darwin') return ['/Applications/Grok.app', '/Applications/Grok Desktop.app', '/Applications/Grok Build.app'];
+  return [];
 }
 function discoverClient(kind, settings = {}, env = process.env, platform = process.platform, remembered = '') {
   if (!KINDS.includes(kind)) throw Error('未知连接器');
@@ -81,6 +89,19 @@ function discoverClient(kind, settings = {}, env = process.env, platform = proce
       try { for (const dir of fs.readdirSync(apps).filter(n => /^OpenAI\.(Codex|ChatGPT)/.test(n)).slice(-8)) candidates.push(path.join(apps, dir, 'app', 'resources', 'codex.exe')); } catch {}
     }
   }
+  if (!configured && kind === 'grok') {
+    if (home) candidates.push(path.join(home, '.grok', 'bin', 'grok' + suffix));
+    for (const root of grokDesktopHints(env, platform)) {
+      candidates.push(path.join(root, 'resources', 'grok' + suffix), path.join(root, 'app', 'resources', 'grok' + suffix), path.join(root, 'grok' + suffix));
+      for (const version of children(path.join(root, 'bin'))) candidates.push(path.join(root, 'bin', version, 'grok' + suffix));
+    }
+    if (platform === 'darwin') candidates.push('/Applications/Grok.app/Contents/Resources/grok', '/Applications/Grok Desktop.app/Contents/Resources/grok', '/Applications/Grok Build.app/Contents/Resources/grok');
+    const vendors = [env.APPDATA && path.join(env.APPDATA, 'npm', 'node_modules', '@xai-official', 'grok', 'vendor'),
+      '/usr/local/lib/node_modules/@xai-official/grok/vendor', '/opt/homebrew/lib/node_modules/@xai-official/grok/vendor'].filter(Boolean);
+    for (const vendor of vendors) {
+      try { for (const dir of fs.readdirSync(vendor).slice(0, 12)) candidates.push(path.join(vendor, dir, 'grok', 'grok' + suffix), path.join(vendor, dir, 'grok' + suffix)); } catch {}
+    }
+  }
   for (const file of candidates) {
     if (!path.isAbsolute(file) || /\.(cmd|bat|ps1|js|mjs|cjs)$/i.test(file) || (platform === 'win32' && !/\.exe$/i.test(file))) continue;
     try {
@@ -94,6 +115,10 @@ function discoverClient(kind, settings = {}, env = process.env, platform = proce
     const error = Error('已发现 Kimi 桌面应用，但未找到提供 ACP 接口的 Kimi Code CLI。请安装官方 Kimi Code CLI，或选择其 kimi.exe 后重新检测。');
     error.code = 'DESKTOP_ONLY'; throw error;
   }
-  throw Error(`未找到 ${kind === 'codex' ? 'Codex' : kind === 'claude' ? 'Claude Code' : 'Kimi Code'} 官方原生客户端，请安装后重新检测，或选择程序位置。`);
+  if (!configured && kind === 'grok' && grokDesktopHints(env, platform).some(dir => { try { return fs.existsSync(dir); } catch { return false; } })) {
+    const error = Error('已发现 Grok Desktop，但未找到提供 ACP 接口的官方 grok CLI。请安装官方 Grok CLI，或选择其 grok 程序后重新检测。');
+    error.code = 'DESKTOP_ONLY'; throw error;
+  }
+  throw Error(`未找到 ${KIND_NAMES[kind] || kind} 官方原生客户端，请安装后重新检测，或选择程序位置。`);
 }
 module.exports = { discoverClient, KINDS, readClientState, rememberClientState };

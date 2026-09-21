@@ -8,7 +8,7 @@
 
 开源的、闭源的，付费的、免费的，都能调度。Key 自己带，只留在你本机。
 
-[![Version](https://img.shields.io/badge/version-2.18.1-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
+[![Version](https://img.shields.io/badge/version-2.18.2-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-lightgrey)](#安装)
 [![CI](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml/badge.svg)](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml)
@@ -140,7 +140,7 @@ API 路由与本机订阅客户端的职责分开：API 负责兼容接口和连
 
 ## 2.1 本机连接与提问卡片
 
-模型选择器增加“本机 AI”入口：检测 Codex、Claude Code 与 Kimi Code，展示连接状态、模型和思考强度。Codex 支持官方 ChatGPT 登录；Claude 与 Kimi 复用官方客户端已有授权。Grok 和其他兼容服务继续使用 API 接入。能力差异、原生客户端要求和开源连接器接口见 [本机连接说明](docs/LOCAL_CONNECTIONS.md)。
+模型选择器增加“本机 AI”入口：检测 Codex、Claude Code、Kimi Code 与 Grok Desktop，展示连接状态、模型和思考强度。Codex 支持官方 ChatGPT 登录；Grok 在需要时启动官方 `grok login`；Claude 与 Kimi 复用官方客户端已有授权。Grok 仍可通过 API 接入。能力差异、原生客户端要求和开源连接器接口见 [本机连接说明](docs/LOCAL_CONNECTIONS.md)。
 
 Chat 与 Work 都支持 AI 提问卡片，可选择选项或填写自己的回答。草稿、回答和待续操作会保存在本机；回答后接着当前任务继续。切换本机连接与 API 时保留同一段对话和文本附件。功能说明见 [2.1.0 说明](docs/releases/v2.1.0.md)。
 

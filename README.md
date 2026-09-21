@@ -8,7 +8,7 @@
 
 Open or closed, paid or free. Bring your own keys; they never leave your machine.
 
-[![Version](https://img.shields.io/badge/version-2.18.1-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
+[![Version](https://img.shields.io/badge/version-2.18.2-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-lightgrey)](#install)
 [![CI](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml/badge.svg)](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml)
@@ -142,7 +142,7 @@ Attachment limits are one text or code file up to 25MB, one image up to 20MB, an
 
 ## 2.1 Local clients and question cards
 
-The model picker gained a Local AI entry. It detects Codex, Claude Code, and Kimi Code, and shows the connection state, models, and reasoning effort. Codex supports the official ChatGPT login; Claude and Kimi reuse the authorization their official clients already hold. Grok and other compatible services continue over the API. Capability differences, native client requirements, and the open connector interface are in [Local connections](docs/LOCAL_CONNECTIONS.md).
+The model picker gained a Local AI entry. It detects Codex, Claude Code, Kimi Code, and Grok Desktop, and shows the connection state, models, and reasoning effort. Codex supports the official ChatGPT login; Grok starts official `grok login` when needed; Claude and Kimi reuse the authorization their official clients already hold. Grok can still be used over the API. Capability differences, native client requirements, and the open connector interface are in [Local connections](docs/LOCAL_CONNECTIONS.md).
 
 Chat and Work both support question cards, where the model asks you something and you pick an option or write your own answer. Drafts, answers, and pending operations stay on your machine, and the task continues from where it paused. Switching between a local client and the API keeps the same conversation and text attachments. See the [2.1.0 notes](docs/releases/v2.1.0.md).
 

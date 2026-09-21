@@ -8,18 +8,31 @@ const { claudeCode } = require('./tools/claudecode.cjs');
 const { readClaudeConnection, describeConnection } = require('./claude-connection.cjs');
 const { guardPath } = require('./tools/common.cjs');
 
+const GROK_FALLBACK_MODELS = [
+  { id: 'grok-4.6', label: 'Grok 4.6', efforts: ['low', 'medium', 'high', 'xhigh'], defaultEffort: 'high' },
+  { id: 'grok-4.5', label: 'Grok 4.5', efforts: ['low', 'medium', 'high'], defaultEffort: 'high' },
+];
 const KIMI_WORK_SCOPE_MESSAGE = 'Kimi Work 已禁用：ACP 未提供可验证的文件编辑范围；只允许在授权工作目录内的一次性文件编辑，执行、终端、网络和未知操作均被拒绝。';
 const KIMI_WORK_PATH_MESSAGE = 'Kimi Work 已禁用：ACP 请求的文件路径不在授权工作目录内，或存在符号链接越界；无法安全批准此操作。';
+const GROK_WORK_SCOPE_MESSAGE = 'Grok Work 已禁用：ACP 未提供可验证的文件编辑范围；只允许在授权工作目录内的一次性文件编辑，执行、终端、网络和未知操作均被拒绝。';
+const GROK_WORK_PATH_MESSAGE = 'Grok Work 已禁用：ACP 请求的文件路径不在授权工作目录内，或存在符号链接越界；无法安全批准此操作。';
 
-function validateKimiWorkPermission(event, root) {
+function acpKind(kind) { return kind === 'kimi' || kind === 'grok'; }
+function workMessages(kind) {
+  return kind === 'grok'
+    ? { scope: GROK_WORK_SCOPE_MESSAGE, path: GROK_WORK_PATH_MESSAGE }
+    : { scope: KIMI_WORK_SCOPE_MESSAGE, path: KIMI_WORK_PATH_MESSAGE };
+}
+
+function validateKimiWorkPermission(event, root, messages = workMessages('kimi')) {
   const toolCall = event?.toolCall;
   const kind = typeof toolCall?.kind === 'string' ? toolCall.kind.toLowerCase() : '';
   // ACP's standard `edit` kind is the only native mutation that can be
   // reviewed safely here.  The ACP client has no OS-level sandbox that we
   // can verify for terminal, command, network, delete, move, or unknown work.
-  if (kind !== 'edit') return { ok: false, message: KIMI_WORK_SCOPE_MESSAGE };
+  if (kind !== 'edit') return { ok: false, message: messages.scope };
   if (toolCall.locationsUnsafe || !Array.isArray(toolCall.locations) || toolCall.locations.length === 0) {
-    return { ok: false, message: KIMI_WORK_SCOPE_MESSAGE };
+    return { ok: false, message: messages.scope };
   }
   const paths = [];
   try {
@@ -27,13 +40,13 @@ function validateKimiWorkPermission(event, root) {
       const candidate = location?.path;
       // ACP ToolCallLocation.path is an absolute path.  Do not let the host
       // process's cwd resolve a relative or URI-like value for us.
-      if (typeof candidate !== 'string' || !candidate || !path.isAbsolute(candidate)) return { ok: false, message: KIMI_WORK_SCOPE_MESSAGE };
+      if (typeof candidate !== 'string' || !candidate || !path.isAbsolute(candidate)) return { ok: false, message: messages.scope };
       const guarded = guardPath(candidate, [root]);
-      if (fs.existsSync(guarded) && fs.statSync(guarded).isDirectory()) return { ok: false, message: KIMI_WORK_PATH_MESSAGE };
+      if (fs.existsSync(guarded) && fs.statSync(guarded).isDirectory()) return { ok: false, message: messages.path };
       paths.push(guarded);
     }
   } catch {
-    return { ok: false, message: KIMI_WORK_PATH_MESSAGE };
+    return { ok: false, message: messages.path };
   }
   return { ok: true, paths };
 }
@@ -49,7 +62,12 @@ function createConversationClients({ userData, getSettings, store, openExternal,
   };
   const rememberedResult=(kind,binary,result)=>{rememberClientState(userData,kind,{binary,status:result.status});return result;};
   const codex = (binary,options={}) => (deps.createCodexClient || createCodexClient)({binary, cwd:scratch,...options});
-  const acp = binary => (deps.createAcpClient || require('./acp-client.cjs').createAcpClient)({binary, cwd:scratch});
+  const acp = (binary, kind, cwd = scratch) => (deps.createAcpClient || require('./acp-client.cjs').createAcpClient)({
+    binary,
+    cwd,
+    args: kind === 'grok' ? ['agent', 'stdio'] : ['acp'],
+    label: kind === 'grok' ? 'Grok ACP' : 'Kimi ACP',
+  });
   const cleanModels = data => (data || []).slice(0,500).filter(m => typeof (m.model || m.id) === 'string').map(m => ({id:(m.model || m.id).slice(0,160),label:String(m.displayName || m.name || m.model || m.id).slice(0,160),efforts:(m.supportedReasoningEfforts || []).map(e=>e.reasoningEffort).filter(e=>typeof e==='string').slice(0,12),defaultEffort:m.defaultReasoningEffort}));
   async function check(kind) {
     if (!KINDS.includes(kind)) throw Error('未知连接器');
@@ -77,15 +95,32 @@ function createConversationClients({ userData, getSettings, store, openExternal,
         const source=connectionInfo.type==='custom_api'?`自定义 API：${connection.baseUrl}`:connectionInfo.type==='api_key'?'API 凭据':'Claude 账号登录';
         return rememberedResult(kind,binary,{kind,binary,status:loggedIn?'ready':'login_required',connection:connectionInfo,message:loggedIn?`Claude Code CLI 已就绪。连接来源：${source}。${gateway?'已配置的本机网关已响应。':''}尚未发送模型请求；可用模型以你的服务配置为准。`:'Claude Code 授权未通过检查，请检查现有账号或 API 配置后重新检测。',models:loggedIn?[{id:'default',label:'Claude Code 配置的默认模型',efforts:[]},...['sonnet','opus','haiku'].map(id=>({id,label:`${id} · 配置别名${connection.env['ANTHROPIC_DEFAULT_'+id.toUpperCase()+'_MODEL']?' → '+connection.env['ANTHROPIC_DEFAULT_'+id.toUpperCase()+'_MODEL']:''}`,efforts:id==='haiku'?[]:['low','medium','high','xhigh','max']}))]:[]});
       }
-      client=acp(binary); const info=await client.inspect();
-      return rememberedResult(kind,binary,{kind,binary,status:'ready',message:'已连接 Kimi ACP；执行范围受客户端能力与授权限制。',models:info.models?.length?info.models.map(m=>({id:m.id,label:m.name || m.id,efforts:(info.efforts || []).map(e=>e.id),defaultEffort:info.current?.effort || undefined})):[{id:'default',label:'官方客户端默认模型',efforts:[]}],capabilities:info.capabilities});
+      client=acp(binary, kind); const info=await client.inspect();
+      return rememberedResult(kind,binary,{kind,binary,status:'ready',message:kind==='grok'?'已连接官方 Grok 账号，模型列表来自本机 Grok Desktop。':'已连接 Kimi ACP；执行范围受客户端能力与授权限制。',models:info.models?.length?info.models.map(m=>({id:m.id,label:m.name || m.id,efforts:(info.efforts || []).map(e=>e.id),defaultEffort:info.current?.effort || undefined})):(kind==='grok'?GROK_FALLBACK_MODELS:[{id:'default',label:'官方客户端默认模型',efforts:[]}]),capabilities:info.capabilities});
     } catch(error) {
-      if(kind==='kimi' && error?.authRequired) return {kind,binary,status:'login_required',models:[],message:'Kimi ACP 要求登录；请先在官方客户端运行 kimi login，再重新检测。'};
+      if(acpKind(kind) && error?.authRequired) return {kind,binary,status:'login_required',models:[],message:kind==='grok'?'Grok ACP 要求登录；请先完成官方 grok login，或点击登录 Grok，再重新检测。':'Kimi ACP 要求登录；请先在官方客户端运行 kimi login，再重新检测。'};
       return {kind,binary,status:'error',models:[],message:'客户端未完成连接，请检查官方客户端版本、登录或网络后重新检测。'};
     }
     finally { client?.close(); }
   }
   async function connect(kind) {
+    if (kind === 'grok') {
+      const status=await check(kind);
+      if(status.status!=='login_required')return status;
+      const binary=discover(kind);
+      logins.get(kind)?.close();
+      const {safeEnvironment}=require('./acp-client.cjs');
+      let child;
+      try {
+        child=(deps.spawn || spawn)(binary,['login'],{cwd:scratch,env:safeEnvironment(deps.env || process.env),shell:false,windowsHide:true,stdio:['ignore','ignore','ignore']});
+      } catch { throw Error('无法发起官方登录，请检查 Grok 客户端。'); }
+      const closer={close(){ try { child.kill(); } catch { /* already exited */ } }};
+      logins.set(kind,closer);
+      child.on?.('error',()=>{ if(logins.get(kind)===closer){ closer.close(); logins.delete(kind); } });
+      const timer=setTimeout(()=>{if(logins.get(kind)===closer){closer.close();logins.delete(kind);}},10*60*1000);timer.unref?.();
+      const result={kind,status:'waiting_login',models:[],message:'已启动官方 grok login，完成登录后点击重新检测。'};
+      rememberClientState(userData,kind,{binary,status:result.status});return result;
+    }
     if (kind !== 'codex') return check(kind);
     const status=await check(kind);
     if(status.status!=='login_required')return status;
@@ -124,14 +159,14 @@ function createConversationClients({ userData, getSettings, store, openExternal,
     }
     const binary=discover(selection.kind), controller=new AbortController(), job={controller,client:null};
     active.set(args.runId,job);
-    let kimiWorkCapabilityFailure=null;
+    let acpWorkCapabilityFailure=null;
     const onApproval=event=>{
       if(!work || controller.signal.aborted)return Promise.resolve('decline');
       let scopedPaths;
-      if(selection.kind==='kimi'){
-        const scope=validateKimiWorkPermission(event,cwd);
+      if(acpKind(selection.kind)){
+        const scope=validateKimiWorkPermission(event,cwd,workMessages(selection.kind));
         if(!scope.ok){
-          kimiWorkCapabilityFailure=scope.message;
+          acpWorkCapabilityFailure=scope.message;
           return Promise.resolve('decline');
         }
         scopedPaths=scope.paths;
@@ -161,7 +196,7 @@ function createConversationClients({ userData, getSettings, store, openExternal,
         const raw=await (deps.claudeCode || claudeCode)({prompt:args.prompt,cwd},{workspaceRoots:[cwd],claudeBin:binary,claudeExtraArgs:extra,claudeTimeoutMs:Math.min(3600000,(record.config.runtime?.maxMinutes || 10)*60000),signal:controller.signal,chatOnly:!work});
         result={status:raw.uncertain?'unknown':raw.ok?'completed':'failed',text:raw.content||'',error:raw.error,sessionId:raw.execution?.sessionId};
       }else{
-        job.client=(deps.createAcpClient || require('./acp-client.cjs').createAcpClient)({binary,cwd});
+        job.client=acp(binary, selection.kind, cwd);
         let partial='',lastSave=0;
         const onEvent=event=>{
           if(event?.type!=='text' || typeof event.delta!=='string' || !event.delta)return;
@@ -173,8 +208,8 @@ function createConversationClients({ userData, getSettings, store, openExternal,
           notify({type:'delta',requestId:args.requestId,text:event.delta});
         };
         result=await job.client.run({prompt:args.prompt,model:selection.model==='default'?undefined:selection.model,effort:selection.effort && selection.effort!=='default'?selection.effort:undefined,mode:work?'work':'chat',signal:controller.signal,onEvent,onApproval});
-        if(kimiWorkCapabilityFailure){
-          result={...result,status:result?.status==='unknown'?'unknown':'permission_required',error:kimiWorkCapabilityFailure};
+        if(acpWorkCapabilityFailure){
+          result={...result,status:result?.status==='unknown'?'unknown':'permission_required',error:acpWorkCapabilityFailure};
         }
       }
       store.saveJob(args.runId,jobId,{status:result.status,result,at:Date.now(),kind:selection.kind,cwd});return result;

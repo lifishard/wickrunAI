@@ -947,6 +947,8 @@ const EN: Record<string, string> = {
     'Uses Claude Code’s existing account or API settings.',
   '通过 Kimi 官方 ACP 接口连接。':
     'Connects over Kimi’s official ACP interface.',
+  '使用官方 Grok 登录与本机 Grok Desktop 订阅模型。':
+    'Uses your official Grok sign-in and Grok Desktop subscription models.',
   '{client} 模型':
     '{client} model',
   '{client} 思考强度':
@@ -957,6 +959,8 @@ const EN: Record<string, string> = {
     'client default',
   '登录 ChatGPT':
     'Sign in to ChatGPT',
+  '登录 Grok':
+    'Sign in to Grok',
   '正在打开…':
     'Opening…',
   '一键连接':

@@ -39,6 +39,15 @@ function validateCwd(cwd) {
   return cwd;
 }
 
+function normalizeSpawnArgs(args) {
+  const value = args === undefined ? ['acp'] : args;
+  if (!Array.isArray(value) || value.length < 1 || value.length > 6) throw Error('ACP process arguments are invalid.');
+  for (const arg of value) {
+    if (typeof arg !== 'string' || !/^[\w./-]{1,40}$/.test(arg)) throw Error('ACP process arguments are invalid.');
+  }
+  return value;
+}
+
 function finiteTimeout(value, fallback, minimum = 1) {
   const number = Number(value);
   return Number.isFinite(number) && number >= minimum ? number : fallback;
@@ -249,6 +258,8 @@ function createAcpClient({
   cwd,
   spawn = nativeSpawn,
   env = process.env,
+  args: spawnArgs,
+  label: agentLabel,
   requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
   turnTimeoutMs = DEFAULT_TURN_TIMEOUT_MS,
   cancelTimeoutMs = DEFAULT_CANCEL_TIMEOUT_MS,
@@ -262,6 +273,9 @@ function createAcpClient({
       : 'Configure the official native Kimi executable using an absolute path; shell scripts and shims are not accepted.');
   }
   validateCwd(cwd);
+  const args = normalizeSpawnArgs(spawnArgs);
+  const label = typeof agentLabel === 'string' && agentLabel.trim() && agentLabel.length <= 40 ? agentLabel.trim() : 'Kimi ACP';
+  const tagged = (message) => label === 'Kimi ACP' || typeof message !== 'string' ? message : message.replaceAll('Kimi ACP', label);
 
   const requestTimeout = finiteTimeout(requestTimeoutMs, DEFAULT_REQUEST_TIMEOUT_MS);
   const turnTimeout = finiteTimeout(turnTimeoutMs, DEFAULT_TURN_TIMEOUT_MS);
@@ -282,12 +296,12 @@ function createAcpClient({
   let active = null;
 
   function send(message) {
-    if (dead || !child?.stdin?.writable) throw Error('Kimi ACP connection is closed.');
+    if (dead || !child?.stdin?.writable) throw Error(tagged('Kimi ACP connection is closed.'));
     child.stdin.write(`${JSON.stringify(message)}\n`);
   }
 
   function rejectError(message, unknown = false) {
-    const error = Error(message);
+    const error = Error(tagged(message));
     if (unknown) error.unknown = true;
     return error;
   }
@@ -318,7 +332,7 @@ function createAcpClient({
       text: run.text,
       sessionId: run.sessionId || null,
     };
-    if (error) result.error = clipText(errorMessage(error));
+    if (error) result.error = clipText(tagged(errorMessage(error)));
     if (run.usage) result.usage = clone(run.usage);
     run.resolve(result);
   }
@@ -560,7 +574,7 @@ function createAcpClient({
 
   function attachChild(processObject) {
     child = processObject;
-    if (!child || !child.stdout || !child.stdin) throw Error('The Kimi ACP process did not expose stdio streams.');
+    if (!child || !child.stdout || !child.stdin) throw Error(tagged('The Kimi ACP process did not expose stdio streams.'));
     child.on('error', () => disconnect('The official Kimi ACP process could not start.', false));
     child.on('close', (code, signal) => {
       if (!dead) disconnect(`Kimi ACP process exited (${code ?? 'unknown'}${signal ? `, ${signal}` : ''}); no matching terminal response was received.`, true);
@@ -598,7 +612,7 @@ function createAcpClient({
       if (dead) throw rejectError('Kimi ACP connection is closed.', true);
       let processObject;
       try {
-        processObject = spawn(binary, ['acp'], {
+        processObject = spawn(binary, args, {
           cwd,
           env: safeEnv,
           shell: false,
@@ -641,7 +655,7 @@ function createAcpClient({
     inspectionPromise = (async () => {
       await start();
       sessionResult = await request('session/new', { cwd, mcpServers: [] });
-      if (!sessionResult || typeof sessionResult.sessionId !== 'string' || !sessionResult.sessionId) throw Error('Kimi ACP did not return a session id.');
+      if (!sessionResult || typeof sessionResult.sessionId !== 'string' || !sessionResult.sessionId) throw Error(tagged('Kimi ACP did not return a session id.'));
       specs = configSpecs(sessionResult);
       inspection = normalizeInspection(initializeResult, sessionResult);
       return clone(inspection);
@@ -668,9 +682,9 @@ function createAcpClient({
   }
 
   function assertSupported(kind, value) {
-    if (typeof value !== 'string' || !value) throw Error(`Kimi ACP ${kind} must be a non-empty supported value.`);
+    if (typeof value !== 'string' || !value) throw Error(tagged(`Kimi ACP ${kind} must be a non-empty supported value.`));
     const ids = supportedIds(kind);
-    if (!ids.includes(value)) throw Error(`Kimi ACP does not advertise ${kind} value "${clipText(value, 120)}".`);
+    if (!ids.includes(value)) throw Error(tagged(`Kimi ACP does not advertise ${kind} value "${clipText(value, 120)}".`));
   }
 
   function chooseMode(requested) {
@@ -682,7 +696,7 @@ function createAcpClient({
       if (safe) return safe.id;
       const manual = modes.find(mode => mode.id === 'default');
       if (manual) return manual.id;
-      if (modes.every(mode => /^(auto|yolo)$/i.test(mode.id))) throw Error('Kimi ACP did not advertise a safe chat mode; refusing to select a permissive mode.');
+      if (modes.every(mode => /^(auto|yolo)$/i.test(mode.id))) throw Error(tagged('Kimi ACP did not advertise a safe chat mode; refusing to select a permissive mode.'));
       return null;
     }
     const manual = modes.find(mode => /^(default|work|agent)$/i.test(mode.id)) || modes.find(mode => /\b(default|work|agent|manual)\b/.test(lower(mode)));
@@ -693,7 +707,7 @@ function createAcpClient({
 
   async function configure(state, options) {
     const requestedMode = options.mode || 'chat';
-    if (requestedMode !== 'chat' && requestedMode !== 'work') throw Error('Kimi ACP mode must be "chat" or "work".');
+    if (requestedMode !== 'chat' && requestedMode !== 'work') throw Error(tagged('Kimi ACP mode must be "chat" or "work".'));
     if (options.model !== undefined) {
       assertSupported('model', options.model);
       if (specs.model) {
@@ -705,7 +719,7 @@ function createAcpClient({
     }
     if (options.effort !== undefined) {
       assertSupported('effort', options.effort);
-      if (!specs.effort) throw Error('Kimi ACP did not advertise a session effort option.');
+      if (!specs.effort) throw Error(tagged('Kimi ACP did not advertise a session effort option.'));
       const response = await request('session/set_config_option', { sessionId: state.sessionId, configId: specs.effort.id, value: options.effort });
       if (response?.configOptions) updateStateFromOptions(response.configOptions);
     }
@@ -717,9 +731,9 @@ function createAcpClient({
   }
 
   async function run(options = {}) {
-    if (active) throw Error('A Kimi ACP turn is already active.');
+    if (active) throw Error(tagged('A Kimi ACP turn is already active.'));
     if (typeof options.prompt !== 'string' || !options.prompt.trim()) throw Error('A prompt is required.');
-    if (options.mode !== undefined && options.mode !== 'chat' && options.mode !== 'work') throw Error('Kimi ACP mode must be "chat" or "work".');
+    if (options.mode !== undefined && options.mode !== 'chat' && options.mode !== 'work') throw Error(tagged('Kimi ACP mode must be "chat" or "work".'));
     if (options.signal?.aborted) return { status: 'cancelled', text: '', sessionId: null };
 
     let resolve;

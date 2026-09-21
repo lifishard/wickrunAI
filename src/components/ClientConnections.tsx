@@ -8,7 +8,7 @@ import ClaudeRepair from './ClaudeRepair';
 import NativeAiPanel from './NativeAiPanel';
 
 type CliClientKind = Exclude<ClientKind, 'claude-desktop'>;
-const CLIENTS: CliClientKind[] = ['codex', 'claude', 'kimi'];
+const CLIENTS: CliClientKind[] = ['codex', 'claude', 'kimi', 'grok'];
 const STATUS_LABEL: Record<ClientStatus['status'], string> = {
   missing: '未安装',
   installed: '已安装',
@@ -204,7 +204,7 @@ export default function ClientConnections({ selection, onSelect, settings, onSet
                 {t(status ? STATUS_LABEL[status.status] : '检测中')}
               </span>
             </div>
-            <p>{status?.message || t(kind === 'codex' ? '使用官方 ChatGPT 登录与 Codex 订阅模型。' : kind === 'claude' ? '使用 Claude Code 的现有账号或 API 配置。' : '通过 Kimi 官方 ACP 接口连接。')}</p>
+            <p>{status?.message || t(kind === 'codex' ? '使用官方 ChatGPT 登录与 Codex 订阅模型。' : kind === 'claude' ? '使用 Claude Code 的现有账号或 API 配置。' : kind === 'grok' ? '使用官方 Grok 登录与本机 Grok Desktop 订阅模型。' : '通过 Kimi 官方 ACP 接口连接。')}</p>
 
             {selected ? (
               <div className="client-model-fields">
@@ -229,8 +229,8 @@ export default function ClientConnections({ selection, onSelect, settings, onSet
             ) : null}
 
             <div className="client-actions">
-              {status?.status === 'login_required' && kind === 'codex' ? (
-                <button className="btn sm" disabled={busy !== null} onClick={() => void act(kind, true)}>{t(busy === kind ? '正在打开…' : '登录 ChatGPT')}</button>
+              {status?.status === 'login_required' && (kind === 'codex' || kind === 'grok') ? (
+                <button className="btn sm" disabled={busy !== null} onClick={() => void act(kind, true)}>{t(busy === kind ? '正在打开…' : kind === 'grok' ? '登录 Grok' : '登录 ChatGPT')}</button>
               ) : status?.status === 'ready' ? (
                 <button className="btn sm" disabled={selected} onClick={() => onSelect({ kind, model: status.models[0]?.id || 'default', effort: status.models[0]?.defaultEffort })}>{selected ? '正在使用' : '使用此连接'}</button>
               ) : (

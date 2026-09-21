@@ -99,8 +99,11 @@ function fixture({ session = defaultSession(), initialize = {}, handlers = {}, o
       ANTHROPIC_API_KEY: 'must-not-forward',
       NODE_OPTIONS: 'must-not-forward',
       HTTPS_PROXY: 'must-not-forward',
+      XAI_API_KEY: 'must-not-forward',
     },
     spawn: (...args) => { invocation = args; return child; },
+    args: options.args,
+    label: options.label,
     requestTimeoutMs: options.requestTimeoutMs ?? 250,
     turnTimeoutMs: options.turnTimeoutMs ?? 1000,
     cancelTimeoutMs: options.cancelTimeoutMs ?? 30,
@@ -442,4 +445,18 @@ test('output and incomplete protocol frames are bounded', async () => {
   frame.child.stdout.write('x'.repeat(MAX_FRAME_BYTES + 1));
   assert.equal((await framePending).status, 'unknown');
   assert.equal(frame.child.killed, true);
+});
+
+test('ACP spawn arguments can target Grok agent stdio without forwarding secrets', async () => {
+  const f = fixture({ options: { args: ['agent', 'stdio'], label: 'Grok ACP' } });
+  await f.client.inspect();
+  assert.deepEqual(f.invocation().slice(0, 2), [binary, ['agent', 'stdio']]);
+  assert.equal(f.invocation()[2].shell, false);
+  assert.equal(f.invocation()[2].env.KIMI_API_KEY, undefined);
+  assert.equal(f.invocation()[2].env.XAI_API_KEY, undefined);
+});
+
+test('ACP spawn arguments reject shells and injection tokens', () => {
+  assert.throws(() => createAcpClient({ binary, cwd, platform: 'win32', args: ['acp', '&& calc'] }), /arguments are invalid/);
+  assert.throws(() => createAcpClient({ binary, cwd, platform: 'win32', args: [''] }), /arguments are invalid/);
 });

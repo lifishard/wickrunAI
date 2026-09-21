@@ -55,3 +55,13 @@ test('a validated discovered executable survives restart without PATH while expl
  assert.equal(discoverClient('codex',{},f.env,'win32',reopened.clients.codex.binary),first);
  assert.equal(discoverClient('codex',{clients:{codexBin:explicit}},f.env,'win32',reopened.clients.codex.binary),explicit);
 });
+
+test('finds official grok CLI and distinguishes desktop-only installation',t=>{
+ const f=fixture(t);
+ fs.mkdirSync(path.join(f.env.LOCALAPPDATA,'Programs','Grok Desktop'),{recursive:true});
+ assert.throws(()=>discoverClient('grok',{},f.env,'win32'),e=>e.code==='DESKTOP_ONLY');
+ const exe=f.file(f.root,'.grok','bin','grok.exe');
+ assert.equal(discoverClient('grok',{},f.env,'win32'),exe);
+ const chosen=f.file(f.root,'chosen','grok.exe');
+ assert.equal(discoverClient('grok',{clients:{grokBin:chosen}},f.env,'win32'),chosen);
+});

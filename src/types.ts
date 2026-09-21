@@ -553,7 +553,7 @@ export interface RemoteConfig {
 }
 
 export interface AppSettings {
-  clients?: { codexBin:string; kimiBin?:string };
+  clients?: { codexBin:string; kimiBin?:string; grokBin?:string };
   collaborationView?: { visible:boolean; projectId?:string };
   keyProfiles: KeyProfile[];
   activeKeyProfileId: string | null;

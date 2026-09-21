@@ -162,3 +162,67 @@ test('Kimi ACP inspection maps advertised models and the shared thinking picker'
     {id:'kimi-k2-thinking',label:'Thinking',efforts:['low','high'],defaultEffort:'low'},
   ]);
 });
+
+test('Grok ACP inspects models, starts official login, and reuses the Kimi work permission boundary',async t=>{
+  const spawned=[],notifications=[];let captured;
+  const f=fixture(t,{
+    discoverClient:kind=>{assert.equal(kind,'grok');return path.join(f.root,'grok.exe');},
+    spawn:(binary,args,options)=>{spawned.push({binary,args,options});const {EventEmitter}=require('node:events');const child=new EventEmitter();child.kill=()=>{};return child;},
+    createAcpClient:options=>{
+      captured=options;
+      return {
+        inspect:async()=>({models:[{id:'grok-4.6',name:'Grok 4.6'},{id:'grok-4.5',name:'Grok 4.5'}],efforts:[{id:'low'},{id:'medium'},{id:'high'},{id:'xhigh'}],current:{effort:'high'},capabilities:{}}),
+        run:async runOptions=>{
+          const decision=await runOptions.onApproval({type:'permission_required',requestId:31,sessionId:'session-g',toolCall:{kind:'execute',locations:[{path:path.join(f.root,'inside.txt')}]},options:[{optionId:'allow_once',name:'Allow once',kind:'allow_once'}]});
+          assert.equal(decision,'decline');
+          return {status:'completed',text:'must not be accepted',sessionId:'session-g'};
+        },
+        close(){},
+      };
+    },
+  });
+  const ready=await f.host.check('grok');
+  assert.equal(ready.status,'ready');
+  assert.equal(ready.models[0].id,'grok-4.6');
+  assert.equal(ready.models[1].id,'grok-4.5');
+  assert.deepEqual(captured.args,['agent','stdio']);
+  assert.equal(captured.label,'Grok ACP');
+
+  const auth=fixture(t,{
+    discoverClient:kind=>{assert.equal(kind,'grok');return path.join(f.root,'grok.exe');},
+    spawn:(binary,args,options)=>{spawned.push({binary,args,options});const {EventEmitter}=require('node:events');const child=new EventEmitter();child.kill=()=>{};return child;},
+    createAcpClient:()=>({inspect:async()=>{const error=Error('AUTH_REQUIRED');error.authRequired=true;error.code=-32000;throw error;},close(){}}),
+  });
+  const loginRequired=await auth.host.check('grok');
+  assert.equal(loginRequired.status,'login_required');
+  const waiting=await auth.host.connect('grok');
+  assert.equal(waiting.status,'waiting_login');
+  assert.equal(spawned.at(-1).args[0],'login');
+  assert.equal(spawned.at(-1).options.shell,false);
+  assert.equal(spawned.at(-1).options.env.XAI_API_KEY,undefined);
+
+  f.record.config={toolsEnabled:true,client:{kind:'grok',model:'grok-4.6'}};f.store.save(f.record);
+  const result=await f.host.run({runId:'run-1',requestId:'request-grok',prompt:'work',cwd:f.root},event=>notifications.push(event));
+  assert.equal(result.status,'permission_required');
+  assert.match(result.error,/Grok Work|ACP|授权工作目录/);
+  assert.deepEqual(notifications,[]);
+});
+
+test('Grok ACP authentication errors are reported as login required without treating them as Kimi',async t=>{
+  const f=fixture(t,{discoverClient:kind=>{assert.equal(kind,'grok');return path.join(f.root,'grok.exe');},createAcpClient:options=>{
+    assert.deepEqual(options.args,['agent','stdio']);
+    return {inspect:async()=>{const error=Error('AUTH_REQUIRED');error.authRequired=true;throw error;},close(){}};
+  }});
+  const result=await f.host.check('grok');
+  assert.equal(result.status,'login_required');
+  assert.match(result.message,/grok login|登录 Grok/);
+  assert.doesNotMatch(result.message,/kimi login/i);
+});
+
+test('Grok ACP falls back to grok-4.6 when the client advertises no model list',async t=>{
+  const f=fixture(t,{discoverClient:kind=>{assert.equal(kind,'grok');return path.join(f.root,'grok.exe');},createAcpClient:()=>({inspect:async()=>({models:[],efforts:[],capabilities:{}}),close(){}})});
+  const result=await f.host.check('grok');
+  assert.equal(result.status,'ready');
+  assert.equal(result.models[0].id,'grok-4.6');
+  assert.deepEqual(result.models[0].efforts,['low','medium','high','xhigh']);
+});
