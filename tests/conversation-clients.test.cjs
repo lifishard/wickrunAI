@@ -225,7 +225,7 @@ test('Grok ACP inspects models, starts official login, and reuses the Kimi work 
   f.record.config={toolsEnabled:true,client:{kind:'grok',model:'grok-4.6'}};f.store.save(f.record);
   const result=await f.host.run({runId:'run-1',requestId:'request-grok',prompt:'work',cwd:f.root},event=>notifications.push(event));
   assert.equal(result.status,'permission_required');
-  assert.match(result.error,/Grok Work|ACP|授权工作目录/);
+  assert.match(result.error,/本次 Grok 操作未执行/);
   assert.deepEqual(notifications,[]);
 });
 

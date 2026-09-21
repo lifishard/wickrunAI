@@ -15,8 +15,8 @@ const GROK_FALLBACK_MODELS = [
 ];
 const KIMI_WORK_SCOPE_MESSAGE = 'Kimi Work 已禁用：ACP 未提供可验证的文件编辑范围；只允许在授权工作目录内的一次性文件编辑，执行、终端、网络和未知操作均被拒绝。';
 const KIMI_WORK_PATH_MESSAGE = 'Kimi Work 已禁用：ACP 请求的文件路径不在授权工作目录内，或存在符号链接越界；无法安全批准此操作。';
-const GROK_WORK_SCOPE_MESSAGE = 'Grok Work 已禁用：ACP 未提供可验证的文件编辑范围；只允许在授权工作目录内的一次性文件编辑，执行、终端、网络和未知操作均被拒绝。';
-const GROK_WORK_PATH_MESSAGE = 'Grok Work 已禁用：ACP 请求的文件路径不在授权工作目录内，或存在符号链接越界；无法安全批准此操作。';
+const GROK_WORK_SCOPE_MESSAGE = '本次 Grok 操作未执行：客户端未提供可核实的文件编辑范围，或请求的是尚未接入的命令、终端或网络操作。已有进度已保留；可继续使用文件编辑工具。';
+const GROK_WORK_PATH_MESSAGE = '本次 Grok 文件编辑未执行：目标路径不在授权工作目录内，或符号链接指向目录外。请检查工作目录后继续。';
 
 function acpKind(kind) { return kind === 'kimi' || kind === 'grok'; }
 function workMessages(kind) {
@@ -176,7 +176,10 @@ function createConversationClients({ userData, getSettings, store, openExternal,
       return new Promise(resolve=>{
         const id=randomUUID();
         const finish=approved=>{if(!approvals.has(id))return;approvals.delete(id);clearTimeout(timer);controller.signal.removeEventListener('abort',stop);
-          const permitted=approved===true&&!controller.signal.aborted&&active.get(args.runId)===job;
+          // Recheck after the user has reviewed the request: a directory may
+          // have become a junction/symlink while the approval card was open.
+          const scopeStillValid=!acpKind(selection.kind)||validateKimiWorkPermission(event,cwd,workMessages(selection.kind)).ok;
+          const permitted=approved===true&&scopeStillValid&&!controller.signal.aborted&&active.get(args.runId)===job;
           try{store.saveJob(args.runId,'approval-'+id,{at:Date.now(),requestId:args.requestId,event,...(scopedPaths?{scopedPaths}:{}),approved:permitted});resolve(permitted?'accept':'decline');}catch{controller.abort();resolve('decline');}};
         const stop=()=>finish(false),timer=setTimeout(stop,180000);
         approvals.set(id,{requestId:args.requestId,finish});controller.signal.addEventListener('abort',stop,{once:true});

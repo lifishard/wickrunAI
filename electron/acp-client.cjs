@@ -386,7 +386,7 @@ function createAcpClient({
     if (!value || typeof value !== 'object') return {};
     const allowed = ['toolCallId', 'kind', 'title', 'status', 'locations'];
     const result = {};
-    let locationsUnsafe = false;
+    let locationsUnsafe = value.locations !== undefined && !Array.isArray(value.locations);
     for (const key of allowed) {
       if (key === 'locations' && Array.isArray(value.locations)) {
         if (value.locations.length > 50) locationsUnsafe = true;
@@ -400,6 +400,31 @@ function createAcpClient({
         });
       } else if (typeof value[key] === 'string') result[key] = clipText(value[key], 1000);
       else if (key === 'status' && value[key] != null) result[key] = clipText(value[key], 1000);
+    }
+    // Grok Write/SearchReplace permission requests omit ACP locations and put
+    // the actual target in rawInput.file_path. Preserve the verified input
+    // shape and derive a location from it; never parse paths out of a title.
+    if (label === 'Grok ACP' && result.kind === 'edit' && value.rawInput !== undefined) {
+      const input = value.rawInput;
+      const keys = input?.variant === 'Write' ? ['variant', 'file_path', 'content']
+        : input?.variant === 'SearchReplace' ? ['variant', 'file_path', 'old_string', 'new_string', 'replace_all'] : null;
+      const validPath = p => typeof p === 'string' && p.length > 0 && p.length < 1000 && !/[\x00-\x1f]/.test(p);
+      const valid = keys && input && typeof input === 'object' && !Array.isArray(input)
+        && Object.keys(input).every(key => keys.includes(key)) && validPath(input.file_path)
+        && (input.variant === 'Write' ? typeof input.content === 'string'
+          : typeof input.old_string === 'string' && typeof input.new_string === 'string' && (input.replace_all === undefined || typeof input.replace_all === 'boolean'));
+      if (!valid) locationsUnsafe = true;
+      else {
+        const target = input.file_path;
+        const declared = value._meta?.['x.ai/tool']?.input?.path;
+        if (declared !== undefined && (!validPath(declared) || path.normalize(declared) !== path.normalize(target))) locationsUnsafe = true;
+        result.rawInput = Object.fromEntries(keys.filter(key => input[key] !== undefined).map(key => [key,
+          typeof input[key] === 'string' && key !== 'file_path' ? clipText(input[key], 20000) : input[key]]));
+        if (keys.some(key => typeof input[key] === 'string' && input[key].length > 20000)) result.inputPreviewTruncated = true;
+        const locations = Array.isArray(result.locations) ? result.locations : [];
+        if (locations.some(location => path.normalize(location.path) !== path.normalize(target))) locationsUnsafe = true;
+        if (!locations.length) result.locations = [{ path: target }];
+      }
     }
     if (locationsUnsafe) result.locationsUnsafe = true;
     return result;
