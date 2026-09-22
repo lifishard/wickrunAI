@@ -264,6 +264,7 @@ function createAcpClient({
   requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
   turnTimeoutMs = DEFAULT_TURN_TIMEOUT_MS,
   cancelTimeoutMs = DEFAULT_CANCEL_TIMEOUT_MS,
+  idleTimeoutMs = null,
   platform = process.platform,
 } = {}) {
   // Validate against the host platform by default. An injectable platform is
@@ -281,6 +282,9 @@ function createAcpClient({
   const requestTimeout = finiteTimeout(requestTimeoutMs, DEFAULT_REQUEST_TIMEOUT_MS);
   const turnTimeout = finiteTimeout(turnTimeoutMs, DEFAULT_TURN_TIMEOUT_MS);
   const cancelTimeout = finiteTimeout(cancelTimeoutMs, DEFAULT_CANCEL_TIMEOUT_MS);
+  // A live Grok process can be thinking or waiting upstream without emitting
+  // ACP events. Silence alone is not evidence that the turn failed.
+  const idleTimeout = idleTimeoutMs == null ? null : finiteTimeout(idleTimeoutMs, turnTimeout);
   const safeEnv = safeEnvironment(env);
   let child = null;
   let dead = false;
@@ -320,6 +324,7 @@ function createAcpClient({
     if (!run || run.settled) return;
     run.settled = true;
     clearTimeout(run.timer);
+    clearInterval(run.heartbeat);
     clearTimeout(run.cancelTimer);
     run.signal?.removeEventListener('abort', run.abort);
     for (const permission of run.permissions.values()) {
@@ -333,6 +338,7 @@ function createAcpClient({
       text: run.text,
       sessionId: run.sessionId || null,
     };
+    if (run.reasoning) result.reasoning = run.reasoning;
     if (error) result.error = clipText(tagged(errorMessage(error)));
     if (run.usage) result.usage = clone(run.usage);
     run.resolve(result);
@@ -354,7 +360,7 @@ function createAcpClient({
       }
       const id = nextId++;
       const entry = { resolve, reject, kind, timer: null, unknown: false, reason: null };
-      entry.timer = setTimeout(() => {
+      entry.timer = timeoutMs === null ? null : setTimeout(() => {
         pending.delete(id);
         entry.unknown = true;
         entry.reason = `Kimi ACP ${method} timed out; execution state is unknown.`;
@@ -427,6 +433,19 @@ function createAcpClient({
       }
     }
     if (locationsUnsafe) result.locationsUnsafe = true;
+    if (label === 'Grok ACP' && result.kind === 'fetch') {
+      const input = value.rawInput;
+      let valid = input && typeof input === 'object' && !Array.isArray(input)
+        && input.variant === 'WebFetch' && Object.keys(input).every(key => ['variant', 'url'].includes(key))
+        && typeof input.url === 'string' && input.url.length <= 8000;
+      try {
+        const url = new URL(input?.url);
+        valid = valid && ['https:', 'http:'].includes(url.protocol) && !url.username && !url.password;
+      } catch { valid = false; }
+      const declared = value._meta?.['x.ai/tool']?.input?.url;
+      if (valid && (declared === undefined || declared === input.url)) result.rawInput = { variant: 'WebFetch', url: input.url };
+      else result.fetchUnsafe = true;
+    }
     // Commands cannot be path-sandboxed by the host. Keep the complete,
     // recognized input for an explicit one-command approval; never approve
     // a truncated command, a title-derived command, or unknown extra inputs.
@@ -481,6 +500,7 @@ function createAcpClient({
       : normalizeApprovalChoice(choice, entry.params);
     if (selected.denied) run.denied = true;
     if (!dead) sendResponse({ jsonrpc: '2.0', id, result: { outcome: selected.outcome } });
+    touchRun(run);
   }
 
   function handlePermission(message) {
@@ -503,12 +523,13 @@ function createAcpClient({
       type: 'permission_required',
       requestId: message.id,
       sessionId: run.sessionId,
-      toolCall: safeToolCall(params.toolCall),
+      toolCall: safeToolCall(mergeToolCall(run, params.toolCall)),
       options,
     };
     const entry = { params: { ...params, options }, timer: null, settled: false };
     run.permissions.set(message.id, entry);
-    entry.timer = setTimeout(() => finishPermission(run, message.id, null, 'timeout'), requestTimeout);
+    if (label === 'Grok ACP') clearTimeout(run.timer);
+    else entry.timer = setTimeout(() => finishPermission(run, message.id, null, 'timeout'), requestTimeout);
     if (run.cancelRequested || dead) {
       finishPermission(run, message.id, null, 'cancelled');
       return;
@@ -550,6 +571,29 @@ function createAcpClient({
     try { run.onEvent?.({ type: 'text', delta }); } catch (error) { disconnect('Kimi ACP text event could not be recorded; execution state is unknown.', true); }
   }
 
+  // ACP permission requests are ToolCallUpdate objects: unchanged fields may
+  // be omitted. Only merge with a call seen in this same turn and session.
+  function mergeToolCall(run, value) {
+    if (!value || typeof value.toolCallId !== 'string') return value;
+    const merged = { ...run.toolCalls.get(value.toolCallId), ...value };
+    if (Buffer.byteLength(JSON.stringify(merged)) <= 100000) {
+      if (!run.toolCalls.has(value.toolCallId) && run.toolCalls.size >= 100) run.toolCalls.delete(run.toolCalls.keys().next().value);
+      run.toolCalls.set(value.toolCallId, merged);
+    } else run.toolCalls.delete(value.toolCallId);
+    return merged;
+  }
+
+  function emitProgress(run, event) {
+    try { run.onEvent?.(event); } catch { disconnect('Kimi ACP progress could not be recorded; execution state is unknown.', true); }
+  }
+
+  function touchRun(run) {
+    if (label !== 'Grok ACP' || run.settled || run.cancelRequested) return;
+    run.lastActivity = Date.now();
+    clearTimeout(run.timer);
+    if (!run.permissions.size && idleTimeout !== null) run.timer = setTimeout(run.expire, idleTimeout);
+  }
+
   function updateStateFromOptions(rawOptions) {
     if (!Array.isArray(rawOptions)) return;
     const filtered = rawOptions.filter(option => option && typeof option === 'object');
@@ -568,8 +612,22 @@ function createAcpClient({
       if (typeof params.sessionId !== 'string') return;
       if (active && params.sessionId === active.sessionId && active.promptStarted) {
         const update = params.update && typeof params.update === 'object' ? params.update : {};
+        touchRun(active);
         if (update.sessionUpdate === 'agent_message_chunk') {
           for (const delta of textBlocks(update)) emitText(active, delta);
+        } else if (update.sessionUpdate === 'agent_thought_chunk' && label === 'Grok ACP') {
+          for (const delta of textBlocks(update)) {
+            active.reasoning = (active.reasoning + delta).slice(-200000);
+            emitProgress(active, { type: 'reasoning', delta });
+          }
+        } else if (update.sessionUpdate === 'tool_call' || update.sessionUpdate === 'tool_call_update') {
+          const call = mergeToolCall(active, update);
+          if (label === 'Grok ACP') emitProgress(active, { type: 'activity', toolCall: safeToolCall(call) });
+        } else if (update.sessionUpdate === 'plan' && label === 'Grok ACP' && Array.isArray(update.entries)) {
+          emitProgress(active, { type: 'plan', entries: update.entries.slice(0, 50).map(entry => ({
+            content: clipText(typeof entry?.content === 'string' ? entry.content : '', 1000),
+            status: ['pending', 'in_progress', 'completed'].includes(entry?.status) ? entry.status : 'pending',
+          })) });
         } else if (update.sessionUpdate === 'usage_update') {
           active.usage = safeUsage(update);
         } else if (update.sessionUpdate === 'config_option_update' && Array.isArray(update.configOptions)) {
@@ -579,8 +637,7 @@ function createAcpClient({
         const update = params.update && typeof params.update === 'object' ? params.update : {};
         if (update.sessionUpdate === 'config_option_update' && Array.isArray(update.configOptions)) updateStateFromOptions(update.configOptions);
       }
-      // `agent_thought_chunk`, tool calls, plans, and other updates are
-      // intentionally not forwarded to the host chat stream.
+      // Progress stays separate from the final answer stream.
       return;
     }
     // ACP has no standard initialized notification. Other notifications are
@@ -789,6 +846,10 @@ function createAcpClient({
       promptRequestId: null,
       promptStarted: false,
       text: '',
+      reasoning: '',
+      toolCalls: new Map(),
+      heartbeat: null,
+      lastActivity: Date.now(),
       outputBytes: 0,
       usage: null,
       denied: false,
@@ -820,7 +881,7 @@ function createAcpClient({
     };
     state.abort = cancel;
     state.signal?.addEventListener('abort', cancel, { once: true });
-    state.timer = setTimeout(() => {
+    state.expire = () => {
       if (state.settled || state.cancelRequested) return;
       state.cancelRequested = true;
       state.cancelReason = 'timeout';
@@ -828,7 +889,13 @@ function createAcpClient({
       if (!state.promptStarted || !state.sessionId) { settleActive('unknown', 'Kimi ACP turn timed out before a prompt was submitted.'); return; }
       try { send({ jsonrpc: '2.0', method: 'session/cancel', params: { sessionId: state.sessionId } }); } catch { disconnect('Kimi ACP turn timed out; execution state is unknown.', true); return; }
       state.cancelTimer = setTimeout(() => { if (!state.settled) disconnect('Kimi ACP turn timed out; cancellation was not confirmed.', true); }, cancelTimeout);
-    }, turnTimeout);
+    };
+    if (label !== 'Grok ACP') state.timer = setTimeout(state.expire, turnTimeout);
+    if (label === 'Grok ACP') state.heartbeat = setInterval(() => {
+      if (!state.settled && !state.cancelRequested && !state.permissions.size) emitProgress(state, {
+        type: 'waiting', seconds: Math.floor((Date.now() - state.lastActivity) / 1000),
+      });
+    }, 15000);
 
     (async () => {
       try {
@@ -842,8 +909,9 @@ function createAcpClient({
         if (state.settled) return;
         if (state.cancelRequested) { settleActive(state.cancelReason === 'user' ? 'cancelled' : 'unknown', state.cancelReason === 'timeout' ? 'Kimi ACP turn timed out.' : null); return; }
         state.promptStarted = true;
+        touchRun(state);
         const response = await request('session/prompt', { sessionId: state.sessionId, prompt: [{ type: 'text', text: options.prompt }, ...images.map(image => ({ type: 'image', mimeType: image.mimeType, data: image.data }))] }, {
-          timeoutMs: turnTimeout + cancelTimeout,
+          timeoutMs: label === 'Grok ACP' ? null : turnTimeout + cancelTimeout,
           kind: 'session/prompt',
           onId: id => { state.promptRequestId = id; },
         });

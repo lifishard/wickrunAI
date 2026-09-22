@@ -133,6 +133,34 @@ async function waitFor(predicate, timeoutMs = 500) {
   assert.fail('Timed out waiting for fake ACP request');
 }
 
+test('silent Grok prompt outlives ordinary turn and RPC deadlines and still completes exactly once',async()=>{
+  const f=fixture({options:{label:'Grok ACP',turnTimeoutMs:20,requestTimeoutMs:30,cancelTimeoutMs:10}});
+  const events=[];
+  const result=f.client.run({prompt:'Wait for the server',onEvent:e=>events.push(e)});
+  await waitFor(()=>f.requests.some(r=>r.method==='session/prompt'));
+  await new Promise(resolve=>setTimeout(resolve,100));
+  assert.equal(f.child.killed,false);assert.equal(f.requests.some(r=>r.method==='session/cancel'),false);
+  f.send({method:'session/update',params:{sessionId:'session-1',update:{sessionUpdate:'agent_thought_chunk',content:{type:'text',text:'Checking the request'}}}});
+  f.send({method:'session/update',params:{sessionId:'session-1',update:{sessionUpdate:'plan',entries:[{content:'Read source',status:'in_progress'}]}}});
+  f.respond(f.requests.find(r=>r.method==='session/prompt'),{stopReason:'end_turn'});
+  const completed=await result;assert.equal(completed.status,'completed');assert.equal(completed.reasoning,'Checking the request');assert.equal(completed.text,'');
+  assert.equal(events[0].type,'reasoning');assert.equal(events[1].type,'plan');
+  assert.equal(f.requests.filter(r=>r.method==='session/prompt').length,1);await f.client.close();
+});
+
+test('silent Grok can still be cancelled and a dead process remains unknown without replay',async()=>{
+  for(const terminate of [false,true]){
+    const f=fixture({options:{label:'Grok ACP',turnTimeoutMs:20,cancelTimeoutMs:20}}),controller=new AbortController();
+    const result=f.client.run({prompt:'Wait',signal:controller.signal});
+    await waitFor(()=>f.requests.some(r=>r.method==='session/prompt'));
+    if(terminate)f.child.emit('close',1);else {
+      controller.abort();f.respond(f.requests.find(r=>r.method==='session/prompt'),{stopReason:'cancelled'});
+    }
+    assert.equal((await result).status,terminate?'unknown':'cancelled');
+    assert.equal(f.requests.filter(r=>r.method==='session/prompt').length,1);await f.client.close();
+  }
+});
+
 test('ACP sends inline image content only when the agent advertises image support',async()=>{
   for(const label of ['Grok ACP','Kimi ACP']){
     const f=fixture({options:{label},handlers:{'session/prompt':(request,{respond})=>respond(request,{stopReason:'end_turn'})}});

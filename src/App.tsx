@@ -1258,6 +1258,7 @@ export default function App() {
           }
           if (cfg.approvalMode === 'all') return Promise.resolve(true);
           if (cfg.approvalMode === 'auto') {
+            if(step.name==='native_client_operation' && ['read','edit'].includes(String(args.approvalClass)))return Promise.resolve(true);
             const def = TOOL_BY_NAME[step.name];
             // 「自动批准编辑」只放行改文件和 Chrome；
             // 跑命令和 Claude Code 影响面太大，这一档仍然要问

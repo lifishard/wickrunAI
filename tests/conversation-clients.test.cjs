@@ -80,6 +80,25 @@ test('Work rejects an unapproved directory before launching the official client'
   const f=fixture(t);f.record.config.toolsEnabled=true;f.store.save(f.record);
   await assert.rejects(f.host.run({runId:'run-1',requestId:'request-2',prompt:'write',cwd:os.tmpdir()}),/授权目录/);assert.equal(f.calls.length,0);
 });
+
+test('Work accepts a nested task folder but rejects sibling prefixes and escaping junctions',async t=>{
+  const f=fixture(t);f.record.config.toolsEnabled=true;f.store.save(f.record);
+  const nested=path.join(f.root,'task');fs.mkdirSync(nested);
+  await f.host.run({runId:'run-1',requestId:'nested',prompt:'write',cwd:nested});assert.equal(f.calls[0].cwd,fs.realpathSync(nested));
+  const outside=f.root+'-outside';fs.mkdirSync(outside);t.after(()=>fs.rmSync(outside,{recursive:true,force:true}));
+  fs.symlinkSync(outside,path.join(f.root,'escape'),process.platform==='win32'?'junction':'dir');
+  for(const cwd of [outside,path.join(f.root,'escape')])await assert.rejects(f.host.run({runId:'run-1',requestId:'escape',prompt:'write',cwd}),/授权目录/);
+  assert.equal(f.calls.length,1);
+});
+
+test('a denied tool cannot mask the actual Grok server failure or unknown execution result',async t=>{
+  for(const status of ['failed','unknown']){
+    const f=fixture(t,{createAcpClient:()=>({async run(options){await options.onApproval({toolCall:{kind:'unknown'}});return {status,text:'Partial work',error:'Upstream request timed out'};},close(){}})});
+    f.record.config.client={kind:'grok',model:'default'};f.record.config.toolsEnabled=true;f.store.save(f.record);
+    const result=await f.host.run({runId:'run-1',requestId:'failure',prompt:'Check',cwd:f.root});
+    assert.equal(result.status,status);assert.match(result.error,/^Upstream request timed out/);assert.match(result.error,/另有请求被拒绝/);
+  }
+});
 test('permission answers are scoped and persisted before reaching the client',async t=>{
   let decision;
   const f=fixture(t,{createCodexClient:()=>({run:async options=>{decision=await options.onApproval({command:'create a file'});return {status:'completed',text:'done'};},close(){}})});

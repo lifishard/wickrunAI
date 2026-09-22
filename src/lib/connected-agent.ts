@@ -5,7 +5,7 @@ import { deliveryReport } from './delivery';
 import { nativeProgressInstructions, applyNativeProgress, nativeVisibleText } from './native-progress';
 import {runAgent,buildWire,type RunAgentArgs,type AgentHandle} from './agent';
 import {desktop} from './transport';
-import type {RunState} from '../types';
+import type {RunState,ToolStep} from '../types';
 import type {ClientTurnResult} from './connections';
 import {formatUserAnswers,parseUserQuestions,validateUserAnswers} from './user-questions';
 import {taskSeed,harnessInstructions,planOnly,completionBlocker,nativeCompletionIssue} from './harness';
@@ -36,7 +36,7 @@ export function runConnectedAgent(args:RunAgentArgs):AgentHandle {
     contextArchive:structuredClone(args.resume?.contextArchive ?? args.conversationMemory?.archive ?? []),
     requirementSourceIds:args.resume?.requirementSourceIds ?? args.history.filter(m=>m.role==='user'&&!m.contextKind).map(m=>m.id),
     version:2,runId:args.resume?.runId || args.requestId,at:Date.now(),round:args.resume?.round || 1,stoppedBy:'unknown',status:'running',
-    content:args.resume?.content || '',lastModel:args.config.model,attemptId:args.requestId,phase:'request',steps:args.resume?.steps || [],sources:args.resume?.sources || []};
+    content:args.resume?.content || '',reasoning:args.resume?.reasoning || '',lastModel:args.config.model,attemptId:args.requestId,phase:'request',steps:args.resume?.steps || [],sources:args.resume?.sources || []};
   let saveChain=Promise.resolve();
   const save=async()=>{reconcileProgress(state);state.delivery=deliveryReport(state);state.at=Date.now();const snapshot=structuredClone(state);await (saveChain=saveChain.then(()=>events.onRunState(snapshot)));};
   state.milestones=structuredClone(args.resume?.milestones??args.conversationMemory?.milestones??[]);
@@ -56,7 +56,7 @@ export function runConnectedAgent(args:RunAgentArgs):AgentHandle {
           else if(!previous)state.uncertainCallId=undefined;
           else if(args.resolveUncertain==='skip')recovered={status:'completed',text:'你已核实并跳过先前未确认的操作；本次没有重新执行。'};
           else if(args.resolveUncertain!=='retry'){
-            if(previous.text){state.content=nativeVisibleText(previous.text);events.onContentReplace?.(state.content,'');}
+            if(previous.text){state.content=nativeVisibleText(previous.text);events.onContentReplace?.(state.content,state.reasoning??'');}
             throw Error('上次本机操作尚未确认。请核实产物后选择跳过或明确重试，避免重复执行。');
           }
         }else throw Error('此前 API 工具的执行结果尚未确认，请先在原连接中核实该操作，再切换本机连接。');
@@ -86,16 +86,49 @@ export function runConnectedAgent(args:RunAgentArgs):AgentHandle {
       if(cancelled)throw Error('已暂停，尚未派发本机请求。');
       let streamed='';
       let visibleStream='',streamStarted=false;
+      let lastProgressSave=0;
+      const saveProgress=()=>{if(Date.now()-lastProgressSave>500){lastProgressSave=Date.now();void save().catch(()=>{cancelled=true;void bridge.toolAbort(state.runId!);});}};
+      const recordStep=(id:string,title:string,status:ToolStep['status'],name:string)=>{
+        const previous=state.steps!.find(step=>step.id===id);
+        const step:ToolStep={id,callId:id,name,args:{},status,summary:title,startedAt:previous?.startedAt??Date.now()};
+        if(status!=='running')step.elapsedMs=Date.now()-step.startedAt;
+        if(previous)Object.assign(previous,step);else state.steps!.push(step);
+        events.onStep(step);saveProgress();
+      };
       off=bridge.onClientEvent(event=>{
         if(event.requestId!==nativeRequestId || cancelled)return;
+        if(event.type==='reasoning' && event.text){
+          state.reasoning=((state.reasoning??'')+event.text).slice(-200000);
+          events.onContentReplace?.(state.content??'',state.reasoning);
+          events.onNotice('Grok 正在思考');saveProgress();
+        }
+        if(event.type==='waiting' && state.waitKind!=='approval'){
+          const seconds=Number(event.event?.seconds)||0;
+          if(seconds>=15)events.onNotice(`等待 Grok 返回 · ${seconds} 秒未收到新动态 · 可随时暂停`);
+        }
+        if(event.type==='activity'){
+          const call=event.event?.toolCall as Record<string,unknown>|undefined;
+          if(typeof call?.toolCallId==='string'){
+            const id=`${nativeRequestId}-tool-${call.toolCallId}`;
+            const title=typeof call.title==='string'?call.title:state.steps!.find(step=>step.id===id)?.summary??'Grok 正在执行操作';
+            recordStep(id,title,call.status==='completed'?'ok':call.status==='failed'?'error':'running','native_client_operation');
+            events.onNotice(title);
+          }
+        }
+        if(event.type==='plan' && Array.isArray(event.event?.entries)){
+          event.event.entries.forEach((entry:{content?:string;status?:string},index:number)=>{
+            if(entry.content)recordStep(`${nativeRequestId}-plan-${index}`,`Grok 计划：${entry.content}`,entry.status==='completed'?'ok':'running','update_plan');
+          });
+        }
         if(event.type==='delta' && event.text){
           streamed+=event.text;
             const visible=nativeVisibleText(streamed,true);
-            if(!streamStarted){streamStarted=true;state.content='';events.onContentReplace?.('','');}
+            if(!streamStarted){streamStarted=true;state.content='';events.onContentReplace?.('',state.reasoning??'');}
             state.content=visible;
             if(visible.startsWith(visibleStream))events.onContentDelta(visible.slice(visibleStream.length));
-            else events.onContentReplace?.(visible,'');
+            else events.onContentReplace?.(visible,state.reasoning??'');
             visibleStream=visible;
+            events.onNotice('正在接收官方客户端回复');saveProgress();
         }
         if(event.type==='approval' && event.id){
           const id=event.id,step={id,callId:id,name:'native_client_operation',args:event.event || {},status:'running' as const,summary:'官方客户端请求执行操作',startedAt:Date.now()};
@@ -119,6 +152,7 @@ ${JSON.stringify(transcript)}`;
       // Save dispatch uncertainty before invoking: a renderer restart cannot imply that nothing ran.
       if(!recovered){state.uncertainCallId='native-'+nativeRequestId;await save();}
       const result=recovered ?? await bridge.conversationClientRun({runId:state.runId!,requestId:nativeRequestId,prompt,images,cwd:args.config.toolsEnabled?args.toolCtx().workspaceRoots[0]:undefined});
+      if(result.reasoning)state.reasoning=result.reasoning;
       recovered=null;
       if(cancelled)throw Error('已暂停并保存当前执行现场；尚未确认的本机操作需要核实');
       if(result.status==='completed'&&state.pendingInputMessages?.length){
@@ -142,15 +176,15 @@ ${JSON.stringify(transcript)}`;
         if(state.userQuestion)throw Error('已有问题尚未回答，已保存独立工作结果；等待回答后继续');
         state.userQuestion={request,callId:`native-question-${nativeRequestId}`,toolIndex:0,nonBlocking:questionData.blocking===false};
         if(state.userQuestion.nonBlocking){
-          state.uncertainCallId=undefined;events.onContentReplace?.(visible,'');await save();
+          state.uncertainCallId=undefined;events.onContentReplace?.(visible,state.reasoning??'');await save();
           state.working.push({id:`${nativeRequestId}-pending-question`,role:'user',contextKind:'handoff',content:'问题已向用户展示，尚未回答。继续不依赖答案的独立工作；不要猜测答案或重复提问。待回答的问题：'+JSON.stringify(request),createdAt:Date.now()});
           continue;
         }
         state.status='paused';state.waitKind='question';state.reason='等待用户回答';state.uncertainCallId=undefined;
-        events.onContentReplace?.(visible,'');
+        events.onContentReplace?.(visible,state.reasoning??'');
         await save();events.onNotice('');events.onPaused?.('等待用户回答');return;
       }
-      if(result.text){state.content=nativeVisibleText(result.text);events.onContentReplace?.(state.content,'');}
+      if(result.text){state.content=nativeVisibleText(result.text);events.onContentReplace?.(state.content,state.reasoning??'');}
       if(result.status!=='unknown')state.uncertainCallId=undefined;
       if(result.status!=='completed')throw Error(result.error || `官方客户端已暂停（${result.status}），已有内容已保留。`);
       if(state.pendingInputMessages?.length){state.working.push({id:nativeRequestId+'-answer',role:'assistant',content:result.text,createdAt:Date.now()});await save();continue;}
@@ -166,14 +200,14 @@ ${JSON.stringify(transcript)}`;
         state.harness!.completion={status:'needs_work',reason:unproven,evidence:[],at:Date.now()};
         throw Error(unproven);
       }
-      events.onContentReplace?.(state.content??'','');
+      events.onContentReplace?.(state.content??'',state.reasoning??'');
       state.working.push({id:args.requestId+'-answer',role:'assistant',content:state.content??'',createdAt:Date.now()});
       state.status='completed';state.reason=undefined;state.pendingCalls=undefined;state.toolCursor=undefined;
       await save();await events.onRunState(null);events.onNotice('');events.onDone();return;
       }
       throw Error('本阶段接力次数已到，进度和待回答的问题已保存');
     }catch(error){
-      events.onContentReplace?.(state.content??'','');
+      events.onContentReplace?.(state.content??'',state.reasoning??'');
       state.status='paused';state.reason=error instanceof Error?error.message:String(error);state.stoppedBy=cancelled?'user':'error';
       try{await save();}catch{state.reason='执行记录写入失败，已停止；请核实本机客户端的运行状态。';}
       events.onNotice('');events.onPaused?.(state.reason);

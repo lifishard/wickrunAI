@@ -22,7 +22,7 @@ function fixture(t,makeCall,kind='grok'){
         else if(request.method==='session/new')send({id:request.id,result:{sessionId:'session'}});
         else if(request.method==='session/prompt'){
           promptRequest=request;
-          send({id:900,method:'session/request_permission',params:{sessionId:'session',toolCall:makeCall(root,launchOptions),options:[
+          send({id:900,method:'session/request_permission',params:{sessionId:'session',toolCall:makeCall(root,launchOptions,send),options:[
             {optionId:'allow-edits-session',kind:'allow_always',name:'All edits'},
             {optionId:'allow-once',kind:'allow_once',name:'Yes'},
             {optionId:'reject-once',kind:'reject_once',name:'No'},
@@ -34,12 +34,47 @@ function fixture(t,makeCall,kind='grok'){
   const host=createConversationClients({userData:storage,store,getSettings:()=>({tools:{workspaceRoots:[root]}}),openExternal:async()=>{},deps:{discoverClient:()=>path.join(root,'grok.exe'),createAcpClient:options=>{launchOptions=options;return createAcpClient({...options,spawn:()=>child});}}});
   t.after(()=>{host.close();fs.rmSync(storage,{recursive:true,force:true});});
   return {root,host,store,wire,notifications,run(onApproval=event=>host.approve('request',event.id,true)){
-    return host.run({runId:'run',requestId:'request',prompt:'Update the fixture',cwd:root},event=>{notifications.push(event);onApproval(event);});
+    return host.run({runId:'run',requestId:'request',prompt:'Update the fixture',cwd:root},event=>{notifications.push(event);if(event.type==='approval')onApproval(event);});
   }};
 }
 const edit=(root,variant='SearchReplace')=>({toolCallId:'edit-1',kind:'edit',title:'Edit fixture',rawInput:{variant,file_path:path.join(root,'README.md'),...(variant==='Write'?{content:'# New\n'}:{old_string:'# Old',new_string:'# New',replace_all:false})},_meta:{'x.ai/tool':{version:1,input:{path:path.join(root,'README.md')}}}});
 
 const command=()=>({toolCallId:'command-1',kind:'execute',title:'Execute command',rawInput:{variant:'Bash',command:'Get-ChildItem -Name | Select-String -Pattern README',description:'List matching files',is_background:false},_meta:{'x.ai/tool':{version:1,name:'run_terminal_command',input:{command:'Get-ChildItem -Name | Select-String -Pattern README'}}}});
+
+const fetchCall=()=>({toolCallId:'fetch-1',kind:'fetch',title:'Fetch: https://example.com',rawInput:{variant:'WebFetch',url:'https://example.com'},_meta:{'x.ai/tool':{version:1,name:'web_fetch',kind:'web_fetch',namespace:'grok_build',label:'Web Fetch',read_only:true}}});
+
+test('captured Grok WebFetch reaches read approval instead of the generic operation-not-executed failure',async t=>{
+  const f=fixture(t,fetchCall);
+  assert.equal((await f.run()).status,'completed');
+  assert.equal(f.notifications[0].event.approvalClass,'read');
+  assert.deepEqual(f.notifications[0].event.toolCall.rawInput,fetchCall().rawInput);
+  assert.equal(f.wire.find(m=>m.id===900&&m.result).result.outcome.optionId,'allow-once');
+});
+
+test('Grok fetch requires actual recognized URL input, never a display title or unrelated metadata',async t=>{
+  for(const change of [c=>{delete c.rawInput;},c=>{c.rawInput.url='file:///secret';},c=>{c.rawInput.url='https://user:password@example.com';},c=>{c.rawInput.headers={Authorization:'secret'};},c=>{c._meta['x.ai/tool'].input={url:'https://different.example'};}]){
+    const f=fixture(t,()=>{const c=fetchCall();change(c);return c;});
+    assert.equal((await f.run()).status,'permission_required');assert.equal(f.notifications.length,0);
+  }
+});
+
+test('partial ACP permission updates reuse only same-session tool details and reach host approval',async t=>{
+  for(const kind of ['fetch','edit','command']){
+    const f=fixture(t,(root,_options,send)=>{
+      const call=kind==='fetch'?fetchCall():kind==='edit'?edit(root):command();
+      send({method:'session/update',params:{sessionId:'session',update:{sessionUpdate:'tool_call',...call}}});
+      return {toolCallId:call.toolCallId,status:'pending'};
+    });
+    assert.equal((await f.run()).status,'completed');
+    assert.equal(f.notifications.filter(e=>e.type==='approval').length,1);
+    assert.equal(f.notifications.filter(e=>e.type==='activity').length,1);
+  }
+  const f=fixture(t,(_root,_options,send)=>{
+    send({method:'session/update',params:{sessionId:'other-session',update:{sessionUpdate:'tool_call',...fetchCall()}}});
+    return {toolCallId:'fetch-1'};
+  });
+  assert.equal((await f.run()).status,'permission_required');assert.equal(f.notifications.length,0);
+});
 
 test('Grok helpers use a private temporary directory, without granting the global temp folder',async t=>{
   let scratchDir;

@@ -53,6 +53,13 @@ function validateKimiWorkPermission(event, root, messages = workMessages('kimi')
 }
 
 function validateWorkPermission(event, root, clientKind, scratchDir) {
+  if (clientKind === 'grok' && event?.toolCall?.kind === 'fetch') {
+    const call=event.toolCall;
+    if (!call.fetchUnsafe && call.rawInput?.variant==='WebFetch' && typeof call.rawInput.url==='string') {
+      try { const url=new URL(call.rawInput.url);if(['http:','https:'].includes(url.protocol)&&!url.username&&!url.password)return {ok:true,approvalClass:'read'}; } catch { /* invalid URL */ }
+    }
+    return {ok:false,message:'Grok 网页读取请求缺少可核实的 HTTP(S) 地址，已拒绝该次读取；这不是运行超时。'};
+  }
   if (clientKind === 'grok' && event?.toolCall?.kind === 'execute') {
     const call = event.toolCall, input = call.rawInput;
     // Only the Grok adapter's complete Bash input reaches this branch.
@@ -68,6 +75,7 @@ function validateWorkPermission(event, root, clientKind, scratchDir) {
     try { if (fs.realpathSync(scratchDir) === scratchDir) roots.push(scratchDir); } catch { /* no longer available */ }
   }
   const result = validateKimiWorkPermission(event, roots, workMessages(clientKind));
+  if(result.ok && clientKind==='grok')result.approvalClass='edit';
   if (!result.ok && clientKind === 'grok' && result.message === GROK_WORK_PATH_MESSAGE) {
     const target = event?.toolCall?.locations?.map(location => location.path).join('、');
     result.message = `Grok 文件编辑被拦截：${target || '未知路径'}。本次允许的项目目录：${root}。${scratchDir ? `临时脚本请写入：${scratchDir}。` : ''}已有成功操作已保留，请从未完成的步骤继续。`;
@@ -179,7 +187,7 @@ function createConversationClients({ userData, getSettings, store, openExternal,
     let cwd=scratch;
     if(work && args.cwd){
       const requested=fs.realpathSync(args.cwd);
-      const allowed=(settings.tools?.workspaceRoots||[]).some(root=>{try{return fs.realpathSync(root)===requested;}catch{return false;}});
+      const allowed=(settings.tools?.workspaceRoots||[]).some(root=>{try{guardPath(requested,[fs.realpathSync(root)],{mustExist:true});return true;}catch{return false;}});
       if(!allowed)throw Error('请先将工作目录加入应用的授权目录');
       if(!fs.statSync(requested).isDirectory())throw Error('工作目录无效');cwd=requested;
     }
@@ -203,6 +211,7 @@ function createConversationClients({ userData, getSettings, store, openExternal,
           return Promise.resolve('decline');
         }
         scopedPaths=scope.paths;
+        if(scope.approvalClass)event={...event,approvalClass:scope.approvalClass};
         if(scope.requiresExplicitApproval)event={...event,requiresExplicitApproval:true,execution:{cwd,scope:'host'}};
       }
       return new Promise(resolve=>{
@@ -213,7 +222,7 @@ function createConversationClients({ userData, getSettings, store, openExternal,
           const scopeStillValid=!acpKind(selection.kind)||validateWorkPermission(event,cwd,selection.kind,scratchDir).ok;
           const permitted=approved===true&&scopeStillValid&&!controller.signal.aborted&&active.get(args.runId)===job;
           try{store.saveJob(args.runId,'approval-'+id,{at:Date.now(),requestId:args.requestId,event,...(scopedPaths?{scopedPaths}:{}),approved:permitted});resolve(permitted?'accept':'decline');}catch{controller.abort();resolve('decline');}};
-        const stop=()=>finish(false),timer=setTimeout(stop,180000);
+        const stop=()=>finish(false),timer=selection.kind==='grok'?null:setTimeout(stop,180000);
         approvals.set(id,{requestId:args.requestId,finish});controller.signal.addEventListener('abort',stop,{once:true});
         try{store.saveJob(args.runId,'approval-'+id,{at:Date.now(),requestId:args.requestId,event,status:'waiting'});notify({type:'approval',requestId:args.requestId,id,event});}catch{finish(false);controller.abort();}
       });
@@ -234,12 +243,25 @@ function createConversationClients({ userData, getSettings, store, openExternal,
         result={status:raw.uncertain?'unknown':raw.ok?'completed':'failed',text:raw.content||'',error:raw.error,sessionId:raw.execution?.sessionId};
       }else{
         job.client=acp(binary, selection.kind, cwd, scratchDir ? {env:{...(deps.env || process.env),TEMP:scratchDir,TMP:scratchDir,TMPDIR:scratchDir}} : {});
-        let partial='',lastSave=0;
+        let partial='',reasoning='',lastSave=0;
+        const activity=new Map();
         const onEvent=event=>{
+          if(['reasoning','activity','plan','waiting'].includes(event?.type)){
+            if(event.type==='reasoning')reasoning=(reasoning+(event.delta||'')).slice(-200000);
+            if(event.type==='activity' && event.toolCall?.toolCallId){
+              activity.set(event.toolCall.toolCallId,event.toolCall);
+              if(activity.size>100)activity.delete(activity.keys().next().value);
+            }
+            if(event.type!=='waiting' && (event.type!=='reasoning'||Date.now()-lastSave>500)){
+              store.saveJob(args.runId,jobId,{status:'running',partial,reasoning,activity:[...activity.values()],at:Date.now(),kind:selection.kind,cwd,...(scratchDir?{scratchDir}:{})});lastSave=Date.now();
+            }
+            notify({type:event.type,requestId:args.requestId,...(event.type==='reasoning'?{text:event.delta}:{event})});
+            return;
+          }
           if(event?.type!=='text' || typeof event.delta!=='string' || !event.delta)return;
           partial=(partial+event.delta).slice(-2000000);
           if(Date.now()-lastSave>500){
-            store.saveJob(args.runId,jobId,{status:'running',partial,at:Date.now(),kind:selection.kind,cwd,...(scratchDir?{scratchDir}:{})});
+            store.saveJob(args.runId,jobId,{status:'running',partial,reasoning,activity:[...activity.values()],at:Date.now(),kind:selection.kind,cwd,...(scratchDir?{scratchDir}:{})});
             lastSave=Date.now();
           }
           notify({type:'delta',requestId:args.requestId,text:event.delta});
@@ -247,7 +269,8 @@ function createConversationClients({ userData, getSettings, store, openExternal,
         const scopePrompt=scratchDir ? `Host execution scope for this turn: project directory ${JSON.stringify(cwd)}; dedicated temporary directory ${JSON.stringify(scratchDir)}. Put temporary scripts, screenshots, logs and verification helpers in that dedicated temporary directory (also set as TEMP, TMP and TMPDIR), not in the user's general temporary folder or an old turn's temporary folder. File edits outside these two directories are rejected. These are file-tool boundaries, not an OS sandbox for commands. Preserve successful work and continue unfinished steps.\n\n` : '';
         result=await job.client.run({prompt:scopePrompt+args.prompt,images,model:selection.model==='default'?undefined:selection.model,effort:selection.effort && selection.effort!=='default'?selection.effort:undefined,mode:work?'work':'chat',signal:controller.signal,onEvent,onApproval});
         if(acpWorkCapabilityFailure){
-          result={...result,status:result?.status==='unknown'?'unknown':'permission_required',error:acpWorkCapabilityFailure};
+          const terminalFailure=['unknown','failed','cancelled'].includes(result?.status);
+          result={...result,status:terminalFailure?result.status:'permission_required',error:terminalFailure&&result.error?`${result.error}\n另有请求被拒绝：${acpWorkCapabilityFailure}`:acpWorkCapabilityFailure};
         }
       }
       store.saveJob(args.runId,jobId,{status:result.status,result,at:Date.now(),kind:selection.kind,cwd,...(scratchDir?{scratchDir}:{})});return result;

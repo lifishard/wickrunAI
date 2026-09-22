@@ -13,6 +13,24 @@ function fixture(result,previous=null){
 }
 const marker='<wickrun_question>'+JSON.stringify({questions:[{id:'choice',question:'Which day?',options:[{label:'Friday'},{label:'Monday'}]}]})+'</wickrun_question>';
 
+test('native reasoning, tool activity and silent waiting reach the UI and survive a failed turn',async()=>{
+  const steps=[],notices=[],reasoning=[];
+  const f=fixture(async(_args,emit)=>{
+    emit({type:'reasoning',text:'Checking sources'});
+    emit({type:'activity',event:{toolCall:{toolCallId:'fetch',title:'Read source',status:'in_progress'}}});
+    emit({type:'waiting',event:{seconds:75}});
+    emit({type:'activity',event:{toolCall:{toolCallId:'fetch',status:'completed'}}});
+    emit({type:'delta',text:'Source read.'});
+    return {status:'unknown',text:'Source read.',reasoning:'Checking sources',error:'Connection closed'};
+  });
+  f.run({events:{...f.args.events,onStep:s=>steps.push(s),onNotice:s=>notices.push(s),onContentReplace:(_s,r)=>reasoning.push(r)}});
+  assert.equal(await f.finished,'paused');
+  assert.match(notices.join('\n'),/75 秒未收到新动态/);
+  assert.equal(steps.at(-1).summary,'Read source');assert.equal(steps.at(-1).status,'ok');
+  assert.equal(f.states.at(-1).steps.length,1);assert.equal(f.states.at(-1).reasoning,'Checking sources');
+  assert.equal(reasoning.at(-1),'Checking sources');assert.match(f.states.at(-1).uncertainCallId,/native-/);
+});
+
 test('streamed native progress stays hidden across every chunk boundary and resumed prose is replaced',async()=>{
   const answer='Current work is saved.\n<wickrun_progress>'+JSON.stringify({milestones:[{id:'remaining',title:'Remaining work',status:'pending'}]})+'</wickrun_progress>';
   const f=fixture(async(_args,emit)=>{for(const text of answer)emit({type:'delta',text});return {status:'completed',text:answer};});

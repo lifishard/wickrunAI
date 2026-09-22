@@ -7,7 +7,7 @@ import MilestonePanel from './MilestonePanel';
 import './ActivityPanel.css';
 
 export function hasActivity(message: ChatMessage) {
-  return Boolean(message.steps?.length || message.runState?.steps?.length || message.milestones?.length || message.runState?.milestones?.length || message.progress);
+  return Boolean(message.steps?.length || message.runState?.steps?.length || message.milestones?.length || message.runState?.milestones?.length || message.progress || (message.pending && message.notice));
 }
 
 export default function ActivityPanel({ messages, onHide }: { messages: ChatMessage[]; onHide: () => void }) {
@@ -30,7 +30,7 @@ export default function ActivityPanel({ messages, onHide }: { messages: ChatMess
     </header>
     <div className="activity-latest" aria-live="polite">
       <span>{t(answer.pending ? '正在进行' : '最近进度')} · {t('{n} 步', { n: steps.length })}{milestones.length ? ` · ${milestones.filter(m => m.status === 'completed').length}/${milestones.length} 项完成` : ''}</span>
-      <p>{latest?.summary ?? current?.title ?? answer.progress ?? t('已记录任务进度')}</p>
+      <p>{(answer.pending ? answer.notice : undefined) || latest?.summary || current?.title || answer.progress || t('已记录任务进度')}</p>
     </div>
     {!collapsed ? <div className="activity-body">
       <MilestonePanel items={milestones} steps={progress.steps} requirements={progress.requirements} />
