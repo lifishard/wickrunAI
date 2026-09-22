@@ -19,6 +19,10 @@ Native conversations send text, text attachments, and inline images through Code
 
 Grok command confirmation shows the complete command and its starting directory. The directory is not an operating-system sandbox: a command runs with the local user's permissions and may access other files or the network. Approvals grant only the current command, never the session-wide option. Rejection, closing the dialog, cancellation, or approval timeout does not authorize execution. Unrecognized requests are saved locally with the rejection reason for diagnosis. Version 2.18.5 fixes terminal requests being rejected before the approval dialog could appear; updating the Grok CLI alone could not fix that host-side restriction.
 
+Starting in 2.18.6, Grok Work gets a private per-turn temporary directory for verification scripts, screenshots, and logs. The host supplies the exact project and temporary paths in the prompt and sets TEMP, TMP and TMPDIR for the CLI. File edits can be approved inside either directory; the user's general temporary folder remains outside this grant. Symlink escapes are rejected and permission paths are checked again when approval arrives. Temporary files are retained with the local execution record for diagnosis and recovery.
+
+Native progress/question markers are hidden from the answer, including incomplete streaming chunks and failed verification. Progress is reconciled before completion checks. Resuming a native turn replaces the previous attempt's visible prose as new output arrives, while the saved conversation and execution records remain available. The reply's loading indicator uses the rotating brand icon and respects reduced-motion preferences.
+
 Kimi's ACP permission metadata is a protocol boundary, not an operating-system sandbox. The adapter trusts the installed official client to describe the operation accurately and respect a declined permission. It rejects missing or truncated location metadata, paths escaping through symlinks, and permissions that offer only persistent approval. A rejected operation pauses the run with a capability explanation instead of reporting success.
 
 ## Connector boundary

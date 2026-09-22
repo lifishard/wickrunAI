@@ -730,21 +730,11 @@ input[type='range'] {
   overflow-y: auto;
 }
 
-.caret {
+.answer-loading {
   display: inline-block;
-  width: 7px;
-  height: 1.05em;
-  background: var(--accent);
-  vertical-align: text-bottom;
-  animation: blink 1.05s steps(2, start) infinite;
-  margin-left: 2px;
-  border-radius: 1px;
-}
-
-@keyframes blink {
-  to {
-    visibility: hidden;
-  }
+  color: var(--accent);
+  vertical-align: middle;
+  margin: 4px 0;
 }
 
 .usage-line {

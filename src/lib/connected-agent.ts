@@ -2,7 +2,7 @@ import { acceptLiveAnswer, consumeLiveInputs } from './live-input';
 import { addRunInput } from './delivery';
 import { reconcileProgress } from './task-progress';
 import { deliveryReport } from './delivery';
-import { nativeProgressInstructions, applyNativeProgress } from './native-progress';
+import { nativeProgressInstructions, applyNativeProgress, nativeVisibleText } from './native-progress';
 import {runAgent,buildWire,type RunAgentArgs,type AgentHandle} from './agent';
 import {desktop} from './transport';
 import type {RunState} from '../types';
@@ -56,7 +56,7 @@ export function runConnectedAgent(args:RunAgentArgs):AgentHandle {
           else if(!previous)state.uncertainCallId=undefined;
           else if(args.resolveUncertain==='skip')recovered={status:'completed',text:'你已核实并跳过先前未确认的操作；本次没有重新执行。'};
           else if(args.resolveUncertain!=='retry'){
-            if(previous.text){state.content=previous.text;events.onContentReplace?.(previous.text,'');}
+            if(previous.text){state.content=nativeVisibleText(previous.text);events.onContentReplace?.(state.content,'');}
             throw Error('上次本机操作尚未确认。请核实产物后选择跳过或明确重试，避免重复执行。');
           }
         }else throw Error('此前 API 工具的执行结果尚未确认，请先在原连接中核实该操作，再切换本机连接。');
@@ -85,13 +85,17 @@ export function runConnectedAgent(args:RunAgentArgs):AgentHandle {
       await save();
       if(cancelled)throw Error('已暂停，尚未派发本机请求。');
       let streamed='';
-      let questionMarkupSeen=false;
+      let visibleStream='',streamStarted=false;
       off=bridge.onClientEvent(event=>{
         if(event.requestId!==nativeRequestId || cancelled)return;
         if(event.type==='delta' && event.text){
           streamed+=event.text;
-          if(/<wickrun_(?:question|progress)\b/i.test(streamed))questionMarkupSeen=true;
-          if(!questionMarkupSeen){state.content=(state.content || '')+event.text;events.onContentDelta(event.text);}
+            const visible=nativeVisibleText(streamed,true);
+            if(!streamStarted){streamStarted=true;state.content='';events.onContentReplace?.('','');}
+            state.content=visible;
+            if(visible.startsWith(visibleStream))events.onContentDelta(visible.slice(visibleStream.length));
+            else events.onContentReplace?.(visible,'');
+            visibleStream=visible;
         }
         if(event.type==='approval' && event.id){
           const id=event.id,step={id,callId:id,name:'native_client_operation',args:event.event || {},status:'running' as const,summary:'官方客户端请求执行操作',startedAt:Date.now()};
@@ -101,7 +105,7 @@ export function runConnectedAgent(args:RunAgentArgs):AgentHandle {
       });
       for(let turn=0;turn<6;turn++){
       if(cancelled)throw Error('已暂停并保存当前执行现场');
-      nativeRequestId=turn===0?args.requestId:`${args.requestId}-followup-${turn}`;streamed='';questionMarkupSeen=false;
+      nativeRequestId=turn===0?args.requestId:`${args.requestId}-followup-${turn}`;streamed='';visibleStream='';streamStarted=false;
       if(!recovered)consumeLiveInputs(state);
       if(!recovered && state.working.some(m=>m.attachments?.some(a=>a.kind==='image'&&!a.dataUrl)))throw Error('图片附件数据缺失，请重新添加图片后继续；原对话已保留。');
       const context=buildWire(state.working,{...args.config,toolsEnabled:false,historyLimit:0},args.extraSystem+harnessInstructions(args.config,state)+nativeProgressInstructions(state));
@@ -132,7 +136,7 @@ ${JSON.stringify(transcript)}`;
         let request,questionData;
         try{questionData=JSON.parse(questionMatch[1]);request=parseUserQuestions(questionData,`question-${state.runId??args.requestId}-${nativeRequestId}`);}
         catch(error){throw Error(`本机客户端的问题格式无效：${error instanceof Error?error.message:String(error)}`);}
-        const visible=(result.text||'').replace(questionMatch[0],'').trim();
+        const visible=nativeVisibleText(result.text||'');
         state.content=visible;
         state.working.push({id:`${args.requestId}-question`,role:'assistant',content:visible,createdAt:Date.now()});
         if(state.userQuestion)throw Error('已有问题尚未回答，已保存独立工作结果；等待回答后继续');
@@ -146,17 +150,17 @@ ${JSON.stringify(transcript)}`;
         events.onContentReplace?.(visible,'');
         await save();events.onNotice('');events.onPaused?.('等待用户回答');return;
       }
-      if(result.text){state.content=result.text;events.onContentReplace?.(result.text,'');}
+      if(result.text){state.content=nativeVisibleText(result.text);events.onContentReplace?.(state.content,'');}
       if(result.status!=='unknown')state.uncertainCallId=undefined;
       if(result.status!=='completed')throw Error(result.error || `官方客户端已暂停（${result.status}），已有内容已保留。`);
       if(state.pendingInputMessages?.length){state.working.push({id:nativeRequestId+'-answer',role:'assistant',content:result.text,createdAt:Date.now()});await save();continue;}
       if(state.userQuestion&&!state.userQuestion.answers){state.waitKind='question';throw Error('已完成可独立进行的工作，等待用户回答');}
-      const blocker=completionBlocker(state,result.text,args.config);if(blocker)throw Error(blocker);
-      if(state.harness?.action&&planOnly(result.text)){
+      await applyNativeProgress(state,result.text,check=>args.config.toolsEnabled&&bridge.tool?bridge.tool('inspect_deliverable',check,args.toolCtx()):Promise.resolve({ok:false,content:'',error:'当前连接无法核验文件'}));
+      const blocker=completionBlocker(state,state.content??'',args.config);if(blocker)throw Error(blocker);
+      if(state.harness?.action&&planOnly(state.content??'')){
         state.harness.completion={status:'needs_work',reason:'本机客户端仅返回了计划，尚未确认完成。',evidence:[],at:Date.now()};
         throw Error('本机客户端只返回了下一步计划，任务尚未完成。请继续本轮以核实进度；应用没有自动重发可能已执行的本机操作。');
       }
-      await applyNativeProgress(state,result.text,check=>args.config.toolsEnabled&&bridge.tool?bridge.tool('inspect_deliverable',check,args.toolCtx()):Promise.resolve({ok:false,content:'',error:'当前连接无法核验文件'}));
       const unproven=nativeCompletionIssue(state,args.config);
       if(unproven){
         state.harness!.completion={status:'needs_work',reason:unproven,evidence:[],at:Date.now()};

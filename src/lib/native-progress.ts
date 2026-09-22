@@ -10,11 +10,24 @@ Schema: {"milestones":[{"id":"stable-id","title":"title","status":"pending|in_pr
 All fields are optional. Reuse saved IDs and preserve unfinished work. Host validates changes and performs file checks; never fabricate a program verification. A model review is not independent verification. Declare completed only with evidence and passing linked checks. Do not emit this marker inside examples or quotations.`;
 }
 
+/** Internal protocol records never belong in the visible answer, even on error. */
+export function nativeVisibleText(text:string, streaming=false):string {
+  const visible=text.replace(/<(wickrun_progress|wickrun_question)\b[^>]*>[\s\S]*?(?:<\/\1\s*>|$)/gi,'');
+  // A marker can straddle arbitrary transport chunks. Hold a possible opening
+  // tag until it is either recognized or turns out to be ordinary answer text.
+  const tail=/<[^<>]*$/.exec(visible)?.[0];
+  if(tail && ['<wickrun_progress','<wickrun_question'].some(tag=>(streaming && tag.startsWith(tail.toLowerCase())) || tail.toLowerCase().startsWith(tag))) {
+    return visible.slice(0,-tail.length);
+  }
+  return streaming ? visible : visible.trim();
+}
+
 /** Same validation as API tools, without granting native text extra authority. */
 export async function applyNativeProgress(state:RunState,text:string,inspect:(check:AcceptanceCheck)=>Promise<ToolResult>):Promise<string> {
   const matches=[...text.matchAll(/<wickrun_progress\b[^>]*>([\s\S]*?)<\/wickrun_progress\s*>/gi)];
-  const visible=text.replace(/<wickrun_progress\b[^>]*>[\s\S]*?<\/wickrun_progress\s*>/gi,'').trim();
+  const visible=nativeVisibleText(text);
   state.content=visible;
+  if(/<wickrun_progress\b/i.test(text) && !matches.length)throw Error('进度记录不完整；已有结果已保存，请核实后继续。');
   if(matches.length){
     if(matches.length!==1)throw Error('进度更新只能包含一份记录；原有任务进度保留。');
     const data=JSON.parse(matches[0][1]);

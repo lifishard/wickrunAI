@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrandLoading } from './BrandLogo';
+import BrandLogo, { BrandLoading } from './BrandLogo';
 import type { Artifact, ChatMessage, ErrorInfo, MessageAnnotation, SourceRef, ToolStep } from '../types';
 import type { UserQuestionAnswers } from '../lib/user-questions';
 import { typeOfPath } from '../lib/artifacts';
@@ -443,7 +443,7 @@ export default function AnswerBlock(props: {
           ) : live && !steps.length ? (
             <BrandLoading label={t('灯芯正在思考')} />
           ) : null}
-          {live && answer.content ? <span className="caret" /> : null}
+          {live && answer.content ? <span className="answer-loading" role="status" aria-label={t('灯芯正在思考')}><BrandLogo loading size={24} /></span> : null}
         </div>
       ) : null}
 

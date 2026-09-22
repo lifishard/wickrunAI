@@ -7,10 +7,11 @@ const {createConversationClients}=require('../electron/conversation-clients.cjs'
 const {createRunStore}=require('../electron/run-store.cjs');
 
 function fixture(t,makeCall,kind='grok'){
-  const root=fs.mkdtempSync(path.join(fs.realpathSync.native(os.tmpdir()),'grok-work-permission-'));
-  const store=createRunStore(path.join(root,'runtime')),wire=[],notifications=[];
+  const storage=fs.mkdtempSync(path.join(fs.realpathSync.native(os.tmpdir()),'grok-work-permission-'));
+  const root=path.join(storage,'project');fs.mkdirSync(root);
+  const store=createRunStore(path.join(storage,'runtime')),wire=[],notifications=[];
   store.save({id:'run',conversationId:'conversation',answerId:'answer',config:{toolsEnabled:true,client:{kind,model:'default'}},state:{working:[],status:'running'}});
-  let promptRequest;
+  let promptRequest,launchOptions;
   const child=new EventEmitter();child.stdout=new PassThrough();child.stderr=new PassThrough();child.kill=()=>{};
   const send=message=>child.stdout.write(JSON.stringify(message)+'\n');
   child.stdin=new Writable({write(chunk,_encoding,done){
@@ -21,7 +22,7 @@ function fixture(t,makeCall,kind='grok'){
         else if(request.method==='session/new')send({id:request.id,result:{sessionId:'session'}});
         else if(request.method==='session/prompt'){
           promptRequest=request;
-          send({id:900,method:'session/request_permission',params:{sessionId:'session',toolCall:makeCall(root),options:[
+          send({id:900,method:'session/request_permission',params:{sessionId:'session',toolCall:makeCall(root,launchOptions),options:[
             {optionId:'allow-edits-session',kind:'allow_always',name:'All edits'},
             {optionId:'allow-once',kind:'allow_once',name:'Yes'},
             {optionId:'reject-once',kind:'reject_once',name:'No'},
@@ -30,8 +31,8 @@ function fixture(t,makeCall,kind='grok'){
       });
     }done();
   }});
-  const host=createConversationClients({userData:root,store,getSettings:()=>({tools:{workspaceRoots:[root]}}),openExternal:async()=>{},deps:{discoverClient:()=>path.join(root,'grok.exe'),createAcpClient:options=>createAcpClient({...options,spawn:()=>child})}});
-  t.after(()=>{host.close();fs.rmSync(root,{recursive:true,force:true});});
+  const host=createConversationClients({userData:storage,store,getSettings:()=>({tools:{workspaceRoots:[root]}}),openExternal:async()=>{},deps:{discoverClient:()=>path.join(root,'grok.exe'),createAcpClient:options=>{launchOptions=options;return createAcpClient({...options,spawn:()=>child});}}});
+  t.after(()=>{host.close();fs.rmSync(storage,{recursive:true,force:true});});
   return {root,host,store,wire,notifications,run(onApproval=event=>host.approve('request',event.id,true)){
     return host.run({runId:'run',requestId:'request',prompt:'Update the fixture',cwd:root},event=>{notifications.push(event);onApproval(event);});
   }};
@@ -39,6 +40,31 @@ function fixture(t,makeCall,kind='grok'){
 const edit=(root,variant='SearchReplace')=>({toolCallId:'edit-1',kind:'edit',title:'Edit fixture',rawInput:{variant,file_path:path.join(root,'README.md'),...(variant==='Write'?{content:'# New\n'}:{old_string:'# Old',new_string:'# New',replace_all:false})},_meta:{'x.ai/tool':{version:1,input:{path:path.join(root,'README.md')}}}});
 
 const command=()=>({toolCallId:'command-1',kind:'execute',title:'Execute command',rawInput:{variant:'Bash',command:'Get-ChildItem -Name | Select-String -Pattern README',description:'List matching files',is_background:false},_meta:{'x.ai/tool':{version:1,name:'run_terminal_command',input:{command:'Get-ChildItem -Name | Select-String -Pattern README'}}}});
+
+test('Grok helpers use a private temporary directory, without granting the global temp folder',async t=>{
+  let scratchDir;
+  const f=fixture(t,(root,options)=>{
+    scratchDir=options.env.TEMP;
+    assert.equal(options.env.TMP,scratchDir);assert.equal(options.env.TMPDIR,scratchDir);
+    assert.ok(path.relative(root,scratchDir).startsWith('..'));
+    return edit(scratchDir,'Write');
+  });
+  assert.equal((await f.run()).status,'completed');
+  assert.equal(f.store.job('run','native-request').scratchDir,scratchDir);
+  assert.match(f.wire.find(m=>m.method==='session/prompt').params.prompt[0].text,/dedicated temporary directory/);
+  const denied=fixture(t,()=>edit(os.tmpdir(),'Write'));
+  const result=await denied.run();assert.equal(result.status,'permission_required');assert.equal(denied.notifications.length,0);
+  assert.ok(result.error.includes(path.join(os.tmpdir(),'README.md')));
+  assert.match(result.error,/临时脚本请写入/);
+});
+
+test('Grok private temp symlinks cannot authorize edits outside its directory',async t=>{
+  const f=fixture(t,(_root,options)=>{
+    fs.symlinkSync(os.tmpdir(),path.join(options.env.TEMP,'escape'),process.platform==='win32'?'junction':'dir');
+    return edit(path.join(options.env.TEMP,'escape'),'Write');
+  });
+  assert.equal((await f.run()).status,'permission_required');assert.equal(f.notifications.length,0);
+});
 
 test('captured Grok terminal command waits for explicit approval and grants only allow_once',async t=>{
   const f=fixture(t,command);

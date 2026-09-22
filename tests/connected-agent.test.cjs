@@ -3,15 +3,34 @@ const {loader}=require('./load-ts.cjs');
 const file=p=>path.join(__dirname,'..',p);
 const realBuildWire=loader()(file('src/lib/agent.ts')).buildWire;
 function fixture(result,previous=null){
-  const calls=[],states=[];let done,apiCalls=0;
+  const calls=[],states=[],visible=[];let done,apiCalls=0,listener,display='';
   const finished=new Promise(resolve=>done=resolve);
-  const bridge={onClientEvent:()=>()=>{},toolAbort:async()=>{},conversationClientRecover:async()=>previous,conversationClientRun:async args=>{calls.push(args);return typeof result==='function'?result(args):result;}};
+  const bridge={onClientEvent:cb=>{listener=cb;return()=>{listener=null;};},toolAbort:async()=>{},conversationClientRecover:async()=>previous,conversationClientRun:async args=>{calls.push(args);return typeof result==='function'?result(args,event=>listener?.({...event,requestId:args.requestId})):result;}};
   const local=loader({[file('src/lib/transport.ts')]:{desktop:()=>bridge},[file('src/lib/agent.ts')]:{buildWire:realBuildWire,runAgent:args=>{apiCalls++;states.push(args.resume);queueMicrotask(()=>done('api'));return {abort(){}};}}});
   const args={requestId:'native-request',config:{client:{kind:'codex',model:'test'},model:'test',toolsEnabled:false,systemPrompt:'',enabledTools:[]},history:[{id:'user-1',role:'user',content:'Keep the original goal',createdAt:1}],toolCtx:()=>({workspaceRoots:[]}),extraSystem:'',confirm:async()=>false,
-    events:{onContentDelta(){},onContentReplace(){},onNotice(){},onRunState:s=>{if(s)states.push(structuredClone(s));},onPaused:()=>done('paused'),onDone:()=>done('completed')}};
-  return {calls,states,finished,args,run:extra=>local(file('src/lib/connected-agent.ts')).runConnectedAgent({...args,...extra}),apiCalls:()=>apiCalls};
+    events:{onContentDelta(text){display+=text;visible.push(display);},onContentReplace(text){display=text;visible.push(display);},onNotice(){},onRunState:s=>{if(s)states.push(structuredClone(s));},onPaused:()=>done('paused'),onDone:()=>done('completed')}};
+  return {calls,states,visible,finished,args,run:extra=>local(file('src/lib/connected-agent.ts')).runConnectedAgent({...args,...extra}),apiCalls:()=>apiCalls};
 }
 const marker='<wickrun_question>'+JSON.stringify({questions:[{id:'choice',question:'Which day?',options:[{label:'Friday'},{label:'Monday'}]}]})+'</wickrun_question>';
+
+test('streamed native progress stays hidden across every chunk boundary and resumed prose is replaced',async()=>{
+  const answer='Current work is saved.\n<wickrun_progress>'+JSON.stringify({milestones:[{id:'remaining',title:'Remaining work',status:'pending'}]})+'</wickrun_progress>';
+  const f=fixture(async(_args,emit)=>{for(const text of answer)emit({type:'delta',text});return {status:'completed',text:answer};});
+  f.run({resume:{working:f.args.history,runId:'saved',content:'Old attempt prose.',round:1,status:'paused'}});
+  assert.equal(await f.finished,'paused');
+  assert.equal(f.states.at(-1).content,'Current work is saved.');
+  assert.equal(f.states.at(-1).milestones.find(m=>m.id==='remaining').status,'pending');
+  assert.ok(f.visible.every(text=>!text.includes('wickrun_')&&!text.includes('milestones')&&!text.includes('Old attempt prose.')));
+});
+
+test('malformed progress and interrupted native turns never expose protocol data as answer text',async()=>{
+  for(const [status,record] of [['completed','<wickrun_progress>{broken}</wickrun_progress>'],['completed','<wickrun_progress>{"milestones":'],['unknown','<wickrun_progress>{"milestones":']]){
+    const f=fixture({status,text:'Visible answer.\n'+record});f.run();assert.equal(await f.finished,'paused');
+    assert.equal(f.states.at(-1).content,'Visible answer.');
+    assert.ok(f.visible.every(text=>!text.includes('wickrun_')&&!text.includes('milestones')));
+    if(status==='unknown')assert.match(f.states.at(-1).uncertainCallId,/native-/);
+  }
+});
 
 test('image conversations and resumed image turns reach the native host',async()=>{
   const image={id:'image-1',kind:'image',name:'screenshot.png',dataUrl:'data:image/png;base64,aGVsbG8='};

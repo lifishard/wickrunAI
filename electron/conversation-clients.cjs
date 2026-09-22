@@ -42,7 +42,7 @@ function validateKimiWorkPermission(event, root, messages = workMessages('kimi')
       // ACP ToolCallLocation.path is an absolute path.  Do not let the host
       // process's cwd resolve a relative or URI-like value for us.
       if (typeof candidate !== 'string' || !candidate || !path.isAbsolute(candidate)) return { ok: false, message: messages.scope };
-      const guarded = guardPath(candidate, [root]);
+      const guarded = guardPath(candidate, Array.isArray(root) ? root : [root]);
       if (fs.existsSync(guarded) && fs.statSync(guarded).isDirectory()) return { ok: false, message: messages.path };
       paths.push(guarded);
     }
@@ -52,7 +52,7 @@ function validateKimiWorkPermission(event, root, messages = workMessages('kimi')
   return { ok: true, paths };
 }
 
-function validateWorkPermission(event, root, clientKind) {
+function validateWorkPermission(event, root, clientKind, scratchDir) {
   if (clientKind === 'grok' && event?.toolCall?.kind === 'execute') {
     const call = event.toolCall, input = call.rawInput;
     // Only the Grok adapter's complete Bash input reaches this branch.
@@ -63,7 +63,16 @@ function validateWorkPermission(event, root, clientKind) {
     }
     return { ok: false, message: workMessages(clientKind).scope };
   }
-  return validateKimiWorkPermission(event, root, workMessages(clientKind));
+  const roots = [root];
+  if (clientKind === 'grok' && scratchDir) {
+    try { if (fs.realpathSync(scratchDir) === scratchDir) roots.push(scratchDir); } catch { /* no longer available */ }
+  }
+  const result = validateKimiWorkPermission(event, roots, workMessages(clientKind));
+  if (!result.ok && clientKind === 'grok' && result.message === GROK_WORK_PATH_MESSAGE) {
+    const target = event?.toolCall?.locations?.map(location => location.path).join('、');
+    result.message = `Grok 文件编辑被拦截：${target || '未知路径'}。本次允许的项目目录：${root}。${scratchDir ? `临时脚本请写入：${scratchDir}。` : ''}已有成功操作已保留，请从未完成的步骤继续。`;
+  }
+  return result;
 }
 
 function createConversationClients({ userData, getSettings, store, openExternal, deps = {} }) {
@@ -77,11 +86,12 @@ function createConversationClients({ userData, getSettings, store, openExternal,
   };
   const rememberedResult=(kind,binary,result)=>{rememberClientState(userData,kind,{binary,status:result.status});return result;};
   const codex = (binary,options={}) => (deps.createCodexClient || createCodexClient)({binary, cwd:scratch,...options});
-  const acp = (binary, kind, cwd = scratch) => (deps.createAcpClient || require('./acp-client.cjs').createAcpClient)({
+  const acp = (binary, kind, cwd = scratch, options = {}) => (deps.createAcpClient || require('./acp-client.cjs').createAcpClient)({
     binary,
     cwd,
     args: kind === 'grok' ? ['agent', 'stdio'] : ['acp'],
     label: kind === 'grok' ? 'Grok ACP' : 'Kimi ACP',
+    ...options,
   });
   const cleanModels = data => (data || []).slice(0,500).filter(m => typeof (m.model || m.id) === 'string').map(m => ({id:(m.model || m.id).slice(0,160),label:String(m.displayName || m.name || m.model || m.id).slice(0,160),efforts:(m.supportedReasoningEfforts || []).map(e=>e.reasoningEffort).filter(e=>typeof e==='string').slice(0,12),defaultEffort:m.defaultReasoningEffort}));
   async function check(kind) {
@@ -173,6 +183,11 @@ function createConversationClients({ userData, getSettings, store, openExternal,
       if(!allowed)throw Error('请先将工作目录加入应用的授权目录');
       if(!fs.statSync(requested).isDirectory())throw Error('工作目录无效');cwd=requested;
     }
+    let scratchDir;
+    if(work && selection.kind==='grok') {
+      const scratchBase=path.join(scratch,'grok-work');fs.mkdirSync(scratchBase,{recursive:true});
+      scratchDir=fs.realpathSync(fs.mkdtempSync(path.join(scratchBase,'run-')));
+    }
     const binary=discover(selection.kind), controller=new AbortController(), job={controller,client:null};
     active.set(args.runId,job);
     let acpWorkCapabilityFailure=null;
@@ -180,7 +195,7 @@ function createConversationClients({ userData, getSettings, store, openExternal,
       if(!work || controller.signal.aborted)return Promise.resolve('decline');
       let scopedPaths;
       if(acpKind(selection.kind)){
-        const scope=validateWorkPermission(event,cwd,selection.kind);
+        const scope=validateWorkPermission(event,cwd,selection.kind,scratchDir);
         if(!scope.ok){
           acpWorkCapabilityFailure=scope.message;
           try { store.saveJob(args.runId,'rejected-'+randomUUID(),{at:Date.now(),requestId:args.requestId,event,status:'rejected',reason:scope.message}); }
@@ -195,7 +210,7 @@ function createConversationClients({ userData, getSettings, store, openExternal,
         const finish=approved=>{if(!approvals.has(id))return;approvals.delete(id);clearTimeout(timer);controller.signal.removeEventListener('abort',stop);
           // Recheck after the user has reviewed the request: a directory may
           // have become a junction/symlink while the approval card was open.
-          const scopeStillValid=!acpKind(selection.kind)||validateWorkPermission(event,cwd,selection.kind).ok;
+          const scopeStillValid=!acpKind(selection.kind)||validateWorkPermission(event,cwd,selection.kind,scratchDir).ok;
           const permitted=approved===true&&scopeStillValid&&!controller.signal.aborted&&active.get(args.runId)===job;
           try{store.saveJob(args.runId,'approval-'+id,{at:Date.now(),requestId:args.requestId,event,...(scopedPaths?{scopedPaths}:{}),approved:permitted});resolve(permitted?'accept':'decline');}catch{controller.abort();resolve('decline');}};
         const stop=()=>finish(false),timer=setTimeout(stop,180000);
@@ -204,7 +219,7 @@ function createConversationClients({ userData, getSettings, store, openExternal,
       });
     };
     try {
-      store.saveJob(args.runId,jobId,{status:'dispatched',at:Date.now(),kind:selection.kind,cwd});
+      store.saveJob(args.runId,jobId,{status:'dispatched',at:Date.now(),kind:selection.kind,cwd,...(scratchDir?{scratchDir}:{})});
       let result;
       if(selection.kind==='codex'){
         job.client=codex(binary,{turnTimeoutMs:Math.min(3600000,Math.max(10000,(record.config.runtime?.maxMinutes || 30)*60000))});
@@ -218,23 +233,24 @@ function createConversationClients({ userData, getSettings, store, openExternal,
         const raw=await (deps.claudeCode || claudeCode)({prompt:args.prompt,images,cwd},{workspaceRoots:[cwd],claudeBin:binary,claudeExtraArgs:extra,claudeTimeoutMs:Math.min(3600000,(record.config.runtime?.maxMinutes || 10)*60000),signal:controller.signal,chatOnly:!work});
         result={status:raw.uncertain?'unknown':raw.ok?'completed':'failed',text:raw.content||'',error:raw.error,sessionId:raw.execution?.sessionId};
       }else{
-        job.client=acp(binary, selection.kind, cwd);
+        job.client=acp(binary, selection.kind, cwd, scratchDir ? {env:{...(deps.env || process.env),TEMP:scratchDir,TMP:scratchDir,TMPDIR:scratchDir}} : {});
         let partial='',lastSave=0;
         const onEvent=event=>{
           if(event?.type!=='text' || typeof event.delta!=='string' || !event.delta)return;
           partial=(partial+event.delta).slice(-2000000);
           if(Date.now()-lastSave>500){
-            store.saveJob(args.runId,jobId,{status:'running',partial,at:Date.now(),kind:selection.kind,cwd});
+            store.saveJob(args.runId,jobId,{status:'running',partial,at:Date.now(),kind:selection.kind,cwd,...(scratchDir?{scratchDir}:{})});
             lastSave=Date.now();
           }
           notify({type:'delta',requestId:args.requestId,text:event.delta});
         };
-        result=await job.client.run({prompt:args.prompt,images,model:selection.model==='default'?undefined:selection.model,effort:selection.effort && selection.effort!=='default'?selection.effort:undefined,mode:work?'work':'chat',signal:controller.signal,onEvent,onApproval});
+        const scopePrompt=scratchDir ? `Host execution scope for this turn: project directory ${JSON.stringify(cwd)}; dedicated temporary directory ${JSON.stringify(scratchDir)}. Put temporary scripts, screenshots, logs and verification helpers in that dedicated temporary directory (also set as TEMP, TMP and TMPDIR), not in the user's general temporary folder or an old turn's temporary folder. File edits outside these two directories are rejected. These are file-tool boundaries, not an OS sandbox for commands. Preserve successful work and continue unfinished steps.\n\n` : '';
+        result=await job.client.run({prompt:scopePrompt+args.prompt,images,model:selection.model==='default'?undefined:selection.model,effort:selection.effort && selection.effort!=='default'?selection.effort:undefined,mode:work?'work':'chat',signal:controller.signal,onEvent,onApproval});
         if(acpWorkCapabilityFailure){
           result={...result,status:result?.status==='unknown'?'unknown':'permission_required',error:acpWorkCapabilityFailure};
         }
       }
-      store.saveJob(args.runId,jobId,{status:result.status,result,at:Date.now(),kind:selection.kind,cwd});return result;
+      store.saveJob(args.runId,jobId,{status:result.status,result,at:Date.now(),kind:selection.kind,cwd,...(scratchDir?{scratchDir}:{})});return result;
     }finally{controller.abort();job.client?.close();active.delete(args.runId);}
   }
   return {check,connect,restore,run,async repairClaude(){ try { const binary=discover('claude');(deps.validateClaudeBinary || require('./claude-program.cjs').assertClaudeCodeBinary)(binary); const recovery=await deps.repairClaudeGateway?.(); if(recovery && recovery.state!=='ready') return {kind:'claude',status:'error',models:[],message:recovery.message}; return await check('claude'); } catch { return {kind:'claude',status:'error',models:[],message:'Claude 恢复检查失败，请核对程序路径和用户路由配置。'}; } },recover(runId,callId){if(!/^native-[\w-]{1,160}$/.test(callId || '')||!store.list().some(r=>r.id===runId))throw Error('执行记录无效');const saved=store.job(runId,callId);return saved?.result || (saved?{status:'unknown',text:saved.partial || '',error:'先前操作未留下可靠的完成记录，请核实后再继续。'}:null);},approve(requestId,id,approved){const entry=approvals.get(id);if(!entry||entry.requestId!==requestId)throw Error('此操作已结束或授权已过期');entry.finish(approved===true);},abort:id=>active.get(id)?.controller.abort(),busy:()=>active.size>0,close(){for(const job of active.values())job.controller.abort();for(const client of logins.values())client.close();logins.clear();}};
