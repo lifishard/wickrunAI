@@ -8,6 +8,7 @@ import {
   validateUserAnswers,
 } from '../lib/user-questions';
 import './UserQuestionCard.css';
+import { createQuestionDraft } from '../lib/question-draft';
 
 export interface UserQuestionCardProps {
   request: UserQuestionRequest;
@@ -129,7 +130,14 @@ function AnsweredCard({ request, answers }: { request: UserQuestionRequest; answ
   );
 }
 
-export default function UserQuestionCard({
+export default function UserQuestionCard(props: UserQuestionCardProps) {
+  // A different question starts a separate editor; its cleanup saves only the
+  // old question's draft, never through the new question's callback.
+  const identity = JSON.stringify([props.request.id, props.request.questions.map(q => q.id)]);
+  return <QuestionEditor key={identity} {...props} />;
+}
+
+function QuestionEditor({
   request,
   answers,
   draft,
@@ -140,39 +148,51 @@ export default function UserQuestionCard({
   const t = useT();
   const [localAnswers, setLocalAnswers] = React.useState<UserQuestionAnswers>(() => normalizedDraft(request, draft));
   const [error, setError] = React.useState('');
-  const requestSignature = React.useMemo(
-    () => `${request.id}\u0000${request.questions.map((question) => question.id).join('\u0001')}`,
-    [request.id, request.questions],
-  );
+  const draftSink = React.useRef(onDraft);
+  draftSink.current = onDraft;
+  const [buffer] = React.useState(() => createQuestionDraft(localAnswers, value => draftSink.current?.(value)));
   const draftSignature = React.useMemo(() => answerSignature(draft, request.questions), [draft, request.questions]);
   const inputPrefix = `user-question-${domToken(request.id)}`;
 
   React.useEffect(() => {
-    setLocalAnswers(normalizedDraft(request, draft));
-    setError('');
-  }, [requestSignature, draftSignature]);
+    const next = normalizedDraft(request, draft);
+    if (buffer.receive(next)) setLocalAnswers(next);
+  }, [draftSignature, buffer]);
+
+  React.useEffect(() => {
+    const flush = () => buffer.flush();
+    window.addEventListener('pagehide', flush);
+    window.addEventListener('wickrun:flush-draft', flush);
+    return () => {
+      window.removeEventListener('pagehide', flush);
+      window.removeEventListener('wickrun:flush-draft', flush);
+      buffer.dispose();
+    };
+  }, [buffer]);
+  React.useEffect(() => { if (answers !== undefined) buffer.submitted(); }, [answers, buffer]);
 
   if (answers !== undefined) return <AnsweredCard request={request} answers={answers} />;
 
   const updateAnswer = (question: UserQuestion, next: { selected: string[]; text: string }) => {
     const nextAnswers: UserQuestionAnswers = {
-      ...localAnswers,
+      ...buffer.current(),
       [question.id]: {
         selected: [...next.selected],
         text: next.text,
       },
     };
+    buffer.update(nextAnswers);
     setLocalAnswers(nextAnswers);
     setError('');
-    onDraft?.(nextAnswers);
   };
 
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (disabled) return;
+    if (disabled || buffer.isComposing()) return;
     try {
-      const valid = validateUserAnswers(request, localAnswers);
+      const valid = validateUserAnswers(request, buffer.current());
       setError('');
+      buffer.submitted();
       onSubmit(valid);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : t('回答无效，请检查后重试'));
@@ -258,6 +278,12 @@ export default function UserQuestionCard({
                   rows={3}
                   placeholder={textRequired ? t('请填写回答') : t('可以补充说明')}
                   onChange={(event) => updateAnswer(question, { selected: answer.selected, text: event.target.value })}
+                  onCompositionStart={() => buffer.composition(true)}
+                  onCompositionEnd={(event) => {
+                    updateAnswer(question, { selected: answerFor(buffer.current(), question.id).selected, text: event.currentTarget.value });
+                    buffer.composition(false);
+                  }}
+                  onBlur={() => buffer.flush()}
                 />
               </div>
             </fieldset>

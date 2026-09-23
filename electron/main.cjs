@@ -13,6 +13,7 @@ const chromeLaunch = require('./chrome-launch.cjs');
 const skillFolder = require('./skill-folder.cjs');
 const attachments = require('./attachments.cjs');
 const { runtimeStore } = require('./run-store.cjs');
+const { sendClientEvent } = require('./client-events.cjs');
 const { verifyFiles } = require('./file-records.cjs');
 
 const DEV_URL = process.env.SNC_DEV_URL || '';
@@ -378,7 +379,7 @@ function registerIpc() {
   ipcMain.handle('snc:claudeRepair',()=>{dataAvailable();return conversationClients.repairClaude();});
   ipcMain.handle('snc:conversationClientCheck',(_e,kind)=>{dataAvailable();return conversationClients.check(kind);});
   ipcMain.handle('snc:conversationClientConnect',(_e,kind)=>{dataAvailable();return conversationClients.connect(kind);});
-  ipcMain.handle('snc:conversationClientRun',(event,args)=>{dataAvailable();return conversationClients.run(args,message=>event.sender.send('snc:clientEvent',message));});
+  ipcMain.handle('snc:conversationClientRun',(event,args)=>{dataAvailable();return conversationClients.run(args,message=>sendClientEvent(event.sender,message));});
   ipcMain.handle('snc:conversationClientApprove',(_e,{requestId,id,approved})=>conversationClients.approve(requestId,id,approved));
   ipcMain.handle('snc:conversationClientRecover',(_e,{runId,callId})=>{dataAvailable();return conversationClients.recover(runId,callId);});
   ipcMain.handle('snc:clientRun',(_e,args)=>{dataAvailable();return localClients.run(args);});
