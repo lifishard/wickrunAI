@@ -53,6 +53,7 @@ const clip = (v: unknown, n = 48): string => {
 };
 
 export const TOOLS: ToolDef[] = [
+  {name:'delete_file',label:'删除文件',group:'files',dangerous:true,needsHost:true,description:'删除一个授权目录内的 UTF-8 文本文件。审核模式下先展示完整删除差异，经用户批准后才删除。',parameters:{type:'object',properties:{path:{type:'string'}},required:['path']},summarize:a=>'删除 '+s(a.path)},
   {name:'complete_task',label:'完成自查',group:'agent',description:'交付前记录已完成事项、自查与测试结果；evidence 必须是实际成功工具的 callId。不能使用计划当证据，未通过的验收条件要先处理。next_action 是供用户选择的下一步建议，不会执行。',parameters:{type:'object',properties:{summary:{type:'string'},checks:{type:'string'},evidence:{type:'array',items:{type:'string'}},next_action:{type:'string'}},required:['summary','checks','evidence']},summarize:()=> tr('核对完成情况与证据')},
   {name:'spawn_subagent',label:'派发临时子代理',group:'agent',description:'把独立且范围明确的子任务交给用户授权的工作模型。先用 list_subagents 查看可选 worker_id。仅传必要目标、材料与验收条件，不复制整段历史。request_key 必须稳定，重试同一请求返回已有任务。最多两个并行；子代理结果需要主模型复核。',parameters:{type:'object',properties:{worker_id:{type:'string'},request_key:{type:'string'},task:{type:'string'}},required:['worker_id','request_key','task']},summarize:a=>tr('子代理：{task}',{task:clip(a.task)})},
   {name:'list_subagents',label:'查看临时子代理',group:'agent',description:'查看本轮允许的工作模型与已派发子代理状态。不会启动任务或调用模型。',parameters:{type:'object',properties:{}},summarize:()=> tr('查看临时协作状态')},

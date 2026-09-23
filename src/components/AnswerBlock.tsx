@@ -1,4 +1,5 @@
 import React from 'react';
+import { CodeChangeSummary } from './CodeChanges';
 import BrandLogo, { BrandLoading } from './BrandLogo';
 import type { Artifact, ChatMessage, ErrorInfo, MessageAnnotation, SourceRef, ToolStep } from '../types';
 import type { UserQuestionAnswers } from '../lib/user-questions';
@@ -238,6 +239,7 @@ export default function AnswerBlock(props: {
   question: ChatMessage | null;
   answer: ChatMessage | null;
   showReasoning: boolean;
+  showCodeChanges?: boolean;
   onOpenArtifact?: (a: Artifact) => void;
   onArtifactSaved?: (a: Artifact) => void;
   onCopy: (text: string) => void;
@@ -448,6 +450,7 @@ export default function AnswerBlock(props: {
         </div>
       ) : null}
 
+      {props.showCodeChanges !== false ? <CodeChangeSummary steps={steps}/> : null}
       {answer ? <StageSummary answer={answer} /> : null}
       {files.length && props.onOpenArtifact ? (
         <ArtifactStrip artifacts={files} onOpen={props.onOpenArtifact} onSaved={props.onArtifactSaved} />

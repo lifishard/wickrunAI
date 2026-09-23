@@ -4,6 +4,7 @@
  * Tavily / Brave / GitHub 的 token 一律不进渲染进程。
  */
 const store = require('../store.cjs');
+const codeAudit = require('../code-changes.cjs');
 const { fail } = require('./common.cjs');
 const web = require('./web.cjs');
 const files = require('./files.cjs');
@@ -71,6 +72,8 @@ async function secrets(id) {
 }
 
 const HANDLERS = {
+  preview_code_change: (a,c) => codeAudit.prepare(a.name,a.args,c),
+  delete_file: (a,c) => codeAudit.apply('delete_file',a,c),
   reconcile_operation: async (a,c) => {
     const runId=String(a.runId || ''),callId=String(a.callId || ''),name=String(a.name || '');
     const input=a.args && typeof a.args==='object'?a.args:{};
@@ -168,13 +171,17 @@ async function executeTool(name, args, ctx) {
   if (!Array.isArray(merged.workspaceRoots)) merged.workspaceRoots = [];
 
   const input = args && typeof args === 'object' ? args : {};
+  // Host settings also protect callers that do not forward the new field.
+  try { merged.reviewCodeChanges ||= JSON.parse(store.kvGet('snc:settings:v1') || '{}').tools?.reviewCodeChanges === true; } catch { /* uninitialized test store */ }
+  if (merged.reviewCodeChanges && ['run_command','claude_code','write_document','project_doc_write','project_memory_write','skill_write','computer_type','computer_key','computer_click','chrome_eval'].includes(name)) return fail('审核后生效已开启：此工具无法在执行前提供完整文件差异，已阻止执行。请使用 write_file / edit_file / delete_file，或由用户在设置中关闭审核模式。');
   const execution = merged.execution;
   const journal = execution?.runId && execution?.callId ? runtimeStore() : null;
   const fingerprint = crypto.createHash('sha256').update(JSON.stringify({ name, args: input })).digest('hex');
-  const readOnly = new Set(['inspect_deliverable', 'read_tool_result', 'register_outputs', 'web_search', 'fetch_url', 'list_dir',
+  const readOnly = new Set(['preview_code_change', 'inspect_deliverable', 'read_tool_result', 'register_outputs', 'web_search', 'fetch_url', 'list_dir',
     'read_file', 'read_document', 'search_files', 'chrome_tabs', 'chrome_read_page', 'chrome_fetch_json', 'github_search',
     'project_memory_read', 'project_doc_read', 'skill_list']);
   const opKey = journal && !readOnly.has(name) ? opKeyOf(name, input) : null;
+  if(!readOnly.has(name)){try{require('../code-versions.cjs').runtimeVersions()?.assertReady();}catch(error){return fail(error.message);}}
   if (journal) {
     const previous = journal.job(execution.runId, execution.callId);
     if (previous && previous.fingerprint !== fingerprint) return fail('同一工具调用编号对应了不同参数，已停止执行');
@@ -202,7 +209,12 @@ async function executeTool(name, args, ctx) {
     journal.saveJob(execution.runId, execution.callId, { fingerprint, name, status: 'started', at: Date.now() });
   }
   try {
-    const res = (await handler(input, merged)) || fail(`${name} 没有返回结果`);
+    const before = ['run_command','claude_code','write_document','project_doc_write','project_memory_write','skill_write'].includes(name) ? codeAudit.snapshot(merged.workspaceRoots) : null;
+    let res;
+    try { res = (await handler(input, merged)) || fail(name + ' 没有返回结果'); }
+    catch (error) { res = fail(error); }
+    if (before) Object.assign(res, codeAudit.compare(before,codeAudit.snapshot(merged.workspaceRoots)));
+
     const outputPaths = [res.filePath, ...(Array.isArray(input.output_files) ? input.output_files : [])].filter(Boolean);
     const inputPaths = ['read_file', 'read_document'].includes(name) && input.path ? [input.path] : [];
     const outputs = verifyFiles(outputPaths, merged.workspaceRoots);

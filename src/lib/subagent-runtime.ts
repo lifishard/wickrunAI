@@ -25,7 +25,7 @@ export function createSubagentRuntime(args:RunAgentArgs,state:RunState,save:()=>
       const wait=Math.min(8000,Math.max(0,Number(input.wait_ms) || 0));let timer:ReturnType<typeof setTimeout>|undefined;
       if(waits.length&&wait)try{await Promise.race([Promise.all(waits),new Promise(r=>{timer=setTimeout(r,wait);})]);}finally{clearTimeout(timer);}
       const jobs=state.subagents!.filter(j=>!ids||ids.includes(j.id));
-      return {ok:true,content:JSON.stringify(snapshot(ids)),summary:`子代理 ${jobs.filter(j=>j.status==='completed').length}/${jobs.length} 已完成`,files:jobs.flatMap(j=>j.checkpoint?.steps?.flatMap(s=>s.files || []) || [])};
+      return {ok:true,content:JSON.stringify(snapshot(ids)),summary:`子代理 ${jobs.filter(j=>j.status==='completed').length}/${jobs.length} 已完成`,files:jobs.flatMap(j=>j.checkpoint?.steps?.flatMap(s=>s.files || []) || []),codeChanges:jobs.flatMap(j=>j.checkpoint?.steps?.flatMap(s=>s.codeChanges || []) || []),codeAuditWarnings:jobs.flatMap(j=>j.checkpoint?.steps?.flatMap(s=>s.codeAuditWarnings || []) || [])};
     }
     if(name!=='spawn_subagent')return {ok:false,content:'',error:'未知子代理工具'};
     const worker=pool!.workers.find(w=>w.id===input.worker_id),key=typeof input.request_key==='string'?input.request_key.trim():'',task=typeof input.task==='string'?input.task.trim():'';

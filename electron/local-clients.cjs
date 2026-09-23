@@ -108,6 +108,8 @@ function createLocalClients({ userData, collaboration, teamFiles, getSettings, o
     } catch { client.close(); loginClients.delete('codex'); throw Error('无法打开官方客户端登录，请检查本机客户端。'); }
   }
   async function run(args = {}) {
+    require('./code-versions.cjs').runtimeVersions()?.assertReady();
+    if(getSettings().tools?.reviewCodeChanges === true)throw Error('审核后生效已开启：本机代理无法保证文件修改预审，请使用 API 文件工具。');
     const scope = Object.fromEntries(['projectId', 'runId', 'attemptId', 'memberId', 'fileSessionId'].map(k => [k, args[k]]));
     if (['projectId', 'runId', 'attemptId', 'memberId'].some(k => typeof scope[k] !== 'string' || !scope[k])) throw Error('本机执行身份不完整');
     if (typeof args.prompt !== 'string' || !args.prompt.trim() || args.prompt.length > 2000000) throw Error('本机执行提示无效');
@@ -118,6 +120,7 @@ function createLocalClients({ userData, collaboration, teamFiles, getSettings, o
     if ([...active.values()].filter(job => job.scope.projectId === scope.projectId && job.scope.runId === scope.runId).length >= snapshot.projectSettings.maxConcurrent) throw Error('本机客户端已达到本次运行的并发上限');
     const cwd = scope.fileSessionId ? authorizedCwd : path.join(scratch, crypto.createHash('sha256').update(key).digest('hex'));
     fs.mkdirSync(cwd, { recursive: true });
+    const audit=require('./code-changes.cjs'), before=audit.snapshot([cwd]);
     const command = binary(member.connectionId === 'client:codex' ? 'codex' : 'claude');
     const controller = new AbortController(), job = { key, scope, controller, client: null, delta: '', output: '', failure: null, closed: false }; active.set(key, job);
     function flush() {
@@ -175,6 +178,11 @@ function createLocalClients({ userData, collaboration, teamFiles, getSettings, o
         if (!attempt || attempt.status !== 'running') throw Error('步骤已停止，客户端结果须重新核实');
         const session = { provider: member.connectionId, ...(normalized.session || {}), threadId: normalized.threadId || null, turnId: normalized.turnId || null, status: normalized.status };
         attempt.clientSessions = { ...attempt.clientSessions, [scope.memberId]: session }; attempt.clientSession = session;
+        const observed=audit.compare(before,audit.snapshot([cwd]));
+        if(observed.codeChanges.length||observed.codeAuditWarnings.length){
+          const id='native-audit-'+crypto.randomUUID();
+          (attempt.steps ||= []).push({id,callId:id,name:'native_code_changes',args:{},status:normalized.status==='completed'?'ok':'error',summary:'本机客户端代码改动',startedAt:Date.now(),...observed});
+        }
         attempt.clientOutputs = { ...attempt.clientOutputs, [scope.memberId]: normalized.text }; event(run, 'client_result', { text: `官方客户端结果：${normalized.status}` }, scope);
       });
       return normalized;

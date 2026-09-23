@@ -292,7 +292,18 @@ export interface ToolCall {
 export type StepStatus = 'running' | 'ok' | 'error' | 'denied';
 
 /** 一次工具执行的记录，用来在 UI 上画「步骤轨迹」 */
+export interface CodeChange {
+  id: string; path: string; kind: 'added' | 'modified' | 'deleted';
+  status: 'pending' | 'applied' | 'denied' | 'conflict' | 'unknown' | 'reverted'; at: number;
+  revisionId?: string;
+  revertUnavailable?: string;
+  beforeHash: string | null; afterHash: string | null;
+  additions: number; deletions: number;
+  lines: { kind: 'add' | 'delete' | 'context' | 'hunk'; text: string; oldLine: number | null; newLine: number | null }[];
+}
 export interface ToolStep {
+  codeChanges?: CodeChange[];
+  codeAuditWarnings?: string[];
   id: string;
   callId: string;
   name: string;
@@ -526,6 +537,8 @@ export interface Conversation {
 export type SearchProvider = 'tavily' | 'brave' | 'searxng';
 
 export interface ToolConfig {
+  showCodeChanges?: boolean;
+  reviewCodeChanges?: boolean;
   /** 文件 / 命令类工具只允许在这些目录下动手 */
   workspaceRoots: string[];
   searchProvider: SearchProvider;
@@ -691,6 +704,9 @@ export interface ChatRequestInit {
 }
 
 export interface ToolResult {
+  reviewToken?: string;
+  codeChanges?: CodeChange[];
+  codeAuditWarnings?: string[];
   ok: boolean;
   /** 回灌给模型的正文 */
   content: string;
@@ -780,6 +796,9 @@ export interface Artifact {
 
 /** 工具执行时传给原生层的上下文（不含明文密钥，密钥由原生层自己从安全存储取） */
 export interface ToolContext {
+  postReviewCodeChanges?: boolean;
+  reviewCodeChanges?: boolean;
+  codeReviewToken?: string;
   teamExecution?: { projectId:string; runId:string; attemptId:string; memberId:string; fileSessionId?:string };
   workspaceRoots: string[];
   searchProvider: SearchProvider;

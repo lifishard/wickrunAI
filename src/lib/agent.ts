@@ -731,8 +731,18 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
               if (prior.filter((s) => s.status === 'error').length >= 2) {
                 result = { ok: false, content: '', error: '相同参数已经失败两次，本次未重复执行。请检查返回结构、改用更小查询或另一种工具。' };
               } else {
-                const asks=def.dangerous && (call.name==='request_access' || (call.name==='run_command'&&Boolean(parsed.elevated)) || cfg.approvalMode==='ask' || (cfg.approvalMode==='auto' && (def.group==='shell'||def.group==='agent')));
-                const permitted = !def.dangerous || (asks ? await awaitUser(()=>args.confirm(step)) : await interrupted(args.confirm(step)));
+                const review = args.toolCtx().reviewCodeChanges === true && ['write_file','edit_file','delete_file'].includes(call.name);
+                let codeReviewToken: string | undefined;
+                if (review) {
+                  const preview = await interrupted(transport.callTool('preview_code_change',{name:call.name,args:parsed},args.toolCtx()));
+                  if (!preview.ok || !preview.reviewToken) throw Error(preview.error || '无法生成代码差异，未执行修改');
+                  codeReviewToken = preview.reviewToken;
+                  step.codeChanges = preview.codeChanges;
+                  events.onStep({...step});
+                }
+                const asks=review || def.dangerous && (call.name==='request_access' || (call.name==='run_command'&&Boolean(parsed.elevated)) || cfg.approvalMode==='ask' || (cfg.approvalMode==='auto' && (def.group==='shell'||def.group==='agent')));
+                const postReview = !review && args.toolCtx().postReviewCodeChanges === true && ['write_file','edit_file','delete_file'].includes(call.name);
+                const permitted = postReview || !def.dangerous || (asks ? await awaitUser(()=>args.confirm(step)) : await interrupted(args.confirm(step)));
                 if (!permitted) {
                   result = { ok: false, content: '', error: '用户拒绝了操作，请换一种已获准的方法。' };
                   step.status = 'denied';
@@ -756,7 +766,7 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
                         : Promise.resolve({ok:false,content:'',error:'当前环境没有本地文件核验能力'})))
                       : call.name === 'request_access'
                       ? await awaitUser(()=>args.grantAccess({ scope: String(parsed.scope ?? '') as AccessRequest['scope'], target: parsed.target ? String(parsed.target) : undefined, reason: String(parsed.reason ?? '') }))
-                      : await interrupted(transport.callTool(call.name, parsed, { ...args.toolCtx(), execution: {
+                      : await interrupted(transport.callTool(call.name, parsed, { ...args.toolCtx(), codeReviewToken, execution: {
                         runId: state.runId!, callId: `${state.round}-${i}-${call.id}`, retryUncertain: resolving && args.resolveUncertain === 'retry',
                       } }));
                   } catch (e) {
@@ -766,6 +776,7 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
                 }
               }
             }
+            if (step.codeChanges && !result.codeChanges) step.codeChanges = step.codeChanges.map(change => ({...change,status:result.uncertain?'unknown':step.status==='denied'?'denied':'conflict'}));
             if (result.uncertain) {
               state.uncertainCallId = call.id;
               await finishPause(result.error || '这一步需要核实是否已经执行'); return;
@@ -781,9 +792,11 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
             Object.assign(step, { status: step.status === 'denied' || result.repeated ? 'denied' : result.ok ? 'ok' : 'error',
               output: clipToolOutput(result.content), error: result.error, summary: result.summary ?? step.summary,
               sources: fresh, filePath: result.filePath, files: result.files, resultRef: result.resultRef,
+              codeChanges: result.codeChanges ?? step.codeChanges, codeAuditWarnings: result.codeAuditWarnings,
               elapsedMs: Date.now()-step.startedAt });
-            if (result.files?.some(f => f.direction === 'output') && !['register_outputs','inspect_deliverable'].includes(call.name)) {
-              for (const r of state.requirements ?? []) if (r.verification && (r.check.kind==='review' || result.files.some(f => f.direction === 'output' && f.path.replace(/\\/g,'/').toLowerCase() === r.check.path?.replace(/\\/g,'/').toLowerCase()))) {
+            const changedPaths=[...(result.files??[]).filter(f=>f.direction==='output').map(f=>f.path),...(result.codeChanges??[]).filter(c=>c.status==='applied').map(c=>c.path)];
+            if (changedPaths.length && !['register_outputs','inspect_deliverable'].includes(call.name)) {
+              for (const r of state.requirements ?? []) if (r.verification && (r.check.kind==='review' || changedPaths.some(p => p.replace(/\\/g,'/').toLowerCase() === r.check.path?.replace(/\\/g,'/').toLowerCase()))) {
                 r.verificationHistory = [...(r.verificationHistory ?? []),r.verification]; r.verification = undefined;
               }
             }
@@ -844,7 +857,8 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
           const viewBudget=Math.max(1024,Math.min(target-3000,harnessMode(cfg)==='guided'?32000:Infinity));
           let view = contextView(readable?memoryView(state):state.working, evidence, viewBudget,readable);
           view=readable?layeredMemoryView(view,state,cfg):view;
-          const extra = (state.extraSystem ?? args.extraSystem)+harnessInstructions(cfg,state)+memoryInstructions(state,harnessMode(cfg)==='guided'&&!final&&toolNames.includes('update_plan'),!final&&readable);
+          const codeReviewInstructions=args.toolCtx().reviewCodeChanges ? '\n代码审核模式已开启：修改本地代码只能使用 write_file、edit_file、delete_file。客户端会先展示差异，用户批准后才写入。命令、本机代理和无法预览的写入被阻止；不要尝试通过其他工具绕过，也不要声称已运行被阻止的测试。' : '';
+          const extra = (state.extraSystem ?? args.extraSystem)+harnessInstructions(cfg,state)+memoryInstructions(state,harnessMode(cfg)==='guided'&&!final&&toolNames.includes('update_plan'),!final&&readable)+codeReviewInstructions;
           if (final) view = [...view, { id: 'wrap-up', role: 'user', content: '本阶段轮次已到。请如实汇总已完成与尚未完成的事项，不要声称未实际交付的文件已经生成。', createdAt: Date.now() }];
           const build = (v: ChatMessage[]) => prepareBody(buildRequestBody(cfg,toWire(v,cfg,!final && toolNames.length > 0,extra),final ? [] : toolNames,args.effortMappings),cfg,cap);
           let body = build(view);

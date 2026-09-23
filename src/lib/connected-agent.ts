@@ -152,6 +152,11 @@ ${JSON.stringify(transcript)}`;
       // Save dispatch uncertainty before invoking: a renderer restart cannot imply that nothing ran.
       if(!recovered){state.uncertainCallId='native-'+nativeRequestId;await save();}
       const result=recovered ?? await bridge.conversationClientRun({runId:state.runId!,requestId:nativeRequestId,prompt,images,cwd:args.config.toolsEnabled?args.toolCtx().workspaceRoots[0]:undefined});
+      if(result.codeChanges?.length || result.codeAuditWarnings?.length){
+        const id=nativeRequestId+'-code-audit';
+        const step:ToolStep={id,callId:id,name:'native_code_changes',args:{},status:result.status==='completed'?'ok':'error',summary:'本机客户端代码改动',startedAt:Date.now(),codeChanges:result.codeChanges,codeAuditWarnings:result.codeAuditWarnings};
+        state.steps=state.steps!.filter(s=>s.id!==id).concat(step);events.onStep(step);await save();
+      }
       if(result.reasoning)state.reasoning=result.reasoning;
       recovered=null;
       if(cancelled)throw Error('已暂停并保存当前执行现场；尚未确认的本机操作需要核实');

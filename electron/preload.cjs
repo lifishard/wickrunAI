@@ -37,6 +37,7 @@ contextBridge.exposeInMainWorld('snc', {
   teamFilesMerge: (id,files) => ipcRenderer.invoke('snc:teamFilesMerge',{id,files}),
   teamFilesList: () => ipcRenderer.invoke('snc:teamFilesList'),
   toolAbort: runId => ipcRenderer.invoke('snc:toolAbort',runId),
+  codeVersion: (action,ids,path) => ipcRenderer.invoke('snc:codeVersion',{action,ids,path}),
   backupStatus: () => ipcRenderer.invoke('snc:backupStatus'),
   backupList: () => ipcRenderer.invoke('snc:backupList'),
   backupCreate: mode => ipcRenderer.invoke('snc:backupCreate',mode),

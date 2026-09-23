@@ -716,6 +716,12 @@ export default function SettingsDialog(props: {
     return (
       <div>
         <div className="section">
+          <div className="section-title">{t('代码改动')}</div>
+          <label className="row"><input type="checkbox" checked={tools.showCodeChanges !== false} onChange={e=>patch({showCodeChanges:e.target.checked})} />{t('显示代码改动面板与对话摘要')}</label>
+          <label className="row"><input type="checkbox" checked={tools.reviewCodeChanges === true} onChange={e=>patch({reviewCodeChanges:e.target.checked})} />{t('逐项修改前确认（可选）')}</label>
+          <p className="hint">{t('默认先应用文件修改，任务结束后按整轮查看差异，选择保留或回退已记录的改动，无需逐项批准。隐藏面板仍保留记录。命令等其他权限确认继续有效。开启此选项才会逐项预审，并阻止命令、本机代理等无法提前预览的写入。该设置从下一次任务启动起作用。')}</p>
+        </div>
+        <div className="section">
           <div className="section-title">{t('工作目录')}</div>
           <div className="hint" style={{ marginBottom: 8 }}>
             {t('文件和命令行工具只能在这些目录里动手。')}<strong>{t('一个都不加的话，这类工具会全部拒绝执行')}</strong>

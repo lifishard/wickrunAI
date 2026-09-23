@@ -111,7 +111,7 @@ function readFile(args, ctx) {
   }
 }
 
-function writeFile(args, ctx) {
+function writeFileLegacy(args, ctx) {
   try {
     const p = guardPath(args.path, ctx.workspaceRoots);
     const content = typeof args.content === 'string' ? args.content : '';
@@ -127,7 +127,7 @@ function writeFile(args, ctx) {
   }
 }
 
-function editFile(args, ctx) {
+function editFileLegacy(args, ctx) {
   try {
     const p = guardPath(args.path, ctx.workspaceRoots, { mustExist: true });
     const oldStr = String(args.old_str ?? '');
@@ -224,4 +224,13 @@ function searchFiles(args, ctx) {
   }
 }
 
+function audited(name,args,ctx,legacy) {
+  try { return require('../code-changes.cjs').apply(name,args,ctx); }
+  catch(error) {
+    if(!ctx.reviewCodeChanges && /512 KB|二进制|非 UTF-8|行数/.test(error.message))return {...legacy(args,ctx),codeAuditWarnings:['未生成逐行差异：'+args.path+'（'+error.message+'）']};
+    return fail(error);
+  }
+}
+function writeFile(args,ctx){return audited('write_file',args,ctx,writeFileLegacy);}
+function editFile(args,ctx){return audited('edit_file',args,ctx,editFileLegacy);}
 module.exports = { listDir, readFile, writeFile, editFile, searchFiles };

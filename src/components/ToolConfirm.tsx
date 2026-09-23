@@ -3,6 +3,7 @@ import { useT } from '../lib/i18n';
 import type { ToolStep } from '../types';
 import { TOOL_BY_NAME } from '../lib/tools/registry';
 import { Modal } from './ui';
+import { ChangeDiff } from './CodeChanges';
 
 /**
  * 危险工具的确认弹窗。
@@ -22,10 +23,10 @@ export default function ToolConfirm(props: {
 
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Enter') {
+      if (e.key === 'Enter' && !props.step.codeChanges?.length) {
         e.preventDefault();
         props.onResolve(true);
-      } else if (e.key === 'ArrowLeft') {
+      } else if (e.key === 'ArrowLeft' && !props.step.codeChanges?.length) {
         e.preventDefault();
         props.onResolve(false);
       }
@@ -37,22 +38,25 @@ export default function ToolConfirm(props: {
 
   return (
     <Modal
-      title={t(nativeCommand ? '确认本机命令' : '这一步要动真格的')}
+      title={t(props.step.codeChanges?.length ? '审核代码改动' : nativeCommand ? '确认本机命令' : '这一步要动真格的')}
       onClose={() => props.onResolve(false)}
       footer={
         <>
-          <button className="btn" onClick={() => props.onResolve(false)}>
-            {t('拒绝')} <kbd>←</kbd>
+          <button className="btn" autoFocus={Boolean(props.step.codeChanges?.length)} onClick={() => props.onResolve(false)}>
+            {t('拒绝')} {!props.step.codeChanges?.length ? <kbd>←</kbd> : null}
           </button>
-          <button className="btn primary" autoFocus onClick={() => props.onResolve(true)}>
-            {t('允许执行')} <kbd>Enter</kbd>
+          <button className="btn primary" autoFocus={!props.step.codeChanges?.length} onClick={() => props.onResolve(true)}>
+            {t(props.step.codeChanges?.length ? '批准并应用' : '允许执行')} {!props.step.codeChanges?.length ? <kbd>Enter</kbd> : null}
           </button>
         </>
       }
     >
       <div className="modal-body">
         <div className="confirm-tool">
-          {nativeCommand ? <>
+          {props.step.codeChanges?.length ? <>
+            <p>以下改动尚未写入文件。批准后生效；拒绝或关闭窗口保留原文件。</p>
+            {props.step.codeChanges.map(change=><ChangeDiff key={change.id} change={change} expanded/>)}
+          </> : nativeCommand ? <>
             <div>{t('Grok 请求在本机运行以下命令。')}</div>
             <div className="hint">{t('命令使用你的本机权限运行，可能访问工作目录以外的文件或网络。每条命令都需单独确认。')}</div>
             <div className="field-label">{t('工作目录')}</div>

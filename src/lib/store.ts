@@ -25,6 +25,8 @@ export function uid(prefix = ''): string {
 export function defaultToolConfig(): ToolConfig {
   return {
     workspaceRoots: [],
+    showCodeChanges: true,
+    reviewCodeChanges: false,
     searchProvider: 'tavily',
     searxngUrl: '',
     chromePort: 9222,
@@ -66,6 +68,8 @@ export function toolContextOf(
   return {
     projectId,
     grants,
+    reviewCodeChanges: s.tools.reviewCodeChanges === true,
+    postReviewCodeChanges: s.tools.reviewCodeChanges !== true,
     // 会话里临时放行的目录并进白名单 —— 它们跟设置里那些一样要过 guardPath，
     // 只是活不过这次会话
     workspaceRoots: [...s.tools.workspaceRoots, ...grants.extraRoots],

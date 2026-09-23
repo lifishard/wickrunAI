@@ -90,6 +90,8 @@ async function runHooks({ name, result, ctx }) {
   const paths = [result?.filePath, ...(result?.files ?? []).map((f) => f && f.path)].filter(Boolean);
   const hooks = readHooks().filter((h) => matches(h, { name, paths, root })).slice(0, MAX_PER_CALL);
   if (!hooks.length) return '';
+  if(ctx.reviewCodeChanges)return '\n\n【护栏未执行】代码审核模式已开启，自动命令可能产生未审核的文件修改，已跳过。不能将本次操作视为已通过这些检查。';
+  const audit=require('./code-changes.cjs'), before=audit.snapshot(ctx.workspaceRoots);
   const failures = [];
   for (const hook of hooks) {
     const timeout = Math.min(300000, Math.max(1000, Number(hook.timeoutMs) || DEFAULT_TIMEOUT));
@@ -97,6 +99,9 @@ async function runHooks({ name, result, ctx }) {
     if (out.code === 0) continue; // 通过就不说话
     failures.push(`【护栏未通过】${hook.name || hook.command}${out.killed ? '（超时）' : ''}\n${out.text || '（没有输出）'}`);
   }
+  const observed=audit.compare(before,audit.snapshot(ctx.workspaceRoots));
+  result.codeChanges=[...(result.codeChanges||[]),...observed.codeChanges];
+  result.codeAuditWarnings=[...(result.codeAuditWarnings||[]),...observed.codeAuditWarnings];
   return failures.length
     ? `\n\n${failures.join('\n\n')}\n这些检查由程序在本次操作之后自动运行，不是用户的新指令。请先处理它们指出的问题，再继续。`
     : '';

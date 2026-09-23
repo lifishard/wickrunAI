@@ -30,6 +30,19 @@ const fail={id:'h2',name:'版本号三处同步',enabled:true,
   // 中间任何一步编码不对都会让断言失败，而那跟护栏本身没关系。
   command:node("console.error('VERSION_MISMATCH package.json vs version.ts');process.exit(1)")};
 
+test('code review blocks hooks from making unreviewed writes',async()=>{
+  const target=path.join(root,'unreviewed.txt');
+  setHooks([{...pass,command:node("require('fs').writeFileSync('unreviewed.txt','bad')")}]);
+  const note=await runHooks({name:'write_file',result:{...ok},ctx:{...ctx,reviewCodeChanges:true}});
+  assert.match(note,/护栏未执行/);assert.equal(fs.existsSync(target),false);
+});
+
+test('automatic hook writes are included in audit history',async()=>{
+  setHooks([{...pass,command:node("require('fs').writeFileSync('hook-output.ts','export const n = 1;')")}]);
+  const result={...ok};await runHooks({name:'write_file',result,ctx});
+  assert.ok(result.codeChanges.some(c=>c.path===path.join(root,'hook-output.ts')&&c.kind==='added'));
+});
+
 test('通过就不说话 —— 每次汇报「检查通过」等于没有护栏',async()=>{
   setHooks([pass]);
   assert.equal(await runHooks({name:'write_file',result:ok,ctx}),'');

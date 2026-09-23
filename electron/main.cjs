@@ -13,6 +13,7 @@ const chromeLaunch = require('./chrome-launch.cjs');
 const skillFolder = require('./skill-folder.cjs');
 const attachments = require('./attachments.cjs');
 const { runtimeStore } = require('./run-store.cjs');
+const { runtimeVersions, reconcileRuns } = require('./code-versions.cjs');
 const { sendClientEvent } = require('./client-events.cjs');
 const { verifyFiles } = require('./file-records.cjs');
 
@@ -31,6 +32,7 @@ let conversationClients = null;
 let nativeAiBridge = null;
 let taskNotifier = null;
 const activeToolControllers = new Map();
+const activeRunIds = new Set();
 function dataAvailable(){if(storageStartupError)throw Error('本地记录需要恢复，已停止读写：'+storageStartupError);if(restoringData)throw Error('正在恢复数据，请等待重启');const error=dataBackup?.recoveryError;if(error)throw Error('数据恢复未完成，已停止读写：'+error);}
 
 /* ------------------------------------------------------------------ *
@@ -397,9 +399,21 @@ function registerIpc() {
   ipcMain.handle('snc:collaborationRead', () => {dataAvailable();return collaboration.read();});
   ipcMain.handle('snc:collaborationUpdate', (_e, {revision,project}) => {dataAvailable();return collaboration.update(revision,project);});
   ipcMain.handle('snc:collaborationClaim', (_e, {projectId,runId}) => {dataAvailable();return collaboration.claim(projectId,runId);});
-  ipcMain.handle('snc:runSave', (_e, record) => {dataAvailable();return runtimeStore().save(record);});
-  ipcMain.handle('snc:runList', () => {dataAvailable();return runtimeStore().list();});
-  ipcMain.handle('snc:runRemove', (_e, id) => {dataAvailable();return runtimeStore().remove(id);});
+  ipcMain.handle('snc:runSave', (_e, record) => {dataAvailable();const result=runtimeStore().save(record);if(['running','waiting'].includes(record.state?.status))activeRunIds.add(record.id);else activeRunIds.delete(record.id);return result;});
+  ipcMain.handle('snc:runList', () => {dataAvailable();return reconcileRuns(runtimeStore(),runtimeVersions());});
+  ipcMain.handle('snc:codeVersion', (_e,{action,ids,path:filePath}) => {
+    dataAvailable();const versions=runtimeVersions();
+    if(action==='details')return versions.details(ids);
+    if(action==='file')return versions.file(ids,filePath);
+    if(!['preview','keep','revert'].includes(action))throw Error('未知代码版本操作');
+    if(inflight.size||activeToolControllers.size||localClients?.busy()||conversationClients?.busy()||nativeAiBridge?.busy())throw Error('任务仍在执行，请停止或等待结束后审阅版本');
+    if(activeRunIds.size||Object.values(collaboration.read().projects).some(p=>p.runs.some(r=>['running','pausing','waiting_approval','waiting_user'].includes(r.status))))throw Error('还有未结束的任务，请先暂停任务再审阅版本');
+    const roots=JSON.parse(store.kvGet('snc:settings:v1')||'{}').tools?.workspaceRoots??[];
+    const result=action==='keep'?versions.keep(ids):action==='preview'?versions.preview(ids,roots):versions.revert(ids,roots);
+    if(action==='revert')reconcileRuns(runtimeStore(),versions);
+    return result;
+  });
+  ipcMain.handle('snc:runRemove', (_e, id) => {dataAvailable();activeRunIds.delete(id);return runtimeStore().remove(id);});
   ipcMain.handle('snc:exchanges', (_e, runId) => runtimeStore().exchanges(runId));
   ipcMain.handle('snc:saveAnalysisExport', async (_e,{name,bytes}) => {
     if (!(bytes instanceof Uint8Array) || bytes.length > 32*1024*1024 || bytes.length < 22 || !/^wickrunAI-[a-z-]+-\d{4}-\d{2}-\d{2}\.zip$/.test(name)) throw new Error('分析导出包无效');
@@ -432,7 +446,7 @@ function registerIpc() {
   ipcMain.handle('snc:tool', async (_e, { name, args, ctx }) => {
     dataAvailable();
     if(ctx?.teamExecution){
-      ctx=require('./team-execution-guard.cjs').createTeamExecutionGuard({collaboration,teamFiles}).tool(name,ctx);
+      ctx=require('./team-execution-guard.cjs').createTeamExecutionGuard({collaboration,teamFiles}).tool(name==='preview_code_change'?args?.name:name,ctx);
     }
     const id=require('node:crypto').randomUUID(),controller=new AbortController();
     activeToolControllers.set(id,{controller,runId:ctx?.execution?.runId,teamRunId:ctx?.teamExecution?.runId});

@@ -92,6 +92,7 @@ export function recoverConversations(original: Conversation[], saved: RunRecord[
       userQuestionHistory: state.userQuestionHistory,harness:state.harness,subagents:state.subagents,
       progress: completed ? undefined : localProgress(state.steps ?? [], recovered.reason),
       artifacts: [...(existing?.artifacts ?? []), ...collectArtifacts(state.content ?? '', state.steps ?? [])]
+        .filter(a=>!a.path||!(state.steps??[]).some(s=>s.codeChanges?.some(c=>c.status==='reverted'&&c.path.replace(/\\/g,'/').toLowerCase()===a.path!.replace(/\\/g,'/').toLowerCase())))
         .filter((a, i, all) => all.findIndex((b) => b.path && a.path ? b.path === a.path && b.direction === a.direction : b.id === a.id) === i),
       error: state.errorInfo?.detail, errorInfo: state.errorInfo,
     };

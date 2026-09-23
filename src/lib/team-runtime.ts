@@ -593,9 +593,10 @@ export class TeamRuntime {
    }).catch(reject);};
    const confirm=async(step:ToolStep)=>{
     if(control.stop)return false;
-    if(config.approvalMode==='all')return true;
-    if(config.approvalMode==='auto'&&!['shell','agent'].includes(TOOL_BY_NAME[step.name]?.group??''))return true;
-    await this.runUpdate(projectId,runId,run=>{const item={nodeId:attemptId,text:`${member.name} 请求 ${step.name}\n${JSON.stringify(step.args,null,2)}`};run.approvalQueue=[...(run.approvalQueue??[]),item];run.pendingApproval=run.approvalQueue[0];});
+    const codeReview=Boolean(step.codeChanges?.some(c=>c.status==='pending'));
+    if(!codeReview && config.approvalMode==='all')return true;
+    if(!codeReview && config.approvalMode==='auto'&&!['shell','agent'].includes(TOOL_BY_NAME[step.name]?.group??''))return true;
+    await this.runUpdate(projectId,runId,run=>{const item={nodeId:attemptId,codeChanges:step.codeChanges,text:`${member.name} 请求 ${step.name}\n${JSON.stringify(step.args,null,2)}`};run.approvalQueue=[...(run.approvalQueue??[]),item];run.pendingApproval=run.approvalQueue[0];});
     return new Promise<boolean>((res)=>{this.approvals.set(runId+':'+attemptId,ok=>{this.approvals.delete(runId+':'+attemptId);void this.runUpdate(projectId,runId,run=>{run.approvalQueue=(run.approvalQueue??[]).filter(x=>x.nodeId!==attemptId);run.pendingApproval=run.approvalQueue[0];run.events.push({id:uid(),at:Date.now(),kind:'permission',text:`${member.name} 的 ${step.name}：${ok?'批准':'拒绝'}`,nodeId:node.id});}).then(()=>res(ok)).catch(()=>res(false));});});
    };
    handle=runAgent({resume,resolveUncertain:resume?'retry':undefined,requestId:uid('teamrequest'),profile:profile!,apiKey:key!,config,

@@ -54,6 +54,10 @@ interface NativeEvent {
 }
 
 interface ElectronBridge extends CloudBridge {
+  codeVersion?(action:'details'|'file'|'preview'|'keep'|'revert',ids:string[],path?:string):Promise<{
+    entries?:{id:string;status:'applied'|'kept'|'reverting'|'reverted'}[];
+    files?:import('../types').CodeChange[];warning?:string;recovering?:boolean;alreadyReverted?:boolean;
+  }>;
   notifyTask(input:TaskNotificationInput):Promise<boolean>;
   onTaskNotificationClick(cb:(event:TaskNotificationClick)=>void):()=>void;
   nativeAiState():Promise<import('./native-ai').NativeAiState>;

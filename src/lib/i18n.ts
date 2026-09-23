@@ -16,6 +16,12 @@ export const LOCALES: { value: Locale; label: string; label2: string; lang: stri
  * 英文查词典，查不到就退回简体原文 —— 半翻译的界面也比缺字的界面好用。
  */
 const EN: Record<string, string> = {
+  '代码改动': 'Code changes',
+  '显示代码改动面板与对话摘要': 'Show code changes panel and conversation summaries',
+  '逐项修改前确认（可选）': 'Confirm each edit before applying (optional)',
+  '默认先应用文件修改，任务结束后按整轮查看差异，选择保留或回退已记录的改动，无需逐项批准。隐藏面板仍保留记录。命令等其他权限确认继续有效。开启此选项才会逐项预审，并阻止命令、本机代理等无法提前预览的写入。该设置从下一次任务启动起作用。': 'By default, file edits apply immediately. Review a whole turn afterward and keep or revert its recorded changes without approving each edit. Hiding the panel preserves records. Other permissions, such as command approval, still apply. Enable this option for individual previews; it blocks commands, native agents and writes that cannot be previewed. Changes take effect with the next task turn.',
+  '审核代码改动':'Review code changes', '批准并应用':'Approve and apply',
+
   '阶段结论': 'Stage outcome',
   '阶段结论 · 有操作结果待核实': 'Stage outcome · Operation results need verification',
   '阶段结论 · 已按你的要求暂停': 'Stage outcome · Paused at your request',

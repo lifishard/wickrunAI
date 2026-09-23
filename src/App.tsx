@@ -96,6 +96,7 @@ import ArtifactPanel from './components/ArtifactPanel';
 import Resizer from './components/Resizer';
 import ErrorBoundary from './components/ErrorBoundary';
 import ToolConfirm from './components/ToolConfirm';
+import CodeChangesPanel from './components/CodeChanges';
 import GrantDialog, { REMEMBER_DAYS } from './components/GrantDialog';
 import WorkspaceDialog from './components/WorkspaceDialog';
 import { Modal, Toast, useToast } from './components/ui';
@@ -180,6 +181,9 @@ export default function App() {
   const [skills, setSkills] = React.useState<Skill[]>([]);
   const [tasks, setTasks] = React.useState<ScheduledTask[]>([]);
   const [activeSkills, setActiveSkills] = React.useState<Skill[]>([]);
+  const [codeChangesOpen, setCodeChangesOpen] = React.useState(false);
+  const codeChangesOpenRef = React.useRef(false);
+  codeChangesOpenRef.current = codeChangesOpen;
   const [openArtifact, setOpenArtifact] = React.useState<Artifact | null>(null);
   const [sidebarHidden, setSidebarHidden] = React.useState(false);
   const [sidebarW, setSidebarW] = React.useState(268);
@@ -1251,7 +1255,7 @@ export default function App() {
           //     那这个档位就等于把授权体系整个关掉
           const args = (step.args ?? {}) as Record<string, unknown>;
           const alwaysAsk =
-            step.name === 'request_access' || (step.name === 'run_command' && Boolean(args.elevated)) ||
+            Boolean(step.codeChanges?.some(c=>c.status==='pending')) || step.name === 'request_access' || (step.name === 'run_command' && Boolean(args.elevated)) ||
             (step.name === 'native_client_operation' && args.requiresExplicitApproval === true);
           if (alwaysAsk) {
             return requestApproval(step);
@@ -1355,7 +1359,7 @@ export default function App() {
                 : prev,
             );
             // 只产出一个东西时直接开右侧面板 —— 多个就让用户自己挑
-            if (arts.length === 1) setOpenArtifact(arts[0]);
+            if (arts.length === 1 && !codeChangesOpenRef.current) setOpenArtifact(arts[0]);
           },
           onError(msg, info) {
             finishUi(); pauseQueue(convId);
@@ -1951,7 +1955,8 @@ export default function App() {
             </button>
           ) : null}
 
-          {msgs.some(hasActivity) ? <button className="btn sm" aria-pressed={activityOpen && !configOpen && !openArtifact} onClick={() => { setActivityOpen(!(activityOpen && !configOpen && !openArtifact)); setConfigOpen(false); setOpenArtifact(null); }}>{t('任务动态')}</button> : null}
+          {settings.tools.showCodeChanges !== false ? <button className="btn sm" aria-pressed={codeChangesOpen && !configOpen && !openArtifact} onClick={()=>{setCodeChangesOpen(!(codeChangesOpen && !configOpen && !openArtifact));setActivityOpen(false);setConfigOpen(false);setOpenArtifact(null);}}>代码改动</button> : null}
+          {msgs.some(hasActivity) ? <button className="btn sm" aria-pressed={activityOpen && !configOpen && !openArtifact} onClick={() => { setCodeChangesOpen(false); setActivityOpen(!(activityOpen && !configOpen && !openArtifact)); setConfigOpen(false); setOpenArtifact(null); }}>{t('任务动态')}</button> : null}
 
           <button className="btn sm" onClick={() => setConfigOpen((v) => !v)}>
             {t('⚙ 配置')}
@@ -1994,6 +1999,7 @@ export default function App() {
                     gatewayProfile={profile}
                     claudeConnection={config.client?.kind==='claude'}
                     onGatewayReady={r=>{if(r.baseUrl && profile)setSettings(s=>s?{...s,keyProfiles:s.keyProfiles.map(p=>p.id===profile.id && p.baseUrl===profile.baseUrl?{...p,baseUrl:r.baseUrl!}:p)}:s);}}
+                    showCodeChanges={settings.tools.showCodeChanges !== false}
                     showReasoning={settings.showReasoningByDefault}
                     onOpenArtifact={setOpenArtifact}
                     onArtifactSaved={(artifact) => {
@@ -2076,6 +2082,7 @@ export default function App() {
         )}
       </main>
 
+      {codeChangesOpen && settings.tools.showCodeChanges !== false && !teamVisible && !configOpen && !openArtifact ? <CodeChangesPanel key={`code-changes-${active?.id}`} messages={msgs} busy={runningRef.current.size>0||startingRef.current.size>0||Object.values(teamRuntime.data?.projects??{}).some(p=>p.runs.some(r=>['running','pausing','waiting_approval','waiting_user'].includes(r.status)))} onReverted={async()=>{const records=await loadRuns();setConversations(all=>recoverConversations(all,records));setOpenArtifact(null);}} onClose={()=>setCodeChangesOpen(false)}/> : null}
       {activityOpen && !teamVisible && !configOpen && !openArtifact ? <ActivityPanel key={`activity-${active?.id}`} messages={msgs} onHide={() => setActivityOpen(false)} /> : null}
 
       {openArtifact && !teamVisible ? (

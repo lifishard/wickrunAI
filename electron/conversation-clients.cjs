@@ -174,6 +174,7 @@ function createConversationClients({ userData, getSettings, store, openExternal,
     return settled.map((result,index)=>result.status==='fulfilled'?result.value:{kind:kinds[index],status:'error',models:[],message:'重启后连接检查失败，请手动重新检测。'});
   }
   async function run(args={},notify=()=>{}) {
+    require('./code-versions.cjs').runtimeVersions()?.assertReady();
     if(!/^[\w-]{1,160}$/.test(args.requestId || '') || !/^[\w-]{1,160}$/.test(args.runId || ''))throw Error('执行编号无效');
     const record=store.list().find(r=>r.id===args.runId), selection=record?.config?.client;
     if(!record || record.state.status!=='running' || !KINDS.includes(selection?.kind))throw Error('请先保存本轮会话和连接配置');
@@ -184,6 +185,7 @@ function createConversationClients({ userData, getSettings, store, openExternal,
     const images=normalizeImages(args.images).map(image=>image.dataUrl);
     if(active.has(args.runId))throw Error('当前会话正在执行');
     const settings=getSettings(), work=record.config.toolsEnabled===true;
+    if(work && settings.tools?.reviewCodeChanges === true)throw Error('审核后生效已开启：本机客户端无法保证逐项预审，请切换 API 连接使用文件工具，或由用户关闭审核模式。');
     let cwd=scratch;
     if(work && args.cwd){
       const requested=fs.realpathSync(args.cwd);
@@ -191,6 +193,7 @@ function createConversationClients({ userData, getSettings, store, openExternal,
       if(!allowed)throw Error('请先将工作目录加入应用的授权目录');
       if(!fs.statSync(requested).isDirectory())throw Error('工作目录无效');cwd=requested;
     }
+    const codeAudit=require('./code-changes.cjs'), before=work ? codeAudit.snapshot([cwd]) : null;
     let scratchDir;
     if(work && selection.kind==='grok') {
       const scratchBase=path.join(scratch,'grok-work');fs.mkdirSync(scratchBase,{recursive:true});
@@ -273,7 +276,13 @@ function createConversationClients({ userData, getSettings, store, openExternal,
           result={...result,status:terminalFailure?result.status:'permission_required',error:terminalFailure&&result.error?`${result.error}\n另有请求被拒绝：${acpWorkCapabilityFailure}`:acpWorkCapabilityFailure};
         }
       }
+      if(before)Object.assign(result,codeAudit.compare(before,codeAudit.snapshot([cwd])));
       store.saveJob(args.runId,jobId,{status:result.status,result,at:Date.now(),kind:selection.kind,cwd,...(scratchDir?{scratchDir}:{})});return result;
+    }catch(error){
+      const saved=store.job(args.runId,jobId);
+      const result={status:'unknown',text:saved?.partial||'',error:String(error.message||error),...(before?codeAudit.compare(before,codeAudit.snapshot([cwd])):{})};
+      store.saveJob(args.runId,jobId,{status:result.status,result,at:Date.now(),kind:selection.kind,cwd});
+      return result;
     }finally{controller.abort();job.client?.close();active.delete(args.runId);}
   }
   return {check,connect,restore,run,async repairClaude(){ try { const binary=discover('claude');(deps.validateClaudeBinary || require('./claude-program.cjs').assertClaudeCodeBinary)(binary); const recovery=await deps.repairClaudeGateway?.(); if(recovery && recovery.state!=='ready') return {kind:'claude',status:'error',models:[],message:recovery.message}; return await check('claude'); } catch { return {kind:'claude',status:'error',models:[],message:'Claude 恢复检查失败，请核对程序路径和用户路由配置。'}; } },recover(runId,callId){if(!/^native-[\w-]{1,160}$/.test(callId || '')||!store.list().some(r=>r.id===runId))throw Error('执行记录无效');const saved=store.job(runId,callId);return saved?.result || (saved?{status:'unknown',text:saved.partial || '',error:'先前操作未留下可靠的完成记录，请核实后再继续。'}:null);},approve(requestId,id,approved){const entry=approvals.get(id);if(!entry||entry.requestId!==requestId)throw Error('此操作已结束或授权已过期');entry.finish(approved===true);},abort:id=>active.get(id)?.controller.abort(),busy:()=>active.size>0,close(){for(const job of active.values())job.controller.abort();for(const client of logins.values())client.close();logins.clear();}};
