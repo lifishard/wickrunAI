@@ -637,7 +637,7 @@ export default function Composer(props: {
             {props.busy ? (
               /* 运行期间三项操作保持同一组，窄屏以图标显示。 */
               <div className="composer-send-group">
-                <button className="btn sm danger" data-short-label="■" title={t('停止')} onClick={props.onStop}>
+                <button className="btn sm danger" data-short-label="■" title={t('停止')} onClick={() => props.onStop()}>
                   {t('停止')}
                 </button>
                 <button

@@ -11,6 +11,7 @@ import Markdown from './Markdown';
 import MessageNotes from './MessageNotes';
 import DeliveryPanel from './DeliveryPanel';
 import RecoveryCard from './RecoveryCard';
+import StageSummary from './StageSummary';
 import TaskFeedback from './TaskFeedback';
 import UserQuestionCard from './UserQuestionCard';
 import GatewayRecovery from './GatewayRecovery';
@@ -447,6 +448,7 @@ export default function AnswerBlock(props: {
         </div>
       ) : null}
 
+      {answer ? <StageSummary answer={answer} /> : null}
       {files.length && props.onOpenArtifact ? (
         <ArtifactStrip artifacts={files} onOpen={props.onOpenArtifact} onSaved={props.onArtifactSaved} />
       ) : null}

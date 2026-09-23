@@ -16,6 +16,22 @@ export const LOCALES: { value: Locale; label: string; label2: string; lang: stri
  * 英文查词典，查不到就退回简体原文 —— 半翻译的界面也比缺字的界面好用。
  */
 const EN: Record<string, string> = {
+  '阶段结论': 'Stage outcome',
+  '阶段结论 · 有操作结果待核实': 'Stage outcome · Operation results need verification',
+  '阶段结论 · 已按你的要求暂停': 'Stage outcome · Paused at your request',
+  '阶段结论 · 已暂停，进度已保存': 'Stage outcome · Paused, progress saved',
+  '阶段结论 · 仍有未完成或待验证事项': 'Stage outcome · Work or verification remains',
+  '阶段结论 · 本轮已结束，结果待确认': 'Stage outcome · Turn ended, results need confirmation',
+  '阶段结论 · 已列条件检查通过': 'Stage outcome · Listed checks passed',
+  '根据本轮保存的任务与检查记录整理。': 'Based on saved task and check records from this turn.',
+  '已记录完成 {n} 项': '{n} items recorded as complete',
+  '尚无已完成的任务项记录。': 'No task items have been recorded as complete yet.',
+  '检查记录：程序核验通过 {program} 项；模型判断通过 {model} 项；共 {total} 项条件。': 'Checks: {program} passed by program; {model} passed by model assessment; {total} conditions in total.',
+  '尚未登记验收条件，不能据此确认整体任务完成。': 'No acceptance conditions were registered, so overall completion cannot be confirmed from these records.',
+  '待完成或待验证': 'Work or verification remaining',
+  '停止原因：': 'Reason for stopping: ',
+  '继续处理待办，并核实已有结果。': 'Continue the remaining work and verify existing results.',
+  '请查看本轮成果；这些记录仅覆盖已列出的条件。': 'Review the results from this turn; these records cover only the listed conditions.',
   '确认本机命令': 'Confirm local command',
   'Grok 请求在本机运行以下命令。': 'Grok requests to run this command on your computer.',
   '命令使用你的本机权限运行，可能访问工作目录以外的文件或网络。每条命令都需单独确认。': 'The command runs with your local permissions and may access files outside the working directory or the network. Each command requires separate confirmation.',

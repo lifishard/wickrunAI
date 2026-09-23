@@ -2868,6 +2868,10 @@ kbd {
 .delivery-failed { border-color: var(--danger); }
 .delivery-path { font-family: var(--mono); font-size: 11px; overflow-wrap: anywhere; }
 .recovery-card { border-left: 3px solid var(--accent); }
+.stage-summary { margin: 20px 0; padding: 16px 0; border-top: 1px solid var(--border); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.stage-summary p { margin: 8px 0; }
+.stage-summary ul { padding-left: 22px; margin: 8px 0; }
+.stage-summary summary { cursor: pointer; }
 .recovery-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
 .eval-cases { list-style: none; margin: 8px 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
 .eval-cases li { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }

@@ -121,7 +121,7 @@ export function recoveryInfo(state: RunState): RecoveryInfo {
     : /验收|核实到实际|未完成里程碑/.test(probe) ? 'verification' : /预算|阶段轮次/.test(probe) ? 'budget'
     : /额度|限流|429/.test(probe) ? 'quota' : /授权|权限|拒绝/.test(probe) ? 'permission'
     : /缺少|资料|输入|没有可用工具/.test(probe) ? 'input' : /连接|网络|超时|中断|关闭/.test(probe) ? 'connection':'other';
-  const remaining = [...(state.requirements ?? []).filter(r => r.verification?.status !== 'passed').map(r => r.title),
+  const remaining = [...(state.requirements ?? []).filter(r => r.verification?.status !== 'passed' || r.verification.revision !== r.revision).map(r => r.title),
     ...(state.milestones ?? []).filter(m => m.status !== 'completed').map(m => m.title)];
   const hints: Record<RecoveryInfo['kind'],string> = {
     user:'准备好后接着跑，也可以补充要求。',quota:'额度恢复后接着跑；已有结果会继续使用。',budget:'接着跑将开启新的执行阶段，仍使用现有结果。',

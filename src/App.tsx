@@ -1777,7 +1777,7 @@ export default function App() {
       onSend={(t, mode) => void send(t, undefined, undefined, {toolsEnabled: mode === 'work', text: t, attachments: [...attachments], quotes: [...quotes], quoteOnly, conversationId: active?.id ?? null})}
       onSendNow={t=>{const accepted=sendNow({text:t,attachments:[...attachments],quotes:[...quotes],quoteOnly,conversationId:active?.id??null});if(accepted){setAttachments([]);setQuotes([]);}return accepted;}}
       onSendQueuedNow={i=>{const entry=activeQueue[i];if(entry&&sendNow(entry.item))setQueue(all=>all.filter((_,j)=>j!==entry.index));}}
-      onStop={stop}
+      onStop={() => stop()}
       stream={config.stream}
       toolCount={toolNames.length}
       quotes={quotes}
