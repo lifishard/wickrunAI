@@ -30,15 +30,17 @@ function createCloudRelay({ userData, account, clients, runner, store, hostname 
     fs.renameSync(temp, file);
   };
   let timer = null, ticking = null, running = null, current = null;
-  let ready = [], checkedAt = 0, beatAt = 0, lastError = '', recovered = false, lastTask = null;
+  // reported：报给网页版的全部客户端（未登录的 ready:false，网页版据此提示去登录）；ready：能领任务的
+  let reported = [], ready = [], checkedAt = 0, beatAt = 0, lastError = '', recovered = false, lastTask = null;
 
   const request = (pathname, method, body) => account.relay(pathname, method, body);
   const post = (id, action, value) => request(`/api/cloud/relay/tasks/${id}/${action}`, 'POST', { device: config.device, ...(action === 'block' ? { reason: String(value).slice(0, 2000) } : { text: value }) });
 
   async function refreshClients() {
     const results = await clients.restore();
-    ready = results.filter(r => KINDS.includes(r?.kind) && r.status === 'ready')
-      .map(r => ({ kind: r.kind, ready: true, models: (r.models || []).slice(0, 50).map(m => ({ id: m.id, label: m.label || m.id, efforts: (m.efforts || []).slice(0, 8) })) }));
+    reported = results.filter(r => KINDS.includes(r?.kind) && ['ready', 'login_required', 'waiting_login'].includes(r.status))
+      .map(r => ({ kind: r.kind, ready: r.status === 'ready', models: r.status === 'ready' ? (r.models || []).slice(0, 50).map(m => ({ id: m.id, label: m.label || m.id, efforts: (m.efforts || []).slice(0, 8) })) : [] }));
+    ready = reported.filter(c => c.ready);
     checkedAt = now();
   }
 
@@ -85,7 +87,7 @@ function createCloudRelay({ userData, account, clients, runner, store, hostname 
       if (!recovered) await recover();
       if (!checkedAt || now() - checkedAt >= refreshMs) await refreshClients();
       if (!beatAt || now() - beatAt >= heartbeatMs) {
-        await request('/api/cloud/relay/devices/heartbeat', 'POST', { device: config.device, name: `wickrunAI · ${hostname}`.slice(0, 80), kind: 'desktop', clients: ready });
+        await request('/api/cloud/relay/devices/heartbeat', 'POST', { device: config.device, name: `wickrunAI · ${hostname}`.slice(0, 80), kind: 'desktop', clients: reported });
         beatAt = now();
       }
       if (running || !ready.length) { lastError = ''; return; }

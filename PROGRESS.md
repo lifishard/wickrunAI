@@ -1,5 +1,11 @@
 # wickrunAI 工程进度
 
+## 2026-09-25 2.19.5：网页版 Grok 改走本机 Grok CLI
+
+- 「允许网页版使用本机 AI」除了就绪的客户端，也把未登录 / 等待登录的报给网页版（ready:false，不领任务），网页版提示去桌面版登录 Grok，而不是引导填 xAI API Key。
+- 网页版同批（wickrunAI-web 2.19.5）：Grok 主入口改为经本机 Grok CLI（账号登录，无需 API Key），xAI API Key 降为折叠备选；CLI 连接器接入 Grok CLI（ACP，仅对话）。
+- 验证：`tests/cloud-relay.test.cjs` 更新。
+
 ## 2026-09-25 2.19.4：网页版连接本机 AI（第二批）
 
 - **允许网页版使用本机 AI**：本机 AI 面板新增开关，默认关闭，需先登录云账号。打开后桌面版每 20 秒向云端报到（设备名、已就绪的 Claude Code / Codex / Kimi / Grok 及其模型），领取网页版派给本机的任务，执行后交回或报告受阻。新文件 `electron/cloud-relay.cjs`；`cloud-account.cjs` 增加只限 `/api/cloud/relay/` 的内部请求，令牌不过 IPC。

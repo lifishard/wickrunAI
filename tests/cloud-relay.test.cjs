@@ -33,7 +33,7 @@ test('打开后上报在线并领取、只做对话、交回结果', async () =>
   await relay.idle();
   const beat=calls.find(c=>c.p==='/api/cloud/relay/devices/heartbeat');
   assert.equal(beat.body.kind,'desktop');
-  assert.deepEqual(beat.body.clients.map(c=>c.kind),['claude']);
+  assert.deepEqual(beat.body.clients.map(c=>[c.kind,c.ready]),[['claude',true],['codex',false]],'未登录的客户端也报上去，网页版提示去登录');
   assert.match(beat.body.device,/^desktop-[0-9a-f]{12}$/);
   const claim=calls.find(c=>c.p.endsWith('/claim'));
   assert.deepEqual(claim.body.kinds,['claude']);
