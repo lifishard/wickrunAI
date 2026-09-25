@@ -3,6 +3,7 @@ import { useT } from '../lib/i18n';
 import { desktop } from '../lib/transport';
 import type { NativeAiState } from '../lib/native-ai';
 import './NativeAiPanel.css';
+import { Modal } from './ui';
 
 const EMPTY_STATE: NativeAiState = { connections: [], tasks: [] };
 /** Electron 会在主进程的报错前加一段「Error invoking remote method …: Error:」，界面上只留真正的原因 */
@@ -10,8 +11,19 @@ const readable = (cause: unknown) => (cause instanceof Error ? cause.message : S
 /** 给 Claude Desktop 对话或定时任务用：每次只领一个任务，做完交回或报告受阻后停下 */
 const CLAIM_PROMPT = '调用 wickrun_claim_task 领取一个灯芯AI 任务并完成。没有任务就回复空闲并停止。完成后用 wickrun_submit_result 交回结果；缺权限、缺信息或能力不够时用 wickrun_report_blocked 说明原因。每次只处理一个任务。';
 
+/** 选用 Claude Desktop 前的说明：模型和思考强度只能在 Claude Desktop 里选，这里的设置对它不生效 */
+const MODEL_TIP_KEY = 'wickrun:claude-desktop-model-tip:v1';
+const tipDismissed = () => { try { return localStorage.getItem(MODEL_TIP_KEY) === '1'; } catch { return false; } };
+
 export default function NativeAiPanel({ selected = false, onSelect }: { selected?: boolean; onSelect?: () => void }) {
   const t = useT();
+  const [modelTip, setModelTip] = React.useState(false);
+  const [hideTip, setHideTip] = React.useState(false);
+  const choose = () => { if (!onSelect) return; if (tipDismissed()) onSelect(); else setModelTip(true); };
+  const confirmTip = () => {
+    if (hideTip) { try { localStorage.setItem(MODEL_TIP_KEY, '1'); } catch { /* 下次再提示 */ } }
+    setModelTip(false); onSelect?.();
+  };
   const [state, setState] = React.useState<NativeAiState>(EMPTY_STATE);
   const [loaded, setLoaded] = React.useState(false);
   const [busy, setBusy] = React.useState<'configure' | 'open' | 'check' | 'extension' | null>(null);
@@ -128,12 +140,13 @@ export default function NativeAiPanel({ selected = false, onSelect }: { selected
       </div>
 
       {connection?.connected && connection.client ? <p className="connection-detail">{t('当前客户端：')}{connection.client}</p> : null}
+      <p className="connection-detail">{t('模型和思考强度只能在 Claude Desktop 里选择和调整，灯芯AI 这里的模型设置对它不生效。')}</p>
       {status === 'waiting' ? <p className="connection-detail">{t('首次配置后请完全退出并重新打开 Claude Desktop。')}</p> : null}
       {connection?.configured ? <p className="connection-detail">{t('从对话发送的任务会排队。Claude 连接在线时，在 Claude 里说「领取灯芯AI 任务」即可领取；也可以把下面的指令设为 Claude Desktop 的定时任务，自动领取。')}</p> : null}
 
       <div className="client-actions">
         {loaded && connection?.configured && onSelect ? (
-          <button className="btn sm" disabled={selected} onClick={onSelect}>{t(selected ? '正在对话中使用' : '在对话中使用')}</button>
+          <button className="btn sm" disabled={selected} onClick={choose}>{t(selected ? '正在对话中使用' : '在对话中使用')}</button>
         ) : null}
         {loaded && !connection?.connected ? (
           <button className={`btn sm${connection?.configured ? ' ghost' : ''}`} disabled={busy !== null} onClick={() => void installExtension()}>
@@ -173,6 +186,20 @@ export default function NativeAiPanel({ selected = false, onSelect }: { selected
       </div> : null}
       {message ? <p className="connection-message" role="status" aria-live="polite">{message}</p> : null}
       {error ? <p className="connection-error" role="alert">{error}</p> : null}
+      {modelTip ? <Modal title={t('在 Claude Desktop 里选模型')} onClose={() => setModelTip(false)} footer={<>
+        <button className="btn" onClick={() => setModelTip(false)}>{t('取消')}</button>
+        <button className="btn primary" autoFocus onClick={confirmTip}>{t('知道了，开始使用')}</button>
+      </>}>
+        <div className="modal-body native-ai-tip">
+          <p>{t('交给 Claude Desktop 的任务，由 Claude Desktop 用它当前选中的模型处理。')}</p>
+          <ul>
+            <li>{t('模型和思考强度只能在 Claude Desktop 的输入框里选择和调整，灯芯AI 的模型、思考强度和路由设置对它不生效。')}</li>
+            <li>{t('想在灯芯AI 里直接控制 Claude 的模型和思考强度，请改用「Claude Code」连接：它可以选大脑路由、本机订阅和思考强度。')}</li>
+            <li>{t('账号、额度和工具授权也都在 Claude Desktop 里管理。')}</li>
+          </ul>
+          <label className="row"><input type="checkbox" checked={hideTip} onChange={e => setHideTip(e.target.checked)} />{t('以后不再提示')}</label>
+        </div>
+      </Modal> : null}
     </div>
   );
 }

@@ -84,6 +84,34 @@ function validateWorkPermission(event, root, clientKind, scratchDir) {
   return result;
 }
 
+/** 审核模式下拒绝进入工作模式时给用户的说明：为什么不行、怎样才能继续 */
+const REVIEW_REASONS = {
+  claude: 'Claude Code 会直接写文件和运行命令，改动不会先交给 wickrunAI 审核',
+  codex: 'Codex 在沙箱里可以直接改工作目录里的文件、运行命令，改动不会先交给 wickrunAI 审核',
+  kimi: 'Kimi 申请修改时只给出文件路径、不带修改内容，无法在批准前展示差异',
+};
+function reviewRefusal(kind) {
+  return `已开启「逐项修改前确认」：${REVIEW_REASONS[kind] || '这个客户端的改动无法在写入前审核'}，本轮没有进入工作模式。`
+    + '可以改用对话模式；或换成 API 模型（用 wickrunAI 的文件工具，逐项审核差异）；或换成 Grok（每处修改先展示差异、批准后才写入，审核模式下不运行命令）；'
+    + '或在设置 → 工具里关闭「逐项修改前确认」，改动仍会记录在代码改动面板，可逐项回退。';
+}
+let codeAuditCache=null;
+const codeAuditModule=()=>codeAuditCache||(codeAuditCache=require('./code-changes.cjs'));
+/** 审核模式的事后核对：实际写入是否与批准的差异一致，有没有没经过审核的改动 */
+function reviewMismatch(reviewed, changes, audit) {
+  const warnings=[];
+  for(const {file,afterHash} of reviewed.values())if(audit.currentHash(file)!==afterHash)warnings.push(`实际写入与审核的内容不一致：${file}`);
+  for(const change of changes)if(!reviewed.has(fileKey(change.path)))warnings.push(`有未经审核的改动：${change.path}`);
+  return warnings;
+}
+/** 同一个文件的不同写法（相对段、符号链接、Windows 大小写）归成同一个键 */
+function fileKey(p) {
+  let resolved=path.resolve(p);
+  try { resolved=fs.realpathSync.native(resolved); }
+  catch { try { resolved=path.join(fs.realpathSync.native(path.dirname(resolved)),path.basename(resolved)); } catch { /* 目录也不存在，保留原样 */ } }
+  return process.platform==='win32'?resolved.toLowerCase():resolved;
+}
+
 function createConversationClients({ userData, getSettings, store, openExternal, deps = {} }) {
   const scratch = path.join(userData, 'conversation-clients'); fs.mkdirSync(scratch, { recursive:true });
   const active = new Map(), logins = new Map(), approvals=new Map();
@@ -189,7 +217,11 @@ function createConversationClients({ userData, getSettings, store, openExternal,
     const images=normalizeImages(args.images).map(image=>image.dataUrl);
     if(active.has(args.runId))throw Error('当前会话正在执行');
     const settings=getSettings(), work=record.config.toolsEnabled===true;
-    if(work && settings.tools?.reviewCodeChanges === true)throw Error('审核后生效已开启：本机客户端无法保证逐项预审，请切换 API 连接使用文件工具，或由用户关闭审核模式。');
+    // 逐项修改前确认：只有 Grok 能做到——它每处改动都带完整内容来申请，批准前能算出差异给用户看。
+    // 其他客户端自己直接写文件，拦不下来，只能拒绝进入工作模式（界面会先弹说明）
+    const review=work && settings.tools?.reviewCodeChanges === true;
+    if(review && selection.kind!=='grok')throw Error(reviewRefusal(selection.kind));
+    const reviewed=new Map(), reviewNotes=[];
     let cwd=scratch;
     if(work && args.cwd){
       const requested=fs.realpathSync(args.cwd);
@@ -209,9 +241,25 @@ function createConversationClients({ userData, getSettings, store, openExternal,
     let acpWorkCapabilityFailure=null;
     const onApproval=event=>{
       if(!work || controller.signal.aborted)return Promise.resolve('decline');
-      let scopedPaths;
+      let scopedPaths, preview;
       if(acpKind(selection.kind)){
         const scope=validateWorkPermission(event,cwd,selection.kind,scratchDir);
+        const reject=message=>{
+          if(review)reviewNotes.push(message);
+          try { store.saveJob(args.runId,'rejected-'+randomUUID(),{at:Date.now(),requestId:args.requestId,event,status:'rejected',reason:message}); }
+          catch { controller.abort(); }
+          return Promise.resolve('decline');
+        };
+        if(review && scope.ok){
+          // 审核模式和 API 文件工具一致：命令可能改到没审核过的文件，不运行；改文件必须先给出完整差异
+          if(event?.toolCall?.kind==='execute')return reject('逐项修改前确认已开启：命令可能产生未经审核的改动，本次不运行。');
+          if(event?.toolCall?.kind==='edit'){
+            if(event.toolCall.inputPreviewTruncated || !event.toolCall.rawInput)return reject('逐项修改前确认已开启：这次修改的内容不完整，无法给出差异，未执行。');
+            try { preview=codeAuditModule().previewNative(event.toolCall.rawInput); }
+            catch(error){ return reject(`逐项修改前确认已开启：无法预览这次修改（${error.message}），未执行。`); }
+            event={...event,codeChanges:[preview.change]};
+          }
+        }
         if(!scope.ok){
           acpWorkCapabilityFailure=scope.message;
           try { store.saveJob(args.runId,'rejected-'+randomUUID(),{at:Date.now(),requestId:args.requestId,event,status:'rejected',reason:scope.message}); }
@@ -229,6 +277,7 @@ function createConversationClients({ userData, getSettings, store, openExternal,
           // have become a junction/symlink while the approval card was open.
           const scopeStillValid=!acpKind(selection.kind)||validateWorkPermission(event,cwd,selection.kind,scratchDir).ok;
           const permitted=approved===true&&scopeStillValid&&!controller.signal.aborted&&active.get(args.runId)===job;
+          if(permitted&&preview)reviewed.set(fileKey(preview.path),{file:preview.path,afterHash:preview.afterHash});
           try{store.saveJob(args.runId,'approval-'+id,{at:Date.now(),requestId:args.requestId,event,...(scopedPaths?{scopedPaths}:{}),approved:permitted});resolve(permitted?'accept':'decline');}catch{controller.abort();resolve('decline');}};
         const stop=()=>finish(false),timer=selection.kind==='grok'?null:setTimeout(stop,180000);
         approvals.set(id,{requestId:args.requestId,finish});controller.signal.addEventListener('abort',stop,{once:true});
@@ -284,6 +333,7 @@ function createConversationClients({ userData, getSettings, store, openExternal,
         }
       }
       if(before)Object.assign(result,codeAudit.compare(before,codeAudit.snapshot([cwd])));
+      if(review)result.codeAuditWarnings=[...new Set([...(result.codeAuditWarnings||[]),...reviewNotes,...reviewMismatch(reviewed,result.codeChanges||[],codeAudit)])];
       store.saveJob(args.runId,jobId,{status:result.status,result,at:Date.now(),kind:selection.kind,cwd,...(scratchDir?{scratchDir}:{})});return result;
     }catch(error){
       const saved=store.job(args.runId,jobId);

@@ -20,10 +20,16 @@ export default function ToolConfirm(props: {
   const nativeCommand = props.step.name === 'native_client_operation' && args.requiresExplicitApproval === true
     ? args as { toolCall: { rawInput: { command: string; description?: string; is_background?: boolean; timeout?: number | null } }; execution: { cwd: string } }
     : null;
+  // 逐项修改前确认拦下了本机客户端的工作模式：只是说明，只有一个「知道了」
+  const reviewBlocked = props.step.name === 'native_review_blocked' ? String(args.reason || '') : null;
+  const nativeEdit = props.step.name === 'native_client_operation' && Boolean(props.step.codeChanges?.length);
 
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Enter' && !props.step.codeChanges?.length) {
+      if (reviewBlocked !== null && (e.key === 'Enter' || e.key === 'ArrowLeft')) {
+        e.preventDefault();
+        props.onResolve(false);
+      } else if (e.key === 'Enter' && !props.step.codeChanges?.length) {
         e.preventDefault();
         props.onResolve(true);
       } else if (e.key === 'ArrowLeft' && !props.step.codeChanges?.length) {
@@ -34,14 +40,15 @@ export default function ToolConfirm(props: {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [props]);
+  }, [props, reviewBlocked]);
 
   return (
     <Modal
-      title={t(props.step.codeChanges?.length ? '审核代码改动' : nativeCommand ? '确认本机命令' : '这一步要动真格的')}
+      title={t(reviewBlocked !== null ? '这一轮不能进入工作模式' : props.step.codeChanges?.length ? '审核代码改动' : nativeCommand ? '确认本机命令' : '这一步要动真格的')}
       onClose={() => props.onResolve(false)}
-      footer={
-        <>
+      footer={reviewBlocked !== null
+        ? <button className="btn primary" autoFocus onClick={() => props.onResolve(false)}>{t('知道了')}</button>
+        : <>
           <button className="btn" autoFocus={Boolean(props.step.codeChanges?.length)} onClick={() => props.onResolve(false)}>
             {t('拒绝')} {!props.step.codeChanges?.length ? <kbd>←</kbd> : null}
           </button>
@@ -53,8 +60,19 @@ export default function ToolConfirm(props: {
     >
       <div className="modal-body">
         <div className="confirm-tool">
-          {props.step.codeChanges?.length ? <>
-            <p>以下改动尚未写入文件。批准后生效；拒绝或关闭窗口保留原文件。</p>
+          {reviewBlocked !== null ? <>
+            <p>{t('已开启「逐项修改前确认」：每处文件改动都要先给你看差异、批准后才写入。')}</p>
+            <p>{t(reviewBlocked)}{t('，这一轮不能进入工作模式，已暂停，已有记录保留。')}</p>
+            <div className="field-label">{t('可以这样继续')}</div>
+            <ul className="review-blocked-options">
+              <li>{t('改用对话模式：只聊天，不改文件。')}</li>
+              <li>{t('换成 API 模型：用 wickrunAI 自己的文件工具，每处改动逐项审核。')}</li>
+              <li>{t('换成 Grok：每处修改先弹出差异，批准后才写入；审核模式下不运行命令。')}</li>
+              <li>{t('在设置 → 工具里关闭「逐项修改前确认」：改动仍会记录在代码改动面板，可逐项回退。')}</li>
+            </ul>
+          </> : props.step.codeChanges?.length ? <>
+            <p>{t('以下改动尚未写入文件。批准后生效；拒绝或关闭窗口保留原文件。')}</p>
+            {nativeEdit ? <p className="hint">{t('批准后由 Grok 写入；本轮结束时 wickrunAI 会核对实际写入是否与这里一致，不一致会在代码改动里提示。')}</p> : null}
             {props.step.codeChanges.map(change=><ChangeDiff key={change.id} change={change} expanded/>)}
           </> : nativeCommand ? <>
             <div>{t('Grok 请求在本机运行以下命令。')}</div>

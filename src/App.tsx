@@ -1282,7 +1282,7 @@ export default function App() {
           const args = (step.args ?? {}) as Record<string, unknown>;
           const alwaysAsk =
             Boolean(step.codeChanges?.some(c=>c.status==='pending')) || step.name === 'request_access' || (step.name === 'run_command' && Boolean(args.elevated)) ||
-            (step.name === 'native_client_operation' && args.requiresExplicitApproval === true);
+            (step.name === 'native_client_operation' && args.requiresExplicitApproval === true) || step.name === 'native_review_blocked';
           if (alwaysAsk) {
             return requestApproval(step);
           }

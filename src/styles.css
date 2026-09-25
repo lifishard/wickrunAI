@@ -1732,6 +1732,18 @@ input[type='range'] {
   word-break: break-word;
 }
 
+.confirm-tool p {
+  margin: 0;
+}
+
+.review-blocked-options {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+  line-height: 1.55;
+}
+
 .tool-grid {
   display: grid;
   grid-template-columns: 1fr;

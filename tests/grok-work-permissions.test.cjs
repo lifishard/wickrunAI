@@ -203,11 +203,12 @@ test('Grok target is rechecked when approving and cannot escape through a new ju
   assert.equal(f.store.job('run','approval-'+f.notifications[0].id).approved,false);
 });
 
+// 标记用独特的字符串：macOS 的临时目录就在 /private/var/… 下，用 private 做标记会误报
 test('Grok preview is bounded without truncating the authorized path or persisting unrelated metadata',async t=>{
-  const f=fixture(t,root=>{const call=edit(root,'Write');call.rawInput.content='a'.repeat(25000);call.secret='private';call._meta.private='private';return call;});
+  const f=fixture(t,root=>{const call=edit(root,'Write');call.rawInput.content='a'.repeat(25000);call.secret='wickrun-unrelated-marker';call._meta.unrelated='wickrun-unrelated-marker';return call;});
   assert.equal((await f.run()).status,'completed');const call=f.notifications[0].event.toolCall;
   assert.equal(call.inputPreviewTruncated,true);assert.ok(call.rawInput.content.length<=20001);assert.ok(call.rawInput.content.length<25000);
-  assert.equal(call.rawInput.file_path,path.join(f.root,'README.md'));assert.doesNotMatch(JSON.stringify(call),/private/);
+  assert.equal(call.rawInput.file_path,path.join(f.root,'README.md'));assert.doesNotMatch(JSON.stringify(call),/wickrun-unrelated-marker|"secret"|"_meta"/);
 });
 
 test('Grok rawInput compatibility does not broaden Kimi permissions or turn rejection into success',async t=>{

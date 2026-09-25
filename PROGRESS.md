@@ -1,5 +1,13 @@
 # wickrunAI 工程进度
 
+## 2026-09-25 2.19.6：逐项修改前确认下的本机客户端
+
+- **Grok 可以进工作模式**：开着「逐项修改前确认」时，Grok 的每处改文件申请（Write / SearchReplace 带完整内容）先按它的输入算出差异，用代码审核弹窗展示，批准后才让 Grok 写入；本轮结束核对实际写入与批准的差异是否一致、有没有没审核过的改动，不一致写进代码改动提示。命令和 API 文件工具的审核模式一致：不运行。内容不完整、原文找不到或不唯一的修改直接拒绝，不盲批。
+- **其他客户端先弹窗说明**：Claude Code、Codex、Kimi、Claude Desktop 在审核模式下仍不能进工作模式（改动不会先经过 wickrunAI），改为先弹窗讲清原因和可行的办法（对话模式 / API 模型 / Grok / 关闭审核后事后回退），再暂停。设置页在开启时补一行说明。
+- **Claude Desktop 的模型只能在它里面选**：本机 AI → Claude Desktop 面板常驻一行说明；第一次点「在对话中使用」时弹窗讲清模型和思考强度只在 Claude Desktop 里调、灯芯AI 的设置对它不生效，要在灯芯AI 里控制就改用 Claude Code（可勾「以后不再提示」）。README 中英文补了同样的说明。
+- **修 macOS 发布一直红**：2.18.11 起 Release 的 macOS 任务每次都挂在同一条测试（grok-work-permissions「preview is bounded」）：它用 `private` 做「不该被保存的字段」标记，而 macOS 临时目录本身就在 `/private/var/…`，路径一出现就误报。标记改成独特字符串；在带 `private` 的临时目录下跑全量已通过。
+- 验证：新增 `tests/grok-review-mode.test.cjs`（真 ACP 客户端 + 假 Grok 进程）、`connected-agent` 审核模式用例。取消了「网页任务使用桌面工作模式」的计划（安全风险不可控）。
+
 ## 2026-09-25 2.19.5：网页版 Grok 改走本机 Grok CLI
 
 - 「允许网页版使用本机 AI」除了就绪的客户端，也把未登录 / 等待登录的报给网页版（ready:false，不领任务），网页版提示去桌面版登录 Grok，而不是引导填 xAI API Key。

@@ -86,3 +86,20 @@
 .connection-error {
   color: var(--danger-fg, #b91c1c);
 }
+
+.native-ai-tip {
+  display: grid;
+  gap: 10px;
+  line-height: 1.6;
+}
+
+.native-ai-tip p,
+.native-ai-tip ul {
+  margin: 0;
+}
+
+.native-ai-tip ul {
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+}

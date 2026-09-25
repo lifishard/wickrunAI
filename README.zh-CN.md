@@ -8,7 +8,7 @@
 
 开源的、闭源的，付费的、免费的，都能调度。Key 自己带，只留在你本机。
 
-[![Version](https://img.shields.io/badge/version-2.19.5-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
+[![Version](https://img.shields.io/badge/version-2.19.6-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-lightgrey)](#安装)
 [![CI](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml/badge.svg)](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml)
@@ -187,6 +187,12 @@ Chat 与 Work 都支持 AI 提问卡片，可选择选项或填写自己的回�
 4. 需要联网搜索时，配置一个搜索服务。需要操作网站时，启动工具中的 Chrome 并登录网站。
 
 模型选择按会话保存。思考强度、工具权限和任务预算等选项见 [配置说明](docs/CONFIGURATION.md)。
+
+### 用 Claude Desktop 时在哪里选模型
+
+对话交给 **Claude Desktop**（本机 AI → Claude Desktop）后，由 Claude Desktop 用它自己窗口里当前选中的模型回答。模型和思考强度只能在 Claude Desktop 里选择和调整，灯芯AI 的模型、思考强度和路由设置对它不生效；账号、额度和工具授权也在 Claude Desktop 里管理。第一次选用 Claude Desktop 时，应用会弹窗说明。
+
+想在灯芯AI 里直接控制 Claude 的模型和思考强度，请改用 **Claude Code** 连接：它可以用灯芯AI 里的任一路由、本机的 Claude 订阅或它自己的配置作为「大脑」，思考强度按对话设置（[详细说明](docs/LOCAL_CONNECTIONS.md#claude-code-and-codex-brains-2190)）。
 
 ### 找免费额度
 

@@ -10,6 +10,7 @@ import type {ClientTurnResult} from './connections';
 import {formatUserAnswers,parseUserQuestions,validateUserAnswers} from './user-questions';
 import {taskSeed,harnessInstructions,planOnly,completionBlocker,nativeCompletionIssue} from './harness';
 import {runDesktopConversation} from './desktop-conversation';
+import {reviewGuard} from './review-guard';
 import {clientContent} from './client-content';
 
 /** Native adapters receive a portable transcript; vendor session IDs are evidence, not the sole memory. */
@@ -48,6 +49,8 @@ export function runConnectedAgent(args:RunAgentArgs):AgentHandle {
   void (async()=>{
     try{
       if(!bridge)throw Error('本机连接需要使用桌面版。');
+      const reviewBlocked=await reviewGuard(args,args.config.client!.kind);
+      if(reviewBlocked)throw Error(reviewBlocked);
       let recovered:ClientTurnResult|null=null;
       if(state.uncertainCallId){
         if(state.uncertainCallId.startsWith('native-')){
@@ -131,7 +134,9 @@ export function runConnectedAgent(args:RunAgentArgs):AgentHandle {
             events.onNotice('正在接收官方客户端回复');saveProgress();
         }
         if(event.type==='approval' && event.id){
-          const id=event.id,step={id,callId:id,name:'native_client_operation',args:event.event || {},status:'running' as const,summary:'官方客户端请求执行操作',startedAt:Date.now()};
+          // 逐项修改前确认：Grok 的改文件申请带着预览差异，确认弹窗按代码审核展示
+          const preview=Array.isArray(event.event?.codeChanges)?event.event.codeChanges:undefined;
+          const id=event.id,step:ToolStep={id,callId:id,name:'native_client_operation',args:event.event || {},status:'running' as const,summary:preview?'Grok 请求修改文件':'官方客户端请求执行操作',startedAt:Date.now(),...(preview?{codeChanges:preview}:{})};
           state.status='waiting';state.waitKind='approval';events.onNotice('官方客户端正在等待操作确认');
           void save().then(()=>args.confirm(step)).then(approved=>bridge.conversationClientApprove(nativeRequestId,id,approved && !cancelled)).catch(()=>bridge.conversationClientApprove(nativeRequestId,id,false).catch(()=>{})).finally(()=>{if(!cancelled){state.status='running';state.waitKind=undefined;events.onNotice('正在等待官方客户端返回结果…');}});
         }

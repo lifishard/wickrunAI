@@ -5,7 +5,7 @@ const realBuildWire=loader()(file('src/lib/agent.ts')).buildWire;
 function fixture(result,previous=null){
   const calls=[],states=[],visible=[];let done,apiCalls=0,listener,display='';
   const finished=new Promise(resolve=>done=resolve);
-  const bridge={onClientEvent:cb=>{listener=cb;return()=>{listener=null;};},toolAbort:async()=>{},conversationClientRecover:async()=>previous,conversationClientRun:async args=>{calls.push(args);return typeof result==='function'?result(args,event=>listener?.({...event,requestId:args.requestId})):result;}};
+  const bridge={onClientEvent:cb=>{listener=cb;return()=>{listener=null;};},toolAbort:async()=>{},conversationClientApprove:async()=>{},conversationClientRecover:async()=>previous,conversationClientRun:async args=>{calls.push(args);return typeof result==='function'?result(args,event=>listener?.({...event,requestId:args.requestId})):result;}};
   const local=loader({[file('src/lib/transport.ts')]:{desktop:()=>bridge},[file('src/lib/agent.ts')]:{buildWire:realBuildWire,runAgent:args=>{apiCalls++;states.push(args.resume);queueMicrotask(()=>done('api'));return {abort(){}};}}});
   const args={requestId:'native-request',config:{client:{kind:'codex',model:'test'},model:'test',toolsEnabled:false,systemPrompt:'',enabledTools:[]},history:[{id:'user-1',role:'user',content:'Keep the original goal',createdAt:1}],toolCtx:()=>({workspaceRoots:[]}),extraSystem:'',confirm:async()=>false,
     events:{onContentDelta(text){display+=text;visible.push(display);},onContentReplace(text){display=text;visible.push(display);},onNotice(){},onRunState:s=>{if(s)states.push(structuredClone(s));},onPaused:()=>done('paused'),onDone:()=>done('completed')}};
@@ -121,4 +121,22 @@ test('recovering a native operation processes a pending new input after the reco
   assert.equal(await f.finished,'completed');assert.equal(f.calls.length,1);
   assert.match(f.calls[0].prompt,/Previous operation was completed once/);assert.match(f.calls[0].prompt,/Now change the target/);
   const working=f.states.at(-1).working;assert.ok(working.findIndex(m=>m.content==='Previous operation was completed once')<working.findIndex(m=>m.id==='new-input'));
+});
+
+test('review mode explains and pauses clients that cannot show a diff first, but lets Grok run with previewed edits',async()=>{
+  const shown=[];let paused='';
+  const f=fixture({status:'completed',text:'done'});
+  f.run({config:{...f.args.config,toolsEnabled:true},toolCtx:()=>({workspaceRoots:['/work'],reviewCodeChanges:true}),confirm:async step=>{shown.push(step);return true;},
+    events:{...f.args.events,onPaused:reason=>{paused=reason;f.args.events.onPaused(reason);}}});
+  assert.equal(await f.finished,'paused');
+  assert.equal(f.calls.length,0,'Codex 没有被派发');
+  assert.equal(shown[0].name,'native_review_blocked');assert.match(shown[0].args.reason,/Codex/);
+  assert.match(paused,/逐项修改前确认/);
+
+  const approvals=[];
+  const g=fixture(async(_args,emit)=>{emit({type:'approval',id:'edit-1',event:{toolCall:{kind:'edit'},codeChanges:[{id:'c1',path:'/work/a.txt',kind:'modified',status:'pending',additions:1,deletions:1,lines:[]}]}});await new Promise(r=>setTimeout(r,20));return {status:'completed',text:'done'};});
+  g.run({config:{...g.args.config,client:{kind:'grok',model:'default'},toolsEnabled:true},toolCtx:()=>({workspaceRoots:['/work'],reviewCodeChanges:true}),confirm:async step=>{approvals.push(step);return true;}});
+  assert.equal(await g.finished,'completed');
+  assert.equal(g.calls.length,1);
+  assert.equal(approvals[0].name,'native_client_operation');assert.equal(approvals[0].codeChanges[0].status,'pending');
 });

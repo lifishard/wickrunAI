@@ -8,7 +8,7 @@
 
 Open or closed, paid or free. Bring your own keys; they never leave your machine.
 
-[![Version](https://img.shields.io/badge/version-2.19.5-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
+[![Version](https://img.shields.io/badge/version-2.19.6-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-lightgrey)](#install)
 [![CI](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml/badge.svg)](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml)
@@ -189,6 +189,12 @@ The packages are not code-signed, so Windows and macOS may warn about the publis
 4. To search the web, configure a search service. To operate websites, launch Chrome from the tools panel and sign in.
 
 The model choice is saved per conversation. Reasoning effort, tool permissions, task budgets, and the rest are covered in [Configuration](docs/CONFIGURATION.md).
+
+### Model choice with Claude Desktop
+
+When a conversation is handed to **Claude Desktop** (本机 AI → Claude Desktop), Claude Desktop answers with whatever model is selected in its own window. The model and reasoning effort can only be chosen and changed inside Claude Desktop; wickrunAI's model, effort and route settings do not apply to it. Your account, usage limits and tool permissions are managed there too. wickrunAI shows this in a dialog the first time you select Claude Desktop.
+
+To control Claude's model and effort from wickrunAI, use the **Claude Code** connection instead: it can think with any wickrunAI route, your local Claude subscription, or its own configuration, and the effort is set per conversation ([details](docs/LOCAL_CONNECTIONS.md#claude-code-and-codex-brains-2190)).
 
 ### Finding free quota
 

@@ -7,6 +7,7 @@ import {buildWire} from './agent';
 import type {RunState} from '../types';
 import {desktop} from './transport';
 import {taskSeed,harnessInstructions,planOnly,completionBlocker} from './harness';
+import { reviewGuard } from './review-guard';
 
 /** Claude Desktop owns its subscription and interaction. MCP returns the result to this turn. */
 export function runDesktopConversation(args:RunAgentArgs):AgentHandle {
@@ -25,7 +26,8 @@ export function runDesktopConversation(args:RunAgentArgs):AgentHandle {
   void(async()=>{
     try{
       if(state.uncertainCallId?.startsWith('desktop-'))throw Error('新输入和原任务现场已保存。Claude Desktop 中的原操作可能仍在运行，请先在官方应用核实结果，再新窗口交接；未自动重复派发。');
-      if(args.config.toolsEnabled && args.toolCtx?.().reviewCodeChanges)throw Error('审核后生效已开启：Claude Desktop 无法保证文件修改预审，请切换 API 文件工具或由用户关闭审核模式。');
+      const reviewBlocked=await reviewGuard(args,'claude-desktop');
+      if(reviewBlocked)throw Error(reviewBlocked);
       if(!bridge?.nativeAiCreate)throw Error('Claude Desktop 连接需要桌面版。');
       if(state.working.some(m=>m.attachments?.some(a=>a.kind==='image')))throw Error('Claude Desktop 交接暂不自动传图片。图片已保留，可在官方应用添加，或切换 Claude Code、Codex 等支持图片的连接。');
       if(!state.nativeDesktop?.taskId){

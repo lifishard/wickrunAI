@@ -124,4 +124,29 @@ function compare(before,after){
   }
   return {codeChanges,codeAuditWarnings:[...new Set([...before.warnings,...after.warnings])]};
 }
-module.exports={difference,prepare,apply,snapshot,compare};
+/**
+ * 本机客户端（Grok）请求改文件时的预览：按它给出的完整输入算出改后内容，给用户看差异。
+ * 写入仍由客户端自己做；预览只负责「批准前看得到改什么」，事后再核对实际结果。
+ */
+function previewNative(rawInput){
+  const p=rawInput?.file_path;
+  if(typeof p!=='string'||!p)throw Error('修改请求没有目标文件');
+  const before=read(p);
+  let after;
+  if(rawInput.variant==='Write'){if(typeof rawInput.content!=='string')throw Error('修改请求缺少写入内容');after=rawInput.content;}
+  else if(rawInput.variant==='SearchReplace'){
+    const old=rawInput.old_string,next=rawInput.new_string;
+    if(typeof old!=='string'||!old||typeof next!=='string')throw Error('修改请求缺少替换内容');
+    if(before===null)throw Error('要替换的文件不存在');
+    const count=before.split(old).length-1;
+    if(!count)throw Error('要替换的原文在文件里找不到');
+    if(count>1&&rawInput.replace_all!==true)throw Error('要替换的原文在文件里出现了不止一次，无法确定改哪一处');
+    after=rawInput.replace_all===true?before.split(old).join(next):before.replace(old,()=>next);
+  }else throw Error('无法识别的修改方式');
+  if(Buffer.byteLength(after)>MAX_BYTES)throw Error('修改结果超过 512 KB，无法逐行审核');
+  if(lines(before).length+lines(after).length>20000)throw Error('文件行数超过逐行审核上限');
+  return {path:p,afterHash:hash(after),change:change(p,before,after,'pending')};
+}
+/** 当前文件内容的哈希；不存在为 null，读不了（二进制、过大）为 undefined */
+function currentHash(p){try{const text=read(p);return text===null?null:hash(text);}catch{return undefined;}}
+module.exports={difference,prepare,apply,snapshot,compare,previewNative,currentHash};
