@@ -148,13 +148,16 @@ function createConversationClients({ userData, getSettings, store, openExternal,
         const connection=(deps.readClaudeConnection || readClaudeConnection)();
         const connectionInfo=describeConnection(connection);
         const gateway=await deps.claudeGatewayCheck?.();
-        if(gateway && gateway.state!=='ready') return rememberedResult(kind,binary,{kind,binary,status:'error',connection:connectionInfo,models:[],message:`Claude Code 配置的本机服务需要检查。${gateway.message}`});
+        // Claude Code 自己配置的本机网关不通，只影响「沿用客户端配置」这个大脑；
+        // 选本机订阅或 wickrunAI 路由时由 wickrunAI 注入连接，仍然可以用，不整体判成异常
+        const configIssue=gateway && gateway.state!=='ready' ? `Claude Code 自己配置的本机网关 ${connection.baseUrl} 需要检查：${String(gateway.message||'').replace(/[。.]$/,'')}` : null;
         const loggedIn = await new Promise(resolve => {
           const child=(deps.spawn || spawn)(binary,['--setting-sources','','--settings','{"disableAllHooks":true}','auth','status'],{cwd:scratch,env:{...subscriptionEnvironment(),...connection.env},shell:false,windowsHide:true,stdio:['ignore','ignore','ignore']});
           const timer=setTimeout(()=>{child.kill();resolve(false);},15000);
           child.on('error',()=>{clearTimeout(timer);resolve(false);});child.on('close',code=>{clearTimeout(timer);resolve(code===0);});
         });
         const source=connectionInfo.type==='custom_api'?`自定义 API：${connection.baseUrl}`:connectionInfo.type==='api_key'?'API 凭据':'Claude 账号登录';
+        if(configIssue)return rememberedResult(kind,binary,{kind,binary,status:'ready',configIssue,connection:connectionInfo,message:`Claude Code CLI 可用。${configIssue}。这只影响「沿用 Claude Code 自己的配置」这个大脑；选本机订阅或 wickrunAI 路由不受影响。`,models:[{id:'default',label:'Claude Code 配置的默认模型',efforts:[]}]});
         return rememberedResult(kind,binary,{kind,binary,status:loggedIn?'ready':'login_required',connection:connectionInfo,message:loggedIn?`Claude Code CLI 已就绪。连接来源：${source}。${gateway?'已配置的本机网关已响应。':''}尚未发送模型请求；可用模型以你的服务配置为准。`:'Claude Code 授权未通过检查，请检查现有账号或 API 配置后重新检测。',models:loggedIn?[{id:'default',label:'Claude Code 配置的默认模型',efforts:[]},...['sonnet','opus','haiku'].map(id=>({id,label:`${id} · 配置别名${connection.env['ANTHROPIC_DEFAULT_'+id.toUpperCase()+'_MODEL']?' → '+connection.env['ANTHROPIC_DEFAULT_'+id.toUpperCase()+'_MODEL']:''}`,efforts:id==='haiku'?[]:['low','medium','high','xhigh','max']}))]:[]});
       }
       client=acp(binary, kind); const info=await client.inspect();

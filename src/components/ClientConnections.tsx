@@ -194,7 +194,9 @@ export default function ClientConnections({ selection, onSelect, settings, onSet
       {CLIENTS.map((kind) => {
         const status = statuses[kind];
         const selected = selection?.kind === kind;
-        const state = status?.status === 'ready' ? 'ready' : status?.status === 'error' || status?.status === 'missing' ? 'error' : 'idle';
+        // Claude Code 自己的网关不通时，只有「沿用客户端配置」这个大脑受影响
+        const configBroken = Boolean(status?.configIssue) && (!selected || (selection?.brain?.source ?? 'config') === 'config');
+        const state = configBroken ? 'error' : status?.status === 'ready' ? 'ready' : status?.status === 'error' || status?.status === 'missing' ? 'error' : 'idle';
         const model = status?.models.find((item) => item.id === selection?.model);
         const efforts = model?.efforts ?? (selection?.effort ? [selection.effort] : []);
         return (
@@ -203,13 +205,13 @@ export default function ClientConnections({ selection, onSelect, settings, onSet
               <strong>{CLIENT_LABELS[kind]}</strong>
               <span className={`connection-state ${state}`}>
                 <span aria-hidden="true" />
-                {t(status ? STATUS_LABEL[status.status] : '检测中')}
+                {t(configBroken ? '网关需检查' : status ? STATUS_LABEL[status.status] : '检测中')}
               </span>
             </div>
             <p>{status?.message || t(kind === 'codex' ? '可用 ChatGPT 订阅，或把 wickrunAI 里的任一路由当作 Codex 的大脑。' : kind === 'claude' ? '可用 Claude 订阅、现有配置，或把 wickrunAI 里的任一路由当作 Claude Code 的大脑。' : kind === 'grok' ? '使用官方 Grok 登录与本机 Grok Desktop 订阅模型。' : '通过 Kimi 官方 ACP 接口连接。')}</p>
 
             {selected && (kind === 'claude' || kind === 'codex') ? (
-              <BrainPicker kind={kind} selection={selection} settings={settings} onSelect={onSelect} clientModels={status?.models ?? []} clientEfforts={efforts} />
+              <BrainPicker kind={kind} selection={selection} settings={settings} onSelect={onSelect} clientModels={status?.models ?? []} clientEfforts={efforts} configIssue={status?.configIssue} />
             ) : selected ? (
               <div className="client-model-fields">
                 <label>
@@ -246,7 +248,7 @@ export default function ClientConnections({ selection, onSelect, settings, onSet
             </div>
 
             {kind === 'codex' ? <QuotaSummary inspection={inspections.codex} /> : <p className="quota-note">{t('额度：{client} 未提供可读取的剩余额度。', { client: CLIENT_LABELS[kind] })}</p>}
-            {kind === 'claude' && status?.status === 'error' ? <ClaudeRepair disabled={busy !== null} onResult={(result) => setStatuses((previous) => ({ ...previous, claude: result }))} /> : null}
+            {kind === 'claude' && (status?.status === 'error' || status?.configIssue) ? <ClaudeRepair disabled={busy !== null} onResult={(result) => setStatuses((previous) => ({ ...previous, claude: result }))} /> : null}
           </div>
         );
       })}

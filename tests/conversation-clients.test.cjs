@@ -295,3 +295,15 @@ test('subscription brain forces the official Claude login and a route brain need
   f.record.config.client={kind:'claude',model:'default',brain:{source:'route',profileId:'p1'}};f.store.save(f.record);
   await assert.rejects(f.host.run({runId:'run-1',requestId:'nomodel',prompt:'go'}),/具体模型/);
 });
+
+test('a dead gateway in Claude Code settings only affects the config brain, not wickrunAI routes or the subscription',async t=>{
+  const {EventEmitter}=require('node:events');
+  const f=fixture(t,{readClaudeConnection:()=>({env:{ANTHROPIC_BASE_URL:'http://localhost:20128/v1',ANTHROPIC_AUTH_TOKEN:'PRIVATE_KEY'},baseUrl:'http://localhost:20128/v1'}),validateClaudeBinary:()=>{},
+    claudeGatewayCheck:async()=>({state:'offline',message:'没有取得本机网关的有效响应。'}),
+    spawn:()=>{const p=new EventEmitter();p.kill=()=>{};queueMicrotask(()=>p.emit('close',0));return p;}});
+  const result=await f.host.check('claude');
+  assert.equal(result.status,'ready');
+  assert.match(result.configIssue,/localhost:20128/);
+  assert.match(result.message,/只影响「沿用 Claude Code 自己的配置」/);
+  assert.doesNotMatch(JSON.stringify(result),/PRIVATE_KEY/);
+});

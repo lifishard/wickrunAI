@@ -123,3 +123,17 @@
   gap: 8px;
   font-size: 12px;
 }
+
+/* 大脑选择里的提示（网关不通、没有模型列表） */
+.brain-fields .hint {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.brain-fields .brain-warning {
+  color: var(--warn-fg, var(--warn));
+}
+
+.brain-fields label > select + input {
+  margin-top: 6px;
+}

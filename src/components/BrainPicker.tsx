@@ -31,8 +31,9 @@ export function brainForRoute(settings: AppSettings, profile: KeyProfile, model:
 function profileModels(settings: AppSettings, id: string): string[] {
   return [...new Set([...(settings.cachedModels[id] ?? []), ...(settings.customModels[id] ?? [])].map((m) => m.id))];
 }
+const CUSTOM = '__custom__';
 
-export default function BrainPicker({ kind, selection, settings, onSelect, clientModels, clientEfforts }: {
+export default function BrainPicker({ kind, selection, settings, onSelect, clientModels, clientEfforts, configIssue }: {
   kind: BrainClient;
   selection: ClientSelection;
   settings: AppSettings;
@@ -40,12 +41,18 @@ export default function BrainPicker({ kind, selection, settings, onSelect, clien
   /** 客户端自己报告的模型（订阅 / 配置模式下用） */
   clientModels: { id: string; label: string; efforts: string[]; defaultEffort?: string }[];
   clientEfforts: string[];
+  /** Claude Code 自己配置的网关没有响应时的说明；只影响「沿用客户端配置」这个大脑 */
+  configIssue?: string;
 }) {
   const t = useT();
   const brain = selection.brain ?? { source: 'config' as const };
   const profile = brain.source === 'route' ? settings.keyProfiles.find((p) => p.id === brain.profileId) : undefined;
   const models = profile ? profileModels(settings, profile.id) : [];
-  const datalist = `brain-models-${kind}`;
+  const current = selection.model === 'default' ? '' : selection.model;
+  // 下拉列出这条路由的全部模型；列表里没有的模型走「自定义」输入框。
+  // 以前用 input + datalist，浏览器只显示和已填内容匹配的项，看起来就像只有一个模型
+  const [customOpen, setCustomOpen] = React.useState(false);
+  const custom = customOpen || (Boolean(current) && !models.includes(current)) || !models.length;
 
   const setSource = (value: string) => {
     if (value === 'config' || value === 'subscription') {
@@ -79,9 +86,16 @@ export default function BrainPicker({ kind, selection, settings, onSelect, clien
     {brain.source === 'route' ? <>
       <label>
         <span>{t('模型')}</span>
-        <input type="text" aria-label={t('{client} 大脑模型', { client: CLIENT_LABELS[kind] })} list={datalist} value={selection.model === 'default' ? '' : selection.model}
-          placeholder={t('选择或输入模型 ID')} onChange={(e) => setRoute(e.target.value.trim(), level)} />
-        <datalist id={datalist}>{models.map((m) => <option key={m} value={m} />)}</datalist>
+        {models.length ? <select aria-label={t('{client} 大脑模型', { client: CLIENT_LABELS[kind] })} value={custom ? CUSTOM : current} onChange={(e) => {
+          if (e.target.value === CUSTOM) { setCustomOpen(true); return; }
+          setCustomOpen(false); setRoute(e.target.value, level);
+        }}>
+          {!current && !custom ? <option value="">{t('选择模型')}</option> : null}
+          {models.map((m) => <option key={m} value={m}>{m}</option>)}
+          <option value={CUSTOM}>{t('自定义模型 ID…')}</option>
+        </select> : null}
+        {custom ? <input type="text" aria-label={t('{client} 自定义大脑模型', { client: CLIENT_LABELS[kind] })} value={current}
+          placeholder={t('输入模型 ID')} onChange={(e) => setRoute(e.target.value.trim(), level)} /> : null}
       </label>
       <label>
         <span>{t('思考强度')}</span>
@@ -90,7 +104,9 @@ export default function BrainPicker({ kind, selection, settings, onSelect, clien
         </select>
       </label>
       <p className="hint">{t('请求经 wickrunAI 本机代理转换后发往「{name}」；密钥留在 wickrunAI，思考强度按映射表下发。', { name: profile?.name ?? '' })}</p>
+      {!models.length ? <p className="hint">{t('这条路由还没有模型列表：去设置 → API 凭据刷新模型，或直接输入模型 ID。')}</p> : null}
     </> : <>
+      {brain.source === 'config' && configIssue ? <p className="hint brain-warning" role="status">{t('Claude Code 自己配置的本机网关没有响应，这个大脑现在用不了：可以改选本机订阅或 wickrunAI 路由，或点下面的「修复连接」。')}</p> : null}
       <label>
         <span>{t('模型')}</span>
         <select aria-label={t('{client} 模型', { client: CLIENT_LABELS[kind] })} value={selection.model} onChange={(event) => {
