@@ -47,6 +47,8 @@ Windows 上双击 **`打包桌面版.bat`** 是同一件事的无命令行版本
 
 ### 三个批处理入口
 
+这些 `.bat`（含 `开发模式.bat`）只放在维护者本机，已被 `.gitignore` 排除，不随仓库分发。克隆仓库后用对应的 npm 脚本：`npm run dist:win`、`npm run sync`、`npm run release`、`npm run dev:electron`。`npm run sync` 会自动把已被忽略但仍在跟踪的文件移出索引，本地文件保留。
+
 请依次运行，并等待前一个窗口完成：
 
 1. **打包桌面版.bat**：构建当前 Windows 安装包，并打开安装向导。

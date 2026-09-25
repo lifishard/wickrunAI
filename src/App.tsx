@@ -34,6 +34,7 @@ import { buildWire, type AgentHandle } from './lib/agent';
 import { runConnectedAgent } from './lib/connected-agent';
 import {
   clearHealth,
+  dispatchable,
   mergeProbe,
   probeModels,
   recordFailure,
@@ -42,6 +43,7 @@ import {
   type ProbeProgress,
 } from './lib/health';
 import { nextRoute, resolveFailover, type FailoverConfig, type FailoverScope, type RouteRef } from './lib/failover';
+import { effectiveRoutes, expandFailover, failoverFromGroup, type RouteGroup } from './lib/route-groups';
 import { TOOL_BY_NAME, availableTools } from './lib/tools/registry';
 import {
   loadConversations,
@@ -537,6 +539,30 @@ export default function App() {
   }
 
   const saveAnnotation = (note: MessageAnnotation) => changeAnnotation(note.quote.messageId, note.id, note);
+
+  /**
+   * 选用路由组。任何一层都是让接力名单引用这一组；本对话这一层还会切到组里
+   * 第一条可用的路由 —— 「选定这个组合」就是连当前路由一起定下来。
+   * 可用只看已知的健康记录和凭据是否还在，不看付费与否。
+   */
+  function applyRouteGroup(scope: FailoverScope, group: RouteGroup) {
+    const failover = failoverFromGroup(group);
+    if (scope === 'app') { setSettings(prev => prev ? { ...prev, failover } : prev); return; }
+    if (scope === 'project') {
+      if (activeProject) setProjects(all => all.map(p => p.id === activeProject.id ? { ...p, failover } : p));
+      return;
+    }
+    const known = group.routes.filter(r => settings?.keyProfiles.some(p => p.id === r.profileId));
+    const first = known.find(r => dispatchable(settings?.modelHealth?.[r.profileId]?.[r.model])) ?? known[0];
+    setConfig(first ? { failover, model: first.model, client: undefined } : { failover });
+    if (first) setProfileForConversation(first.profileId);
+    if (first) toast.show(t('已选用路由组「{name}」：当前路由 {model}，失灵时按组内顺序交接。', { name: group.name || t('未命名路由组'), model: first.model }));
+  }
+
+  function openRouteGroupSettings() {
+    setSettingsTab('routes');
+    setSettingsOpen(true);
+  }
 
   function setProfileForConversation(profileId: string) {
     if (active) updateConv(active.id, (c) => ({ ...c, keyProfileId: profileId }));
@@ -1376,9 +1402,10 @@ export default function App() {
             const current: RouteRef = { profileId: profile.id, model: cfg.model };
             const tried = failoverTriedRef.current.get(convId) ?? [];
             // 三层继承：本对话 > 项目 > 应用全局。哪一层先有设置就用哪一层。
-            const failover = resolveFailover(cfg.failover,
+            // 引用了路由组的名单按组的当前顺序展开；组被删了就用选用时的快照。
+            const failover = expandFailover(resolveFailover(cfg.failover,
               projects.find((p) => p.id === conv!.projectId)?.failover,
-              settingsRef.current?.failover).config;
+              settingsRef.current?.failover).config, settingsRef.current?.routeGroups);
             const decision = !interrupted && latestState && failover.enabled && !cfg.client
               ? nextRoute({ current, order: failover.routes ?? [], tried, health, info })
               : null;
@@ -1425,7 +1452,7 @@ export default function App() {
     if(!settings)return;
     let live=true;
     const wanted=[...new Set([settings.failover,...projects.map(p=>p.failover),...conversations.map(c=>c.config.failover)]
-      .flatMap(f=>f?.routes??[]).map(r=>`${r.profileId}::${r.model}`))];
+      .flatMap(f=>effectiveRoutes(f,settings.routeGroups)).map(r=>`${r.profileId}::${r.model}`))];
     if(!wanted.length){setRouteScoreMap({});return;}
     void (async()=>{
       const store=await observationSnapshot();
@@ -1441,7 +1468,7 @@ export default function App() {
       if(live)setRouteScoreMap(out);
     })();
     return ()=>{live=false;};
-  },[settings?.failover,settings?.keyProfiles,projects,conversations]);
+  },[settings?.failover,settings?.routeGroups,settings?.keyProfiles,projects,conversations]);
 
   React.useEffect(()=>{
     if(!failoverResume)return;
@@ -1816,6 +1843,10 @@ export default function App() {
       onMuteModel={muteModel}
       onRemoveModel={removeCustomModel}
       onClearHealth={clearProfileHealth}
+      routeGroups={(settings.routeGroups ?? []).map(g => ({ id: g.id, name: g.name, count: g.routes.length }))}
+      activeRouteGroupId={config.failover?.groupId}
+      onRouteGroup={id => { const group = settings.routeGroups?.find(g => g.id === id); if (group) applyRouteGroup('session', group); }}
+      onManageRouteGroups={openRouteGroupSettings}
       effortLevel={config.effortLevel}
       onEffortLevel={(l: EffortLevel) => setConfig({ effortLevel: l })}
       effortMappings={settings.effortMappings}
@@ -2123,6 +2154,9 @@ export default function App() {
             else if (scope === 'app') setSettings(prev => prev ? { ...prev, failover: value } : prev);
             else if (activeProject) setProjects(all => all.map(p => p.id === activeProject.id ? { ...p, failover: value } : p));
           }}
+          routeGroups={settings.routeGroups ?? []}
+          onApplyRouteGroup={applyRouteGroup}
+          onManageRouteGroups={openRouteGroupSettings}
           hasKey={Boolean(profile)}
           canRunHostTools={canRunHostTools}
           onRefreshModels={() => void refreshModels()}

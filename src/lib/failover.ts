@@ -17,7 +17,12 @@ import type { ErrorInfo, ModelHealthMap } from '../types';
  * ------------------------------------------------------------------ */
 
 export interface RouteRef { profileId: string; model: string }
-export interface FailoverConfig { enabled: boolean; routes: RouteRef[] }
+export interface FailoverConfig {
+  enabled: boolean;
+  routes: RouteRef[];
+  /** 引用的路由组。组还在就按组的顺序走，routes 是选用那一刻的快照，组被删掉时兜底 */
+  groupId?: string;
+}
 export interface FailoverDecision { route: RouteRef; reason: string }
 
 export const sameRoute = (a: RouteRef, b: RouteRef): boolean =>

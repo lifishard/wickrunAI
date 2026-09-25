@@ -2896,6 +2896,13 @@ kbd {
 .failover-score { color: var(--fg-faint); }
 
 .failover-actions { display: flex; gap: 4px; flex-shrink: 0; }
+.route-group-card { margin-bottom: 12px; }
+.route-group-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.route-group-head input { flex: 1; min-width: 0; font-weight: 600; }
+.route-group-badge { color: var(--accent); white-space: nowrap; }
+.route-group-add { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.route-group-add select, .route-group-add input { flex: 1 1 160px; min-width: 0; }
+.route-group-picker select { flex: 1 1 200px; min-width: 0; }
 .recovery-input { margin-top: 12px; }
 .recovery-input textarea { display: block; width: 100%; box-sizing: border-box; margin: 10px 0; resize: vertical; }
 .task-feedback { margin: 18px 0; padding: 12px 0; border-top: 1px solid var(--border); font-size: 12px; }

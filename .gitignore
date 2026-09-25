@@ -6,8 +6,8 @@ release/
 
 # Capacitor 生成的原生工程，不进版本库
 # 重新生成后记得跑 npm run cap:patch 把流式插件装回去
-android/
-ios/
+/android/
+/ios/
 
 # 运行期数据（真跑起来不会写到仓库里，这几条是保险）
 *.log
@@ -20,3 +20,10 @@ Thumbs.db
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# 本机双击入口：只留在本地，不进远端仓库（2.18.12 起）
+/*.bat
+
+# 会话产物与临时补丁，不属于源码
+/Claude outputs/
+/*.patch

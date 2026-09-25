@@ -58,6 +58,11 @@ export default function ModelPicker(props: {
   /** 只对手动补的 ID 开放：扫描来的删了下次还会回来，删除对它没有意义 */
   onRemove?: (id: string) => void;
   onClearHealth: () => void;
+  /** 设置里存的路由组：点一组 = 切到组里第一条路由，并把整组设为本对话的接力名单 */
+  routeGroups?: { id: string; name: string; count: number }[];
+  activeRouteGroupId?: string;
+  onRouteGroup?: (id: string) => void;
+  onManageRouteGroups?: () => void;
 }) {
   const t = useT();
   const [open, setOpen] = React.useState(false);
@@ -228,6 +233,23 @@ export default function ModelPicker(props: {
         <AnchoredPopover anchorRef={anchorRef} onClose={() => setOpen(false)} className="popup picker" label={t('选择模型与凭据')}>
           {props.clientSlot && <div className="connection-tabs" role="group" aria-label={t('模型连接方式')}><button className={`btn sm ${source==='api'?'':'ghost'}`} onClick={()=>setSource('api')}>{t('API 模型')}</button><button className={`btn sm ${source==='local'?'':'ghost'}`} onClick={()=>setSource('local')}>{t('本机 AI')}</button></div>}
           {source==='local' && props.clientSlot ? props.clientSlot : <>
+          {props.onRouteGroup && (props.routeGroups?.length || props.onManageRouteGroups) ? <div className="picker-section">
+            <div className="picker-label">
+              {t('路由组')}
+              <span style={{ flex: 1 }} />
+              {props.onManageRouteGroups ? <button className="icon-btn" title={t('管理路由组')}
+                onClick={() => { setOpen(false); props.onManageRouteGroups!(); }}>⚙</button> : null}
+            </div>
+            <div className="picker-profiles">
+              {props.routeGroups?.length ? props.routeGroups.map((g) => <button key={g.id} disabled={!g.count}
+                className={`picker-profile${g.id === props.activeRouteGroupId ? ' on' : ''}`}
+                title={t('切到这一组的第一条路由，失灵时按组内顺序交接')}
+                onClick={() => { props.onRouteGroup!(g.id); setOpen(false); }}>
+                {g.name || t('未命名路由组')} · {g.count}
+              </button>) : <div className="picker-empty">{t('还没有路由组，去设置里建一组')}</div>}
+            </div>
+          </div> : null}
+
           {/* 凭据 */}
           <div className="picker-section">
             <div className="picker-label">

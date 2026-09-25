@@ -3,6 +3,7 @@ import { useT } from '../lib/i18n';
 import type { FailoverConfig, FailoverScope, RouteRef } from '../lib/failover';
 import { resolveFailover } from '../lib/failover';
 import type { RouteScore } from '../lib/routing-memory';
+import { effectiveRoutes, failoverFromGroup, orphanedGroup, type RouteGroup } from '../lib/route-groups';
 import { Switch } from './ui';
 
 export interface RouteOption { profileId: string; profileName: string; models: string[] }
@@ -18,28 +19,60 @@ export interface FailoverScopes { session?: FailoverConfig; project?: FailoverCo
  * 项目里换一套，某一次对话再临时换。所以每一层都要能表达「我没意见」
  * （继承上层）和「我这层就是要这样」（哪怕是关掉）两种意思。
  */
-export default function FailoverList({ scopes, projectName, options, scores, onChange }: {
+export default function FailoverList({ scopes, projectName, options, scores, onChange, groups = [], onApplyGroup, onManageGroups }: {
   scopes: FailoverScopes;
   projectName?: string;
   options: RouteOption[];
   /** 「凭据::模型」→ 这条路由的历史表现。没有就是还没数据 */
   scores?: Record<string, RouteScore>;
   onChange: (scope: FailoverScope, value: FailoverConfig | undefined) => void;
+  /** 设置 → 路由组 里存的组。选用后名单引用这一组 */
+  groups?: RouteGroup[];
+  /** 选用一组。本对话这一层还会顺带切到组里第一条路由；不传就只改名单 */
+  onApplyGroup?: (scope: FailoverScope, group: RouteGroup) => void;
+  onManageGroups?: () => void;
 }) {
   const t = useT();
   const [scope, setScope] = React.useState<FailoverScope>('session');
   const effective = resolveFailover(scopes.session, scopes.project, scopes.app);
   const own = scopes[scope];
-  const routes = own?.routes ?? [];
-  const set = (patch: Partial<FailoverConfig>) =>
-    onChange(scope, { enabled: own?.enabled ?? false, routes: own?.routes ?? [], ...patch });
+  const routes = effectiveRoutes(own, groups);
+  const linked = own?.groupId ? groups.find((g) => g.id === own.groupId) : undefined;
+  const orphan = orphanedGroup(own, groups);
+  const set = (patch: Partial<FailoverConfig>) => {
+    const next: FailoverConfig = { enabled: own?.enabled ?? false, routes: own?.routes ?? [], ...patch };
+    if (own?.groupId && !('groupId' in patch)) next.groupId = own.groupId;
+    if (!next.groupId) delete next.groupId;
+    onChange(scope, next);
+  };
+  /* 在这里直接调顺序 = 这一层不再跟随那一组，改为本层自己的名单 */
+  const setRoutes = (next: RouteRef[]) => set({ routes: next, groupId: undefined });
+  const applyGroup = (id: string) => {
+    if (!id) { set({ routes: routes.map((r) => ({ ...r })), groupId: undefined }); return; }
+    const group = groups.find((g) => g.id === id);
+    if (!group) return;
+    if (onApplyGroup) onApplyGroup(scope, group);
+    else onChange(scope, failoverFromGroup(group));
+  };
+  const groupPicker = groups.length || onManageGroups ? <div className="field route-group-picker">
+    <div className="field-label">{t('路由组')}</div>
+    <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+      {groups.length ? <select aria-label={t('选用路由组')} value={linked ? linked.id : ''} onChange={(e) => applyGroup(e.target.value)}>
+        <option value="">{own ? t('不使用路由组（本层自己排）') : t('选用一个路由组…')}</option>
+        {groups.map((g) => <option key={g.id} value={g.id} disabled={!g.routes.length}>{g.name || t('未命名路由组')}（{g.routes.length}）</option>)}
+      </select> : <span className="hint">{t('还没有路由组。')}</span>}
+      {onManageGroups ? <button className="btn sm ghost" onClick={onManageGroups}>{t('管理路由组')}</button> : null}
+    </div>
+    {linked ? <div className="hint">{t('这一层跟随路由组「{name}」：在设置里改这一组，这里同步生效。直接在下面调整会脱离这一组。', { name: linked.name || t('未命名路由组') })}</div> : null}
+    {orphan ? <div className="hint">{t('原来选用的路由组已被删除，现在按选用时保存的顺序交接。')}</div> : null}
+  </div> : null;
   const nameOf = (r: RouteRef) => options.find((o) => o.profileId === r.profileId)?.profileName ?? r.profileId;
   const move = (i: number, to: number) => {
     if (to < 0 || to >= routes.length) return;
     const next = [...routes];
     const [item] = next.splice(i, 1);
     next.splice(to, 0, item);
-    set({ routes: next });
+    setRoutes(next);
   };
   const scopeLabel: Record<FailoverScope | 'none', string> = {
     session: t('本对话'), project: projectName ? t('项目「{name}」', { name: projectName }) : t('项目'),
@@ -77,9 +110,10 @@ export default function FailoverList({ scopes, projectName, options, scores, onC
     <p className="hint">
       {t('当前实际生效的是：')}<strong>{scopeLabel[effective.from]}</strong>
       {effective.from !== 'none' ? t('（{state}，{n} 条候选）', {
-        state: effective.config.enabled ? t('已开启') : t('已关闭'), n: effective.config.routes.length }) : null}
+        state: effective.config.enabled ? t('已开启') : t('已关闭'), n: effectiveRoutes(effective.config, groups).length }) : null}
     </p>
 
+    {groupPicker}
     {own ? <>
       <div className="field">
         <Switch checked={own.enabled} onChange={(v) => set({ enabled: v })} label={t('失灵时自动交接')} />
@@ -98,7 +132,7 @@ export default function FailoverList({ scopes, projectName, options, scores, onC
           <span className="failover-actions">
             <button className="btn sm" aria-label={t('上移')} disabled={i === 0} onClick={() => move(i, i - 1)}>↑</button>
             <button className="btn sm" aria-label={t('下移')} disabled={i === routes.length - 1} onClick={() => move(i, i + 1)}>↓</button>
-            <button className="btn sm ghost" aria-label={t('移出名单')} onClick={() => set({ routes: routes.filter((_, x) => x !== i) })}>{t('移除')}</button>
+            <button className="btn sm ghost" aria-label={t('移出名单')} onClick={() => setRoutes(routes.filter((_, x) => x !== i))}>{t('移除')}</button>
           </span>
         </li>)}
       </ol> : <p className="hint">{t('这一层的名单是空的：会按这一层的设置不做交接，也不再往上继承。')}</p>}
@@ -109,7 +143,7 @@ export default function FailoverList({ scopes, projectName, options, scores, onC
           const at = value.indexOf('\u0000');
           const profileId = value.slice(0, at), model = value.slice(at + 1);
           if (routes.some((r) => r.profileId === profileId && r.model === model)) return;
-          set({ routes: [...routes, { profileId, model }] });
+          setRoutes([...routes, { profileId, model }]);
         }}>
           <option value="">{t('添加一条候选路由…')}</option>
           {options.map((o) => <optgroup key={o.profileId} label={o.profileName}>
@@ -118,7 +152,7 @@ export default function FailoverList({ scopes, projectName, options, scores, onC
         </select>
       </div>
       {rankable.length > 1 ? <>
-        <button className="btn sm" onClick={() => set({ routes: suggested })}>{t('按历史做成率重排（{n} 条有足够样本）', { n: rankable.length })}</button>
+        <button className="btn sm" onClick={() => setRoutes(suggested)}>{t('按历史做成率重排（{n} 条有足够样本）', { n: rankable.length })}</button>
         <p className="hint">{t('这是建议，不是自动执行：顺序仍然由你定。样本不足的保持原位，不会被历史数据挤到后面去。')}</p>
       </> : null}
       <button className="btn sm ghost" onClick={() => onChange(scope, undefined)}>{t('这一层改回继承上层')}</button>

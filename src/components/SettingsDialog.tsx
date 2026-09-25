@@ -13,11 +13,13 @@ import {
   type EffortStyle,
 } from '../lib/effort';
 import { Field, Modal, Segmented, Switch } from './ui';
+import RouteGroupsSettings from './RouteGroupsSettings';
 
-type Tab = 'keys' | 'tools' | 'effort' | 'remote' | 'sync' | 'look';
+type Tab = 'keys' | 'routes' | 'tools' | 'effort' | 'remote' | 'sync' | 'look';
 
 const TAB_LABEL: Record<Tab, string> = {
   keys: 'API 凭据',
+  routes: '路由组',
   tools: '工具',
   effort: '思考强度',
   remote: '遥控',
@@ -558,7 +560,7 @@ export default function SettingsDialog(props: {
   storePath: string;
 }) {
   const t = useT();
-  const tab = (['keys', 'tools', 'effort', 'remote', 'sync', 'look'] as Tab[]).includes(props.tab as Tab)
+  const tab = (['keys', 'routes', 'tools', 'effort', 'remote', 'sync', 'look'] as Tab[]).includes(props.tab as Tab)
     ? (props.tab as Tab)
     : 'keys';
   const setTab = (t: Tab) => props.onTab(t);
@@ -1150,6 +1152,7 @@ export default function SettingsDialog(props: {
       </div>
       <div className="modal-body">
         {tab === 'keys' ? KeysTab() : null}
+        {tab === 'routes' ? <RouteGroupsSettings settings={s} onChange={props.onChange} /> : null}
         {tab === 'tools' ? ToolsTab() : null}
         {tab === 'effort' ? EffortTab() : null}
         {tab === 'remote' ? <RemoteTab settings={s} onChange={props.onChange} /> : null}

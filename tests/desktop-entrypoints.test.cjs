@@ -9,14 +9,17 @@ test('desktop install selects only the current setup and launches literal paths 
 });
 test('installer start errors remain failures and batch entrypoints keep cwd and exit status',async()=>{
  const {launchDesktopInstall}=await import('../scripts/desktop-install.mjs');await assert.rejects(launchDesktopInstall('fixture.exe',()=>{const child=new EventEmitter();child.unref=()=>{};queueMicrotask(()=>child.emit('error',Error('denied')));return child;}),/denied/);
- for(const name of ['打包桌面版.bat','同步到github.bat','发布三平台版本.bat']){const b=fs.readFileSync(path.join(__dirname,'..',name));assert.ok([...b].every(n=>n<128));const s=b.toString();assert.match(s,/cd \/d "%~dp0"/);assert.match(s,/set "RC=%ERRORLEVEL%"/);assert.match(s,/exit \/b %RC%/);}
- assert.match(fs.readFileSync(path.join(__dirname,'..','打包桌面版.bat'),'utf8'),/build-desktop.mjs" --install %\*/);
+ // The .bat entrypoints stay on the developer machine only (ignored by git), so a fresh clone checks them only when present.
+ for(const name of ['打包桌面版.bat','同步到github.bat','发布三平台版本.bat']){const file=path.join(__dirname,'..',name);if(!fs.existsSync(file))continue;const b=fs.readFileSync(file);assert.ok([...b].every(n=>n<128));const s=b.toString();assert.match(s,/cd \/d "%~dp0"/);assert.match(s,/set "RC=%ERRORLEVEL%"/);assert.match(s,/exit \/b %RC%/);}
+ const packBat=path.join(__dirname,'..','打包桌面版.bat');if(fs.existsSync(packBat))assert.match(fs.readFileSync(packBat,'utf8'),/build-desktop.mjs" --install %\*/);
+ assert.match(fs.readFileSync(path.join(__dirname,'..','.gitignore'),'utf8'),/^\/\*\.bat$/m);
  const desktop=fs.readFileSync(path.join(__dirname,'..','scripts','build-desktop.mjs'),'utf8');
  assert.match(desktop,/\['--test', \.\.\.testFiles\]/);
  assert.match(desktop,/const checkOnly = options\.has\('--check-only'\)/);
  assert.match(desktop,/未打包、未安装、未构建产物、未打开产物/);
  const sync=fs.readFileSync(path.join(__dirname,'..','scripts','sync-github.mjs'),'utf8');
  assert.match(sync,/execFileSync\(process\.execPath,\['--test',\.\.\.testFiles\]/);
+ assert.match(sync,/untrackIgnored\(\)/);
  const workflow=fs.readFileSync(path.join(__dirname,'..','.github','workflows','release.yml'),'utf8');
  assert.match(workflow,/github\.event_name == 'push' && startsWith\(github\.ref, 'refs\/tags\/v'\)/);
 });

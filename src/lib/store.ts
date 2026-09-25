@@ -10,6 +10,7 @@ import { defaultGenerationConfig, mergeParamDefaults } from './paramSchema';
 import { BAKED_IN_PATTERN, defaultEffortMappings } from './effort';
 import { getTransport } from './transport';
 import { cloudCall, usesCloudKey } from './cloud-api';
+import { sanitizeRouteGroups } from './route-groups';
 
 const K_SETTINGS = 'snc:settings:v1';
 const K_CONVS = 'snc:conversations:v1';
@@ -103,6 +104,7 @@ export async function loadSettings(): Promise<AppSettings> {
     if(merged.tools.claudeExtraArgs.trim()==='--permission-mode acceptEdits')merged.tools.claudeExtraArgs='';
     merged.remote = { enabled: false, url: '', token: '', ...(parsed.remote ?? {}) };
     merged.skillSync = { dir: '', auto: false, ...(parsed.skillSync ?? {}) };
+    merged.routeGroups = sanitizeRouteGroups(parsed.routeGroups);
     /*
      * 一次性迁移：把老配置里默认开着的 max_tokens 关掉。
      *

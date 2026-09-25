@@ -72,6 +72,7 @@ export const SYNCABLE_SETTINGS = [
   'effortMappings',
   'autoRetry',
   'failover',
+  'routeGroups',
   'notifications',
 ] as const;
 

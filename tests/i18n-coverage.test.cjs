@@ -20,6 +20,7 @@ const TRANSLATED=[
   'components/LocaleSwitch.tsx',
   'components/SettingsDialog.tsx',
   'components/FailoverList.tsx',
+  'components/RouteGroupsSettings.tsx',
   'components/ConfigPanel.tsx',
   'components/ModelPicker.tsx',
   'components/AnswerBlock.tsx',

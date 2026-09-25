@@ -104,6 +104,10 @@ export default function Composer(props: {
   onMuteModel: (id: string, muted: boolean) => void;
   onRemoveModel: (id: string) => void;
   onClearHealth: () => void;
+  routeGroups?: React.ComponentProps<typeof ModelPicker>['routeGroups'];
+  activeRouteGroupId?: string;
+  onRouteGroup?: (id: string) => void;
+  onManageRouteGroups?: () => void;
 
   /* 思考强度 */
   effortLevel: EffortLevel;
@@ -594,6 +598,10 @@ export default function Composer(props: {
               onMute={props.onMuteModel}
               onRemove={props.onRemoveModel}
               onClearHealth={props.onClearHealth}
+              routeGroups={props.routeGroups}
+              activeRouteGroupId={props.activeRouteGroupId}
+              onRouteGroup={props.onRouteGroup}
+              onManageRouteGroups={props.onManageRouteGroups}
             />
 
             {!compact ? secondaryControls : <button className="btn sm ghost composer-more" aria-expanded={moreOpen} aria-controls={optionsId}

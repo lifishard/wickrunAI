@@ -9,6 +9,15 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2), checkOnly = args.includes('--check-only');
 const git = values => execFileSync('git', values, { cwd: root, encoding: 'utf8', maxBuffer: 64*1024*1024 });
 const fail = message => { console.error(`\n✗ ${message}`); process.exitCode = 1; };
+// Files that .gitignore now excludes but the index still tracks (the local .bat entrypoints)
+// are removed from the index only; the working copies stay on disk.
+function untrackIgnored() {
+  const tracked = git(['ls-files','-ci','--exclude-standard','-z']).split('\0').filter(Boolean);
+  if (!tracked.length) return 0;
+  git(['rm','--cached','--quiet','--',...tracked]);
+  console.log(`已停止跟踪 ${tracked.length} 个被 .gitignore 排除的文件（本地文件保留）：${tracked.join('、')}`);
+  return tracked.length;
+}
 function push() {
   const branch = git(['branch','--show-current']).trim();
   if (!branch) throw new Error('当前不在分支上，请先切回要同步的分支。');
@@ -20,6 +29,7 @@ try {
   const version=JSON.parse(fs.readFileSync(path.join(root,'package.json'),'utf8')).version;
   const lock=JSON.parse(fs.readFileSync(path.join(root,'package-lock.json'),'utf8'));
   if(!/^\d+\.\d+\.\d+$/.test(version)||lock.version!==version||lock.packages?.['']?.version!==version)throw new Error('正式版本号或依赖锁文件不一致，已停止同步。');
+  if (!checkOnly) untrackIgnored();
   const files = parseStatus(git(['status','--porcelain=v1','-z']));
   if(args.includes('--release'))checkReleaseTag(root,version,files.length>0);
   console.log(`待提交改动：${files.length} 个文件${checkOnly ? '；本次只检查' : ''}`);

@@ -12,6 +12,7 @@ import { loadRuns } from './runs';
 import { observationSnapshot } from './observations';
 import { limitKey, mergeLearnedLimit, type LearnedLimit } from './limits';
 import { nextRoute, resolveFailover, type RouteRef } from './failover';
+import { expandFailover } from './route-groups';
 import type { ErrorInfo } from '../types';
 import { emptyTeamProject, loadCollaboration, teamBridge, validateGraph, type CollaborationData, type TeamProject, type TeamRun, type Member, type FlowNode, type FlowVersion } from './collaboration';
 import { tr } from './i18n';
@@ -467,7 +468,7 @@ export class TeamRuntime {
     await this.logRoute(projectId,runId,attemptId,member.id,current,'failed');
     const info=(error as {info?:ErrorInfo}).info;
     const settings=this.settings();
-    const list=resolveFailover(active.failover,undefined,settings?.failover).config;
+    const list=expandFailover(resolveFailover(active.failover,undefined,settings?.failover).config,settings?.routeGroups);
     const isClient=['client:codex','client:claude'].includes(active.connectionId);
     const decision=!control.stop&&info&&!isClient&&list.enabled
      ? nextRoute({current,order:list.routes??[],tried,health:settings?.modelHealth??{},info}):null;

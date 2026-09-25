@@ -8,7 +8,7 @@
 
 开源的、闭源的，付费的、免费的，都能调度。Key 自己带，只留在你本机。
 
-[![Version](https://img.shields.io/badge/version-2.18.11-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
+[![Version](https://img.shields.io/badge/version-2.18.12-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-lightgrey)](#安装)
 [![CI](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml/badge.svg)](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml)
@@ -211,9 +211,9 @@ npm install
 npm run dist:win
 ```
 
-在 macOS 或 Linux 上，最后一步分别使用 `npm run dist:mac` 或 `npm run dist:linux`。Windows 用户也可以双击 `打包桌面版.bat`。
+在 macOS 或 Linux 上，最后一步分别使用 `npm run dist:mac` 或 `npm run dist:linux`。维护者在 Windows 上也可以双击本机的 `打包桌面版.bat`；批处理入口不进仓库。
 
-维护者可用 `同步到github.bat` 提交源码，用 `发布三平台版本.bat` 触发 GitHub Actions 构建并发布安装包。发版流程和 Android 构建方法见 [构建说明](docs/BUILD.md)。
+维护者可用 `npm run sync` 提交源码，用 `npm run release` 触发（本机的 `同步到github.bat` / `发布三平台版本.bat` 封装的是同样的脚本） GitHub Actions 构建并发布安装包。发版流程和 Android 构建方法见 [构建说明](docs/BUILD.md)。
 
 ## 权限与数据
 

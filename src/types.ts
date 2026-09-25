@@ -602,6 +602,8 @@ export interface AppSettings {
   }[];
   /** 应用全局的失灵交接名单；会话和项目都没设置时用它 */
   failover?: import('./lib/failover').FailoverConfig;
+  /** 用户自定的路由组：一组有序路由，选用即定下当前路由和交接顺序 */
+  routeGroups?: import('./lib/route-groups').RouteGroup[];
   /** 模型健康度：哪些 ID 在这份凭据下是坏的，默认不进模型列表 */
   modelHealth: ModelHealthMap;
   /** 请求失败后自动重试的次数上限（限流和 5xx 才重试），0 = 关掉 */

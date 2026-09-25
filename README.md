@@ -8,7 +8,7 @@
 
 Open or closed, paid or free. Bring your own keys; they never leave your machine.
 
-[![Version](https://img.shields.io/badge/version-2.18.11-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
+[![Version](https://img.shields.io/badge/version-2.18.12-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-lightgrey)](#install)
 [![CI](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml/badge.svg)](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml)
@@ -213,9 +213,9 @@ npm install
 npm run dist:win
 ```
 
-On macOS or Linux, use `npm run dist:mac` or `npm run dist:linux` for the last step. On Windows you can also double-click `打包桌面版.bat`.
+On macOS or Linux, use `npm run dist:mac` or `npm run dist:linux` for the last step. On Windows, maintainers can also double-click a local `打包桌面版.bat`; the batch entrypoints are kept out of the repository.
 
-Maintainers commit source with `同步到github.bat` and cut a release with `发布三平台版本.bat`, which pushes the version tag and lets GitHub Actions build and publish the packages. The release flow and the Android build are in [Building](docs/BUILD.md).
+Maintainers commit source with `npm run sync` and cut a release with `npm run release` (local `同步到github.bat` / `发布三平台版本.bat` wrap the same scripts), which pushes the version tag and lets GitHub Actions build and publish the packages. The release flow and the Android build are in [Building](docs/BUILD.md).
 
 ## Permissions and data
 
