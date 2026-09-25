@@ -11,12 +11,18 @@ function subscriptionEnvironment(source = process.env) {
   return { ...Object.fromEntries(Object.entries(source).filter(([key]) => allowed.test(key))), NO_COLOR: '1' };
 }
 
-function createCodexClient({ binary, cwd, spawn = nativeSpawn, env = process.env, requestTimeoutMs = 30000, turnTimeoutMs = 30 * 60 * 1000, cancelTimeoutMs = 5000, approvalTimeoutMs = 5 * 60 * 1000 } = {}) {
+function createCodexClient({ binary, cwd, spawn = nativeSpawn, env = process.env, brain = null, requestTimeoutMs = 30000, turnTimeoutMs = 30 * 60 * 1000, cancelTimeoutMs = 5000, approvalTimeoutMs = 5 * 60 * 1000 } = {}) {
   if (!binary || !path.isAbsolute(binary) || /\.(cmd|bat|ps1|js)$/i.test(binary) || (process.platform === 'win32' && !/\.exe$/i.test(binary))) throw Error('Configure the official native Codex executable using an absolute path.');
   if (!cwd || !path.isAbsolute(cwd)) throw Error('Codex requires an absolute project directory.');
   let child, handshake, dead = false, nextId = 1, active = null, buffer = '';
   const decoder = new StringDecoder('utf8'), pending = new Map();
-  const safeEnv = subscriptionEnvironment(env);
+  // brain：wickrunAI 大脑代理。给了就用本机代理当 Codex 的模型服务，令牌只放进子进程环境。
+  if (brain && (typeof brain.baseUrl !== 'string' || !/^http:\/\/127\.0\.0\.1:\d{1,5}\/v1$/.test(brain.baseUrl) || !/^[a-f0-9]{64}$/.test(brain.token || ''))) throw Error('Invalid wickrunAI brain connection.');
+  const safeEnv = { ...subscriptionEnvironment(env), ...(brain ? { WICKRUN_BRAIN_TOKEN: brain.token } : {}) };
+  const providerId = brain ? 'wickrun' : 'openai';
+  const launchArgs = brain
+    ? ['-c', `model_providers.wickrun={name="wickrunAI",base_url="${brain.baseUrl}",env_key="WICKRUN_BRAIN_TOKEN",wire_api="responses"}`, '-c', 'model_provider="wickrun"', 'app-server']
+    : ['-c', 'model_provider="openai"', '-c', 'forced_login_method="chatgpt"', 'app-server'];
   function send(message) {
     if (dead || !child?.stdin?.writable) throw Error('Codex connection is closed.');
     child.stdin.write(JSON.stringify(message) + '\n');
@@ -146,7 +152,7 @@ function createCodexClient({ binary, cwd, spawn = nativeSpawn, env = process.env
   function start() {
     if (handshake) return handshake;
     handshake = (async () => {
-      child = spawn(binary, ['-c', 'model_provider="openai"', '-c', 'forced_login_method="chatgpt"', 'app-server'], { cwd, env: safeEnv, shell: false, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+      child = spawn(binary, launchArgs, { cwd, env: safeEnv, shell: false, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
       child.on('error', () => disconnect('The official Codex process could not start.'));
       child.on('close', code => disconnect(`Codex process exited (${code ?? 'unknown'}); no matching terminal event was received.`));
       child.stdin.on('error', () => disconnect('Codex input stream closed.'));
@@ -203,7 +209,7 @@ function createCodexClient({ binary, cwd, spawn = nativeSpawn, env = process.env
       try {
         const account = await readAccount();
         if (state.settled) return;
-        if (account.account?.type !== 'chatgpt') { finish('failed', 'Sign in through the official Codex ChatGPT login before using this subscription route. API-key authentication is not accepted.'); return; }
+        if (!brain && account.account?.type !== 'chatgpt') { finish('failed', 'Sign in through the official Codex ChatGPT login before using this subscription route. API-key authentication is not accepted.'); return; }
         let isolatedConfig;
         if(options.isolateTools){
           const effective=await request('config/read',{includeLayers:false,cwd:project});
@@ -218,7 +224,7 @@ function createCodexClient({ binary, cwd, spawn = nativeSpawn, env = process.env
           isolatedConfig.plugins=Object.fromEntries(Object.entries(effective.config.plugins || {}).map(([name,value])=>[name,{...omitNull(value),enabled:false}]));
           if(sandbox==='readOnly')Object.assign(isolatedConfig,{'features.shell_tool':false,'features.unified_exec':false,'features.apply_patch_freeform':false});
         }
-        const config = { cwd: project, modelProvider: 'openai', approvalPolicy: 'untrusted', approvalsReviewer: 'user', sandbox: sandbox === 'readOnly' ? 'read-only' : 'workspace-write', ...(options.model ? { model: options.model } : {}),...(isolatedConfig?{config:isolatedConfig}:{}) };
+        const config = { cwd: project, modelProvider: providerId, approvalPolicy: 'untrusted', approvalsReviewer: 'user', sandbox: sandbox === 'readOnly' ? 'read-only' : 'workspace-write', ...(options.model ? { model: options.model } : {}),...(isolatedConfig?{config:isolatedConfig}:{}) };
         const thread = await request(state.threadId ? 'thread/resume' : 'thread/start', { ...config, ...(state.threadId ? { threadId: state.threadId } : {}) });
         if (state.settled) return;
         if (typeof thread.thread?.id !== 'string' || !thread.thread.id || (state.threadId && thread.thread.id !== state.threadId)) throw Error('Codex did not return the requested thread.');

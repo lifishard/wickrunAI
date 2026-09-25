@@ -266,3 +266,32 @@ test('Grok ACP falls back to grok-4.6 when the client advertises no model list',
   assert.equal(result.models[0].id,'grok-4.6');
   assert.deepEqual(result.models[0].efforts,['low','medium','high','xhigh']);
 });
+
+test('a wickrunAI route brain gives Claude Code and Codex only a proxy session, closed after the run',async t=>{
+  const opened=[],closed=[];
+  const brainProxy={openSession:async s=>{opened.push(s);return {token:'b'.repeat(64),model:s.model,anthropicBaseUrl:'http://127.0.0.1:18765',openaiBaseUrl:'http://127.0.0.1:18765/v1'};},closeSession:token=>closed.push(token)};
+  for(const kind of ['claude','codex']){
+    const received=[],created=[];
+    const f=fixture(t,{brainProxy,createCodexClient:options=>{created.push(options);return {run:async o=>{received.push(o);return {status:'completed',text:'ok'};},close(){}};},
+      claudeCode:async(args,ctx)=>{received.push(ctx);return {ok:true,content:'ok'};}});
+    f.record.config.client={kind,model:'kimi-k3',effort:'high',brain:{source:'route',profileId:'p1',extras:{reasoning_effort:'high'}}};f.store.save(f.record);
+    assert.equal((await f.host.run({runId:'run-1',requestId:'brain-'+kind,prompt:'go'})).status,'completed');
+    if(kind==='claude'){
+      assert.equal(received[0].brainEnv.ANTHROPIC_BASE_URL,'http://127.0.0.1:18765');assert.equal(received[0].brainEnv.ANTHROPIC_MODEL,'kimi-k3');
+      assert.equal(received[0].claudeExtraArgs,'','model and effort come from the brain session, not CLI flags');
+    }else assert.deepEqual(created.at(-1).brain,{baseUrl:'http://127.0.0.1:18765/v1',token:'b'.repeat(64)});
+    assert.doesNotMatch(JSON.stringify(f.store.job('run-1','native-brain-'+kind)),/b{64}/);
+  }
+  assert.deepEqual(opened.map(o=>[o.profileId,o.model,o.extras.reasoning_effort]),[['p1','kimi-k3','high'],['p1','kimi-k3','high']]);
+  assert.equal(closed.length,2);
+});
+
+test('subscription brain forces the official Claude login and a route brain needs a concrete model',async t=>{
+  const received=[];
+  const f=fixture(t,{claudeCode:async(args,ctx)=>{received.push(ctx);return {ok:true,content:'ok'};},brainProxy:{openSession:async()=>{throw Error('unused');},closeSession(){}}});
+  f.record.config.client={kind:'claude',model:'opus',effort:'max',brain:{source:'subscription'}};f.store.save(f.record);
+  await f.host.run({runId:'run-1',requestId:'sub',prompt:'go'});
+  assert.equal(received[0].subscription,true);assert.match(received[0].claudeExtraArgs,/--effort max/);
+  f.record.config.client={kind:'claude',model:'default',brain:{source:'route',profileId:'p1'}};f.store.save(f.record);
+  await assert.rejects(f.host.run({runId:'run-1',requestId:'nomodel',prompt:'go'}),/具体模型/);
+});

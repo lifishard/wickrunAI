@@ -21,6 +21,7 @@ const TRANSLATED=[
   'components/SettingsDialog.tsx',
   'components/FailoverList.tsx',
   'components/RouteGroupsSettings.tsx',
+  'components/BrainPicker.tsx',
   'components/ConfigPanel.tsx',
   'components/ModelPicker.tsx',
   'components/AnswerBlock.tsx',

@@ -118,3 +118,18 @@ test('user-configured Claude routing is passed only via environment with setting
  assert.equal(f.calls[0].args[f.calls[0].args.indexOf('--setting-sources')+1],'');assert.equal(f.calls[0].args.includes('{"disableAllHooks":true}'),true);
  assert.doesNotMatch(JSON.stringify(result),/private-route-token/);assert.equal(result.execution.authSource,'claude-user-routing-config');
 });
+
+test('brain and subscription modes replace the user routing config for this run only',async()=>{
+  const brain=fixture();
+  const env={ANTHROPIC_BASE_URL:'http://127.0.0.1:18765',ANTHROPIC_AUTH_TOKEN:'c'.repeat(64),ANTHROPIC_MODEL:'kimi-k3',ANTHROPIC_API_KEY:'must-not-pass',NODE_OPTIONS:'bad'};
+  assert.equal((await brain.run({prompt:'go'},{...ctx,brainEnv:env})).ok,true);
+  const e=brain.calls[0].config.env;
+  assert.equal(e.ANTHROPIC_BASE_URL,'http://127.0.0.1:18765');assert.equal(e.ANTHROPIC_MODEL,'kimi-k3');
+  assert.equal(e.ANTHROPIC_API_KEY,undefined,'user API keys never leak into a brain run');assert.equal(e.NODE_OPTIONS,undefined);
+  const bad=await fixture().run({prompt:'go'},{...ctx,brainEnv:{...env,ANTHROPIC_BASE_URL:'https://elsewhere.example'}});
+  assert.equal(bad.ok,false);
+  const sub=fixture();
+  assert.equal((await sub.run({prompt:'go'},{...ctx,subscription:true})).ok,true);
+  assert.equal(sub.calls[0].config.env.ANTHROPIC_API_KEY,undefined);assert.equal(sub.calls[0].config.env.ANTHROPIC_BASE_URL,undefined);
+  assert.equal(JSON.parse(sub.calls[0].args[sub.calls[0].args.indexOf('--settings')+1]).forceLoginMethod,'claudeai');
+});

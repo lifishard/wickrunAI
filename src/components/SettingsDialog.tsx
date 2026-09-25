@@ -671,6 +671,13 @@ export default function SettingsDialog(props: {
               {t('wickrunAI 与该清单的作者、以及清单内任何 API 供应商之间均无关联关系；本应用不对其作出任何认可或推荐，亦未获其认可或赞助。额度与条款由各供应商自行订立并可随时变更。')}
             </p>
 
+            <Field label={t('给 Claude Code / Codex 当大脑时的接口协议')} hint={t('大多数路由是 OpenAI 兼容，由 wickrunAI 本机代理转换；只有端点本身支持 Anthropic /v1/messages 时才选原生，请求会原样转发。')}>
+              <select aria-label={t('给 Claude Code / Codex 当大脑时的接口协议')} value={p.protocol ?? 'openai'} onChange={(e) => updateProfile(p.id, { protocol: e.target.value === 'anthropic' ? 'anthropic' : undefined })}>
+                <option value="openai">{t('OpenAI 兼容（自动转换）')}</option>
+                <option value="anthropic">{t('Anthropic 原生')}</option>
+              </select>
+            </Field>
+
             <Field label="API Key" hint={usesCloudKey(p.id) ? t('此账号的 API 密钥会加密保存到云端，并在已登录的设备上使用。') : t('保存后就只留在本机的安全存储里，界面上不再回显。')}>
               <SecretInput
                 secretId={p.id}

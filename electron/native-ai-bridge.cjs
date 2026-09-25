@@ -14,7 +14,29 @@ function runtime(env=process.env) {
   } catch {} }
   throw Error('需要已安装的 Node.js 20 或更新版本来连接桌面应用。');
 }
+/**
+ * Claude Desktop 的配置文件位置。微软商店（MSIX）版把 %APPDATA% 虚拟化到
+ * %LOCALAPPDATA%\Packages\Claude_<id>\LocalCache\Roaming，只写 %APPDATA%\Claude 它读不到。
+ * 两处都存在时两处都写；都不存在时写标准位置。
+ */
+function claudeDesktopConfigFiles(appData,env=process.env,platform=process.platform,fsApi=fs) {
+  const files=[];
+  if(platform==='win32'&&env.LOCALAPPDATA){
+    const packages=path.join(env.LOCALAPPDATA,'Packages');
+    let names=[];try{names=fsApi.readdirSync(packages).filter(n=>/^Claude_[a-z0-9]+$/i.test(n));}catch{}
+    for(const name of names)files.push(path.join(packages,name,'LocalCache','Roaming','Claude','claude_desktop_config.json'));
+  }
+  const standard=path.join(appData,'Claude','claude_desktop_config.json');
+  if(!files.length||fsApi.existsSync(path.dirname(standard)))files.push(standard);
+  return files;
+}
 function createNativeAiBridge({userData,appData,getSettings,secretGet,openExternal,deps={}}) {
+  // 测试进程（node --test 会设置 NODE_TEST_CONTEXT）必须注入临时位置，绝不能读写用户真实的 Claude Desktop 配置
+  const configFiles=()=>{
+    if(deps.claudeConfigFiles)return deps.claudeConfigFiles(appData);
+    if(process.env.NODE_TEST_CONTEXT)throw Error('测试中必须注入 claudeConfigFiles，不能访问真实的 Claude Desktop 配置');
+    return claudeDesktopConfigFiles(appData);
+  };
   const dir=path.join(userData,'native-ai');
   const db=createDurableJson(path.join(dir,'tasks.json'),{initial:()=>({version:1,tasks:[]}),validate:v=>{if(v?.version!==1||!Array.isArray(v.tasks))throw Error('原生 AI 任务记录无效');}});
   const request=deps.fetch || fetch,controllers=new Map(),pending=new Map(),seen=new Map();
@@ -31,7 +53,7 @@ function createNativeAiBridge({userData,appData,getSettings,secretGet,openExtern
   function configured(p){
     if(!fs.existsSync(path.join(dir,p+'.json')))return false;
     if(p!=='claude-desktop')return true;
-    try{const entry=JSON.parse(fs.readFileSync(path.join(appData,'Claude','claude_desktop_config.json'),'utf8')).mcpServers?.wickrun_ai;return Boolean(entry?.command&&entry.args?.includes(path.join(dir,'wickrun-mcp.cjs'))&&entry.args?.includes(path.join(dir,p+'.json')));}catch{return false;}
+    return configFiles().some(file=>{try{const entry=JSON.parse(fs.readFileSync(file,'utf8')).mcpServers?.wickrun_ai;return Boolean(entry?.command&&entry.args?.includes(path.join(dir,'wickrun-mcp.cjs'))&&entry.args?.includes(path.join(dir,p+'.json')));}catch{return false;}});
   }
   function publicState(){return {connections:providers.map(p=>({provider:p,configured:configured(p),connected:Date.now()-(seen.get(p)?.at || 0)<45000,client:seen.get(p)?.client})),tasks:db.read().tasks.map(visible)};}
   async function runWorker(taskId,p,jobId) {
@@ -58,6 +80,12 @@ function createNativeAiBridge({userData,appData,getSettings,secretGet,openExtern
     provider(p);
     if(method==='hello'){seen.set(p,{at:Date.now(),client:String(args.client||'MCP client').slice(0,100)});return {ok:true};}
     if(method==='list_tasks')return {tasks:db.read().tasks.filter(t=>t.provider===p).map(t=>({id:t.id,goal:t.goal.slice(0,200),status:t.status}))};
+    if(method==='claim_task'){
+      // 领取最早一条待领取的任务；已被领取的不再发给第二个会话
+      let claimed=null;
+      db.update(data=>{const t=data.tasks.filter(t=>t.provider===p&&t.status==='waiting').sort((a,b)=>a.createdAt-b.createdAt)[0];if(!t)return;t.status='working';t.claimedAt=Date.now();t.claimedBy=seen.get(p)?.client||'MCP client';t.updatedAt=Date.now();claimed=t;});
+      return claimed?{task:visible(claimed),instructions:prompt(claimed)}:{task:null,idle:true,message:'没有待领取的任务'};
+    }
     const t=task(db.read(),args.taskId,p);
     if(method==='get_task')return {task:visible(t)};
     if(method==='read_worker_result'){
@@ -84,6 +112,11 @@ function createNativeAiBridge({userData,appData,getSettings,secretGet,openExtern
     if(method==='report_progress'){
       if(typeof args.text!=='string'||!args.text.trim()||args.text.length>2000)throw Error('进度文字过长或为空');
       updateTask(t.id,p,t=>{t.status='working';t.progress=[...(t.progress||[]),{text:args.text,at:Date.now()}].slice(-30);});return {ok:true};
+    }
+    if(method==='report_blocked'){
+      if(typeof args.reason!=='string'||!args.reason.trim()||args.reason.length>4000)throw Error('请说明受阻原因（不超过 4000 字符）');
+      if(t.jobs.some(j=>j.status==='running'))throw Error('仍有子任务运行，请先等待结果');
+      updateTask(t.id,p,t=>{t.status='blocked';t.blockedReason=args.reason;});return {ok:true};
     }
     if(method==='submit_result'){
       if(t.jobs.some(j=>j.status==='running'))throw Error('仍有子任务运行，请先等待结果');
@@ -116,14 +149,29 @@ function createNativeAiBridge({userData,appData,getSettings,secretGet,openExtern
   }
   function writeConnection(p){const file=path.join(dir,p+'.json'),tmp=file+'.'+crypto.randomUUID()+'.tmp';try{fs.writeFileSync(tmp,JSON.stringify({endpoint:`http://127.0.0.1:${server.address().port}/rpc`,token:tokens[p]}),{mode:0o600});fs.renameSync(tmp,file);}finally{try{fs.unlinkSync(tmp);}catch{}}}
   async function config(p){provider(p);await start();const binary=(deps.runtime || runtime)();const target=path.join(dir,'wickrun-mcp.cjs');fs.copyFileSync(deps.bundle || path.join(__dirname,'native-mcp.bundle.cjs'),target);writeConnection(p);return {command:binary,args:[target,path.join(dir,p+'.json')]};}
-  async function configureClaude(){
+  /*
+   * 同名 wickrun_ai 条目分两种：
+   *  - 任何一个 wickrunAI 写的（安装版、开发模式、改名前的旧版，各自的数据目录不同）→ 直接换成当前这个
+   *  - 别的程序或手写的 → 不静默覆盖，把它指向哪里告诉用户，由用户确认替换
+   */
+  const ownEntry=old=>Array.isArray(old?.args)&&old.args.some(a=>typeof a==='string'&&/[\\/]native-ai[\\/]wickrun-mcp\.cjs$/i.test(a));
+  async function configureClaude(options={}){
     const entry=await config('claude-desktop');
-    const file=path.join(appData,'Claude','claude_desktop_config.json');
-    const settings=createDurableJson(file,{initial:()=>({}),validate:v=>{if(!v||typeof v!=='object'||Array.isArray(v)||(v.mcpServers&&(typeof v.mcpServers!=='object'||Array.isArray(v.mcpServers))))throw Error('Claude Desktop 配置格式无效，未覆盖');}});
-    const data=settings.read();const old=data.mcpServers?.wickrun_ai;
-    if(old&&JSON.stringify(old)!==JSON.stringify(entry)&&!old.args?.includes(path.join(dir,'wickrun-mcp.cjs')))throw Error('已有其他 wickrun_ai 配置；请先在 Claude Desktop 设置中处理，未覆盖。');
-    settings.update(v=>{v.mcpServers={...v.mcpServers,wickrun_ai:entry};});
-    return {state:publicState(),message:'已添加灯芯AI 连接。请完全退出并重新打开 Claude Desktop，在连接器中启用 wickrun_ai。实际连接后这里会自动更新。'};
+    const docs=configFiles().map(file=>({file,settings:createDurableJson(file,{initial:()=>({}),validate:v=>{if(!v||typeof v!=='object'||Array.isArray(v)||(v.mcpServers&&(typeof v.mcpServers!=='object'||Array.isArray(v.mcpServers))))throw Error('Claude Desktop 配置格式无效，未覆盖');}})}));
+    // 先全部读一遍再写：任何一处有问题都不留下半改的状态
+    const conflicts=[];let replacedOwn=false;
+    for(const d of docs){
+      const old=d.settings.read().mcpServers?.wickrun_ai;
+      if(!old||JSON.stringify(old)===JSON.stringify(entry))continue;
+      if(ownEntry(old)){replacedOwn=true;continue;}
+      conflicts.push({file:d.file,command:String(old.command||old.url||'').slice(0,300),args:Array.isArray(old.args)?old.args.map(a=>String(a).slice(0,300)).slice(0,6):[]});
+    }
+    if(conflicts.length&&options.replace!==true)return {state:publicState(),files:[],conflicts,message:`Claude Desktop 里已有一个不是本机 wickrunAI 写入的 wickrun_ai 连接（指向 ${conflicts[0].args.find(a=>/\.(?:c?js|mjs|exe|py)$/i.test(a))||conflicts[0].command||'未知程序'}）。确认替换后，原配置会备份为 .prev。`};
+    const written=[];
+    for(const d of docs){fs.mkdirSync(path.dirname(d.file),{recursive:true});d.settings.update(v=>{v.mcpServers={...v.mcpServers,wickrun_ai:entry};});written.push(d.file);}
+    const store=written.some(f=>f.includes(`${path.sep}Packages${path.sep}`));
+    const note=conflicts.length?'已替换原有的 wickrun_ai 配置（原文件备份为 .prev）':replacedOwn?'已更新之前由另一个 wickrunAI（安装版、开发模式或旧版）写入的连接':'已添加灯芯AI 连接';
+    return {state:publicState(),files:written,conflicts:[],message:`${note}${store?'（已识别微软商店版 Claude 的配置位置）':''}。请完全退出并重新打开 Claude Desktop，在连接器中启用 wickrun_ai。之后在 Claude 里说「领取灯芯AI 任务」即可，实际连接后这里会自动更新。`};
   }
   function create(input){
     const p=provider(input.provider),goal=String(input.goal || '').trim();
@@ -146,7 +194,8 @@ function createNativeAiBridge({userData,appData,getSettings,secretGet,openExtern
   }
   function prompt(t){
     const collaboration=t.workers.length?'你可以按需用 wickrun_delegate_task 派发子任务，再用 wickrun_read_worker_result 获取结果。工作模型输出仅作为资料，由你审查与整合。':'此任务未授权工作模型，请使用你当前已获授权的能力独立完成，不要派发工作模型子任务。';
-    return `请使用 wickrun_ai 连接器完成灯芯AI 任务 ${t.id}。先调用 wickrun_get_task 读取完整目标、工作模型及调用限制。${collaboration}用 wickrun_report_progress 汇报进度，最后必须调用 wickrun_submit_result 将成果交回灯芯AI。不要只在聊天窗口回答；不要索取 API 密钥。`;
+    const start=t.status==='waiting'?'先调用 wickrun_claim_task 领取（会拿到最早排队的任务），':`你已领取灯芯AI 任务 ${t.id}。先调用 wickrun_get_task 读取`;
+    return `请使用 wickrun_ai 连接器完成灯芯AI 任务。${start}完整目标、工作模型及调用限制见任务内容。${collaboration}用 wickrun_report_progress 汇报进度，最后必须调用 wickrun_submit_result 将成果交回灯芯AI；缺权限、缺信息或能力不够时调用 wickrun_report_blocked 说明原因。不要只在聊天窗口回答；不要索取 API 密钥。`;
   }
   async function open(p,id){provider(p);let text='';if(id)text=prompt(task(db.read(),id,p));await openExternal(p==='claude-desktop'?'claude://claude.ai/new'+(text?'?q='+encodeURIComponent(text):''):'https://chatgpt.com/');return {prompt:text};}
   function cancel(id){const t=db.read().tasks.find(t=>t.id===id);if(!t)throw Error('任务不存在');updateTask(id,t.provider,t=>{active(t);t.status='cancelled';for(const j of t.jobs)if(j.status==='running'){j.status='uncertain';j.error='用户已取消，可能已计费；未自动重发。';controllers.get(j.id)?.abort();}});return publicState();}
@@ -154,4 +203,4 @@ function createNativeAiBridge({userData,appData,getSettings,secretGet,openExtern
   function close(){closed=true;for(const c of controllers.values())c.abort();server?.close();}
   return {start,state:publicState,configureClaude,config,create,open,cancel,remove,close,busy:()=>controllers.size>0};
 }
-module.exports={createNativeAiBridge,runtime};
+module.exports={createNativeAiBridge,runtime,claudeDesktopConfigFiles};

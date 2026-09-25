@@ -61,7 +61,7 @@ interface ElectronBridge extends CloudBridge {
   notifyTask(input:TaskNotificationInput):Promise<boolean>;
   onTaskNotificationClick(cb:(event:TaskNotificationClick)=>void):()=>void;
   nativeAiState():Promise<import('./native-ai').NativeAiState>;
-  nativeAiConfigure():Promise<{state:import('./native-ai').NativeAiState;message:string}>;
+  nativeAiConfigure(options?:{replace?:boolean}):Promise<{state:import('./native-ai').NativeAiState;message:string;files?:string[];conflicts?:{file:string;command:string;args:string[]}[]}>;
   nativeAiCreate(input:import('./native-ai').NativeAiInput):Promise<{task:import('./native-ai').NativeAiTask;prompt:string}>;
   nativeAiOpen(provider:import('./native-ai').NativeAiProvider,taskId?:string):Promise<{prompt:string}>;
   nativeAiCancel(id:string):Promise<import('./native-ai').NativeAiState>;
@@ -73,6 +73,8 @@ interface ElectronBridge extends CloudBridge {
   conversationClientRun(args:{runId:string;requestId:string;prompt:string;images?:string[];cwd?:string}):Promise<import('./connections').ClientTurnResult>;
   conversationClientApprove(requestId:string,id:string,approved:boolean):Promise<void>;
   conversationClientRecover(runId:string,callId:string):Promise<import('./connections').ClientTurnResult|null>;
+  brainGlobalStatus():Promise<import('./connections').BrainGlobalStatus>;
+  brainGlobalApply(args:{client:'claude'|'codex';mode:'route'|'subscription'|'restore';brain?:import('./connections').ClientBrain&{model:string};effort?:string}):Promise<import('./connections').BrainGlobalStatus&{changed:boolean;file:string;backup?:string|null;message?:string}>;
   onClientEvent(cb:(event:{requestId:string;type:string;id?:string;text?:string;event?:Record<string,unknown>})=>void):()=>void;
   platform: 'electron';
   collaborationRead(): Promise<import('./collaboration').CollaborationData>;

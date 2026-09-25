@@ -25,6 +25,28 @@ Native progress/question markers are hidden from the answer, including incomplet
 
 Kimi's ACP permission metadata is a protocol boundary, not an operating-system sandbox. The adapter trusts the installed official client to describe the operation accurately and respect a declined permission. It rejects missing or truncated location metadata, paths escaping through symlinks, and permissions that offer only persistent approval. A rejected operation pauses the run with a capability explanation instead of reporting success.
 
+## Claude Code and Codex brains (2.19.0)
+
+Claude Code and Codex can think with any route registered in wickrunAI, not only their own configuration. In **本机 AI**, select Claude Code or Codex, then choose a **大脑** (brain):
+
+| Brain | What happens |
+| --- | --- |
+| Claude Code's own configuration | Previous behavior: connection keys are read from `~/.claude/settings.json`. |
+| Local subscription | Claude Code runs with its official claude.ai login (`forceLoginMethod: claudeai`, no API variables); Codex runs with its ChatGPT login. |
+| A wickrunAI route | wickrunAI opens a per-run session on its local brain proxy (`127.0.0.1`, preferred port 18765). Claude Code receives `ANTHROPIC_BASE_URL` pointing at the proxy and a session token as `ANTHROPIC_AUTH_TOKEN`; all model aliases and the subagent model point at the selected model. Codex receives a `wickrun` provider (`wire_api = "responses"`) through `-c` overrides and the token in its process environment. |
+
+The proxy converts Anthropic Messages (Claude Code) and OpenAI Responses (Codex) into Chat Completions for the route, streams the answer back, and maps tool calls both ways. Routes marked **Anthropic 原生** on the credentials page are forwarded unchanged to `/v1/messages` (Claude Code only). The route key never leaves wickrunAI: clients only hold a session token, which is revoked when the run ends. Thinking effort uses the same five-level scale and mapping table as API conversations; client-sent thinking fields are replaced by the mapped fields.
+
+**Apply globally** writes the current brain into `~/.claude/settings.json` (`env`) or `~/.codex/config.toml` (top-level `model`, `model_provider`, `model_reasoning_effort` plus `[model_providers.wickrun]`), so `claude` / `codex` in a terminal use it too. Only those keys change; the first original file is kept as `*.before-wickrun`, and **还原接管前的配置** restores the previous values. A global route uses a persistent proxy token, so switching the global route later does not rewrite the token; wickrunAI must be running for the terminal client to reach the proxy. **全局改用订阅** removes the connection keys and forces the official login instead.
+
+Limits: providers must support tool calling for Claude Code and Codex to work well. Hosted client features that only the original vendor can verify (thinking signatures, server-side web search) are not forwarded. Token counting for Claude Code's context management is an estimate.
+
+## Claude Desktop task claiming (2.19.0)
+
+Tasks sent to Claude Desktop are queued instead of relying only on a prefilled deep link. The `wickrun_ai` MCP server adds `wickrun_claim_task` (claims the oldest waiting task; a claimed task is not handed to a second session) and `wickrun_report_blocked` (stops a task with a reason shown in wickrunAI). When a Claude session is connected, the conversation shows "waiting to be claimed"; otherwise wickrunAI opens Claude Desktop with a prefilled claim request. **复制领取指令** copies an instruction suitable for a Claude Desktop scheduled task.
+
+Configuration now detects the Microsoft Store (MSIX) build of Claude Desktop, whose configuration lives in `%LOCALAPPDATA%\Packages\Claude_<id>\LocalCache\Roaming\Claude\claude_desktop_config.json`. Earlier versions wrote only `%APPDATA%\Claude`, which the Store build never reads. When both locations exist, both are updated.
+
 ## Connector boundary
 
 ### Claude Desktop collaboration (2.1.5)

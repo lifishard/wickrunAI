@@ -22,6 +22,8 @@ export interface KeyProfile {
   routeProfiles?: Record<string, RouteOverrides>;
   /** Explicitly link credentials that share an upstream account/project quota. */
   quotaGroup?: string;
+  /** 给 Claude Code / Codex 当大脑时：openai（默认，经本机代理转换）或 anthropic（端点原生支持 /v1/messages） */
+  protocol?: 'openai' | 'anthropic';
 }
 
 export interface RouteOverrides {

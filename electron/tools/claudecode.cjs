@@ -13,6 +13,14 @@ function localLoginEnvironment(source) {
   const allowed = /^(PATH|PATHEXT|SYSTEMROOT|WINDIR|COMSPEC|TEMP|TMP|TMPDIR|HOME|USERPROFILE|APPDATA|LOCALAPPDATA|PROGRAMFILES|PROGRAMFILES\(X86\)|PROGRAMDATA|LANG|LC_ALL|TERM)$/i;
   return { ...Object.fromEntries(Object.entries(source).filter(([key]) => allowed.test(key))), NO_COLOR: '1', FORCE_COLOR: '0' };
 }
+/* 只接受大脑代理给的这几项，且地址必须是本机回环 */
+const BRAIN_KEYS = ['ANTHROPIC_BASE_URL', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_MODEL', 'ANTHROPIC_DEFAULT_OPUS_MODEL', 'ANTHROPIC_DEFAULT_SONNET_MODEL', 'ANTHROPIC_DEFAULT_HAIKU_MODEL', 'ANTHROPIC_DEFAULT_FABLE_MODEL', 'CLAUDE_CODE_SUBAGENT_MODEL', 'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC'];
+function brainEnvironment(env) {
+  if (!/^http:\/\/127\.0\.0\.1:\d{1,5}$/.test(env.ANTHROPIC_BASE_URL || '') || !/^[a-f0-9]{64}$/.test(env.ANTHROPIC_AUTH_TOKEN || '')) throw Error('wickrunAI 大脑连接无效');
+  const out = {};
+  for (const key of BRAIN_KEYS) if (typeof env[key] === 'string') out[key] = env[key];
+  return out;
+}
 function safeExtraArgs(value) {
   const text = String(value || '').trim();
   if (!text) return [];
@@ -57,10 +65,14 @@ function createClaudeCode(deps = {}) {
       extra = safeExtraArgs(ctx.claudeExtraArgs);
       command = resolveNative(ctx.claudeBin, environment, platform, deps.exists);
       (deps.validateBinary || require('../claude-program.cjs').assertClaudeCodeBinary)(command);
-      connection = (deps.readClaudeConnection || readClaudeConnection)(environment);
+      // brainEnv：wickrunAI 选定的大脑（本机代理地址 + 会话令牌 + 模型）；subscription：只用官方账号登录。
+      // 两者都不给时沿用用户 Claude Code 配置里的连接设置（旧行为）。
+      if (ctx.brainEnv) connection = { env: brainEnvironment(ctx.brainEnv), baseUrl: ctx.brainEnv.ANTHROPIC_BASE_URL, brain: true };
+      else if (ctx.subscription) connection = { env: {}, baseUrl: null, subscription: true };
+      else connection = (deps.readClaudeConnection || readClaudeConnection)(environment);
     } catch (e) { return Promise.resolve(fail(e)); }
     const runId = randomUUID(), startedAt = new Date().toISOString();
-    const record = (status, details = {}) => ({ runId, startedAt, finishedAt: new Date().toISOString(), provider: 'claude-code', authSource: connection.baseUrl ? 'claude-user-routing-config' : 'official-client-local-login', status, ...details });
+    const record = (status, details = {}) => ({ runId, startedAt, finishedAt: new Date().toISOString(), provider: 'claude-code', authSource: connection.brain ? 'wickrun-brain-route' : connection.baseUrl ? 'claude-user-routing-config' : 'official-client-local-login', status, ...details });
     if (ctx.signal?.aborted) return Promise.resolve({ ...fail('Claude Code 已取消，尚未启动'), execution: record('cancelled'), cancelled: true });
     return new Promise(resolve => {
       let child, done = false, reason = null, stdout = '', bytes = 0, timer, stopTimer;
@@ -83,7 +95,7 @@ function createClaudeCode(deps = {}) {
       };
       const cancel = () => stop('cancelled');
       try {
-        child = launch(command, ['-p', '--output-format', images.length ? 'stream-json' : 'json', ...(images.length ? ['--input-format', 'stream-json', '--verbose'] : []), '--permission-mode', 'dontAsk', '--setting-sources', '', '--settings', '{"disableAllHooks":true}', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', ...(ctx.chatOnly ? ['--tools', '', '--disallowedTools', 'mcp__*'] : []), ...extra], {
+        child = launch(command, ['-p', '--output-format', images.length ? 'stream-json' : 'json', ...(images.length ? ['--input-format', 'stream-json', '--verbose'] : []), '--permission-mode', 'dontAsk', '--setting-sources', '', '--settings', connection.subscription ? '{"disableAllHooks":true,"forceLoginMethod":"claudeai"}' : '{"disableAllHooks":true}', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', ...(ctx.chatOnly ? ['--tools', '', '--disallowedTools', 'mcp__*'] : []), ...extra], {
           cwd, shell: false, windowsHide: true, detached: platform !== 'win32', stdio: ['pipe', 'pipe', 'pipe'], env: {...localLoginEnvironment(environment),...connection.env},
         });
       } catch { finish({ ...fail('无法启动 Claude Code 客户端'), execution: record('launch_failed') }); return; }

@@ -6,12 +6,12 @@ const os=require('node:os');
 const path=require('node:path');
 const {Client}=require('@modelcontextprotocol/sdk/client/index.js');
 const {StdioClientTransport}=require('@modelcontextprotocol/sdk/client/stdio.js');
-const {createNativeAiBridge}=require('../electron/native-ai-bridge.cjs');
+const {createNativeAiBridge,claudeDesktopConfigFiles}=require('../electron/native-ai-bridge.cjs');
 function fixture(t,overrides={}){
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'wickrun-native-ai-'));
   const settings={keyProfiles:[{id:'key',name:'Worker API',baseUrl:'https://worker.invalid/v1',extraHeaders:{'X-Test':'yes'}}]};
   const requests=[],opened=[];
-  const bridge=createNativeAiBridge({userData:root,appData:path.join(root,'roaming'),getSettings:()=>settings,secretGet:()=> 'fixture-secret',openExternal:async url=>opened.push(url),deps:{runtime:()=>process.execPath,fetch:async(url,init)=>{requests.push({url,...init});return new Response(JSON.stringify({choices:[{message:{content:'工作模型返回的证据'}}],usage:{prompt_tokens:20,completion_tokens:30}}));},...overrides}});
+  const bridge=createNativeAiBridge({userData:root,appData:path.join(root,'roaming'),getSettings:()=>settings,secretGet:()=> 'fixture-secret',openExternal:async url=>opened.push(url),deps:{runtime:()=>process.execPath,claudeConfigFiles:()=>[path.join(root,'roaming','Claude','claude_desktop_config.json')],fetch:async(url,init)=>{requests.push({url,...init});return new Response(JSON.stringify({choices:[{message:{content:'工作模型返回的证据'}}],usage:{prompt_tokens:20,completion_tokens:30}}));},...overrides}});
   t.after(()=>{bridge.close();fs.rmSync(root,{recursive:true,force:true});});
   const create=(extra={})=>bridge.create({provider:'claude-desktop',goal:'评估两个方案并给出结论',workers:[{profileId:'key',model:'worker-one'}],maxJobs:2,maxOutputTokens:512,...extra}).task;
   const rpc=async(p,method,args={},extra={})=>{const config=JSON.parse(fs.readFileSync(path.join(root,'native-ai',p+'.json'),'utf8'));return fetch(config.endpoint,{method:'POST',headers:{Authorization:`Bearer ${config.token}`,'Content-Type':'application/json',...extra},body:JSON.stringify({method,args})});};
@@ -23,7 +23,7 @@ test('real stdio MCP handshake, bounded delegation and final result round trip',
   const client=new Client({name:'fixture-desktop',version:'1.0.0'});
   const transport=new StdioClientTransport({...config,stderr:'pipe'});
   t.after(()=>client.close());await client.connect(transport);
-  const list=await client.listTools();assert.equal(list.tools.length,6);
+  const list=await client.listTools();assert.equal(list.tools.length,8);
   const task=f.create();
   const call=async(name,args)=>{const result=await client.callTool({name:'wickrun_'+name,arguments:args});assert.notEqual(result.isError,true,result.content[0].text);return JSON.parse(result.content[0].text);};
   const detail=await call('get_task',{taskId:task.id});
@@ -89,8 +89,65 @@ test('interrupted jobs remain uncertain after restart, token remains usable at u
   const f=fixture(t);await f.bridge.config('claude-desktop');const task=f.create();
   const file=path.join(f.root,'native-ai','tasks.json'),data=JSON.parse(fs.readFileSync(file,'utf8'));data.tasks[0].jobs.push({id:'job',status:'running'});fs.writeFileSync(file,JSON.stringify(data));
   const previous=JSON.parse(fs.readFileSync(path.join(f.root,'native-ai','claude-desktop.json'),'utf8'));f.bridge.close();
-  const reopened=createNativeAiBridge({userData:f.root,appData:path.join(f.root,'roaming'),getSettings:()=>f.settings,secretGet:()=>'',openExternal:async()=>{}});t.after(()=>reopened.close());await reopened.start();
+  const reopened=createNativeAiBridge({userData:f.root,appData:path.join(f.root,'roaming'),getSettings:()=>f.settings,secretGet:()=>'',openExternal:async()=>{},deps:{claudeConfigFiles:()=>[path.join(f.root,'roaming','Claude','claude_desktop_config.json')]}});t.after(()=>reopened.close());await reopened.start();
   assert.equal(reopened.state().tasks[0].jobs[0].status,'uncertain');
   const next=JSON.parse(fs.readFileSync(path.join(f.root,'native-ai','claude-desktop.json'),'utf8'));assert.equal(next.token,previous.token);assert.notEqual(next.endpoint,previous.endpoint);
   const response=await f.rpc('claude-desktop','get_task',{taskId:task.id});assert.equal(response.status,200);
+});
+
+test('Claude claims queued tasks one at a time and can report a blocker',async t=>{
+  const f=fixture(t);await f.bridge.config('claude-desktop');
+  const call=async(method,args)=>{const r=await f.rpc('claude-desktop',method,args);const v=await r.json();if(v.error)throw Error(v.error);return v;};
+  assert.deepEqual((await call('claim_task')).idle,true);
+  const first=f.create({workers:[],requestKey:'a'}),second=f.create({workers:[],goal:'第二个任务',requestKey:'b'});
+  const got=await call('claim_task');
+  assert.equal(got.task.id,first.id);assert.equal(got.task.status,'working');assert.match(got.instructions,/wickrun_report_blocked/);
+  assert.equal((await call('claim_task')).task.id,second.id,'a claimed task is never handed out twice');
+  assert.equal((await call('claim_task')).idle,true);
+  await assert.rejects(call('report_blocked',{taskId:first.id,reason:''}),/受阻原因/);
+  await call('report_blocked',{taskId:first.id,reason:'需要访问 D 盘的权限'});
+  const saved=f.bridge.state().tasks.find(x=>x.id===first.id);
+  assert.equal(saved.status,'blocked');assert.equal(saved.blockedReason,'需要访问 D 盘的权限');
+  await assert.rejects(call('submit_result',{taskId:first.id,text:'x'}),/已经结束/);
+});
+
+test('Microsoft Store Claude Desktop config location is written alongside the standard one',()=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'wickrun-msix-'));
+  try{
+    const local=path.join(root,'Local'),roaming=path.join(root,'Roaming');
+    fs.mkdirSync(path.join(local,'Packages','Claude_pzs8sxrjxfjjc'),{recursive:true});fs.mkdirSync(path.join(local,'Packages','Other_x'),{recursive:true});
+    const onlyStore=claudeDesktopConfigFiles(roaming,{LOCALAPPDATA:local},'win32');
+    assert.deepEqual(onlyStore,[path.join(local,'Packages','Claude_pzs8sxrjxfjjc','LocalCache','Roaming','Claude','claude_desktop_config.json')]);
+    fs.mkdirSync(path.join(roaming,'Claude'),{recursive:true});
+    assert.equal(claudeDesktopConfigFiles(roaming,{LOCALAPPDATA:local},'win32').length,2);
+    assert.deepEqual(claudeDesktopConfigFiles(roaming,{},'darwin'),[path.join(roaming,'Claude','claude_desktop_config.json')]);
+  }finally{fs.rmSync(root,{recursive:true,force:true});}
+});
+
+test('a wickrun_ai entry written by another wickrunAI copy is updated; a foreign one needs confirmation',async t=>{
+  const f=fixture(t);const file=path.join(f.root,'roaming','Claude','claude_desktop_config.json');fs.mkdirSync(path.dirname(file),{recursive:true});
+  // 开发模式 / 旧名字的安装版：数据目录不同，但同样是 wickrunAI 写的
+  const other={command:'node',args:[path.join(f.root,'old-userdata','native-ai','wickrun-mcp.cjs'),path.join(f.root,'old-userdata','native-ai','claude-desktop.json')]};
+  fs.writeFileSync(file,JSON.stringify({mcpServers:{wickrun_ai:other,keep:{command:'x'}}}));
+  const updated=await f.bridge.configureClaude();
+  assert.equal(updated.conflicts.length,0);assert.match(updated.message,/另一个 wickrunAI/);
+  let saved=JSON.parse(fs.readFileSync(file,'utf8'));
+  assert.ok(saved.mcpServers.wickrun_ai.args[0].startsWith(path.join(f.root,'native-ai')));assert.equal(saved.mcpServers.keep.command,'x');
+  // 别的程序写的同名连接：不改文件，返回冲突说明
+  const foreign={command:'python',args:['C:/tools/someone-else/server.py']};
+  fs.writeFileSync(file,JSON.stringify({mcpServers:{wickrun_ai:foreign}}));
+  const blocked=await f.bridge.configureClaude();
+  assert.equal(blocked.conflicts.length,1);assert.match(blocked.message,/server\.py/);assert.deepEqual(blocked.files,[]);
+  assert.deepEqual(JSON.parse(fs.readFileSync(file,'utf8')).mcpServers.wickrun_ai,foreign);
+  const replaced=await f.bridge.configureClaude({replace:true});
+  assert.equal(replaced.files.length,1);assert.match(replaced.message,/\.prev/);
+  saved=JSON.parse(fs.readFileSync(file,'utf8'));assert.equal(saved.mcpServers.wickrun_ai.command,process.execPath);
+  assert.deepEqual(JSON.parse(fs.readFileSync(file+'.prev','utf8')).mcpServers.wickrun_ai,foreign);
+});
+
+test('tests can never reach the real Claude Desktop configuration',async t=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'wickrun-guard-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+  const bridge=createNativeAiBridge({userData:root,appData:path.join(root,'roaming'),getSettings:()=>({}),secretGet:()=>'',openExternal:async()=>{},deps:{runtime:()=>process.execPath}});
+  t.after(()=>bridge.close());
+  await assert.rejects(bridge.configureClaude(),/claudeConfigFiles/);
 });

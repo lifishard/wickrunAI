@@ -1,5 +1,14 @@
 # wickrunAI 工程进度
 
+## 2026-09-24 2.19.0：Claude Code / Codex 大脑统一调控、Claude Desktop 领取任务
+
+- **大脑**：本机 AI 里选 Claude Code 或 Codex 后可选「大脑」：沿用客户端配置、本机订阅（Claude / ChatGPT 官方登录）、或 wickrunAI 任一路由。路由经新加的本机大脑代理（`electron/brain-proxy.cjs`，仅 127.0.0.1）把 Anthropic Messages / OpenAI Responses 转成 Chat Completions，流式与工具调用双向映射；密钥不出 wickrunAI，客户端只拿会话令牌，运行结束即撤销。思考强度沿用五级刻度与映射表。凭据页可把端点标为 Anthropic 原生（原样转发）。
+- **全局应用**：可把当前大脑写进 `~/.claude/settings.json` / `~/.codex/config.toml`，终端直接用；只改接管的键，首次原文件另存 `.before-wickrun`，一键还原或改用订阅。
+- **Claude Desktop 领取**：`wickrun_ai` 新增 `wickrun_claim_task`、`wickrun_report_blocked`；对话交给 Claude 的任务先排队，Claude 在线时自行领取，离线时才用深链接；可复制领取指令做成 Claude Desktop 定时任务。修复微软商店版 Claude 读不到配置（MSIX 虚拟化路径）。
+- 2.19.1：一键配置遇到同名 `wickrun_ai` 时不再直接报错。另一个 wickrunAI（安装版、开发模式、改名前旧版，数据目录不同）写的条目直接更新；别的程序写的条目显示它指向哪里，确认后替换并备份 `.prev`。先读全部配置位置再写，不会只改一半。界面去掉 Electron 报错前缀。
+- 2.19.2：修正测试隔离。2.19.0 起配置会识别微软商店版 Claude 的真实位置，而桥接测试没有注入临时位置，Windows 上跑打包或同步前的测试会把指向临时目录的 wickrun_ai 写进用户真实的 Claude Desktop 配置，这正是「已有其他 wickrun_ai 配置」报错的来源之一。现在测试一律注入临时配置位置；测试进程里未注入就直接报错，不再可能碰到真实配置。
+- 验证：见本批交付说明。第二批（网页版云端 MCP 连接器、网页版连接本机 AI）尚未开始。
+
 ## 2026-09-24 2.18.12：路由组，批处理入口移出仓库
 
 - **路由组**：设置新增「路由组」页，可新建、命名、备注、排序、复制、删除，也可从应用全局接力名单新建或把一组设为全局名单。输入框左下角模型选择器顶部可一键选用：切到组内第一条可用路由，整组成为本对话接力名单。右侧「失灵交接名单」三层都可选用。名单引用组 id 并保存快照，改组即时生效，删组退回快照。协作成员沿用全局名单时同样按组展开。设置随云同步。

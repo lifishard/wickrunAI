@@ -6,6 +6,7 @@ import type { AppSettings } from '../types';
 import './ClientConnections.css';
 import ClaudeRepair from './ClaudeRepair';
 import NativeAiPanel from './NativeAiPanel';
+import BrainPicker from './BrainPicker';
 
 type CliClientKind = Exclude<ClientKind, 'claude-desktop'>;
 const CLIENTS: CliClientKind[] = ['codex', 'claude', 'kimi', 'grok'];
@@ -204,9 +205,11 @@ export default function ClientConnections({ selection, onSelect, settings, onSet
                 {t(status ? STATUS_LABEL[status.status] : '检测中')}
               </span>
             </div>
-            <p>{status?.message || t(kind === 'codex' ? '使用官方 ChatGPT 登录与 Codex 订阅模型。' : kind === 'claude' ? '使用 Claude Code 的现有账号或 API 配置。' : kind === 'grok' ? '使用官方 Grok 登录与本机 Grok Desktop 订阅模型。' : '通过 Kimi 官方 ACP 接口连接。')}</p>
+            <p>{status?.message || t(kind === 'codex' ? '可用 ChatGPT 订阅，或把 wickrunAI 里的任一路由当作 Codex 的大脑。' : kind === 'claude' ? '可用 Claude 订阅、现有配置，或把 wickrunAI 里的任一路由当作 Claude Code 的大脑。' : kind === 'grok' ? '使用官方 Grok 登录与本机 Grok Desktop 订阅模型。' : '通过 Kimi 官方 ACP 接口连接。')}</p>
 
-            {selected ? (
+            {selected && (kind === 'claude' || kind === 'codex') ? (
+              <BrainPicker kind={kind} selection={selection} settings={settings} onSelect={onSelect} clientModels={status?.models ?? []} clientEfforts={efforts} />
+            ) : selected ? (
               <div className="client-model-fields">
                 <label>
                   <span>{t('模型')}</span>
@@ -231,8 +234,8 @@ export default function ClientConnections({ selection, onSelect, settings, onSet
             <div className="client-actions">
               {status?.status === 'login_required' && (kind === 'codex' || kind === 'grok') ? (
                 <button className="btn sm" disabled={busy !== null} onClick={() => void act(kind, true)}>{t(busy === kind ? '正在打开…' : kind === 'grok' ? '登录 Grok' : '登录 ChatGPT')}</button>
-              ) : status?.status === 'ready' ? (
-                <button className="btn sm" disabled={selected} onClick={() => onSelect({ kind, model: status.models[0]?.id || 'default', effort: status.models[0]?.defaultEffort })}>{selected ? '正在使用' : '使用此连接'}</button>
+              ) : status?.status === 'ready' || ((kind === 'claude' || kind === 'codex') && status?.binary && status.status !== 'missing' && settings.keyProfiles.length > 0) ? (
+                <button className="btn sm" disabled={selected} onClick={() => onSelect({ kind, model: status.models[0]?.id || 'default', effort: status.models[0]?.defaultEffort })}>{t(selected ? '正在使用' : '使用此连接')}</button>
               ) : (
                 <button className="btn sm" disabled={busy !== null} onClick={() => void act(kind, true)}>{t(busy === kind ? '连接中…' : '一键连接')}</button>
               )}

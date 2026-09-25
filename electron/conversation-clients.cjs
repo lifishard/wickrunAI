@@ -8,6 +8,7 @@ const { claudeCode } = require('./tools/claudecode.cjs');
 const { readClaudeConnection, describeConnection } = require('./claude-connection.cjs');
 const { guardPath } = require('./tools/common.cjs');
 const { normalizeImages } = require('./client-images.cjs');
+const { cleanBrain, claudeBrainEnv, codexBrain } = require('./brain-config.cjs');
 
 const GROK_FALLBACK_MODELS = [
   { id: 'grok-4.6', label: 'Grok 4.6', efforts: ['low', 'medium', 'high', 'xhigh'], defaultEffort: 'high' },
@@ -180,6 +181,9 @@ function createConversationClients({ userData, getSettings, store, openExternal,
     if(!record || record.state.status!=='running' || !KINDS.includes(selection?.kind))throw Error('请先保存本轮会话和连接配置');
     if(typeof selection.model!=='string'||!/^[\w./:-]{1,160}$/.test(selection.model)||(selection.effort!==undefined && (typeof selection.effort!=='string'||!/^[\w-]{1,30}$/.test(selection.effort))))throw Error('模型或思考强度格式无效');
     if(typeof args.prompt!=='string'||!args.prompt.trim()||args.prompt.length>2000000)throw Error('上下文为空或过长');
+    // 大脑：Claude Code / Codex 用哪条路由思考。其他客户端没有这个概念
+    const brain=['claude','codex'].includes(selection.kind)?cleanBrain(selection.brain):{source:'config'};
+    if(brain.source==='route'&&(!deps.brainProxy||selection.model==='default'))throw Error('请为大脑路由选择一个具体模型');
     const jobId='native-'+args.requestId, prior=store.job(args.runId,jobId);
     if(prior){if(prior.result)return prior.result;throw Error('此调用已派发但结果未确认，请先核实，不会重复执行。');}
     const images=normalizeImages(args.images).map(image=>image.dataUrl);
@@ -200,6 +204,7 @@ function createConversationClients({ userData, getSettings, store, openExternal,
       scratchDir=fs.realpathSync(fs.mkdtempSync(path.join(scratchBase,'run-')));
     }
     const binary=discover(selection.kind), controller=new AbortController(), job={controller,client:null};
+    let brainSession=null;
     active.set(args.runId,job);
     let acpWorkCapabilityFailure=null;
     const onApproval=event=>{
@@ -231,18 +236,20 @@ function createConversationClients({ userData, getSettings, store, openExternal,
       });
     };
     try {
-      store.saveJob(args.runId,jobId,{status:'dispatched',at:Date.now(),kind:selection.kind,cwd,...(scratchDir?{scratchDir}:{})});
+      store.saveJob(args.runId,jobId,{status:'dispatched',at:Date.now(),kind:selection.kind,cwd,...(scratchDir?{scratchDir}:{}),...(brain.source!=='config'?{brain:{source:brain.source,profileId:brain.profileId}}:{})});
+      if(brain.source==='route')brainSession=await deps.brainProxy.openSession({profileId:brain.profileId,model:selection.model,extras:brain.extras,outputField:brain.outputField});
       let result;
       if(selection.kind==='codex'){
-        job.client=codex(binary,{turnTimeoutMs:Math.min(3600000,Math.max(10000,(record.config.runtime?.maxMinutes || 30)*60000))});
+        job.client=codex(binary,{turnTimeoutMs:Math.min(3600000,Math.max(10000,(record.config.runtime?.maxMinutes || 30)*60000)),...(brainSession?{brain:codexBrain(brainSession)}:{})});
         let partial='',lastSave=0;
         const raw=await job.client.run({prompt:args.prompt,images,model:selection.model==='default'?undefined:selection.model,effort:selection.effort||undefined,cwd,sandbox:work?'workspaceWrite':'readOnly',signal:controller.signal,onApproval,isolateTools:true,
           onEvent:event=>{if(event.type==='thread/ready')store.saveJob(args.runId,jobId,{status:'running',threadId:event.threadId,at:Date.now(),kind:selection.kind,cwd});
             if(event.type==='item/agentMessage/delta' && typeof event.delta==='string'){partial=(partial+event.delta).slice(-2000000);if(Date.now()-lastSave>500){store.saveJob(args.runId,jobId,{status:'running',partial,at:Date.now(),kind:selection.kind,cwd});lastSave=Date.now();}notify({type:'delta',requestId:args.requestId,text:event.delta});}}});
         result={status:raw.status,text:raw.text,error:raw.error,sessionId:raw.threadId};
       }else if(selection.kind==='claude'){
-        const extra=[selection.model==='default'?'':`--model ${selection.model}`,selection.effort?`--effort ${selection.effort}`:''].filter(Boolean).join(' ');
-        const raw=await (deps.claudeCode || claudeCode)({prompt:args.prompt,images,cwd},{workspaceRoots:[cwd],claudeBin:binary,claudeExtraArgs:extra,claudeTimeoutMs:Math.min(3600000,(record.config.runtime?.maxMinutes || 10)*60000),signal:controller.signal,chatOnly:!work});
+        // 大脑路由的模型和思考强度由代理会话决定，不再用 --model / --effort 叠一层
+        const extra=brainSession?'':[selection.model==='default'?'':`--model ${selection.model}`,selection.effort?`--effort ${selection.effort}`:''].filter(Boolean).join(' ');
+        const raw=await (deps.claudeCode || claudeCode)({prompt:args.prompt,images,cwd},{workspaceRoots:[cwd],claudeBin:binary,claudeExtraArgs:extra,...(brainSession?{brainEnv:claudeBrainEnv(brainSession)}:brain.source==='subscription'?{subscription:true}:{}),claudeTimeoutMs:Math.min(3600000,(record.config.runtime?.maxMinutes || 10)*60000),signal:controller.signal,chatOnly:!work});
         result={status:raw.uncertain?'unknown':raw.ok?'completed':'failed',text:raw.content||'',error:raw.error,sessionId:raw.execution?.sessionId};
       }else{
         job.client=acp(binary, selection.kind, cwd, scratchDir ? {env:{...(deps.env || process.env),TEMP:scratchDir,TMP:scratchDir,TMPDIR:scratchDir}} : {});
@@ -283,7 +290,7 @@ function createConversationClients({ userData, getSettings, store, openExternal,
       const result={status:'unknown',text:saved?.partial||'',error:String(error.message||error),...(before?codeAudit.compare(before,codeAudit.snapshot([cwd])):{})};
       store.saveJob(args.runId,jobId,{status:result.status,result,at:Date.now(),kind:selection.kind,cwd});
       return result;
-    }finally{controller.abort();job.client?.close();active.delete(args.runId);}
+    }finally{controller.abort();job.client?.close();active.delete(args.runId);if(brainSession)deps.brainProxy.closeSession(brainSession.token);}
   }
   return {check,connect,restore,run,async repairClaude(){ try { const binary=discover('claude');(deps.validateClaudeBinary || require('./claude-program.cjs').assertClaudeCodeBinary)(binary); const recovery=await deps.repairClaudeGateway?.(); if(recovery && recovery.state!=='ready') return {kind:'claude',status:'error',models:[],message:recovery.message}; return await check('claude'); } catch { return {kind:'claude',status:'error',models:[],message:'Claude 恢复检查失败，请核对程序路径和用户路由配置。'}; } },recover(runId,callId){if(!/^native-[\w-]{1,160}$/.test(callId || '')||!store.list().some(r=>r.id===runId))throw Error('执行记录无效');const saved=store.job(runId,callId);return saved?.result || (saved?{status:'unknown',text:saved.partial || '',error:'先前操作未留下可靠的完成记录，请核实后再继续。'}:null);},approve(requestId,id,approved){const entry=approvals.get(id);if(!entry||entry.requestId!==requestId)throw Error('此操作已结束或授权已过期');entry.finish(approved===true);},abort:id=>active.get(id)?.controller.abort(),busy:()=>active.size>0,close(){for(const job of active.values())job.controller.abort();for(const client of logins.values())client.close();logins.clear();}};
 }

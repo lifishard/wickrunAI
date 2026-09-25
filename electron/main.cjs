@@ -29,6 +29,7 @@ let restoringData = false;
 let storageStartupError = null;
 let localClients = null;
 let conversationClients = null;
+let brainProxy = null;
 let nativeAiBridge = null;
 let taskNotifier = null;
 const activeToolControllers = new Map();
@@ -364,7 +365,7 @@ function registerIpc() {
   const gatewayRecovery = require('./gateway-recovery.cjs').createGatewayRecovery({getSettings:()=>JSON.parse(store.kvGet('snc:settings:v1')||'{}'),secretGet:id=>store.secretGet(id),getClaudeConnection:()=>require('./claude-connection.cjs').readClaudeConnection()});
   const nativeBridge=()=>{dataAvailable();if(!nativeAiBridge)nativeAiBridge=require('./native-ai-bridge.cjs').createNativeAiBridge({userData:app.getPath('userData'),appData:app.getPath('appData'),getSettings:()=>JSON.parse(store.kvGet('snc:settings:v1')||'{}'),secretGet:id=>store.secretGet(id),openExternal:url=>shell.openExternal(url)});return nativeAiBridge;};
   ipcMain.handle('snc:nativeAiState',async()=>{const bridge=nativeBridge();await bridge.start();return bridge.state();});
-  ipcMain.handle('snc:nativeAiConfigure',()=>nativeBridge().configureClaude());
+  ipcMain.handle('snc:nativeAiConfigure',(_e,options)=>nativeBridge().configureClaude({replace:options?.replace===true}));
   ipcMain.handle('snc:nativeAiCreate',(_e,input)=>nativeBridge().create(input));
   ipcMain.handle('snc:nativeAiOpen',(_e,{provider,taskId})=>nativeBridge().open(provider,taskId));
   ipcMain.handle('snc:nativeAiCancel',(_e,id)=>nativeBridge().cancel(id));
@@ -377,7 +378,21 @@ function registerIpc() {
   ipcMain.handle('snc:pickClientBinary',async()=>{const chosen=await dialog.showOpenDialog(mainWindow,{title:'选择官方原生客户端',properties:['openFile'],...(process.platform==='win32'?{filters:[{name:'原生程序',extensions:['exe']}]}:{})});return chosen.canceled?null:chosen.filePaths[0];});
   ipcMain.handle('snc:clientCheck',(_e,kind)=>{dataAvailable();if(!['codex','claude'].includes(kind))throw Error('未知客户端');return localClients.check(kind);});
   ipcMain.handle('snc:clientLogin',()=>{dataAvailable();return localClients.login();});
-  conversationClients=require('./conversation-clients.cjs').createConversationClients({userData:app.getPath('userData'),getSettings:()=>JSON.parse(store.kvGet('snc:settings:v1')||'{}'),store:runtimeStore(),openExternal:url=>shell.openExternal(url),deps:{claudeGatewayCheck:()=>gatewayRecovery.checkClaude(),repairClaudeGateway:()=>gatewayRecovery.repairClaude()}});
+  // 大脑代理：Claude Code / Codex 通过它用 wickrunAI 里登记的任意路由；只监听 127.0.0.1
+  brainProxy=require('./brain-proxy.cjs').createBrainProxy({userData:app.getPath('userData'),getSettings:()=>JSON.parse(store.kvGet('snc:settings:v1')||'{}'),secretGet:id=>store.secretGet(id)});
+  const brainGlobal=require('./brain-config.cjs').createBrainGlobal({userData:app.getPath('userData')});
+  conversationClients=require('./conversation-clients.cjs').createConversationClients({userData:app.getPath('userData'),getSettings:()=>JSON.parse(store.kvGet('snc:settings:v1')||'{}'),store:runtimeStore(),openExternal:url=>shell.openExternal(url),deps:{brainProxy,claudeGatewayCheck:()=>gatewayRecovery.checkClaude(),repairClaudeGateway:()=>gatewayRecovery.repairClaude()}});
+  const brainPublic=scope=>{const g=brainProxy.getGlobal(scope);return g?{profileId:g.profileId,model:g.model,baseUrl:scope==='claude'?g.anthropicBaseUrl:g.openaiBaseUrl}:null;};
+  ipcMain.handle('snc:brainGlobalStatus',async()=>{dataAvailable();await brainProxy.start();return {applied:brainGlobal.status(),claude:brainPublic('claude'),codex:brainPublic('codex'),port:brainProxy.port()};});
+  ipcMain.handle('snc:brainGlobalApply',async(_e,{client,mode,brain,effort})=>{
+    dataAvailable();
+    if(!['claude','codex'].includes(client)||!['route','subscription','restore'].includes(mode))throw Error('参数无效');
+    let session=null;
+    if(mode==='route'){const b=require('./brain-config.cjs').cleanBrain(brain);if(b.source!=='route'||typeof brain.model!=='string')throw Error('请选择路由和模型');session=await brainProxy.setGlobal(client,{profileId:b.profileId,model:brain.model,extras:b.extras,outputField:b.outputField});}
+    else await brainProxy.setGlobal(client,null);
+    const result=client==='claude'?brainGlobal.applyClaude(mode,session,effort):brainGlobal.applyCodex(mode,session,effort);
+    return {...result,applied:brainGlobal.status(),claude:brainPublic('claude'),codex:brainPublic('codex')};
+  });
   ipcMain.handle('snc:claudeRepair',()=>{dataAvailable();return conversationClients.repairClaude();});
   ipcMain.handle('snc:conversationClientCheck',(_e,kind)=>{dataAvailable();return conversationClients.check(kind);});
   ipcMain.handle('snc:conversationClientConnect',(_e,kind)=>{dataAvailable();return conversationClients.connect(kind);});
@@ -584,6 +599,8 @@ if (!app.requestSingleInstanceLock()) {
     if(!storageStartupError){
       void chromeLaunch.restore().catch(error=>console.error('Chrome connection restore:',error.message));
       void conversationClients?.restore().catch(error=>console.error('Native connection restore:',error.message));
+      // 全局大脑写进了 Claude Code / Codex 配置时，终端里的 claude / codex 需要代理在线
+      if(require('node:fs').existsSync(path.join(app.getPath('userData'),'brain-sessions.json')))void brainProxy?.start().catch(error=>console.error('Brain proxy:',error.message));
     }
     buildMenu();
     createWindow();
@@ -605,6 +622,7 @@ if (!app.requestSingleInstanceLock()) {
     nativeAiBridge?.close();
     localClients?.close();
     conversationClients?.close();
+    brainProxy?.close();
     for (const [, rec] of inflight) {
       clearTimeout(rec.timer);
       rec.controller.abort('quit');

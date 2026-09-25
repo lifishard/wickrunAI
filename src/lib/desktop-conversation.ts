@@ -39,8 +39,11 @@ export function runDesktopConversation(args:RunAgentArgs):AgentHandle {
       }
       const taskId=state.nativeDesktop.taskId!;
       if(cancelled){await bridge.nativeAiCancel(taskId);throw Error('已停止 Claude Desktop 交接。');}
-      await bridge.nativeAiOpen('claude-desktop',taskId);
-      events.onNotice('已打开 Claude Desktop。请在官方应用点发送并授权连接器；任务进度和结果会回到此处。');
+      // 领取模式：任务进队列，已连接的 Claude 会话调用 wickrun_claim_task 自行领取。
+      // 没有在线的 Claude 时才用深链接打开官方应用，预填一句「领取任务」的话。
+      const live=(await bridge.nativeAiState()).connections?.find(c=>c.provider==='claude-desktop')?.connected;
+      if(live)events.onNotice('任务已排队，等待 Claude 领取（在 Claude 里说「领取灯芯AI 任务」，或让它的定时任务自动领取）。进度和结果会回到此处。');
+      else{await bridge.nativeAiOpen('claude-desktop',taskId);events.onNotice('已打开 Claude Desktop。请在官方应用发送预填的话并授权连接器，Claude 会领取此任务；进度和结果会回到此处。');}
       const deadline=Date.now()+(args.config.runtime?.maxMinutes||60)*60000;
       let signature='';
       while(!cancelled){
@@ -66,6 +69,7 @@ export function runDesktopConversation(args:RunAgentArgs):AgentHandle {
           await save();await events.onRunState(null);events.onNotice('');events.onDone();return;
         }
         if(task.status==='cancelled')throw Error('Claude Desktop 任务已取消，已有记录保留。');
+        if(task.status==='blocked')throw Error(`Claude 报告任务受阻：${task.blockedReason||'未说明原因'}`);
         if(Date.now()>=deadline)throw Error('等待 Claude Desktop 达到本阶段时间上限，可继续检查原任务；未自动重发。');
         await new Promise<void>((resolve)=>{const timer=setTimeout(()=>{wake=undefined;resolve();},3000);wake=()=>{clearTimeout(timer);resolve();};});
       }

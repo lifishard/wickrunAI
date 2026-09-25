@@ -205,3 +205,19 @@ test('approval timeout rejects late acceptance and unsupported requests never us
   assert.deepEqual(f.messages.filter(m => m.id === 'approve').map(m => m.result), [{ decision: 'decline' }]);
   terminal(f.send); const result = await p; assert.equal(result.status, 'approval_required'); assert.ok(result.pendingApprovals.some(a => a.resolutionReason === 'timeout')); f.client.close();
 });
+
+test('a wickrunAI brain runs Codex against the local proxy without a ChatGPT account', async () => {
+  const token = 'd'.repeat(64);
+  const f = fixture({ 'account/read': (request, send) => send({ id: request.id, result: { account: null } }) }, { brain: { baseUrl: 'http://127.0.0.1:18765/v1', token } });
+  const p = f.client.run({ prompt: 'hello', model: 'kimi-k3', sandbox: 'readOnly' });
+  await ready();
+  const invocation = f.invocation();
+  assert.deepEqual(invocation[2].env, { PATH: 'safe', NO_COLOR: '1', WICKRUN_BRAIN_TOKEN: token });
+  assert.ok(invocation[1].includes('model_provider="wickrun"'));
+  assert.ok(invocation[1].some(a => a.startsWith('model_providers.wickrun=') && a.includes('wire_api="responses"') && a.includes('http://127.0.0.1:18765/v1') && !a.includes(token)));
+  assert.equal(invocation[1].includes('forced_login_method="chatgpt"'), false);
+  assert.equal(f.messages.find(m => m.method === 'thread/start').params.modelProvider, 'wickrun');
+  f.send({ method: 'item/completed', params: { threadId: 'thread-1', turnId: 'turn-1', item: { type: 'agentMessage', id: 'i', phase: 'final_answer', text: 'done' } } });
+  terminal(f.send); assert.equal((await p).status, 'completed'); f.client.close();
+  assert.throws(() => createCodexClient({ binary: path.resolve('codex.exe'), cwd: path.resolve('.'), brain: { baseUrl: 'https://evil.example/v1', token } }), /brain/);
+});
