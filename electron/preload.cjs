@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('snc', {
   platform: 'electron',
   nativeAiState: () => ipcRenderer.invoke('snc:nativeAiState'),
   nativeAiConfigure: options => ipcRenderer.invoke('snc:nativeAiConfigure',options),
+  nativeAiExtension: () => ipcRenderer.invoke('snc:nativeAiExtension'),
   nativeAiCreate: input => ipcRenderer.invoke('snc:nativeAiCreate',input),
   nativeAiOpen: (provider,taskId) => ipcRenderer.invoke('snc:nativeAiOpen',{provider,taskId}),
   nativeAiCancel: id => ipcRenderer.invoke('snc:nativeAiCancel',id),

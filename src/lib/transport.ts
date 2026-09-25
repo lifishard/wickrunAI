@@ -62,6 +62,7 @@ interface ElectronBridge extends CloudBridge {
   onTaskNotificationClick(cb:(event:TaskNotificationClick)=>void):()=>void;
   nativeAiState():Promise<import('./native-ai').NativeAiState>;
   nativeAiConfigure(options?:{replace?:boolean}):Promise<{state:import('./native-ai').NativeAiState;message:string;files?:string[];conflicts?:{file:string;command:string;args:string[]}[]}>;
+  nativeAiExtension():Promise<{file:string;opened:boolean;removedConfig:number;state:import('./native-ai').NativeAiState}>;
   nativeAiCreate(input:import('./native-ai').NativeAiInput):Promise<{task:import('./native-ai').NativeAiTask;prompt:string}>;
   nativeAiOpen(provider:import('./native-ai').NativeAiProvider,taskId?:string):Promise<{prompt:string}>;
   nativeAiCancel(id:string):Promise<import('./native-ai').NativeAiState>;

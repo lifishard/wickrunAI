@@ -53,6 +53,7 @@ function createNativeAiBridge({userData,appData,getSettings,secretGet,openExtern
   function configured(p){
     if(!fs.existsSync(path.join(dir,p+'.json')))return false;
     if(p!=='claude-desktop')return true;
+    if(fs.existsSync(path.join(dir,'extension.json')))return true;
     return configFiles().some(file=>{try{const entry=JSON.parse(fs.readFileSync(file,'utf8')).mcpServers?.wickrun_ai;return Boolean(entry?.command&&entry.args?.includes(path.join(dir,'wickrun-mcp.cjs'))&&entry.args?.includes(path.join(dir,p+'.json')));}catch{return false;}});
   }
   function publicState(){return {connections:providers.map(p=>({provider:p,configured:configured(p),connected:Date.now()-(seen.get(p)?.at || 0)<45000,client:seen.get(p)?.client})),tasks:db.read().tasks.map(visible)};}
@@ -201,6 +202,27 @@ function createNativeAiBridge({userData,appData,getSettings,secretGet,openExtern
   function cancel(id){const t=db.read().tasks.find(t=>t.id===id);if(!t)throw Error('任务不存在');updateTask(id,t.provider,t=>{active(t);t.status='cancelled';for(const j of t.jobs)if(j.status==='running'){j.status='uncertain';j.error='用户已取消，可能已计费；未自动重发。';controllers.get(j.id)?.abort();}});return publicState();}
   function remove(id){db.update(data=>{const t=data.tasks.find(t=>t.id===id);if(t&&(t.status==='waiting'||t.status==='working'))throw Error('请先取消进行中的任务');data.tasks=data.tasks.filter(t=>t.id!==id);});return publicState();}
   function close(){closed=true;for(const c of controllers.values())c.abort();server?.close();}
-  return {start,state:publicState,configureClaude,config,create,open,cancel,remove,close,busy:()=>controllers.size>0};
+  /*
+   * 打包成 Claude Desktop 扩展（.mcpb）：Claude 用自带的 Node 运行，双击即可安装，
+   * 不依赖用户的 Node，也不依赖 Claude 读哪份配置文件。
+   * 装扩展后移除本机 wickrunAI 写过的 wickrun_ai 配置条目，免得 Claude 里出现两套同名工具。
+   */
+  async function buildExtension(options={}){
+    await start();
+    const target=path.join(dir,'wickrun-mcp.cjs');
+    fs.copyFileSync(deps.bundle || path.join(__dirname,'native-mcp.bundle.cjs'),target);
+    writeConnection('claude-desktop');
+    const out=path.join(dir,'wickrun-ai.mcpb');
+    (deps.buildMcpb || require('./mcpb.cjs').buildMcpb)({outFile:out,serverFile:target,connectionFile:path.join(dir,'claude-desktop.json'),version:options.version,iconFile:options.iconFile});
+    let removed=0;
+    for(const file of configFiles()){
+      if(!fs.existsSync(file))continue;
+      const settings=createDurableJson(file,{initial:()=>({}),validate:v=>{if(!v||typeof v!=='object'||Array.isArray(v))throw Error('Claude Desktop 配置格式无效，未改动');}});
+      if(ownEntry(settings.read().mcpServers?.wickrun_ai)){settings.update(v=>{delete v.mcpServers.wickrun_ai;});removed++;}
+    }
+    fs.writeFileSync(path.join(dir,'extension.json'),JSON.stringify({builtAt:Date.now(),file:out}));
+    return {file:out,removedConfig:removed,state:publicState()};
+  }
+  return {start,state:publicState,configureClaude,buildExtension,config,create,open,cancel,remove,close,busy:()=>controllers.size>0};
 }
 module.exports={createNativeAiBridge,runtime,claudeDesktopConfigFiles};

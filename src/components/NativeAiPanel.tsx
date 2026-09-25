@@ -14,7 +14,7 @@ export default function NativeAiPanel({ selected = false, onSelect }: { selected
   const t = useT();
   const [state, setState] = React.useState<NativeAiState>(EMPTY_STATE);
   const [loaded, setLoaded] = React.useState(false);
-  const [busy, setBusy] = React.useState<'configure' | 'open' | 'check' | null>(null);
+  const [busy, setBusy] = React.useState<'configure' | 'open' | 'check' | 'extension' | null>(null);
   const [message, setMessage] = React.useState('');
   const [error, setError] = React.useState('');
   const [conflict, setConflict] = React.useState<{ message: string; where: string[] } | null>(null);
@@ -77,6 +77,27 @@ export default function NativeAiPanel({ selected = false, onSelect }: { selected
     }
   };
 
+  const installExtension = async () => {
+    const api = desktop();
+    if (!api?.nativeAiExtension) return;
+    setBusy('extension');
+    setError('');
+    setMessage('');
+    setConflict(null);
+    try {
+      const result = await api.nativeAiExtension();
+      setState(result.state);
+      setLoaded(true);
+      setMessage(t(result.opened
+        ? '已生成扩展并交给 Claude Desktop。请在弹出的安装界面点「安装」，然后在 Claude 里说「领取灯芯AI 任务」。灯芯AI 需要保持运行。'
+        : '已生成扩展文件并在文件夹中显示。把 wickrun-ai.mcpb 拖进 Claude Desktop 窗口，或在「设置 → 扩展 → 高级设置 → 安装扩展」里选择它。'));
+    } catch (cause) {
+      setError(readable(cause));
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const openClaude = async () => {
     const api = desktop();
     if (!api) return;
@@ -111,19 +132,25 @@ export default function NativeAiPanel({ selected = false, onSelect }: { selected
       {connection?.configured ? <p className="connection-detail">{t('从对话发送的任务会排队。Claude 连接在线时，在 Claude 里说「领取灯芯AI 任务」即可领取；也可以把下面的指令设为 Claude Desktop 的定时任务，自动领取。')}</p> : null}
 
       <div className="client-actions">
-        {loaded && !error && connection?.configured && onSelect ? (
+        {loaded && connection?.configured && onSelect ? (
           <button className="btn sm" disabled={selected} onClick={onSelect}>{t(selected ? '正在对话中使用' : '在对话中使用')}</button>
         ) : null}
-        {loaded && !error && connection?.configured ? (
+        {loaded && !connection?.connected ? (
+          <button className={`btn sm${connection?.configured ? ' ghost' : ''}`} disabled={busy !== null} onClick={() => void installExtension()}>
+            {t(busy === 'extension' ? '正在生成…' : '安装为 Claude 扩展（推荐）')}
+          </button>
+        ) : null}
+        {loaded && !connection?.configured ? (
+          <button className="btn sm ghost" disabled={busy !== null} onClick={() => void configure(false)}>
+            {t(busy === 'configure' ? '正在配置…' : '写入配置文件')}
+          </button>
+        ) : null}
+        {loaded && connection?.configured ? (
           <button className="btn sm ghost" disabled={busy !== null} onClick={() => void openClaude()}>
             {t(busy === 'open' ? '正在打开…' : '打开 Claude Desktop')}
           </button>
-        ) : loaded && !error ? (
-          <button className="btn sm" disabled={busy !== null} onClick={() => void configure(false)}>
-            {t(busy === 'configure' ? '正在配置…' : '一键配置并打开')}
-          </button>
         ) : null}
-        {loaded && !error && connection?.configured && !connection.connected ? (
+        {loaded && connection?.configured && !connection.connected ? (
           <button className="btn sm ghost" disabled={busy !== null} onClick={() => void configure(false)}>
             {t(busy === 'configure' ? '正在修复…' : '修复连接')}
           </button>
@@ -132,6 +159,7 @@ export default function NativeAiPanel({ selected = false, onSelect }: { selected
           {t(busy === 'check' ? '检测中…' : '重新检测')}
         </button>
       </div>
+      {loaded && !connection?.connected ? <p className="connection-detail">{t('本机连接不在「连接器 → 添加自定义连接器」里：那里只接受 HTTPS 远程地址。装好扩展后在 Claude 的「设置 → 扩展」可见；写配置文件的方式在「设置 → 开发者」可见。两种方式都要完全退出 Claude（托盘图标 → 退出）再打开。')}</p> : null}
 
       {connection?.configured ? <button className="btn sm ghost" onClick={() => { void navigator.clipboard?.writeText(t(CLAIM_PROMPT)).then(() => setMessage(t('已复制领取指令。'))).catch(() => setMessage(t(CLAIM_PROMPT))); }}>{t('复制领取指令')}</button> : null}
       <p className="quota-note">{t('额度：Claude Desktop 未提供可读取的剩余额度。')}</p>

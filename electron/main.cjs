@@ -366,6 +366,13 @@ function registerIpc() {
   const nativeBridge=()=>{dataAvailable();if(!nativeAiBridge)nativeAiBridge=require('./native-ai-bridge.cjs').createNativeAiBridge({userData:app.getPath('userData'),appData:app.getPath('appData'),getSettings:()=>JSON.parse(store.kvGet('snc:settings:v1')||'{}'),secretGet:id=>store.secretGet(id),openExternal:url=>shell.openExternal(url)});return nativeAiBridge;};
   ipcMain.handle('snc:nativeAiState',async()=>{const bridge=nativeBridge();await bridge.start();return bridge.state();});
   ipcMain.handle('snc:nativeAiConfigure',(_e,options)=>nativeBridge().configureClaude({replace:options?.replace===true}));
+  ipcMain.handle('snc:nativeAiExtension',async()=>{
+    const result=await nativeBridge().buildExtension({version:app.getVersion(),iconFile:path.join(__dirname,'..','dist','brand','icon.png')});
+    // 双击 .mcpb 由 Claude Desktop 接管，弹出它自己的安装界面；打不开时退回在文件夹中显示
+    const failed=await shell.openPath(result.file);
+    if(failed)shell.showItemInFolder(result.file);
+    return {...result,opened:!failed};
+  });
   ipcMain.handle('snc:nativeAiCreate',(_e,input)=>nativeBridge().create(input));
   ipcMain.handle('snc:nativeAiOpen',(_e,{provider,taskId})=>nativeBridge().open(provider,taskId));
   ipcMain.handle('snc:nativeAiCancel',(_e,id)=>nativeBridge().cancel(id));

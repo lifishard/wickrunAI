@@ -151,3 +151,21 @@ test('tests can never reach the real Claude Desktop configuration',async t=>{
   t.after(()=>bridge.close());
   await assert.rejects(bridge.configureClaude(),/claudeConfigFiles/);
 });
+
+test('installing the Claude extension replaces the config-file entry so tools are not duplicated',async t=>{
+  const f=fixture(t);const file=path.join(f.root,'roaming','Claude','claude_desktop_config.json');fs.mkdirSync(path.dirname(file),{recursive:true});
+  fs.writeFileSync(file,JSON.stringify({mcpServers:{keep:{command:'x'}}}));
+  await f.bridge.configureClaude();
+  assert.ok(JSON.parse(fs.readFileSync(file,'utf8')).mcpServers.wickrun_ai);
+  const built=[];
+  f.bridge.close();
+  const bridge=createNativeAiBridge({userData:f.root,appData:path.join(f.root,'roaming'),getSettings:()=>f.settings,secretGet:()=>'',openExternal:async()=>{},deps:{claudeConfigFiles:()=>[file],buildMcpb:o=>{built.push(o);fs.writeFileSync(o.outFile,'zip');return {file:o.outFile};}}});
+  t.after(()=>bridge.close());
+  const result=await bridge.buildExtension({version:'2.19.3'});
+  assert.equal(result.removedConfig,1);assert.ok(fs.existsSync(result.file));
+  assert.equal(built[0].connectionFile,path.join(f.root,'native-ai','claude-desktop.json'));
+  assert.ok(fs.existsSync(built[0].serverFile));
+  const saved=JSON.parse(fs.readFileSync(file,'utf8'));assert.equal(saved.mcpServers.wickrun_ai,undefined);assert.equal(saved.mcpServers.keep.command,'x');
+  assert.equal(result.state.connections[0].configured,true);
+  const endpoint=JSON.parse(fs.readFileSync(built[0].connectionFile,'utf8'));assert.match(endpoint.endpoint,/^http:\/\/127\.0\.0\.1:\d+\/rpc$/);
+});

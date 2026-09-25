@@ -3409,6 +3409,12 @@ const EN: Record<string, string> = {
   '正在替换…': 'Replacing…',
   '替换为本机 wickrunAI': 'Replace with this wickrunAI',
   '先不处理': 'Not now',
+  '本机连接不在「连接器 → 添加自定义连接器」里：那里只接受 HTTPS 远程地址。装好扩展后在 Claude 的「设置 → 扩展」可见；写配置文件的方式在「设置 → 开发者」可见。两种方式都要完全退出 Claude（托盘图标 → 退出）再打开。': "This local connection is not added under “Connectors → Add custom connector”, which only accepts HTTPS remote addresses. After installing the extension, find it in Claude under “Settings → Extensions”; the config-file method appears under “Settings → Developer”. Either way, fully quit Claude (tray icon → Quit) and reopen it.",
+  '正在生成…': "Generating…",
+  '安装为 Claude 扩展（推荐）': "Install as Claude extension (recommended)",
+  '写入配置文件': "Write config file",
+  '已生成扩展并交给 Claude Desktop。请在弹出的安装界面点「安装」，然后在 Claude 里说「领取灯芯AI 任务」。灯芯AI 需要保持运行。': "The extension was created and handed to Claude Desktop. Click “Install” in its installer, then ask Claude to claim a wickrunAI task. Keep wickrunAI running.",
+  '已生成扩展文件并在文件夹中显示。把 wickrun-ai.mcpb 拖进 Claude Desktop 窗口，或在「设置 → 扩展 → 高级设置 → 安装扩展」里选择它。': "The extension file was created and shown in its folder. Drag wickrun-ai.mcpb into the Claude Desktop window, or choose it under “Settings → Extensions → Advanced settings → Install Extension”.",
 };
 
 const hantCache = new Map<string, string>();
