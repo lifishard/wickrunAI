@@ -6,6 +6,7 @@ import type { AppSettings } from '../types';
 import './ClientConnections.css';
 import ClaudeRepair from './ClaudeRepair';
 import NativeAiPanel from './NativeAiPanel';
+import WebRelayToggle from './WebRelayToggle';
 import BrainPicker from './BrainPicker';
 
 type CliClientKind = Exclude<ClientKind, 'claude-desktop'>;
@@ -254,6 +255,7 @@ export default function ClientConnections({ selection, onSelect, settings, onSet
         selected={selection?.kind === 'claude-desktop'}
         onSelect={() => onSelect({ kind: 'claude-desktop', model: 'desktop' })}
       />
+      <WebRelayToggle />
       {error ? <p className="connection-error" role="alert">{error}</p> : null}
     </section>
   );

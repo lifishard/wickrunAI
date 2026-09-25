@@ -49,6 +49,10 @@ Tasks sent to Claude Desktop are queued instead of relying only on a prefilled d
 
 Configuration now detects the Microsoft Store (MSIX) build of Claude Desktop, whose configuration lives in `%LOCALAPPDATA%\Packages\Claude_<id>\LocalCache\Roaming\Claude\claude_desktop_config.json`. Earlier versions wrote only `%APPDATA%\Claude`, which the Store build never reads. When both locations exist, both are updated.
 
+## Allow the web app (2.19.4)
+
+**本机 AI → 允许网页版使用本机 AI** (off by default, requires the cloud account sign-in) lets the web app signed in to the same account hand chats to this computer. The desktop app reports its ready clients every 20 seconds, claims tasks addressed to it, runs them chat-only (no tools, Codex read-only sandbox) and posts the answer or the blocking reason back. Run records live in `cloud-relay-runs`, separate from local chats. A task interrupted by quitting is reported as blocked on the next start, never re-run.
+
 ## Connector boundary
 
 ### Claude Desktop collaboration (2.1.5)

@@ -111,3 +111,15 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* 允许网页版使用本机 AI */
+.web-relay .hint {
+  margin: 4px 0;
+  color: var(--fg-faint);
+  font-size: 11px;
+}
+
+.web-relay label.row {
+  gap: 8px;
+  font-size: 12px;
+}

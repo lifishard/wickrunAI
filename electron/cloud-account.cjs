@@ -53,6 +53,13 @@ function createCloudAccount({ app, safeStorage, openExternal, fetcher = fetch })
   return {
     activeId: active,
     basePath: base,
+    signedIn: () => Boolean(active),
+    /** 任务中继（主进程内部用，不经 IPC）：只允许 /api/cloud/relay/ 下的接口 */
+    async relay(urlPath, method = 'GET', body) {
+      if (!active) throw new Error('Sign in to access your cloud account.');
+      if (typeof urlPath !== 'string' || !/^\/api\/cloud\/relay\/[\w/-]+$/.test(urlPath)) throw new Error('Unsupported relay operation.');
+      return request(urlPath, method, body);
+    },
     state() { return { user: active ? registry.accounts[active].user : null, origin: ORIGIN, pending: pending ? { code: pending.code, expires: pending.expires } : null, ready: readyAccount?.user || null }; },
     async login() {
       if (!safeStorage.isEncryptionAvailable() || safeStorage.getSelectedStorageBackend?.() === 'basic_text') throw new Error('Secure system storage is required to save your cloud sign-in.');

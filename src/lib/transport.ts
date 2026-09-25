@@ -61,6 +61,8 @@ interface ElectronBridge extends CloudBridge {
   notifyTask(input:TaskNotificationInput):Promise<boolean>;
   onTaskNotificationClick(cb:(event:TaskNotificationClick)=>void):()=>void;
   nativeAiState():Promise<import('./native-ai').NativeAiState>;
+  cloudRelayState?():Promise<CloudRelayState>;
+  cloudRelaySet?(enabled:boolean):Promise<CloudRelayState>;
   nativeAiConfigure(options?:{replace?:boolean}):Promise<{state:import('./native-ai').NativeAiState;message:string;files?:string[];conflicts?:{file:string;command:string;args:string[]}[]}>;
   nativeAiExtension():Promise<{file:string;opened:boolean;removedConfig:number;state:import('./native-ai').NativeAiState}>;
   nativeAiCreate(input:import('./native-ai').NativeAiInput):Promise<{task:import('./native-ai').NativeAiTask;prompt:string}>;
@@ -878,3 +880,6 @@ export function platformLabel(): string {
   if (t.kind === 'capacitor') return Capacitor.getPlatform() === 'ios' ? 'iOS' : 'Android';
   return tr('浏览器（开发态）');
 }
+
+/** 允许网页版使用本机 AI 的状态（主进程 cloud-relay.cjs） */
+export interface CloudRelayState { enabled:boolean; signedIn:boolean; device:string; clients:string[]; online:boolean; error:string; current:{id:string;title:string;kind:string;startedAt:number}|null; last:{id:string;title:string;kind:string;status:'completed'|'blocked';reason?:string}|null }

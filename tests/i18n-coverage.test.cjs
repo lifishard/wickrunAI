@@ -64,6 +64,7 @@ const TRANSLATED=[
   'components/ArtifactPanel.tsx',
   'components/ClientConnections.tsx',
   'components/NativeAiPanel.tsx',
+  'components/WebRelayToggle.tsx',
   'components/DeliveryPanel.tsx',
   'components/ExportDialog.tsx',
   'components/RecoveryCard.tsx',

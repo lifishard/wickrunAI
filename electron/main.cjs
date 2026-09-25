@@ -31,6 +31,7 @@ let localClients = null;
 let conversationClients = null;
 let brainProxy = null;
 let nativeAiBridge = null;
+let cloudRelay = null;
 let taskNotifier = null;
 const activeToolControllers = new Map();
 const activeRunIds = new Set();
@@ -321,7 +322,7 @@ function registerIpc() {
   ipcMain.handle('snc:cloudGuestData', () => cloudAccount.guestData());
   ipcMain.handle('snc:cloudSwitch', async (_e, logout) => {
     dataAvailable();
-    if (inflight.size || activeToolControllers.size) throw new Error('Stop running tasks before switching accounts.');
+    if (inflight.size || activeToolControllers.size || cloudRelay?.busy()) throw new Error('Stop running tasks before switching accounts.');
     await store.flush();
     if (logout) await cloudAccount.logout(); else cloudAccount.activate();
     app.relaunch(); app.quit();
@@ -356,7 +357,7 @@ function registerIpc() {
     const bundle=fs.readFileSync(file,'utf8'),summary=dataBackup.preview({bundle}),token=require('node:crypto').randomUUID();importedBackups.clear();importedBackups.set(token,bundle);return {input:{token},summary};
   });
   ipcMain.handle('snc:backupRestore',async(_e,input)=>{
-    if(inflight.size||activeToolControllers.size||localClients?.busy()||conversationClients?.busy()||nativeAiBridge?.busy())throw Error('还有模型或工具操作正在结束，请等待完成后恢复');
+    if(inflight.size||activeToolControllers.size||localClients?.busy()||conversationClients?.busy()||nativeAiBridge?.busy()||cloudRelay?.busy())throw Error('还有模型或工具操作正在结束，请等待完成后恢复');
     const source=input?.id?{id:input.id}:input?.token&&importedBackups.has(input.token)?{bundle:importedBackups.get(input.token)}:null;if(!source)throw Error('请先预览要恢复的备份');
     restoringData=true;try{await store.flush();dataBackup.restore(source);app.relaunch();app.exit(0);}catch(error){restoringData=false;throw error;}
   });
@@ -389,6 +390,13 @@ function registerIpc() {
   brainProxy=require('./brain-proxy.cjs').createBrainProxy({userData:app.getPath('userData'),getSettings:()=>JSON.parse(store.kvGet('snc:settings:v1')||'{}'),secretGet:id=>store.secretGet(id)});
   const brainGlobal=require('./brain-config.cjs').createBrainGlobal({userData:app.getPath('userData')});
   conversationClients=require('./conversation-clients.cjs').createConversationClients({userData:app.getPath('userData'),getSettings:()=>JSON.parse(store.kvGet('snc:settings:v1')||'{}'),store:runtimeStore(),openExternal:url=>shell.openExternal(url),deps:{brainProxy,claudeGatewayCheck:()=>gatewayRecovery.checkClaude(),repairClaudeGateway:()=>gatewayRecovery.repairClaude()}});
+  // 允许网页版使用本机 AI：独立执行记录目录，不混进本机会话；默认关闭
+  const relayRunStore=require('./run-store.cjs').createRunStore(path.join(app.getPath('userData'),'cloud-relay-runs'));
+  cloudRelay=require('./cloud-relay.cjs').createCloudRelay({userData:app.getPath('userData'),account:cloudAccount,clients:conversationClients,store:relayRunStore,
+    runner:require('./conversation-clients.cjs').createConversationClients({userData:app.getPath('userData'),getSettings:()=>JSON.parse(store.kvGet('snc:settings:v1')||'{}'),store:relayRunStore,openExternal:url=>shell.openExternal(url),deps:{brainProxy}}),
+    log:message=>console.error('Cloud relay:',message)});
+  ipcMain.handle('snc:cloudRelayState',()=>cloudRelay.state());
+  ipcMain.handle('snc:cloudRelaySet',(_e,enabled)=>{dataAvailable();return cloudRelay.setEnabled(enabled===true);});
   const brainPublic=scope=>{const g=brainProxy.getGlobal(scope);return g?{profileId:g.profileId,model:g.model,baseUrl:scope==='claude'?g.anthropicBaseUrl:g.openaiBaseUrl}:null;};
   ipcMain.handle('snc:brainGlobalStatus',async()=>{dataAvailable();await brainProxy.start();return {applied:brainGlobal.status(),claude:brainPublic('claude'),codex:brainPublic('codex'),port:brainProxy.port()};});
   ipcMain.handle('snc:brainGlobalApply',async(_e,{client,mode,brain,effort})=>{
@@ -428,7 +436,7 @@ function registerIpc() {
     if(action==='details')return versions.details(ids);
     if(action==='file')return versions.file(ids,filePath);
     if(!['preview','keep','revert'].includes(action))throw Error('未知代码版本操作');
-    if(inflight.size||activeToolControllers.size||localClients?.busy()||conversationClients?.busy()||nativeAiBridge?.busy())throw Error('任务仍在执行，请停止或等待结束后审阅版本');
+    if(inflight.size||activeToolControllers.size||localClients?.busy()||conversationClients?.busy()||nativeAiBridge?.busy()||cloudRelay?.busy())throw Error('任务仍在执行，请停止或等待结束后审阅版本');
     if(activeRunIds.size||Object.values(collaboration.read().projects).some(p=>p.runs.some(r=>['running','pausing','waiting_approval','waiting_user'].includes(r.status))))throw Error('还有未结束的任务，请先暂停任务再审阅版本');
     const roots=JSON.parse(store.kvGet('snc:settings:v1')||'{}').tools?.workspaceRoots??[];
     const result=action==='keep'?versions.keep(ids):action==='preview'?versions.preview(ids,roots):versions.revert(ids,roots);
@@ -606,6 +614,7 @@ if (!app.requestSingleInstanceLock()) {
     if(!storageStartupError){
       void chromeLaunch.restore().catch(error=>console.error('Chrome connection restore:',error.message));
       void conversationClients?.restore().catch(error=>console.error('Native connection restore:',error.message));
+      cloudRelay?.start();
       // 全局大脑写进了 Claude Code / Codex 配置时，终端里的 claude / codex 需要代理在线
       if(require('node:fs').existsSync(path.join(app.getPath('userData'),'brain-sessions.json')))void brainProxy?.start().catch(error=>console.error('Brain proxy:',error.message));
     }
@@ -630,6 +639,7 @@ if (!app.requestSingleInstanceLock()) {
     localClients?.close();
     conversationClients?.close();
     brainProxy?.close();
+    cloudRelay?.close();
     for (const [, rec] of inflight) {
       clearTimeout(rec.timer);
       rec.controller.abort('quit');

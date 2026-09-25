@@ -15,6 +15,8 @@ contextBridge.exposeInMainWorld('snc', {
   cloudSwitch: (logout) => ipcRenderer.invoke('snc:cloudSwitch', logout),
   platform: 'electron',
   nativeAiState: () => ipcRenderer.invoke('snc:nativeAiState'),
+  cloudRelayState: () => ipcRenderer.invoke('snc:cloudRelayState'),
+  cloudRelaySet: (enabled) => ipcRenderer.invoke('snc:cloudRelaySet', enabled),
   nativeAiConfigure: options => ipcRenderer.invoke('snc:nativeAiConfigure',options),
   nativeAiExtension: () => ipcRenderer.invoke('snc:nativeAiExtension'),
   nativeAiCreate: input => ipcRenderer.invoke('snc:nativeAiCreate',input),

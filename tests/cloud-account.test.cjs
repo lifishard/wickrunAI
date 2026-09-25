@@ -57,3 +57,16 @@ test('guest import exposes only selected data and imports keys without overwriti
   await account.call('importGuestKeys');assert.equal(uploaded.length,1);assert(uploaded[0].url.endsWith('/new'));assert.equal(uploaded[0].body.value,'import-key');
   await assert.rejects(account.call('keyGet',{id:'../../other'}),/Unsupported/);
 });
+
+test('relay requests stay under /api/cloud/relay/ and use the bearer token',async t=>{
+  const seen=[];
+  const f=fixture(t,async(url,options)=>{seen.push({url,auth:options.headers.Authorization});return response({task:null});});
+  fs.writeFileSync(path.join(f.base,'cloud-accounts.json'),JSON.stringify({active:'alice',accounts:{alice:{user,token:Buffer.from('encrypted:'+token).toString('base64')}}}));
+  const account=f.create();
+  assert.equal(account.signedIn(),true);
+  assert.deepEqual(await account.relay('/api/cloud/relay/devices/claim','POST',{device:'desktop-000000000000'}),{task:null});
+  assert.equal(seen[0].url,ORIGIN+'/api/cloud/relay/devices/claim');
+  assert.equal(seen[0].auth,'Bearer '+token);
+  await assert.rejects(account.relay('/api/cloud/keys','GET'),/Unsupported relay/);
+  await assert.rejects(account.relay('/api/cloud/relay/../keys','GET'),/Unsupported relay/);
+});

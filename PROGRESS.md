@@ -1,5 +1,12 @@
 # wickrunAI 工程进度
 
+## 2026-09-25 2.19.4：网页版连接本机 AI（第二批）
+
+- **允许网页版使用本机 AI**：本机 AI 面板新增开关，默认关闭，需先登录云账号。打开后桌面版每 20 秒向云端报到（设备名、已就绪的 Claude Code / Codex / Kimi / Grok 及其模型），领取网页版派给本机的任务，执行后交回或报告受阻。新文件 `electron/cloud-relay.cjs`；`cloud-account.cjs` 增加只限 `/api/cloud/relay/` 的内部请求，令牌不过 IPC。
+- **边界**：只做对话（`toolsEnabled:false`，Claude Code 关工具、Codex 只读沙箱）；执行记录放 `cloud-relay-runs`，不进本机会话、观察记录和云端归档；中途退出的任务下次启动报告受阻，不自动重跑。
+- **网页版同批**（wickrunAI-web 2.19.4）：Claude 远程 MCP 连接器、在线设备选择、CLI 连接器、Grok xAI 一键凭据。
+- 验证：新增 `tests/cloud-relay.test.cjs`、`cloud-account` 中继用例；与网页版服务端联调（内存库）通过。未在 Windows 实机打包运行。
+
 ## 2026-09-24 2.19.0：Claude Code / Codex 大脑统一调控、Claude Desktop 领取任务
 
 - **大脑**：本机 AI 里选 Claude Code 或 Codex 后可选「大脑」：沿用客户端配置、本机订阅（Claude / ChatGPT 官方登录）、或 wickrunAI 任一路由。路由经新加的本机大脑代理（`electron/brain-proxy.cjs`，仅 127.0.0.1）把 Anthropic Messages / OpenAI Responses 转成 Chat Completions，流式与工具调用双向映射；密钥不出 wickrunAI，客户端只拿会话令牌，运行结束即撤销。思考强度沿用五级刻度与映射表。凭据页可把端点标为 Anthropic 原生（原样转发）。
@@ -8,7 +15,7 @@
 - 2.19.1：一键配置遇到同名 `wickrun_ai` 时不再直接报错。另一个 wickrunAI（安装版、开发模式、改名前旧版，数据目录不同）写的条目直接更新；别的程序写的条目显示它指向哪里，确认后替换并备份 `.prev`。先读全部配置位置再写，不会只改一半。界面去掉 Electron 报错前缀。
 - 2.19.2：修正测试隔离。2.19.0 起配置会识别微软商店版 Claude 的真实位置，而桥接测试没有注入临时位置，Windows 上跑打包或同步前的测试会把指向临时目录的 wickrun_ai 写进用户真实的 Claude Desktop 配置，这正是「已有其他 wickrun_ai 配置」报错的来源之一。现在测试一律注入临时配置位置；测试进程里未注入就直接报错，不再可能碰到真实配置。
 - 2.19.3：新增「安装为 Claude 扩展（推荐）」。wickrunAI 现场打包 `wickrun-ai.mcpb`（manifest 0.3，已用官方 `mcpb validate` 校验），交给 Claude Desktop 弹出安装界面，由 Claude 自带的 Node 运行，不依赖用户的 Node，也不依赖商店版读哪份配置文件；安装扩展时移除本机写过的 `wickrun_ai` 配置条目，避免两套同名工具。面板说明本机连接不在「添加自定义连接器」（那里只收 HTTPS 远程地址），扩展在「设置 → 扩展」，配置文件方式在「设置 → 开发者」。出错后操作按钮不再被隐藏。
-- 验证：见本批交付说明。第二批（网页版云端 MCP 连接器、网页版连接本机 AI）尚未开始。
+- 验证：见本批交付说明。第二批见 2.19.4。
 
 ## 2026-09-24 2.18.12：路由组，批处理入口移出仓库
 
