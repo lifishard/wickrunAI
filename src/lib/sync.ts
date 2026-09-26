@@ -11,6 +11,7 @@
 
 import type { AppSettings, Conversation } from '../types';
 import { getTransport, desktop } from './transport';
+import { memoryItemsOf, mergeMemoryItems, renderMemoryText } from './memory-core';
 import {
   SYNC_KEYS,
   assertSyncSafe,
@@ -80,6 +81,19 @@ export async function recordDeletion(collection: string, id: string, deviceId = 
 const listOf = <T>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
 const stampCreated = (x: { updatedAt?: number; createdAt?: number }) => x.updatedAt ?? x.createdAt ?? 0;
 
+/**
+ * 项目整行按时间取一份，但记忆逐条合：这台记的、那台删的都要留下。
+ * 旧字段 memory 是条目的镜像，合完重新生成。
+ */
+function mergeProjectMemory(items: { id: string }[], versions: { id: string }[][]): { id: string }[] {
+  return items.map((row) => {
+    const lists = versions.flatMap((list) => list.filter((x) => x.id === row.id)).map((x) => memoryItemsOf(x as { memory?: string; memoryItems?: unknown }, 0));
+    if (!lists.length) return row;
+    const merged = lists.reduce((a, b) => mergeMemoryItems(a, b));
+    return { ...row, memoryItems: merged, memory: renderMemoryText(merged) };
+  });
+}
+
 /** 组一份可以出门的包。返回的东西已经过了发车前闸门。 */
 export async function buildBundle(settings: AppSettings): Promise<SyncBundle> {
   const g = await graves();
@@ -135,6 +149,7 @@ export async function applyBundles(
         if (!theirs) continue;
         acc = mergeCollection(acc, theirs, { stampOf: stampOf as (x: { id: string }) => number });
       }
+      if (key === K_PROJECTS) acc = { ...acc, items: mergeProjectMemory(acc.items, [listOf(await readJson(key, [])), ...incoming.map((b) => b.projects?.items ?? [])]) };
       await t.kvSet(key, JSON.stringify(acc.items));
       g[key] = acc.tombstones;
       merged[key] = acc.items.length;

@@ -631,25 +631,42 @@ export const TOOLS: ToolDef[] = [
     label: '读项目记忆',
     group: 'project',
     description:
-      '读当前项目的记忆 —— 之前几轮对话里攒下来的结论和约定。开始一件跟这个项目有关的事之前，值得先看一眼。',
-    parameters: { type: 'object', properties: {} },
-    summarize: () => tr('读项目记忆'),
+      '读当前项目的记忆 —— 之前几轮对话里攒下来的结论、约定和偏好，每条带 id。给 query 就按相关度查，不给就按时间列出最近的。system 里放不下的记忆要靠它查。',
+    parameters: { type: 'object', properties: {
+      query: { type: 'string', description: '要找的内容，中英文关键词都行；不填列出最近的' },
+      limit: { type: 'number', description: '最多返回几条，默认 30' },
+    } },
+    summarize: (a) => (a.query ? tr('查项目记忆：{query}', { query: clip(a.query, 30) }) : tr('读项目记忆')),
   },
   {
     name: 'project_memory_write',
     label: '写项目记忆',
     group: 'project',
     description:
-      '往当前项目的记忆里追加一条。只写**跨对话还成立**的东西：确定下来的决策、踩过的坑、用户明确的偏好。这一轮的临时细节不要写。',
+      '往当前项目的记忆里记一条，或用 id 更新已有的一条。只写**跨对话还成立**的东西：确定下来的决策、踩过的坑、用户明确的偏好。这一轮的临时细节不要写。已有同样内容时不会重复记录；像密钥、密码的内容会被隐藏。',
     parameters: {
       type: 'object',
       properties: {
         text: { type: 'string', description: '要记下来的内容，一两句话' },
-        mode: { type: 'string', enum: ['append', 'replace'], description: '默认 append' },
+        kind: { type: 'string', enum: ['preference', 'decision', 'fact', 'lesson', 'note'], description: '偏好 / 决定 / 事实 / 经验 / 备注，默认 note' },
+        id: { type: 'string', description: '要更新的那条记忆的 id；不填就是新记一条' },
+        applicability: { type: 'string', description: '可选：适用条件与失败边界' },
+        evidence: { type: 'string', description: '可选：验证证据（真实工具结果或用户确认），不要写模型自评' },
+        keywords: { type: 'array', items: { type: 'string' }, description: '可选：只在问题里出现这些词时才用；不填就是项目通用' },
       },
       required: ['text'],
     },
-    summarize: (a) => tr('记到项目记忆：{text}', { text: clip(a.text, 40) }),
+    summarize: (a) => (a.id ? tr('更新项目记忆：{text}', { text: clip(a.text, 40) }) : tr('记到项目记忆：{text}', { text: clip(a.text, 40) })),
+  },
+  {
+    name: 'project_memory_forget',
+    label: '删除项目记忆',
+    group: 'project',
+    dangerous: true,
+    description:
+      '删除当前项目里过时或错误的一条记忆（按 id）。删除会同步到其他设备，同一句不会再被自动提议。只删确定不再成立的；拿不准就问用户。',
+    parameters: { type: 'object', properties: { id: { type: 'string', description: '要删除的记忆 id' } }, required: ['id'] },
+    summarize: (a) => tr('删除项目记忆 {id}', { id: clip(a.id, 40) }),
   },
   {
     name: 'project_doc_read',

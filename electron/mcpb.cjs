@@ -57,6 +57,8 @@ const TOOLS = [
   ['wickrun_read_worker_result', '读取工作模型的结果'],
   ['wickrun_report_progress', '向灯芯AI 汇报进度'],
   ['wickrun_submit_result', '把最终成果交回灯芯AI'],
+  ['wickrun_memory_search', '查这个任务所属项目的记忆（只读）'],
+  ['wickrun_memory_propose', '提议一条项目记忆，用户批准后才会用到'],
   ['wickrun_report_blocked', '说明任务受阻的原因'],
   ['wickrun_list_tasks', '列出发给 Claude 的任务'],
 ];

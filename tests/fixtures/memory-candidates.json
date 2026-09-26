@@ -1,0 +1,311 @@
+{
+  "note": "记忆候选提炼的固定评测集。positive = 应该提炼成候选（跨对话还成立的偏好 / 约定）；negative = 不该提炼（一次性指令、提问、陈述、临时情况）。改规则时同时看召回和误报。 holdout_* 是调规则之后另写的一组，没有拿来调规则，只用来看在没见过的句子上表现如何；以后调规则也不要照着它改。",
+  "positive": [
+    [
+      "以后回答都用中文。",
+      "preference"
+    ],
+    [
+      "今后写代码注释统一用英文",
+      "preference"
+    ],
+    [
+      "从现在起，提交信息用 Conventional Commits 格式。",
+      "preference"
+    ],
+    [
+      "每次改完都要跑一遍 npm test。",
+      "preference"
+    ],
+    [
+      "记住：部署只用 Railway，不用 Vercel。",
+      "preference"
+    ],
+    [
+      "别再给我加 emoji 了",
+      "preference"
+    ],
+    [
+      "不要再用 lodash，项目里没有这个依赖。",
+      "preference"
+    ],
+    [
+      "我喜欢简洁的回答，先给结论。",
+      "preference"
+    ],
+    [
+      "我更偏好 pnpm 而不是 npm",
+      "preference"
+    ],
+    [
+      "默认用 TypeScript 写新文件。",
+      "preference"
+    ],
+    [
+      "我们决定数据库用 Postgres。",
+      "decision"
+    ],
+    [
+      "就用 Vite，不换 webpack 了。",
+      "decision"
+    ],
+    [
+      "版本号统一用 semver。",
+      "decision"
+    ],
+    [
+      "约定：API 返回的时间一律用 ISO 8601。",
+      "decision"
+    ],
+    [
+      "always reply in English please",
+      "preference"
+    ],
+    [
+      "From now on, use tabs for indentation.",
+      "preference"
+    ],
+    [
+      "Never commit directly to main.",
+      "preference"
+    ],
+    [
+      "I prefer shorter answers with code first.",
+      "preference"
+    ],
+    [
+      "Remember that the staging server is at port 8080.",
+      "preference"
+    ],
+    [
+      "We decided to use Postgres for the ledger.",
+      "decision"
+    ],
+    [
+      "Let's use pytest for all new tests.",
+      "decision"
+    ],
+    [
+      "请始终先给出测试结果再解释。",
+      "preference"
+    ],
+    [
+      "回答里金额一律保留两位小数。",
+      "preference"
+    ],
+    [
+      "以后遇到不确定的地方先问我，不要猜。",
+      "preference"
+    ],
+    [
+      "注释写中文就行，变量名用英文。",
+      "preference"
+    ],
+    [
+      "文档统一放在 docs 目录下。",
+      "decision"
+    ],
+    [
+      "以后别自动推送，推送由我自己来。",
+      "preference"
+    ],
+    [
+      "下次改 UI 先给我看截图。",
+      "preference"
+    ],
+    [
+      "所有日期都按温哥华时间显示。",
+      "preference"
+    ],
+    [
+      "我习惯用 Windows，命令给 PowerShell 版本。",
+      "preference"
+    ],
+    [
+      "Make sure to always run the linter before you finish.",
+      "preference"
+    ],
+    [
+      "Don't use semicolons in this project.",
+      "preference"
+    ],
+    [
+      "Going forward, keep functions under 50 lines.",
+      "preference"
+    ],
+    [
+      "We'll use Railway for deployment from now on.",
+      "decision"
+    ],
+    [
+      "以后所有新功能都要写测试。",
+      "preference"
+    ],
+    [
+      "货币统一显示为 CAD。",
+      "decision"
+    ],
+    [
+      "不要在代码里写死 API Key，一律从环境变量读。",
+      "preference"
+    ],
+    [
+      "每个 PR 都要附上截图。",
+      "preference"
+    ],
+    [
+      "Please avoid using any external CDN.",
+      "preference"
+    ],
+    [
+      "记得每次交付都要升版本号。",
+      "preference"
+    ]
+  ],
+  "negative": [
+    "帮我把这个函数改成异步的。",
+    "这个报错是什么意思？",
+    "以后怎么升级这个依赖？",
+    "你能不能总是这么快？",
+    "今天的测试挂了三个。",
+    "把 README 第二段删掉。",
+    "运行一下 npm test 看看结果",
+    "我刚才决定先去吃饭。",
+    "这个文件为什么总是报错？",
+    "请把这段翻译成英文。",
+    "Can you always use this format?",
+    "What does this error mean?",
+    "Fix the bug in utils.ts.",
+    "The build failed again.",
+    "Please summarize this article.",
+    "他们决定明天开会。",
+    "默认值是多少？",
+    "帮我查一下昨天的记录。",
+    "这个 API 返回的时间是 UTC 吗？",
+    "上次你说要用 Postgres，为什么？",
+    "给我写一个排序算法。",
+    "继续",
+    "好的，谢谢",
+    "Why do we never get this warning locally?",
+    "The docs say we should always pin versions.",
+    "这篇文章说永远不要在周五部署。",
+    "用户反馈说总是加载很慢。",
+    "Show me the diff.",
+    "把第三行的 always 改成 never。",
+    "这次先用 npm 装一下试试。",
+    "这次就用这个方案吧，下次再说。",
+    "今天先别推送，我还要看看。",
+    "Let's look at the logs first.",
+    "I think it always crashes on startup.",
+    "Remember when we fixed this last week?",
+    "这个项目里是不是统一用 tabs？",
+    "价格就用 29.99 吧，这个页面先这样。",
+    "每次打开都卡住，怎么办？",
+    "禁止吸烟这个标志要放大。",
+    "请用红色标出错误的地方。"
+  ],
+  "holdout_positive": [
+    [
+      "以后生成的报告都附上数据来源。",
+      "preference"
+    ],
+    [
+      "今后别用缩写，写全称。",
+      "preference"
+    ],
+    [
+      "每次回答最后给一个一句话总结。",
+      "preference"
+    ],
+    [
+      "记住我的时区是 America/Vancouver。",
+      "preference"
+    ],
+    [
+      "默认用 Python 3.12。",
+      "preference"
+    ],
+    [
+      "我们决定前端用 React 18。",
+      "decision"
+    ],
+    [
+      "测试框架统一用 node:test。",
+      "decision"
+    ],
+    [
+      "不要再给我解释基础概念了。",
+      "preference"
+    ],
+    [
+      "所有金额都用加元显示。",
+      "preference"
+    ],
+    [
+      "我习惯先看代码再看解释。",
+      "preference"
+    ],
+    [
+      "Always include type hints in Python code.",
+      "preference"
+    ],
+    [
+      "Never use force push on shared branches.",
+      "preference"
+    ],
+    [
+      "From now on, write commit messages in English.",
+      "preference"
+    ],
+    [
+      "We'll use SQLite for local storage.",
+      "decision"
+    ],
+    [
+      "I prefer tables over bullet lists for comparisons.",
+      "preference"
+    ],
+    [
+      "By default, target Node 20.",
+      "preference"
+    ],
+    [
+      "请始终把风险写在最前面。",
+      "preference"
+    ],
+    [
+      "以后改动超过三个文件先跟我确认。",
+      "preference"
+    ],
+    [
+      "Every time you edit CSS, check dark mode too.",
+      "preference"
+    ],
+    [
+      "就用 GitHub Actions 做 CI。",
+      "decision"
+    ]
+  ],
+  "holdout_negative": [
+    "帮我看看这个正则为什么不匹配。",
+    "以后的版本会支持 ARM 吗？",
+    "我们昨天讨论了一下部署方案。",
+    "这个库总是很慢吗？",
+    "把 always 这个词翻译一下。",
+    "Please rewrite this paragraph.",
+    "Is it always safe to use eval?",
+    "They always ship on Fridays.",
+    "先用 mock 数据跑通。",
+    "今天就用这个模型试一下。",
+    "这段代码每次运行结果都不一样，为什么",
+    "统计一下所有文件的行数。",
+    "What's the default port?",
+    "文档里说默认端口是 3000。",
+    "删掉所有的 console.log。",
+    "Run the tests again.",
+    "给我一个永远不会重复的 id 生成方法。",
+    "我决定不了，你帮我比较一下。",
+    "Let's try Postgres first and see.",
+    "这个函数总是返回 null，帮我查查。"
+  ]
+}

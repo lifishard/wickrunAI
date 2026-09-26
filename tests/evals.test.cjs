@@ -93,3 +93,34 @@ test('读不到就给空的，不抛',async()=>{
   kv.set('anyai:evals:v1','这不是 JSON');
   assert.deepEqual((await e.loadEvals()).cases,[]);
 });
+
+test('回归题带着自己的验收跑：被模型改掉或漏掉的题目验收，不算做成',()=>{
+  const check={kind:'file_contains',path:'README.md',contains:['v2']};
+  const c=ecase({acceptance:[check]});
+  const reqs=e.evalRequirements(c,'u1',5);
+  assert.equal(reqs.length,1);assert.deepEqual(reqs[0].check,check);assert.equal(reqs[0].sourceId,'u1');assert.equal(reqs[0].revision,1);
+  const passed=(r)=>({...r,verification:{revision:r.revision,status:'passed',method:'program',detail:'',evidence:[],at:1}});
+  const ok=e.resultFromRun(c.id,'m',{status:'completed',requirements:[passed(reqs[0])]},1,c.acceptance);
+  assert.equal(ok.done,true);
+  // 模型把验收改宽了：自己定的尺子通过了，也不算
+  const loosened=passed({...reqs[0],check:{kind:'file_exists',path:'README.md'}});
+  const bad=e.resultFromRun(c.id,'m',{status:'completed',requirements:[loosened]},1,c.acceptance);
+  assert.equal(bad.done,false);assert.equal(bad.falseDone,true);
+});
+
+test('组件对照：两边都跑过的题太少不下结论；有退步就保留；没坏处才说能删',()=>{
+  const cases=[...Array(6)].map((_,i)=>ecase({id:`a${i}`}));
+  const r=(caseId,config,done,falseDone=false)=>({caseId,config,at:1,done,activeMs:1,tokens:1,falseDone});
+  const base=cases.map(c=>r(c.id,'m',true));
+  const few={version:1,cases,results:[...base,...cases.slice(0,3).map(c=>r(c.id,'m −harness',true))]};
+  assert.equal(e.ablationVerdict(few,'m','harness','dev').verdict,'insufficient');
+  const worse={version:1,cases,results:[...base,...cases.map((c,i)=>r(c.id,'m −harness',i!==2))]};
+  const v=e.ablationVerdict(worse,'m','harness','dev');
+  assert.equal(v.verdict,'keep');assert.deepEqual(v.regressed,['a2']);
+  const fine={version:1,cases,results:[...base,...cases.map(c=>r(c.id,'m −skills',true))]};
+  assert.equal(e.ablationVerdict(fine,'m','skills','dev').verdict,'removable');
+  const moreFalse={version:1,cases,results:[...cases.map(c=>r(c.id,'m',false)),...cases.map((c,i)=>r(c.id,'m −project_memory',false,i===0))]};
+  assert.equal(e.ablationVerdict(moreFalse,'m','project_memory','dev').verdict,'keep','错误完成变多也不能删');
+  assert.deepEqual(e.ablationRuns(fine),[{model:'m',ablation:'skills'}]);
+  assert.equal(e.ablationConfig('m'),'m');assert.equal(e.ablationConfig('m','harness'),'m −harness');
+});

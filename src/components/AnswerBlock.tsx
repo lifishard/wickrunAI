@@ -256,6 +256,8 @@ export default function AnswerBlock(props: {
   onSkillOutcome?:(recordId:string,done:boolean)=>void;
   onCorrection?:(recordId:string,kind:import('../lib/observations').CorrectionKind,note:string)=>Promise<string>;
   onReplay?:(recordId:string)=>void;
+  /** 本轮提炼出的项目记忆候选卡片（没有就不传） */
+  memoryCard?: React.ReactNode;
   onResolveUncertain?: (choice: 'skip' | 'retry') => void;
   onQuestionSubmit?: (answers: UserQuestionAnswers) => void;
   onQuestionDraft?: (answers: UserQuestionAnswers) => void;
@@ -457,6 +459,7 @@ export default function AnswerBlock(props: {
         <ArtifactStrip artifacts={files} onOpen={props.onOpenArtifact} onSaved={props.onArtifactSaved} />
       ) : null}
       {answer && !answer.pending ? <TaskFeedback taskId={answer.taskId ?? answer.runState?.runId} onOutcome={props.onSkillOutcome} onCorrection={props.onCorrection} onReplay={props.onReplay}/>:null}
+      {answer && !answer.pending ? props.memoryCard ?? null : null}
 
       {answer ? <MessageNotes notes={answer.annotations} onSave={props.onSaveAnnotation}
         onDelete={(id) => props.onDeleteAnnotation(answer.id, id)} /> : null}

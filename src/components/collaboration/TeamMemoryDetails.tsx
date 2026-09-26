@@ -25,7 +25,7 @@ export function TeamMemoryAudit({run}:{run:TeamRun}){
  const selection=selectTeamMemories(run.memorySnapshot,run,{now:run.createdAt});
  return <details className="team-attempt"><summary>本次记忆选择 · {selection.snapshots.length} 条 · {selection.totalChars} / {selection.maxChars} 字符</summary>
   <p className="team-note">从创建运行时冻结的已采用版本中筛选；关键词匹配不代表内容已验证为真。</p>
-  {selection.audit.map((item,i)=><p key={`${item.id}:${i}`}>{run.memorySnapshot.find(m=>m.id===item.id)?.title??item.id} · v{item.revision} · {reasonLabels[item.reason]??'未选入：记忆格式无效'}</p>)}
+  {selection.audit.map((item,i)=><p key={`${item.id}:${i}`}>{(m=>!m?item.id:m.id.startsWith('m_')?m.text.replace(/\s+/g,' ').slice(0,40):m.title)(run.memorySnapshot.find(m=>m.id===item.id))} · v{item.revision} · {reasonLabels[item.reason]??'未选入：记忆格式无效'}</p>)}
   {!!selection.prompt&&<details><summary>查看选入的完整内容</summary><pre>{selection.prompt}</pre></details>}
  </details>;
 }

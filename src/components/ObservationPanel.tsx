@@ -6,14 +6,18 @@ import { acceptanceLabel, acceptanceVars, buildAnalysisFiles, filterTasks, outco
 import { zipTextFiles } from '../lib/export-zip';
 import { runRecord, runTitle } from '../lib/runs';
 import { routeScores, MIN_RANK_SAMPLES, MIN_COST_SAMPLES, type ScoreSource } from '../lib/routing-memory';
-import { report, staleHoldout, worthKeeping, HOLDOUT_STALE_USES, type EvalStore } from '../lib/evals';
+import { ABLATIONS, ABLATION_MIN_CASES, ablationRuns, ablationVerdict, report, staleHoldout, worthKeeping, HOLDOUT_STALE_USES, type Ablation, type EvalStore } from '../lib/evals';
 import { desktop } from '../lib/transport';
 
-export default function ObservationPanel({onClose,onOpenTask,evals,onSaveCase,onRunCase,onSplit}:{
+export default function ObservationPanel({onClose,onOpenTask,evals,onSaveCase,onRunCase,onRunCases,onRunAblation,onSplit}:{
   onClose:()=>void;onOpenTask:(conversationId:string,answerId:string)=>void;
   evals?:EvalStore;
   onSaveCase?:(recordId:string)=>void;
   onRunCase?:(caseId:string)=>void;
+  /** 按顺序一道接一道地跑，前一道结束才开始下一道 */
+  onRunCases?:(caseIds:string[])=>void;
+  /** 组件对照：先按原配置、再去掉这个组件，把同一批题各跑一遍 */
+  onRunAblation?:(caseIds:string[],ablation:Ablation)=>void;
   onSplit?:(caseId:string,split:'dev'|'holdout')=>void;
 }) {
   const t = useT();
@@ -116,6 +120,12 @@ export default function ObservationPanel({onClose,onOpenTask,evals,onSaveCase,on
         {t('dev 用来调，holdout 只在最后跑。但用来调过的题目就已经是开发数据了 —— holdout 跑满 {n} 次就该换一批，否则你量的只是自己的过拟合。',{n:HOLDOUT_STALE_USES})}
       </p>
       {staleHoldout(evals.cases).length?<p className="hint"><strong>{t('有 {n} 道 holdout 题已经跑满次数，建议换一批。',{n:staleHoldout(evals.cases).length})}</strong></p>:null}
+      {evals.cases.length&&onRunCases?<div className="row" style={{gap:8,flexWrap:'wrap'}}>
+        {(['dev','holdout'] as const).map(split=>{const ids=evals.cases.filter(c=>c.split===split).map(c=>c.id);
+          return ids.length?<button key={split} className="btn sm" onClick={()=>onRunCases(ids)}>{t('按顺序跑完 {split}（{n} 道）',{split,n:ids.length})}</button>:null;})}
+        <span className="hint">{t('一道跑完再开始下一道；中途暂停就停在那里。')}</span>
+      </div>:null}
+      {evals.cases.length&&onRunAblation?<AblationPanel evals={evals} onRun={onRunAblation}/>:null}
       {evals.cases.length?<><ul className="eval-cases">
         {evals.cases.map(c=><li key={c.id}>
           <span className="eval-title">{c.title}</span>
@@ -166,4 +176,41 @@ export default function ObservationPanel({onClose,onOpenTask,evals,onSaveCase,on
       {clearConfirm?<><p>{t('清空会删除统计和反馈，并重置导出标识；原任务和文件仍保留。旧任务不会重新进入统计。')}</p><button className="btn sm" onClick={()=>{void clearObservations().then(()=>{setPreview(undefined);setSelected('');setInclude([]);setClearConfirm(false);});}}>{t('确认清空统计')}</button><button className="btn sm ghost" onClick={()=>setClearConfirm(false)}>{t('取消')}</button></>:<button className="btn sm" onClick={()=>setClearConfirm(true)}>{t('清空统计与反馈')}</button>}
     </details>
   </div></Modal>;
+}
+
+/**
+ * 组件对照：同一批题先按原配置跑、再去掉一个组件跑，两边都跑过的题按 preserve-and-extend 比。
+ * 结论只说「这批题上去掉有没有坏处」，删不删由人决定；dev 上看着能删，还要在 holdout 上再确认。
+ */
+function AblationPanel({evals,onRun}:{evals:EvalStore;onRun:(caseIds:string[],ablation:Ablation)=>void}){
+  const t=useT();
+  const [ablation,setAblation]=React.useState<Ablation>('harness');
+  const [split,setSplit]=React.useState<'dev'|'holdout'>('dev');
+  const ids=evals.cases.filter(c=>c.split===split).map(c=>c.id);
+  const runs=ablationRuns(evals);
+  const verdictText={insufficient:'题太少，还不能下结论',keep:'去掉后有退步，保留',removable:'这批题上去掉没有坏处'} as const;
+  const pct=(x:number|null)=>x===null?'—':`${Math.round(x*100)}%`;
+  return <div className="ablation">
+    <strong>{t('组件对照')}</strong>
+    <p className="hint">{t('先按原配置把这批题跑一遍，再去掉一个组件跑一遍，比较两边都跑过的题。至少 {n} 道才给结论；dev 上看着能删，还要在 holdout 上再确认。',{n:ABLATION_MIN_CASES})}</p>
+    <div className="row" style={{gap:8,flexWrap:'wrap'}}>
+      <select aria-label={t('要去掉的组件')} value={ablation} onChange={e=>setAblation(e.target.value as Ablation)}>
+        {ABLATIONS.map(a=><option key={a.id} value={a.id}>{t(a.label)}</option>)}
+      </select>
+      <select aria-label={t('题目集')} value={split} onChange={e=>setSplit(e.target.value as 'dev'|'holdout')}>
+        <option value="dev">dev</option><option value="holdout">holdout</option>
+      </select>
+      <button className="btn sm" disabled={!ids.length} onClick={()=>onRun(ids,ablation)}>{t('开始对照（{n} 道 × 2）',{n:ids.length})}</button>
+    </div>
+    <p className="hint">{t(ABLATIONS.find(a=>a.id===ablation)!.hint)}</p>
+    {runs.length?<table className="route-scores"><thead><tr>
+      <th>{t('组件')}</th><th>{t('模型')}</th><th>{t('题目集')}</th><th>{t('对比题数')}</th><th>{t('做成率（原 → 去掉后）')}</th><th>{t('错误完成率（原 → 去掉后）')}</th><th>{t('退步 / 新做成')}</th><th>{t('结论')}</th>
+    </tr></thead><tbody>
+      {runs.flatMap(r=>(['dev','holdout'] as const).map(s=>({...r,split:s,v:ablationVerdict(evals,r.model,r.ablation,s)}))).filter(x=>x.v.compared||x.split==='dev').map(x=><tr key={`${x.model}:${x.ablation}:${x.split}`}>
+        <td>{t(ABLATIONS.find(a=>a.id===x.ablation)!.label)}</td><td><code>{x.model}</code></td><td>{x.split}</td><td>{x.v.compared}</td>
+        <td>{pct(x.v.baseRate)} → {pct(x.v.candRate)}</td><td>{pct(x.v.baseFalseDone)} → {pct(x.v.candFalseDone)}</td>
+        <td>{x.v.regressed.length} / {x.v.gained.length}</td><td className={`ablation-${x.v.verdict}`}>{t(verdictText[x.v.verdict])}</td>
+      </tr>)}
+    </tbody></table>:<p className="hint">{t('还没有跑过对照。')}</p>}
+  </div>;
 }

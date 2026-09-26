@@ -64,10 +64,13 @@ import { loadSkills, recordSkillOutcome, saveSkills, skillSystemBlock, type Skil
 import { recallFrom } from './lib/recall';
 import { observationSnapshot, routeAliasOf, type CorrectionKind } from './lib/observations';
 import { routeScores, type RouteScore } from './lib/routing-memory';
-import { caseFromRecord, loadEvals, resultFromRun, saveEvals, worthKeeping, type EvalStore } from './lib/evals';
+import { DEFAULT_RUNTIME } from './lib/task-context';
+import { ABLATIONS, ablationConfig, caseFromRecord, evalRequirements, loadEvals, resultFromRun, type Ablation, saveEvals, worthKeeping, type EvalStore } from './lib/evals';
 import { collectArtifacts } from './lib/artifacts';
 import { applyPlan, describeSync, planSync } from './lib/skillsync';
 import { loadProjects, makeProject, projectSystemBlock, saveProjects, type Project } from './lib/projects';
+import { addMemory, memoryCandidatesFrom, memoryItemsOf, mergeMemoryItems, type ProjectMemoryItem } from './lib/memory-core';
+import { MemoryCandidateCard } from './components/ProjectMemoryPanel';
 import { teamRuntime } from './lib/team-runtime';
 import { conversationQueue, nextQueuedIndex, type QueuedInput } from './lib/run-queue';
 import { teamNotifications } from './lib/team-notify';
@@ -180,6 +183,38 @@ export default function App() {
   } | null>(null);
 
   const [projects, setProjects] = React.useState<Project[]>([]);
+  const projectsRef = React.useRef<Project[]>([]);
+  projectsRef.current = projects;
+  /*
+   * 模型的 project_memory_* 工具、本机客户端提交的记忆候选都在主进程直接写盘。
+   * 界面手里那份不刷新的话，下次保存项目会把它们盖掉 —— 所以跑完一轮、打开工作区时
+   * 把盘上的记忆逐条合回来（按 id 新的赢，删除留墓碑，两边的改动都不丢）。
+   */
+  /* 回归题排队：批量跑时一道结束（完成或出错）才开下一道；用户暂停就清空队列 */
+  type EvalJob = { caseId: string; ablation?: Ablation };
+  const evalQueueRef = React.useRef<EvalJob[]>([]);
+  const runEvalCaseRef = React.useRef<(job: EvalJob) => void>(() => {});
+  const nextEvalCase = () => { const next = evalQueueRef.current.shift(); if (next) setTimeout(() => runEvalCaseRef.current(next), 0); };
+  const updateProjectMemory = React.useCallback((projectId: string, update: (items: ProjectMemoryItem[]) => ProjectMemoryItem[]) => {
+    setProjects(all => all.map(p => p.id === projectId ? { ...p, memoryItems: update(memoryItemsOf(p)) } : p));
+  }, []);
+  const refreshProjectMemory = React.useCallback(async () => {
+    const disk = await loadProjects().catch(() => null);
+    if (!disk) return;
+    const byId = new Map(disk.map(p => [p.id, p]));
+    setProjects(all => {
+      let changed = false;
+      const next = all.map(p => {
+        const d = byId.get(p.id);
+        if (!d) return p;
+        const merged = mergeMemoryItems(memoryItemsOf(p), memoryItemsOf(d));
+        if (JSON.stringify(merged) === JSON.stringify([...memoryItemsOf(p)].sort((a, b) => a.id.localeCompare(b.id)))) return p;
+        changed = true;
+        return { ...p, memoryItems: merged };
+      });
+      return changed ? next : all;
+    });
+  }, []);
   const [skills, setSkills] = React.useState<Skill[]>([]);
   const [tasks, setTasks] = React.useState<ScheduledTask[]>([]);
   const [activeSkills, setActiveSkills] = React.useState<Skill[]>([]);
@@ -1089,7 +1124,8 @@ export default function App() {
       // 注意技能是**粘的** —— 发完不清空，一直注入到用户自己点掉那个 ✕。
       // 一次性注入看着更"干净"，但技能通常是一整段工作流（先查再写再验），
       // 第二轮开始模型就看不见规则了，表现出来就是"它好像忘了"。
-      const turnSkills = activeSkills;
+      // 组件对照「去掉技能」：这一轮不注入技能
+      const turnSkills = conv.evalAblation === 'skills' ? [] : activeSkills;
       if (turnSkills.length) {
         const ids = new Set(turnSkills.map((x) => x.id));
         setSkills((prev) => prev.map((x) => (ids.has(x.id) ? { ...x, uses: x.uses + 1 } : x)));
@@ -1181,6 +1217,7 @@ export default function App() {
       };
 
       const finishUi = () => {
+        void refreshProjectMemory();
         approvalsClosed=true;
         for(const resolve of pendingApprovals)resolve(false);
         setConfirmReq(null);
@@ -1227,7 +1264,12 @@ export default function App() {
         resume: resumeFrom,
         compactBeforeRun,
         previousModel: resumeAnswer?.model,
-        conversationMemory: resumeFrom ? undefined : withHandoffArchive(conversationMemory(history, runRecord), history.some(m => m.quoteOnly) ? undefined : runRecord(conv.handoffSourceRunId ?? '')),
+        conversationMemory: resumeFrom ? undefined : (() => {
+          const memory = withHandoffArchive(conversationMemory(history, runRecord), history.some(m => m.quoteOnly) ? undefined : runRecord(conv.handoffSourceRunId ?? ''));
+          // 回归题：用存下来的验收条件，而不是让这一轮的模型自己定
+          const evalCase = nextConv.evalCaseId ? evalsRef.current?.cases.find(c => c.id === nextConv.evalCaseId) : undefined;
+          return evalCase?.acceptance.length && !memory.requirements?.length ? { ...memory, requirements: evalRequirements(evalCase, userMsg.id) } : memory;
+        })(),
         resolveUncertain: resolution,
         // 这条路由的窗口有多大 —— 之前撞出来的那个数
         modelInfo: [...(settings.cachedModels[profile.id] ?? []), ...(settings.customModels[profile.id] ?? [])].find(m => m.id === cfg.model),
@@ -1266,7 +1308,7 @@ export default function App() {
         recallTasks: async (query, limit) => recallFrom(await loadRuns(), await observationSnapshot(),
           { query, limit, projectId: conv!.projectId ?? null, excludeConversationId: conv!.id }),
         extraSystem: [
-          projectSystemBlock(projects.find((p) => p.id === conv.projectId) ?? null),
+          projectSystemBlock(projects.find((p) => p.id === conv.projectId) ?? null, text, { memory: conv.evalAblation !== 'project_memory' }),
           skillSystemBlock(turnSkills),
         ]
           .filter(Boolean)
@@ -1341,6 +1383,7 @@ export default function App() {
           },
           onPaused(reason) {
             finishUi(); pauseQueue(convId);
+            if(nextConv.evalCaseId)evalQueueRef.current=[];
             const interrupted=finishInterruption();
             const answeredWhileSaving=!latestState?.userQuestion&&!latestState?.uncertainCallId&&latestState?.pendingInputMessages?.some(m=>m.id.startsWith('answer-'));
             if(!interrupted&&answeredWhileSaving&&latestState)setResumeInput({convId,state:latestState});
@@ -1370,11 +1413,34 @@ export default function App() {
              */
             if(nextConv.evalCaseId&&latestState&&evalsRef.current){
               const store=evalsRef.current;
-              const result=resultFromRun(nextConv.evalCaseId,nextConv.evalConfig??cfg.model,latestState,Date.now()-started);
+              const result=resultFromRun(nextConv.evalCaseId,nextConv.evalConfig??cfg.model,latestState,Date.now()-started,store.cases.find(c=>c.id===nextConv.evalCaseId)?.acceptance);
               writeEvals({...store,results:[...store.results,result],
                 cases:store.cases.map(c=>c.id===nextConv.evalCaseId?{...c,uses:c.uses+1,lastUsedAt:Date.now()}:c)});
             }
+            if(nextConv.evalCaseId)nextEvalCase();
             notifyTask('completed',`${requestId}:completed`,convId,t('任务已完成'),buf.content.slice(-240)||nextConv.title);
+            /*
+             * 从用户这一轮的原话里找值得跨对话记住的偏好和约定。只生成候选，
+             * 放在回答下面和项目记忆里等用户批准；批准前不会进任何对话。
+             */
+            const projectId=conv!.projectId;
+            if(projectId&&!resumeFrom&&!nextConv.evalCaseId&&text.trim()){
+              const found=memoryCandidatesFrom([text]);
+              const project=projectsRef.current.find(p=>p.id===projectId);
+              if(found.length&&project){
+                let items=memoryItemsOf(project);
+                const ids:string[]=[];
+                for(const c of found){
+                  const r=addMemory(items,{text:c.text,kind:c.kind,source:'candidate',status:'candidate',sourceRef:latestState?.runId??requestId});
+                  if(r.item&&!r.duplicate&&!r.error){items=r.items;ids.push(r.item.id);}
+                }
+                if(ids.length){
+                  const added=items.filter(m=>ids.includes(m.id));
+                  setProjects(all=>all.map(p=>p.id!==projectId?p:{...p,memoryItems:[...memoryItemsOf(p).filter(m=>!ids.includes(m.id)),...added]}));
+                  patchMessage(convId,answerMsg.id,{memoryCandidateIds:ids});
+                }
+              }
+            }
             // 只有完整响应成功才清除失败记录。
             if (latestState?.status === 'completed') setSettings((prev) =>
               prev
@@ -1391,6 +1457,7 @@ export default function App() {
             finishUi(); pauseQueue(convId);
             const interrupted = finishInterruption();
             if(!interrupted)notifyTask('error',`${requestId}:error`,convId,t('任务遇到问题'),msg);
+            if(nextConv.evalCaseId&&!interrupted)nextEvalCase();
             // 记一笔健康度：确定性的服务端崩溃和「模型不存在」会让这个 ID
             // 从默认模型列表里消失，限流和超时不算
             const health = info.blameModel
@@ -1486,6 +1553,26 @@ export default function App() {
     // '继续处理新输入' 是发给模型的续跑指令，不跟界面语言走
     void send('继续处理新输入',undefined,state,{text:'',attachments:[],quotes:[],quoteOnly:false,conversationId:convId});
   },[resumeInput,runs,send]);
+
+  runEvalCaseRef.current = ({ caseId, ablation }: EvalJob) => {
+    const item = evalsRef.current?.cases.find(c => c.id === caseId);
+    if (!settings || !item) { nextEvalCase(); return; }
+    const conv = newConversation(settings.defaultConfig, settings.activeKeyProfileId);
+    const label = ABLATIONS.find(a => a.id === ablation)?.label;
+    conv.title = label ? t('回归题（去掉{component}）：{title}', { component: t(label), title: item.title }) : t('回归题：{title}', { title: item.title });
+    conv.evalCaseId = item.id;
+    conv.evalConfig = ablationConfig(conv.config.model, ablation);
+    if (ablation) conv.evalAblation = ablation;
+    if (ablation === 'harness') conv.config = { ...conv.config, runtime: { ...DEFAULT_RUNTIME, ...conv.config.runtime, harness: 'off' } };
+    // 回放放回原来的项目，项目规范和记忆才和当时一致
+    const projectId = item.projectId ?? runRecord(item.fromRecordId ?? '')?.projectId ?? null;
+    if (projectId && projects.some(p => p.id === projectId)) conv.projectId = projectId;
+    setConversations(all => [conv, ...all]);
+    setActiveId(conv.id);
+    setObservationsOpen(false);
+    setTimeout(() => { void send(item.task, undefined, undefined,
+      { text: '', attachments: [], quotes: [], quoteOnly: false, conversationId: conv.id }); }, 0);
+  };
 
   function sendNow(input:QueuedInput):boolean {
     const convId=input.conversationId??activeId;
@@ -1913,6 +2000,7 @@ export default function App() {
           onNewInProject={(pid) => newChat(pid)}
           onOpenWorkspace={(t) => {
             setWorkspaceTab(t);
+            void refreshProjectMemory();
             setWorkspaceOpen(true);
             setSidebarOpen(false);
           }}
@@ -1948,7 +2036,7 @@ export default function App() {
         />
       )}
 
-      {teamVisible ? <div className="team-workspace-container"><React.Suspense fallback={<div className="empty"><BrandLoading label={t('正在打开协作空间…')} /></div>}><TeamWorkspace sidebarTarget={teamSidebar} sidebarHidden={sidebarHidden} onOpenSidebar={()=>{setSidebarHidden(false);setSidebarOpen(true);}} onNavigate={()=>setSidebarOpen(false)} projects={projects} settings={settings} sourceConversation={active} beforeRestore={async()=>{stopAll();await teamRuntime.pauseAll();await saveConversationsNow(conversations);}} onProject={projectId=>setSettings(s=>s?{...s,collaborationView:{visible:true,projectId}}:s)} onSettingsChange={update=>setSettings(prev=>prev?update(prev):prev)} initialProjectId={settings.collaborationView?.projectId??activeProject?.id} onSingle={()=>setTeamVisible(false)} onSettings={()=>{setSettingsTab('keys');setSettingsOpen(true);}} onCreateProject={name=>{const p=makeProject(name);setProjects(all=>[...all,p]);return p.id;}} onHandoff={(text,projectId)=>{const conv=newConversation(settings.defaultConfig,settings.activeKeyProfileId);conv.projectId=projectId;conv.title=titleFrom(text);conv.messages=[{id:uid(),role:'user',content:text,createdAt:Date.now()}];setConversations(all=>[...all,conv]);setActiveId(conv.id);setTeamVisible(false);}}/></React.Suspense></div> : null}
+      {teamVisible ? <div className="team-workspace-container"><React.Suspense fallback={<div className="empty"><BrandLoading label={t('正在打开协作空间…')} /></div>}><TeamWorkspace sidebarTarget={teamSidebar} sidebarHidden={sidebarHidden} onOpenSidebar={()=>{setSidebarHidden(false);setSidebarOpen(true);}} onNavigate={()=>setSidebarOpen(false)} projects={projects} settings={settings} sourceConversation={active} beforeRestore={async()=>{stopAll();await teamRuntime.pauseAll();await saveConversationsNow(conversations);}} onProject={projectId=>setSettings(s=>s?{...s,collaborationView:{visible:true,projectId}}:s)} onSettingsChange={update=>setSettings(prev=>prev?update(prev):prev)} onProjectMemory={updateProjectMemory} initialProjectId={settings.collaborationView?.projectId??activeProject?.id} onSingle={()=>setTeamVisible(false)} onSettings={()=>{setSettingsTab('keys');setSettingsOpen(true);}} onCreateProject={name=>{const p=makeProject(name);setProjects(all=>[...all,p]);return p.id;}} onHandoff={(text,projectId)=>{const conv=newConversation(settings.defaultConfig,settings.activeKeyProfileId);conv.projectId=projectId;conv.title=titleFrom(text);conv.messages=[{id:uid(),role:'user',content:text,createdAt:Date.now()}];setConversations(all=>[...all,conv]);setActiveId(conv.id);setTeamVisible(false);}}/></React.Suspense></div> : null}
       <main className="main" style={teamVisible?{display:'none'}:undefined}>
         {saveError ? <div className="grant-banner" role="alert">{saveError}<button className="btn sm" onClick={() => { void Promise.all([saveSettings(settings), saveConversationsNow(conversations),saveProjects(projects),saveSkills(skills),saveTasks(tasks)]).then(() => setSaveError(null)).catch(reportSaveError); }}>{t('重试保存')}</button></div> : null}
         <div className="topbar">
@@ -2061,15 +2149,27 @@ export default function App() {
                       const rec=runRecord(recordId);
                       const project=projects.find(p=>p.id===rec?.projectId);
                       if(!project){toast.show(t('这个任务不属于任何项目，纠错没有可写入的地方'));return t('（没有写入）');}
-                      const stamp=new Date().toLocaleString('zh-CN',{hour12:false});
                       const title=(rec?.question.content??'').trim().replace(/\s+/g,' ').slice(0,60);
+                      if(kind==='knowledge'){
+                        // 知识缺口记成一条「经验」，来源指回这个任务；同一句不会记两遍
+                        const input={text:`纠错（来自任务「${title}」）：${note}`,kind:'lesson' as const,source:'correction' as const,sourceRef:recordId};
+                        const added=addMemory(memoryItemsOf(project),input);
+                        if(added.error){toast.show(t(added.error));return t('（没有写入）');}
+                        setProjects(all=>all.map(p=>p.id===project.id?{...p,memoryItems:addMemory(memoryItemsOf(p),input).items}:p));
+                        return t('项目记忆');
+                      }
+                      const stamp=new Date().toLocaleString('zh-CN',{hour12:false});
                       const line=`[${stamp}] 纠错（来自任务「${title}」）：${note}`;
-                      const patch=kind==='knowledge'
-                        ?{memory:`${project.memory.trimEnd()}\n\n${line}`.trim()}
-                        :{instructions:`${project.instructions.trimEnd()}\n\n${line}`.trim()};
-                      setProjects(all=>all.map(p=>p.id===project.id?{...p,...patch}:p));
-                      return kind==='knowledge'?t('项目记忆'):t('项目规范');
+                      setProjects(all=>all.map(p=>p.id===project.id?{...p,instructions:`${p.instructions.trimEnd()}\n\n${line}`.trim()}:p));
+                      return t('项目规范');
                     }}
+                    memoryCard={(()=>{
+                      const ids=turn.a?.memoryCandidateIds;
+                      const project=ids?.length?projects.find(p=>p.id===active?.projectId):undefined;
+                      if(!ids?.length||!project)return undefined;
+                      return <MemoryCandidateCard ids={ids} items={memoryItemsOf(project)}
+                        onChange={items=>setProjects(all=>all.map(p=>p.id===project.id?{...p,memoryItems:items}:p))}/>;
+                    })()}
                     onReplay={busy?undefined:(recordId)=>{
                       const question=runRecord(recordId)?.question.content;
                       if(question)void send(question);
@@ -2236,18 +2336,12 @@ export default function App() {
             // 转到 holdout 时把跑过的次数清零：它要重新开始当留出集
             writeEvals({...evals,cases:evals.cases.map(c=>c.id===caseId?{...c,split,uses:split==='holdout'?0:c.uses}:c)});
           }}
-          onRunCase={caseId=>{
-            const item=evals?.cases.find(c=>c.id===caseId);
-            if(!settings||!item)return;
-            const conv=newConversation(settings.defaultConfig,settings.activeKeyProfileId);
-            conv.title=t('回归题：{title}',{title:item.title});
-            conv.evalCaseId=item.id;
-            conv.evalConfig=conv.config.model;
-            setConversations(all=>[conv,...all]);
-            setActiveId(conv.id);
-            setObservationsOpen(false);
-            setTimeout(()=>{void send(item.task,undefined,undefined,
-              {text:'',attachments:[],quotes:[],quoteOnly:false,conversationId:conv.id});},0);
+          onRunCase={caseId=>{evalQueueRef.current=[];runEvalCaseRef.current({caseId});}}
+          onRunCases={ids=>{const jobs=ids.map(caseId=>({caseId}));evalQueueRef.current=jobs.slice(1);if(jobs[0])runEvalCaseRef.current(jobs[0]);}}
+          onRunAblation={(ids,ablation)=>{
+            // 先按原配置跑一遍，再去掉这个组件跑一遍；同一道题两边配置标签不同，结果分开记
+            const jobs=[...ids.map(caseId=>({caseId})),...ids.map(caseId=>({caseId,ablation}))];
+            evalQueueRef.current=jobs.slice(1);if(jobs[0])runEvalCaseRef.current(jobs[0]);
           }}/>
       </React.Suspense>:null}
       {settingsOpen ? (

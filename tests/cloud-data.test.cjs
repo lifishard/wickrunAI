@@ -73,3 +73,19 @@ test('interrupted cloud apply restores every local collection before startup',as
   for(const key of keys)assert.equal(values.get(key),backup[key]);
   assert.equal(values.get('wickrun:cloud:pending-apply:v1'),'null');
 });
+test('project memory merges per item: two devices adding and deleting never conflict',()=>{
+  const item=(id,text,t,extra={})=>({id,text,kind:'note',source:'user',createdAt:t,updatedAt:t,hash:id,...extra});
+  const row=(items)=>({id:'p',name:'P',memoryItems:items,memory:items.filter(m=>!m.deletedAt).map(m=>m.text).join('\n\n')});
+  const base={...emptyCloudData(),projects:[row([item('a','A',1),item('b','B',1)])]};
+  const local={...base,projects:[row([item('a','A',1),item('b','B',1),item('c','local note',2)])]};
+  const remote={...base,projects:[row([item('a','A',1),{...item('b','',3),deletedAt:3},item('d','remote note',3)])]};
+  const merged=mergeCloudData(base,local,remote);
+  const p=merged.projects[0];
+  assert.deepEqual(p.memoryItems.filter(m=>!m.deletedAt).map(m=>m.id).sort(),['a','c','d']);
+  assert.ok(p.memoryItems.find(m=>m.id==='b').deletedAt,'deletion is kept as a tombstone');
+  assert.match(p.memory,/local note/);assert.match(p.memory,/remote note/);assert.doesNotMatch(p.memory,/\bB\b/);
+  assert.deepEqual(mergeCloudData(base,remote,local).projects[0].memoryItems,p.memoryItems);
+  // 其他字段仍按原规则：两边都改名照样要用户决定
+  const renamed=(x,name)=>({...x,projects:[{...x.projects[0],name}]});
+  assert.throws(()=>mergeCloudData(base,renamed(local,'L'),renamed(remote,'R')),CloudMergeConflict);
+});

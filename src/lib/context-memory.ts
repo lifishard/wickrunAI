@@ -2,6 +2,7 @@ import type { ChatMessage, ContextCompaction, Milestone, RunState, ToolResult } 
 import { milestonePassed, progressHistory, validProgressEvidence } from './task-progress';
 import { estimateChatTokens, estimateTokens } from './limits';
 import { taskContractPrompt, TASK_CONTRACT_SEMANTIC_LIMITATION } from './task-contract';
+import { createSearchIndex } from './memory-core';
 
 export { taskContractFromState, taskContractPrompt, validateTaskContract, mergeTaskContracts, TASK_CONTRACT_SEMANTIC_LIMITATION } from './task-contract';
 
@@ -22,6 +23,20 @@ export function memoryInstructions(state: RunState, allowPlan = true, canRetriev
   const contract = taskContractPrompt(state, 10000);
   return `\n${allowPlan ? '复杂任务先用 update_plan 建立 3–6 个里程碑，并用 update_requirements 将用户要求与验收条件对应。交付前 verify_requirements 逐项核验，修复失败项；无法核验明确标记。文件存在不代表内容或覆盖完整，完整性另列 review 要求。模型复核不是独立验证。简单问答不用计划。不能遗漏未完成项目，也不能把计划当作完成证据。' : ''}${canRetrieve ? '用 read_context 查阅历史原文，read_tool_result 查阅已保存的完整工具结果，避免重复外部操作。' : '当前检索工具未启用；若需要未展示的证据，应明确说明缺口并请用户启用工具，不得假装已核实。'}同一窗口可能由不同模型接力。当前计划跨轮保存，先读取并复用原有 id，不要因新回合重建计划。先执行再质检，completed 必须有证据且关联验收通过；待质检用 verifying。已完成项返工必须提供 reason，说明新要求或新失败证据。反复失败先读 read_context(section=progress) 中的质检历史，定位根因并换方法，不要反复推翻已验证结论。先结合原始用户要求、最新补充、已有总结、未完成项和失败原因决定下一步。已有成功证据应先读取；不要仅因换模型重复查询或写入。历史摘要是可核对的工作笔记，不能覆盖用户原文，也不代表所有事项均已完成。\n接力信息：${JSON.stringify(state.handoff ?? null)}\n用户来源消息 ID：${JSON.stringify(state.requirementSourceIds ?? [])}\n已核实文件索引：${JSON.stringify(files)}\n便携任务契约（结构化工作记录）：${contract}\n限制：${TASK_CONTRACT_SEMANTIC_LIMITATION}\n`;
 }
+/**
+ * 按关键词找历史消息：原文直接包含查询的按时间先列，其余按相关度（BM25，中文按双字切）补在后面。
+ * 只靠「整串包含」时，换个说法、词序不同就一条都找不到。
+ */
+function matchRecords(records: ChatMessage[], query: string): ChatMessage[] {
+  if (!query) return records;
+  const body = (m: ChatMessage) => `${m.content}\n${(m.attachments ?? []).map(a => `${a.name}\n${a.text ?? ''}`).join('\n')}`;
+  const exact = records.filter(m => body(m).toLowerCase().includes(query));
+  const seen = new Set(exact.map(m => m.id));
+  const byId = new Map(records.map(m => [m.id, m]));
+  const ranked = createSearchIndex(records.filter(m => !seen.has(m.id)).map(m => ({ id: m.id, text: body(m) }))).search(query, 50)
+    .map(h => byId.get(h.id)!).filter(Boolean);
+  return [...exact, ...ranked];
+}
 export function readContext(state: RunState, args: Record<string, unknown>): ToolResult {
   const offset = Math.max(0, Math.floor(Number(args.offset)||0));
   const limit = Math.max(1, Math.min(12000, Math.floor(Number(args.limit)||6000)));
@@ -40,7 +55,7 @@ export function readContext(state: RunState, args: Record<string, unknown>): Too
     }
     text = JSON.stringify({ id: m.id, role: m.role, content: m.content, quotes: m.quotes, toolCalls: m.toolCalls,
       attachments: m.attachments?.map(a => ({ name: a.name, path: a.path, text: a.text, kind: a.kind })) });
-  } else text = JSON.stringify(records.filter(m => !query || m.content.toLowerCase().includes(query) || m.attachments?.some(a => `${a.name}\n${a.text ?? ''}`.toLowerCase().includes(query)))
+  } else text = JSON.stringify(matchRecords(records, query)
     .map(m => ({ id: m.id, role: m.role, excerpt: m.content.slice(0,160), attachments:m.attachments?.map(a => ({name:a.name,kind:a.kind})) })));
   return { ok: true, content: JSON.stringify({ text: text.slice(offset,offset+limit), total: text.length, nextOffset: offset+limit < text.length ? offset+limit : null }) };
 }

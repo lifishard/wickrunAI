@@ -35,53 +35,95 @@ function currentProject(ctx) {
 const NO_PROJECT = '当前对话不属于任何项目。把对话放进一个项目里，这个工具才有东西可读写。';
 
 /* ---------------- 项目记忆 ---------------- */
+// 记忆是一条一条的（src/lib/memory-core.ts，主进程用打包版）。旧的整段文字第一次读到时迁移成条目。
+const memory = require('../memory-core.bundle.cjs');
+const KINDS = new Set(['preference', 'decision', 'fact', 'lesson', 'note']);
 
-function projectMemoryRead(_args, ctx) {
+function saveMemory(list, i, items) {
+  const kept = memory.pruneMemory(items);
+  list[i] = { ...list[i], memoryItems: kept, memory: memory.renderMemoryText(kept) };
+  return writeList(K_PROJECTS, list);
+}
+
+function projectMemoryRead(args, ctx) {
   const p = currentProject(ctx);
   if (!p) return fail(NO_PROJECT);
-  if (!String(p.memory || '').trim()) {
-    return ok(`项目「${p.name}」还没有记忆内容。`, { summary: '读项目记忆：空' });
-  }
-  return ok(p.memory, { summary: `读项目记忆（${p.memory.length} 字）` });
+  const items = memory.memoryItemsOf(p);
+  const live = memory.activeItems(items);
+  if (!live.length) return ok(`项目「${p.name}」还没有记忆内容。`, { summary: '读项目记忆：空' });
+  const query = String(args?.query || '').trim();
+  const found = memory.searchMemory(items, query, Math.max(1, Math.min(50, Number(args?.limit) || 30)));
+  if (!found.length) return ok(`项目「${p.name}」的 ${live.length} 条记忆里没有和「${clip(query, 40)}」相关的。`, { summary: `查项目记忆：没有匹配` });
+  return ok(memory.formatMemoryList(found), {
+    summary: query ? `查项目记忆「${clip(query, 20)}」（${found.length} 条）` : `读项目记忆（${found.length}/${live.length} 条）`,
+  });
 }
 
 async function projectMemoryWrite(args, ctx) {
   const p = currentProject(ctx);
   if (!p) return fail(NO_PROJECT);
-
+  if (args.mode === 'replace' && !args.id) return fail('不再支持整段覆盖。要改某一条，传那条的 id；要删，用 project_memory_forget。');
   const text = String(args.text || '').trim();
   if (!text) return fail('text 不能为空');
-  const mode = args.mode === 'replace' ? 'replace' : 'append';
-
   const list = readList(K_PROJECTS);
   const i = list.findIndex((x) => x.id === p.id);
   if (i < 0) return fail('项目不见了，可能刚被删掉');
-
-  const stamp = new Date().toLocaleString('zh-CN', { hour12: false });
-  const next =
-    mode === 'replace'
-      ? text
-      : `${String(list[i].memory || '').trimEnd()}\n\n[${stamp}] ${text}`.trim();
-
-  // 别让记忆无限膨胀 —— 每轮都要拼进 system prompt。
-  //
-  // 只从尾部保留会让**开头**跟着变。这段拼在 system prompt 里，前缀一变，
-  // 整段上下文缓存就失配 —— 记一次记忆的代价是重算全部前缀。
-  // 所以保住固定长度的开头、挖掉中间、只让结尾滚动：开头逐字节稳定，
-  // 缓存至少能命中到那个边界。
-  const MAX = 20000;
-  const HEAD = 12000;
-  const GAP = '\n\n…（中间部分已归档，未展示）\n\n';
-  list[i].memory =
-    next.length > MAX
-      ? `${next.slice(0, HEAD)}${GAP}${next.slice(-(MAX - HEAD))}`
-      : next;
-  await writeList(K_PROJECTS, list);
-
-  return ok(`已${mode === 'replace' ? '覆盖' : '追加'}到项目「${p.name}」的记忆。`, {
-    summary: `写项目记忆（${text.length} 字）`,
+  const items = memory.memoryItemsOf(list[i]);
+  const kind = KINDS.has(args.kind) ? args.kind : undefined;
+  const extra = {};
+  for (const key of ['applicability', 'evidence']) if (typeof args[key] === 'string') extra[key] = args[key];
+  if (Array.isArray(args.keywords)) extra.keywords = args.keywords;
+  const result = args.id
+    ? memory.updateMemory(items, String(args.id), { text, ...(kind ? { kind } : {}), ...extra })
+    : memory.addMemory(items, { text, kind, source: 'model', sourceRef: ctx.conversationId || undefined, ...extra });
+  if (result.error) return fail(result.error);
+  if (result.duplicate) return ok(`项目「${p.name}」已经有这条记忆（${result.item.id}），没有重复记录。`, { summary: '写项目记忆：已存在' });
+  await saveMemory(list, i, result.items);
+  const note = result.redacted ? '其中像密钥或密码的内容已替换成 [REDACTED]。' : '';
+  return ok(`已${args.id ? '更新' : '记下'}项目「${p.name}」的记忆 ${result.item.id}。${note}`, {
+    summary: `${args.id ? '更新' : '写'}项目记忆（${text.length} 字）`,
   });
 }
+
+async function projectMemoryForget(args, ctx) {
+  const p = currentProject(ctx);
+  if (!p) return fail(NO_PROJECT);
+  const id = String(args.id || '').trim();
+  if (!id) return fail('需要要删除的那条记忆的 id（project_memory_read 的结果里有）');
+  const list = readList(K_PROJECTS);
+  const i = list.findIndex((x) => x.id === p.id);
+  if (i < 0) return fail('项目不见了，可能刚被删掉');
+  const result = memory.forgetMemory(memory.memoryItemsOf(list[i]), id);
+  if (result.error) return fail(result.error);
+  await saveMemory(list, i, result.items);
+  return ok(`已删除项目「${p.name}」的记忆 ${id}。`, { summary: `删除项目记忆 ${id}` });
+}
+
+/*
+ * 本机客户端（Claude Desktop 等，经 wickrun_ai 连接器）用的两个入口。
+ * 只认任务上带的项目；查询只读；提交只能生成候选，要用户在 wickrunAI 里批准才会用到。
+ */
+const nativeMemory = {
+  search(projectId, query, limit) {
+    const p = projectId ? readList(K_PROJECTS).find((x) => x.id === projectId) : null;
+    if (!p) throw Error('这个任务不属于任何项目，没有项目记忆可查');
+    const items = memory.memoryItemsOf(p);
+    const found = memory.searchMemory(items, String(query || ''), Math.max(1, Math.min(30, Number(limit) || 10)));
+    return { project: p.name, total: memory.activeItems(items).length, items: found.map((m) => ({ id: m.id, kind: m.kind, text: m.text, pinned: Boolean(m.pinned) })) };
+  },
+  async propose(projectId, { text, kind, sourceRef }) {
+    const list = readList(K_PROJECTS);
+    const i = projectId ? list.findIndex((x) => x.id === projectId) : -1;
+    if (i < 0) throw Error('这个任务不属于任何项目，没有地方放记忆候选');
+    const result = memory.addMemory(memory.memoryItemsOf(list[i]), {
+      text: String(text || ''), kind: KINDS.has(kind) ? kind : undefined, source: 'client', status: 'candidate', sourceRef,
+    });
+    if (result.error) throw Error(result.error);
+    if (result.duplicate) return { ok: true, duplicate: true, id: result.item.id, message: '项目里已经有这条（或用户删过它），没有重复提交。' };
+    await saveMemory(list, i, result.items);
+    return { ok: true, id: result.item.id, redacted: Boolean(result.redacted), message: '已作为候选提交，用户在 wickrunAI 里批准后才会用到。' };
+  },
+};
 
 /* ---------------- 项目文档 ---------------- */
 
@@ -197,6 +239,8 @@ async function skillWrite(args) {
 }
 
 module.exports = {
+  nativeMemory,
+  projectMemoryForget,
   projectMemoryRead,
   projectMemoryWrite,
   projectDocRead,

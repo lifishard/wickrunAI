@@ -20,3 +20,31 @@ test('explicit retry resumes stored member checkpoint without charging prior usa
 test('multiple delivery endpoints can each be accepted with concurrency one',async t=>{const f=fixture(t,async args=>{args.events.onContentDelta('actual result');args.events.onDone();});const {id}=await setup(f,{configure(p,flow){const end=flow.draft.nodes.at(-1),second={...end,id:'second-end'};flow.draft.nodes.push(second);flow.draft.edges.push({...flow.draft.edges.at(-1),id:'second-edge',to:second.id});flow.versions[0].graph=structuredClone(flow.draft);}});await f.runtime.start('p',id);assert.equal(f.runtime.project('p').runs[0].approvalQueue.length,2);await f.runtime.approve('p',id,true);assert.equal(f.runtime.project('p').runs[0].status,'waiting_user');await f.runtime.approve('p',id,true);assert.equal(f.runtime.project('p').runs[0].status,'completed');});
 test('discussion retry keeps completed participant results',async t=>{let f;f=fixture(t,async args=>{const isB=args.extraSystem.includes('成员 B');if(isB&&f.calls.length===2){await args.events.onRunState({working:[],round:1,at:1,spentTokens:90,status:'paused',content:'B partial'});args.events.onError('interrupt B',{kind:'unknown'});}else{if(isB)assert.equal(args.resume.content,'B partial');args.events.onContentDelta(isB?'B final':'A final');args.events.onDone();}});const {id}=await setup(f,{configure(p,flow){p.members.push({...p.members[0],id:'b',name:'B'});const a=flow.draft.nodes.find(n=>n.type==='agent');a.type='discussion';a.participants=['a','b'];flow.versions[0].graph=structuredClone(flow.draft);}});await f.runtime.start('p',id);await f.runtime.resolveUncertain('p',id,'retry','B has no completed external action');await f.runtime.start('p',id);assert.equal(f.calls.length,3);assert.equal(f.runtime.project('p').runs[0].status,'waiting_user');assert.match(f.runtime.project('p').runs[0].attempts.at(-2).output,/A final/);});
 test('bound scheduled ready run is recovered once after interruption before dispatch',async t=>{const f=fixture(t,async args=>{args.events.onContentDelta('scheduled evidence');args.events.onDone();});const key='schedule:2026-09-13';const {id}=await setup(f,{scheduleKey:key});await f.runtime.update('p',p=>p.schedules.push({id:'schedule',name:'Scheduled',workflowId:p.workflows[0].id,versionId:'v',goal:'Goal',acceptance:'Evidence',timezone:'UTC',hour:9,minute:0,catchUp:true,overlap:'skip',enabled:true,nextAt:Date.now()+86400000,triggers:[{key,at:Date.now()-1000,runId:id}]}));await f.runtime.tick();for(let i=0;i<100&&f.runtime.project('p').runs[0].status!=='waiting_user';i++)await new Promise(r=>setTimeout(r,5));await f.runtime.tick();assert.equal(f.runtime.project('p').runs.length,1);assert.equal(f.calls.length,1);assert.equal(f.runtime.project('p').runs[0].status,'waiting_user');});
+
+test('project memory is one store: legacy team experience migrates into project items and the run snapshots the mirror',async t=>{
+ const f=fixture(t,async args=>{args.events.onContentDelta('done');args.events.onDone();});
+ let items=[{id:'m_one',text:'部署用 Railway',kind:'decision',source:'user',createdAt:1,updatedAt:1,hash:'h1'},
+  {id:'m_scoped',text:'CSV 用 UTF-8 BOM',kind:'lesson',source:'user',createdAt:2,updatedAt:2,hash:'h2',keywords:['CSV']},
+  {id:'m_wait',text:'还没批准的候选',kind:'note',source:'candidate',status:'candidate',createdAt:3,updatedAt:3,hash:'h3'}];
+ const project=()=>({id:'p',name:'P',instructions:'',docs:[],prompts:[],memory:'',memoryItems:items,createdAt:1});
+ f.runtime.projects=()=>[project()];
+ f.runtime.saveProjectMemory=(id,update)=>{assert.equal(id,'p');items=update(items);};
+ const legacy={id:'memory-old',title:'旧经验',text:'先跑测试再提交',applicability:'所有改动',evidence:'CI 记录',status:'adopted',revision:3,history:[],kind:'experience'};
+ const {id}=await setup(f,{configure:p=>{p.memories=[legacy];}});
+ const migrated=items.find(m=>m.id==='m_team_memory-old');
+ assert.ok(migrated,'legacy team experience became a project memory item');
+ assert.equal(migrated.text,'旧经验：先跑测试再提交');assert.equal(migrated.kind,'lesson');assert.equal(migrated.evidence,'CI 记录');
+ const disk=f.store.read().projects.p;
+ assert.ok(disk.memories.every(m=>m.id.startsWith('m_')),'team project now holds only the mirror');
+ const run=disk.runs.find(r=>r.id===id);
+ assert.deepEqual(run.memorySnapshot.map(m=>m.id).sort(),['m_one','m_scoped','m_team_memory-old'],'candidates stay out of the snapshot');
+ assert.deepEqual(run.memoryIds.sort(),['m_one@1','m_scoped@1','m_team_memory-old@1']);
+ // 迁移是幂等的：再建一次运行不会多出一条
+ await f.runtime.createRun('p','task',disk.workflows[0].id,'v',f.cfg);
+ assert.equal(items.filter(m=>m.id==='m_team_memory-old').length,1);
+ // 成员提示里记忆只出现一次（来自快照），任务目标没提 CSV，限定关键词的那条不放
+ await f.runtime.start('p',id);
+ const prompt=f.calls[0].extraSystem;
+ assert.equal(prompt.split('部署用 Railway').length-1,1);
+ assert.doesNotMatch(prompt,/UTF-8 BOM/);
+});

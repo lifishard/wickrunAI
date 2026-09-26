@@ -72,6 +72,7 @@ const TRANSLATED=[
   'components/ErrorBoundary.tsx',
   'components/collaboration/DataBackupPanel.tsx',
   'components/collaboration/LocalClientsPanel.tsx',
+  'components/ProjectMemoryPanel.tsx',
 ];
 
 /** 纯逻辑模块：整份文件里的中文字符串都是给界面翻的 key。 */

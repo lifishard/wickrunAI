@@ -34,7 +34,7 @@ export function runDesktopConversation(args:RunAgentArgs):AgentHandle {
         const goal=JSON.stringify(buildWire(state.working,{...args.config,toolsEnabled:false,historyLimit:0},args.extraSystem+harnessInstructions(args.config,state)+nativeProgressInstructions(state)));
         if(goal.length>24000)throw Error('Claude Desktop 的交接材料超过 24000 字符。请使用新对话明确本次目标，或改用 Claude Code / API 模型处理长上下文；原文未裁剪。');
         await save();
-        const created=await bridge.nativeAiCreate({provider:'claude-desktop',goal,requestKey:state.runId,
+        const created=await bridge.nativeAiCreate({provider:'claude-desktop',goal,requestKey:state.runId,projectId:args.toolCtx?.()?.projectId??undefined,
           workers:args.config.subagents?.enabled?args.config.subagents.workers.map(w=>({profileId:w.profileId,model:w.model,outputField:'max_tokens' as const})):[],
           maxJobs:Math.max(1,Math.min(8,args.config.subagents?.maxCalls||4)),maxOutputTokens:2048});
         state.nativeDesktop={taskId:created.task.id,prompt:created.prompt,status:created.task.status};await save();

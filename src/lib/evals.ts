@@ -1,4 +1,4 @@
-import type { AcceptanceCheck, RunRecord } from '../types';
+import type { AcceptanceCheck, DeliveryRequirement, RunRecord } from '../types';
 import type { TaskObservation } from './observations';
 import { verdictOf } from './routing-memory';
 import { getTransport } from './transport';
@@ -40,6 +40,8 @@ export interface EvalCase {
   uses: number;
   lastUsedAt?: number;
   notes?: string;
+  /** 原任务所在的项目：回放时放回同一个项目，项目规范和记忆才和当时一致 */
+  projectId?: string | null;
 }
 
 export interface EvalResult {
@@ -83,8 +85,20 @@ export function caseFromRecord(record: RunRecord, split: EvalCase['split'] = 'de
     title: (record.question.content ?? '').trim().replace(/\s+/g, ' ').slice(0, 80) || '未命名回归题',
     task: record.question.content ?? '',
     acceptance: (record.state.requirements ?? []).map((r) => r.check),
-    split, createdAt: Date.now(), uses: 0,
+    split, createdAt: Date.now(), uses: 0, projectId: record.projectId ?? null,
   };
+}
+
+/**
+ * 跑回归题时把存下来的验收条件原样放进这一轮 —— 不让模型自己重新定验收。
+ * 模型自己定的尺子，量出来的「通过」说明不了什么。
+ */
+export function evalRequirements(c: EvalCase, sourceId: string, now = Date.now()): DeliveryRequirement[] {
+  const quote = c.task.trim().slice(0, 200);
+  return c.acceptance.map((check, i) => {
+    const title = `回归题验收 ${i + 1}：${check.kind}${check.path ? ` ${check.path}` : ''}`;
+    return { id: `eval-${c.id}-${i + 1}`, revision: 1, title, sourceId, sourceQuote: quote, check: structuredClone(check), at: now, history: [] };
+  });
 }
 
 /** holdout 看过太多次就已经是开发数据了，该换一批 */
@@ -178,12 +192,15 @@ export function resultFromRun(caseId: string, config: string, state: {
   status?: string;
   requirements?: { revision: number; check: { kind: string }; verification?: { status: string; revision: number; method?: string } }[];
   requestStats?: { actualInput?: number; output?: number }[];
-}, activeMs: number): EvalResult {
+}, activeMs: number, fixed: AcceptanceCheck[] = []): EvalResult {
   const reqs = state.requirements ?? [];
   const current = reqs.map((r) => (r.verification?.revision === r.revision ? r.verification : undefined));
   const passed = current.filter((v) => v?.status === 'passed').length;
   const program = current.filter((v) => v?.method === 'program').length;
-  const done = state.status === 'completed' && reqs.length > 0 && passed === reqs.length && program > 0;
+  // 题目自带的验收一条都不能少、不能被改掉，而且每条都要在当前版本上通过
+  const key = (c: unknown) => JSON.stringify(c, Object.keys((c ?? {}) as object).sort());
+  const kept = fixed.every((check) => reqs.some((r, i) => key(r.check) === key(check) && current[i]?.status === 'passed'));
+  const done = state.status === 'completed' && reqs.length > 0 && passed === reqs.length && program > 0 && kept;
   return {
     caseId, config, at: Date.now(), done, activeMs,
     tokens: (state.requestStats ?? []).reduce((n, r) => n + (r.actualInput ?? 0) + (r.output ?? 0), 0),
@@ -194,4 +211,55 @@ export function resultFromRun(caseId: string, config: string, state: {
 /** 一条观测能不能拿来当回归题：只收真实失败，成功的题目没有区分度 */
 export function worthKeeping(t: TaskObservation): boolean {
   return verdictOf(t) === 'not_done';
+}
+
+/* ------------------------------------------------------------------ *
+ * 组件对照（ablation）：同一批题，先按原配置跑，再去掉一个组件跑，按 preserve-and-extend 判断能不能删。
+ * 见 docs/HARNESS_COMPONENTS.md 的「可删条件」。
+ * ------------------------------------------------------------------ */
+
+export type Ablation = 'harness' | 'project_memory' | 'skills';
+export const ABLATIONS: { id: Ablation; label: string; hint: string }[] = [
+  { id: 'harness', label: '任务引导提示', hint: '不放执行规范提示（完成检查、重复操作保护这些底线照常生效）' },
+  { id: 'project_memory', label: '项目记忆', hint: '不把项目记忆放进提示词（模型仍可以用工具查）' },
+  { id: 'skills', label: '技能', hint: '不注入已启用的技能' },
+];
+/** 结果按配置标签分组：原配置就是模型名，去掉组件的加一个后缀 */
+export const ablationConfig = (model: string, ablation?: Ablation) => (ablation ? `${model} −${ablation}` : model);
+/** 对照至少要这么多道两边都跑过的题，才给结论 */
+export const ABLATION_MIN_CASES = 5;
+
+export interface AblationVerdict {
+  ablation: Ablation;
+  model: string;
+  compared: number;
+  regressed: string[];
+  gained: string[];
+  baseRate: number | null;
+  candRate: number | null;
+  baseFalseDone: number | null;
+  candFalseDone: number | null;
+  /** insufficient 题太少；keep 去掉后有退步或错误完成变多；removable 这批题上去掉没有坏处（还要在 holdout 上确认） */
+  verdict: 'insufficient' | 'keep' | 'removable';
+}
+
+export function ablationVerdict(store: EvalStore, model: string, ablation: Ablation, split: EvalCase['split']): AblationVerdict {
+  const base = ablationConfig(model), cand = ablationConfig(model, ablation);
+  const pe = compare(store, base, cand, split);
+  const rows = new Map(report(store, split).map((r) => [r.config, r]));
+  const b = rows.get(base), c = rows.get(cand);
+  const baseFalseDone = b?.falseDoneRate ?? null, candFalseDone = c?.falseDoneRate ?? null;
+  const worseFalse = baseFalseDone !== null && candFalseDone !== null && candFalseDone > baseFalseDone;
+  const verdict = pe.compared < ABLATION_MIN_CASES ? 'insufficient' : pe.regressed.length || worseFalse ? 'keep' : 'removable';
+  return { ablation, model, compared: pe.compared, regressed: pe.regressed, gained: pe.gained, baseRate: b?.doneRate ?? null, candRate: c?.doneRate ?? null, baseFalseDone, candFalseDone, verdict };
+}
+
+/** 结果里出现过的对照：按（模型, 组件）列出来 */
+export function ablationRuns(store: EvalStore): { model: string; ablation: Ablation }[] {
+  const out = new Map<string, { model: string; ablation: Ablation }>();
+  for (const r of store.results) {
+    const m = r.config.match(/^(.*) −(harness|project_memory|skills)$/);
+    if (m) out.set(r.config, { model: m[1], ablation: m[2] as Ablation });
+  }
+  return [...out.values()];
 }

@@ -58,7 +58,8 @@ function opKeyOf(name, args) {
  */
 function onceOnly(name, args) {
   if (name === 'github_api') return String(args.method || 'GET').toUpperCase() !== 'GET';
-  if (name === 'project_memory_write') return args.mode !== 'replace';
+  // 新记一条不能因为重放多一遍；按 id 更新同样内容是幂等的
+  if (name === 'project_memory_write') return !args.id;
   return false;
 }
 
@@ -145,6 +146,7 @@ const HANDLERS = {
 
   project_memory_read: (a, c) => knowledge.projectMemoryRead(a, c),
   project_memory_write: (a, c) => knowledge.projectMemoryWrite(a, c),
+  project_memory_forget: (a, c) => knowledge.projectMemoryForget(a, c),
   project_doc_read: (a, c) => knowledge.projectDocRead(a, c),
   project_doc_write: (a, c) => knowledge.projectDocWrite(a, c),
   skill_list: (a, c) => knowledge.skillList(a, c),
@@ -173,7 +175,7 @@ async function executeTool(name, args, ctx) {
   const input = args && typeof args === 'object' ? args : {};
   // Host settings also protect callers that do not forward the new field.
   try { merged.reviewCodeChanges ||= JSON.parse(store.kvGet('snc:settings:v1') || '{}').tools?.reviewCodeChanges === true; } catch { /* uninitialized test store */ }
-  if (merged.reviewCodeChanges && ['run_command','claude_code','write_document','project_doc_write','project_memory_write','skill_write','computer_type','computer_key','computer_click','chrome_eval'].includes(name)) return fail('审核后生效已开启：此工具无法在执行前提供完整文件差异，已阻止执行。请使用 write_file / edit_file / delete_file，或由用户在设置中关闭审核模式。');
+  if (merged.reviewCodeChanges && ['run_command','claude_code','write_document','project_doc_write','project_memory_write','project_memory_forget','skill_write','computer_type','computer_key','computer_click','chrome_eval'].includes(name)) return fail('审核后生效已开启：此工具无法在执行前提供完整文件差异，已阻止执行。请使用 write_file / edit_file / delete_file，或由用户在设置中关闭审核模式。');
   const execution = merged.execution;
   const journal = execution?.runId && execution?.callId ? runtimeStore() : null;
   const fingerprint = crypto.createHash('sha256').update(JSON.stringify({ name, args: input })).digest('hex');

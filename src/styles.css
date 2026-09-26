@@ -2984,3 +2984,30 @@ kbd {
   background: var(--code-bg, rgba(127,127,127,.12));
   font-size: 12px; word-break: break-all; user-select: all;
 }
+
+/* 项目记忆：一条一张卡，候选用强调色边，置顶的左边一条色带 */
+.project-memory { display: flex; flex-direction: column; gap: 8px; }
+.project-memory-tools { gap: 8px; }
+.project-memory-tools input[type='search'] { flex: 1; min-width: 0; }
+.project-memory-item { margin-bottom: 0; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
+.project-memory-item textarea { width: 100%; resize: vertical; min-height: 0; border: 1px solid transparent; background: transparent; padding: 4px 6px; border-radius: 6px; font: inherit; color: inherit; }
+.project-memory-item textarea:hover, .project-memory-item textarea:focus { border-color: var(--border); background: var(--bg-elev); }
+.project-memory-item.pinned { border-left: 3px solid var(--accent); }
+.project-memory-item.candidate { border-color: var(--accent); background: var(--accent-soft); }
+.project-memory-meta { gap: 8px; flex-wrap: wrap; align-items: center; }
+.project-memory-meta .spacer { flex: 1; }
+.project-memory-meta select { width: auto; }
+.project-memory-candidates { display: flex; flex-direction: column; gap: 6px; padding-bottom: 6px; border-bottom: 1px dashed var(--border); }
+.project-memory-add { display: flex; flex-direction: column; gap: 6px; }
+.project-memory-add .row { gap: 8px; justify-content: flex-end; }
+.project-memory-add select { width: auto; }
+.memory-candidate-card { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; border-color: var(--accent); }
+.memory-candidate-card .project-memory-item { background: var(--bg-elev); }
+.project-memory-details { font-size: 12.5px; }
+.project-memory-details summary { cursor: pointer; color: var(--fg-dim); }
+.project-memory-details .field-label { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.project-memory-details textarea, .project-memory-details input { width: 100%; }
+.ablation { margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--border); display: flex; flex-direction: column; gap: 6px; }
+.ablation-keep { color: var(--danger); }
+.ablation-removable { color: var(--ok); }
+.ablation-insufficient { color: var(--fg-dim); }

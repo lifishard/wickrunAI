@@ -414,6 +414,8 @@ export interface ChatMessage {
   supplementalInputs?: {id:string;content:string;createdAt:number}[];
   /** UI questions requested during this turn and answered by the user. */
   userQuestionHistory?: UserQuestionHistoryItem[];
+  /** 这一轮从用户原话里提炼出的项目记忆候选（条目 id）。要用户批准才会用到。 */
+  memoryCandidateIds?: string[];
 }
 
 /** 中断现场。够用来无缝续跑，也够小到能塞进 localStorage */
@@ -525,6 +527,8 @@ export interface Conversation {
   evalCaseId?: string;
   /** 跑这道题时用的配置标签，比分数时必须对齐 */
   evalConfig?: string;
+  /** 组件对照：这一轮去掉哪个组件跑（见 lib/evals.ts ABLATIONS） */
+  evalAblation?: import('./lib/evals').Ablation;
   /** 由哪个定时任务创建的 */
   taskId?: string;
   messages: ChatMessage[];

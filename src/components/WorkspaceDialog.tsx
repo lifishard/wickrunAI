@@ -11,6 +11,8 @@ import {
   type Skill,
 } from '../lib/skills';
 import { makeProject, type Project, type ProjectDoc } from '../lib/projects';
+import { memoryItemsOf } from '../lib/memory-core';
+import ProjectMemoryPanel from './ProjectMemoryPanel';
 import {
   describeSchedule,
   makeTask,
@@ -160,15 +162,9 @@ function ProjectsTab(props: {
           <div className="section">
             <div className="section-title">{t('项目记忆')}</div>
             <div className="hint" style={{ marginBottom: 6 }}>
-              {t('模型用 project_memory_write 往里追加跨对话的结论。这里可以直接改或清空。太长会挤占每轮的上下文，超过两万字会自动截断最早的部分。')}
+              {t('跨对话还成立的结论、约定和偏好，一条一条记。模型用 project_memory_write 记、按编号改或删；你在这里也能改。记忆多了以后，每轮只放和问题最相关的，置顶的总会放进去。')}
             </div>
-            <textarea
-              rows={6}
-              className="mono"
-              value={p.memory}
-              placeholder={t('（空）')}
-              onChange={(e) => patch({ memory: e.target.value })}
-            />
+            <ProjectMemoryPanel items={memoryItemsOf(p)} onChange={(items) => patch({ memoryItems: items })} />
           </div>
 
           <div className="section">

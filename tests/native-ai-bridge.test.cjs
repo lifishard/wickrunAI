@@ -7,11 +7,11 @@ const path=require('node:path');
 const {Client}=require('@modelcontextprotocol/sdk/client/index.js');
 const {StdioClientTransport}=require('@modelcontextprotocol/sdk/client/stdio.js');
 const {createNativeAiBridge,claudeDesktopConfigFiles}=require('../electron/native-ai-bridge.cjs');
-function fixture(t,overrides={}){
+function fixture(t,overrides={},memory=null){
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'wickrun-native-ai-'));
   const settings={keyProfiles:[{id:'key',name:'Worker API',baseUrl:'https://worker.invalid/v1',extraHeaders:{'X-Test':'yes'}}]};
   const requests=[],opened=[];
-  const bridge=createNativeAiBridge({userData:root,appData:path.join(root,'roaming'),getSettings:()=>settings,secretGet:()=> 'fixture-secret',openExternal:async url=>opened.push(url),deps:{runtime:()=>process.execPath,claudeConfigFiles:()=>[path.join(root,'roaming','Claude','claude_desktop_config.json')],fetch:async(url,init)=>{requests.push({url,...init});return new Response(JSON.stringify({choices:[{message:{content:'工作模型返回的证据'}}],usage:{prompt_tokens:20,completion_tokens:30}}));},...overrides}});
+  const bridge=createNativeAiBridge({userData:root,appData:path.join(root,'roaming'),getSettings:()=>settings,secretGet:()=> 'fixture-secret',openExternal:async url=>opened.push(url),memory,deps:{runtime:()=>process.execPath,claudeConfigFiles:()=>[path.join(root,'roaming','Claude','claude_desktop_config.json')],fetch:async(url,init)=>{requests.push({url,...init});return new Response(JSON.stringify({choices:[{message:{content:'工作模型返回的证据'}}],usage:{prompt_tokens:20,completion_tokens:30}}));},...overrides}});
   t.after(()=>{bridge.close();fs.rmSync(root,{recursive:true,force:true});});
   const create=(extra={})=>bridge.create({provider:'claude-desktop',goal:'评估两个方案并给出结论',workers:[{profileId:'key',model:'worker-one'}],maxJobs:2,maxOutputTokens:512,...extra}).task;
   const rpc=async(p,method,args={},extra={})=>{const config=JSON.parse(fs.readFileSync(path.join(root,'native-ai',p+'.json'),'utf8'));return fetch(config.endpoint,{method:'POST',headers:{Authorization:`Bearer ${config.token}`,'Content-Type':'application/json',...extra},body:JSON.stringify({method,args})});};
@@ -23,7 +23,7 @@ test('real stdio MCP handshake, bounded delegation and final result round trip',
   const client=new Client({name:'fixture-desktop',version:'1.0.0'});
   const transport=new StdioClientTransport({...config,stderr:'pipe'});
   t.after(()=>client.close());await client.connect(transport);
-  const list=await client.listTools();assert.equal(list.tools.length,8);
+  const list=await client.listTools();assert.equal(list.tools.length,10);
   const task=f.create();
   const call=async(name,args)=>{const result=await client.callTool({name:'wickrun_'+name,arguments:args});assert.notEqual(result.isError,true,result.content[0].text);return JSON.parse(result.content[0].text);};
   const detail=await call('get_task',{taskId:task.id});
@@ -168,4 +168,27 @@ test('installing the Claude extension replaces the config-file entry so tools ar
   const saved=JSON.parse(fs.readFileSync(file,'utf8'));assert.equal(saved.mcpServers.wickrun_ai,undefined);assert.equal(saved.mcpServers.keep.command,'x');
   assert.equal(result.state.connections[0].configured,true);
   const endpoint=JSON.parse(fs.readFileSync(built[0].connectionFile,'utf8'));assert.match(endpoint.endpoint,/^http:\/\/127\.0\.0\.1:\d+\/rpc$/);
+});
+
+test('project memory: search is read-only and scoped to the task project; proposals are candidates with a cap',async t=>{
+  const calls=[];
+  const memory={
+    search:(projectId,query,limit)=>{calls.push(['search',projectId,query,limit]);if(!projectId)throw Error('这个任务不属于任何项目，没有项目记忆可查');return {project:'P',total:1,items:[{id:'m1',kind:'decision',text:'部署用 Railway',pinned:false}]};},
+    propose:async(projectId,input)=>{calls.push(['propose',projectId,input]);return {ok:true,id:'m_'+calls.length};},
+  };
+  const f=fixture(t,{},memory);await f.bridge.config('claude-desktop');
+  const task=f.bridge.create({provider:'claude-desktop',goal:'整理部署说明',projectId:'proj-1',workers:[],maxJobs:1,maxOutputTokens:512}).task;
+  const call=async(method,args)=>(await f.rpc('claude-desktop',method,args)).json();
+  const found=await call('memory_search',{taskId:task.id,query:'部署'});
+  assert.equal(found.items[0].text,'部署用 Railway');
+  assert.deepEqual(calls[0],['search','proj-1','部署',undefined]);
+  const proposed=await call('memory_propose',{taskId:task.id,text:'文档统一用简体中文',kind:'preference'});
+  assert.equal(proposed.ok,true);
+  assert.equal(calls[1][1],'proj-1');assert.equal(calls[1][2].sourceRef,`native:${task.id}`);
+  for(let i=0;i<4;i++)assert.equal((await call('memory_propose',{taskId:task.id,text:'约定 '+i})).ok,true);
+  const capped=await call('memory_propose',{taskId:task.id,text:'第六条'});
+  assert.match(capped.error,/最多提交 5 条/);
+  // 不属于项目的任务查不到任何项目的记忆
+  const loose=f.bridge.create({provider:'claude-desktop',goal:'随便问问',workers:[],maxJobs:1,maxOutputTokens:512}).task;
+  assert.match((await call('memory_search',{taskId:loose.id})).error,/不属于任何项目/);
 });

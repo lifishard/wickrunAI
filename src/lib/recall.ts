@@ -1,6 +1,7 @@
 import type { RunRecord } from '../types';
 import type { ObservationStore } from './observations';
 import { verdictOf } from './routing-memory';
+import { createSearchIndex } from './memory-core';
 
 /* ------------------------------------------------------------------ *
  * 回想过去的任务
@@ -44,17 +45,21 @@ export function recallFrom(
   const limit = Math.max(1, Math.min(10, args.limit ?? 5));
   const byRecord = new Map((store?.tasks ?? []).map((t) => [t.recordId, t]));
 
-  return records
+  const pool = records
     .filter((r) => (r.projectId ?? null) === scope)
-    .filter((r) => r.conversationId !== args.excludeConversationId)
+    .filter((r) => r.conversationId !== args.excludeConversationId);
+  // 相关度用 BM25（中文按双字切），整词直接命中的再加一档：用户记得的原话最可靠
+  const text = (r: RunRecord) => `${r.title ?? ''} ${r.question?.content ?? ''}`;
+  const scores = new Map(createSearchIndex(pool.map((r) => ({ id: r.id, text: text(r) }))).search(query, pool.length).map((h) => [h.id, h.score]));
+  return pool
     .map((r) => {
-      const haystack = norm(`${r.title ?? ''} ${r.question?.content ?? ''}`);
+      const haystack = norm(text(r));
       const hits = terms.filter((t) => haystack.includes(t)).length;
-      return { record: r, hits };
+      return { record: r, hits, score: (scores.get(r.id) ?? 0) + hits };
     })
-    .filter((x) => x.hits > 0)
-    // 命中的词多的在前，同样多的按时间倒序 —— 最近的更可能还作数
-    .sort((a, b) => b.hits - a.hits || (b.record.state?.at ?? 0) - (a.record.state?.at ?? 0))
+    .filter((x) => x.score > 0)
+    // 相关度高的在前，一样高的按时间倒序 —— 最近的更可能还作数
+    .sort((a, b) => b.score - a.score || (b.record.state?.at ?? 0) - (a.record.state?.at ?? 0))
     .slice(0, limit)
     .map(({ record }) => {
       const t = byRecord.get(record.id);

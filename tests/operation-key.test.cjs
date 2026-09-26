@@ -135,12 +135,13 @@ test('项目记忆的追加同样只认内容，不认发起位置',async()=>{
   assert.equal(JSON.parse(kv.get('snc:projects:v1'))[0].memory,after);
 });
 
-test('覆盖写不算重复：replace 本来就是幂等的',async()=>{
+test('按 id 更新不算重复：同样内容再写一遍是幂等的',async()=>{
   reset();
-  kv.set('snc:projects:v1',JSON.stringify([{id:'p1',name:'项目',memory:''}]));
+  kv.set('snc:projects:v1',JSON.stringify([{id:'p1',name:'项目',memory:'',memoryItems:[{id:'m1',text:'旧的结论',kind:'note',source:'user',createdAt:1,updatedAt:1,hash:'x'}]}]));
   const c=cid=>({workspaceRoots:[],projectId:'p1',execution:{runId:RUN,callId:cid}});
-  const args={text:'整份记忆',mode:'replace'};
+  const args={text:'整份记忆',id:'m1'};
   await runTool('project_memory_write',args,c('1-0-aaa'));
   const again=await runTool('project_memory_write',args,c('2-0-bbb'));
   assert.equal(again.ok,true);
+  assert.equal(JSON.parse(kv.get('snc:projects:v1'))[0].memoryItems[0].text,'整份记忆');
 });

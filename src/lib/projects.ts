@@ -1,5 +1,6 @@
 import { getTransport } from './transport';
 import { uid } from './store';
+import { memoryItemsOf, pruneMemory, renderMemoryText, selectMemoryForPrompt, type ProjectMemoryItem } from './memory-core';
 
 /* ------------------------------------------------------------------ *
  * 项目（Project）
@@ -37,8 +38,13 @@ export interface Project {
   instructions: string;
   docs: ProjectDoc[];
   prompts: ProjectPrompt[];
-  /** 跨对话累积的记忆，模型可读写 */
+  /**
+   * 旧版的整段记忆文本。现在以 memoryItems 为准，这里只保留一份可读的镜像，
+   * 给还没升级的设备看；读到没有 memoryItems 的旧数据时由它迁移成条目。
+   */
   memory: string;
+  /** 跨对话累积的记忆，一条一条：可单独编辑、置顶、删除，按条同步合并 */
+  memoryItems?: ProjectMemoryItem[];
   /** 这个项目的失灵交接名单；会话没设置时用它，它没设置再看应用全局 */
   failover?: import('./failover').FailoverConfig;
   /** 这个项目默认用哪个模型 / 凭据，新开对话时套上 */
@@ -56,6 +62,7 @@ export function makeProject(name: string): Project {
     docs: [],
     prompts: [],
     memory: '',
+    memoryItems: [],
     createdAt: Date.now(),
   };
 }
@@ -71,6 +78,8 @@ export async function loadProjects(): Promise<Project[]> {
       docs: p.docs ?? [],
       prompts: p.prompts ?? [],
       memory: p.memory ?? '',
+      // 旧数据只有整段文字：按内容确定 id 迁移成条目，两台设备迁移结果一致
+      memoryItems: memoryItemsOf(p),
       instructions: p.instructions ?? '',
     }));
   } catch (error) {
@@ -79,14 +88,21 @@ export async function loadProjects(): Promise<Project[]> {
 }
 
 export async function saveProjects(list: Project[]): Promise<void> {
-  await getTransport().kvSet(K_PROJECTS, JSON.stringify(list));
+  await getTransport().kvSet(K_PROJECTS, JSON.stringify(list.map(withMemoryMirror)));
+}
+
+/** 存盘前：清掉过期墓碑，并刷新给旧版本看的文字镜像 */
+export function withMemoryMirror(p: Project): Project {
+  if (!Array.isArray(p.memoryItems)) return p;
+  const items = pruneMemory(p.memoryItems);
+  return { ...p, memoryItems: items, memory: renderMemoryText(items) };
 }
 
 /**
  * 项目拼进 system prompt 的那一段。
  * 文档只给目录和字数，正文让模型用 project_doc_read 按需取。
  */
-export function projectSystemBlock(p: Project | null): string {
+export function projectSystemBlock(p: Project | null, query = '', opts: { memory?: boolean } = {}): string {
   if (!p) return '';
   const parts: string[] = [`当前项目：${p.name}`];
 
@@ -94,10 +110,14 @@ export function projectSystemBlock(p: Project | null): string {
     parts.push(`项目规范（本项目内所有对话都要遵守）：\n${p.instructions.trim()}`);
   }
 
-  if (p.memory.trim()) {
+  // 放得下就全放（前缀稳定、缓存能命中）；放不下按置顶、相关度、新近程度挑，其余让模型按需查
+  // 协作运行的记忆走创建运行时冻结的快照（team-memory），这里不再放一份
+  const memory = selectMemoryForPrompt(opts.memory === false ? [] : memoryItemsOf(p), { query });
+  if (memory.selected.length) {
     parts.push(
-      `项目记忆（之前几轮对话里攒下来的，可能有用）：\n${p.memory.trim()}\n` +
-        '有值得跨对话记住的结论或约定，用 project_memory_write 追加进去。',
+      `项目记忆（之前几轮对话里攒下来的，每条带 id，可能有用）：\n${memory.prompt}\n` +
+        (memory.omitted ? `另有 ${memory.omitted} 条未展示，需要时用 project_memory_read 按关键词查。\n` : '') +
+        '有值得跨对话记住的结论或约定，用 project_memory_write 记下一条；发现某条过时了，用它的 id 更新或用 project_memory_forget 删除。',
     );
   }
 

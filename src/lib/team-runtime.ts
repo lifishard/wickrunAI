@@ -19,7 +19,8 @@ import { tr } from './i18n';
 import { teamInputs, teamTaskContract, verifyTeamReview } from './team-contract';
 import { textReviewInputs, verifyTextReview, TEXT_REVIEW_INSTRUCTIONS } from './team-text-review';
 import { repeatedReviewStagnation, type ReviewStagnation } from './team-stagnation';
-import { selectTeamMemories, teamMemorySystemBlock } from './team-memory';
+import { isLegacyTeamMemory, memoryItemsToTeamEntries, migrateTeamMemories, selectTeamMemories, teamMemorySystemBlock } from './team-memory';
+import { memoryItemsOf, type ProjectMemoryItem } from './memory-core';
 import { captureTaskDependencies, validateFrozenDependencies, validateTaskDependencies } from './team-dependencies';
 import { teamFileTools, validateTeamFileScope, validateTeamFileSnapshot } from './team-file-scope';
 import { teamPendingQuestions, teamHasUnknownOperations } from './team-run-guidance';
@@ -80,6 +81,27 @@ export class TeamRuntime {
   * 子代理漏桶是同一个 bug，只是换了一条支路。
   */
  saveSettings: ((update:(prev:AppSettings)=>AppSettings)=>void) | null = null;
+ /**
+  * 项目记忆只有一份：项目上的条目（单人对话和协作空间共用）。协作空间改记忆、迁移旧经验都经这里写回。
+  * 没接上（测试、界面还没挂载）时，协作项目沿用自己那份 memories。
+  */
+ saveProjectMemory: ((projectId:string,update:(items:ProjectMemoryItem[])=>ProjectMemoryItem[])=>void) | null = null;
+ /** 当前项目记忆条目；项目不存在或没接上时返回 null（按旧行为处理） */
+ private projectMemory(projectId:string):ProjectMemoryItem[]|null{
+  const project=this.projects().find(x=>x.id===projectId);
+  return project&&this.saveProjectMemory?memoryItemsOf(project):null;
+ }
+ /** 旧版协作经验并进项目记忆，协作项目里换成镜像。返回合并后的条目；没接上时返回 null */
+ async syncProjectMemory(projectId:string):Promise<ProjectMemoryItem[]|null>{
+  const current=this.projectMemory(projectId);
+  if(!current||!this.data)return null;
+  const legacy=this.project(projectId).memories.filter(isLegacyTeamMemory);
+  const merged=legacy.length?migrateTeamMemories(current,legacy).items:current;
+  if(merged!==current)this.saveProjectMemory!(projectId,items=>migrateTeamMemories(items,legacy).items);
+  const mirror=memoryItemsToTeamEntries(merged);
+  if(legacy.length||JSON.stringify(mirror)!==JSON.stringify(this.project(projectId).memories))await this.update(projectId,p=>{p.memories=mirror;});
+  return merged;
+ }
   schedulingPaused=false;
  private ticking=false;
  async tick(now=Date.now()){
@@ -128,7 +150,10 @@ export class TeamRuntime {
  async runUpdate(projectId:string,runId:string,fn:(run:TeamRun,project:TeamProject)=>void){await this.update(projectId,p=>{const r=p.runs.find(x=>x.id===runId);if(!r)throw Error(tr('运行不存在'));fn(r,p);r.updatedAt=Date.now();const task=p.tasks.find(t=>t.id===r.taskId);if(task)task.status=({ready:"待开始",running:"运行中",pausing:"正在暂停",paused:"已暂停",waiting_user:"等待用户",uncertain:"待核实",failed:"失败",cancelled:"已取消",completed:"已完成"})[r.status];});}
  async createRun(projectId:string,taskId:string,workflowId:string,versionId:string,config:GenerationConfig,scheduleKey?:string){
   const id=uid('teamrun');
+  // 记忆以项目条目为准：先迁移旧经验、刷新镜像，快照再从镜像取（主进程按镜像校验快照）
+  const items=await this.syncProjectMemory(projectId);
   await this.update(projectId,p=>{
+   if(items)p.memories=memoryItemsToTeamEntries(items);
    validateTaskDependencies(p);
    if(scheduleKey&&p.runs.some(r=>r.scheduleKey===scheduleKey))throw Error(tr('此触发已创建运行'));
    const task=p.tasks.find(t=>t.id===taskId),flow=p.workflows.find(f=>f.id===workflowId),version=flow?.versions.find(v=>v.id===versionId);
@@ -571,7 +596,7 @@ export class TeamRuntime {
    const timer=setInterval(()=>void this.load(),600);
    try{
     const result=await teamBridge().clientRun({projectId,runId,attemptId,memberId:member.id,prompt:[
-     projectSystemBlock(this.projects().find(x=>x.id===projectId)??null),
+     projectSystemBlock(this.projects().find(x=>x.id===projectId)??null,'',{memory:false}),
      `${node.type==='review'?'仅可读取/检查，不得修改文件或运行命令。以 JSON 返回 {"verdict":"pass 或 fail 或 unverifiable","evidence":["本次成功读取或检查的 callId"],"changes":"检查覆盖与需要修改项","artifactIds":["已接收的全部产物版本 id"]}。编号必须来自真实执行；无法核实用 unverifiable，不能猜测。':''}\n成员职责：${member.instructions}\n${memories}\n${prompt}`,
      skillSystemBlock(chosen),
     ].filter(Boolean).join('\n\n'),fileSessionId});
@@ -615,7 +640,7 @@ export class TeamRuntime {
     onLearnLimit:value=>learn(profile!.id,member.model,profile!.baseUrl,value),
     limits:{get:(profileId,model,baseUrl)=>this.settings()?.modelLimits?.[routeKeyOf(profileId,model,baseUrl)],learn},
     // 默认零关联：成员想不起来时才显式查，而且只查同一个项目
-    recallTasks:async(query,limit)=>recallFrom(await loadRuns(),await observationSnapshot(),{query,limit,projectId}),toolCtx:()=>({...toolContextOf(settings,projectId),teamExecution:{projectId,runId,attemptId,memberId:member.id,fileSessionId},workspaceRoots:roots,grants:{extraRoots:[],screen:false,admin:false}}),effortMappings:settings.effortMappings,extraSystem:[projectSystemBlock(this.projects().find(x=>x.id===projectId)??null),
+    recallTasks:async(query,limit)=>recallFrom(await loadRuns(),await observationSnapshot(),{query,limit,projectId}),toolCtx:()=>({...toolContextOf(settings,projectId),teamExecution:{projectId,runId,attemptId,memberId:member.id,fileSessionId},workspaceRoots:roots,grants:{extraRoots:[],screen:false,admin:false}}),effortMappings:settings.effortMappings,extraSystem:[projectSystemBlock(this.projects().find(x=>x.id===projectId)??null,'',{memory:false}),
     `你是项目成员 ${member.name}。\n${member.instructions}\n${memories}\n${node.type==='review'?reviewInstructions:''}`,
     skillSystemBlock(chosen)].filter(Boolean).join('\n\n'),timeoutMs:settings.requestTimeoutMs,canRunHostTools:true,autoRetry:settings.autoRetry,confirm,grantAccess:async()=>({ok:false,content:'',error:'协作运行权限固定；请暂停后在项目设置调整并创建新运行。'}),events:{
     onContentDelta(text){output+=text;},onContentReplace(text){output=text;},onReasoningDelta(){},onSources(){},onRound(){},

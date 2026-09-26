@@ -1,4 +1,5 @@
 import type { MemoryEntry } from './collaboration';
+import { MEMORY_KIND_LABEL, addMemory, type AddMemoryInput, type MemoryKind, type ProjectMemoryItem } from './memory-core';
 
 /** Optional metadata carried by the durable project-memory entry. */
 export type TeamMemoryKind = 'fact' | 'preference' | 'experience';
@@ -282,3 +283,69 @@ export function selectTeamMemories(
 }
 
 export const TEAM_MEMORY_DEFAULT_MAX_CHARS = DEFAULT_MAX_CHARS;
+
+/* ------------------------------------------------------------------ *
+ * 协作空间的经验记录与项目记忆合成一套（2.20.1）
+ *
+ * 真正的存放处是项目上的记忆条目（memory-core）。协作项目里的 memories 只是它的镜像：
+ * 创建运行时按当前条目重新生成，再照旧冻结成 memorySnapshot —— 主进程对快照的校验、
+ * 按 id@revision 审计、按关键词和过期时间筛选都不用改。
+ * 旧版协作空间里手写的经验记录，第一次打开时迁移成项目记忆条目（id 固定，重复迁移无害）。
+ * ------------------------------------------------------------------ */
+
+const TEAM_KIND: Record<MemoryKind, TeamMemoryKind> = { preference: 'preference', fact: 'fact', decision: 'preference', lesson: 'experience', note: 'experience' };
+const ITEM_KIND: Record<TeamMemoryKind, MemoryKind> = { preference: 'preference', fact: 'fact', experience: 'lesson' };
+
+/** 镜像条目的 id 都以 m_ 开头；不是这个前缀的，是旧版协作空间里手写的经验 */
+export const isLegacyTeamMemory = (m: { id: string }) => !String(m.id).startsWith('m_');
+
+/** 旧版经验记录 → 项目记忆条目。已失效的不迁移；候选、已验证都当候选，要用户批准 */
+export function teamEntryToMemoryInput(entry: TeamMemoryEntry): AddMemoryInput | null {
+  if (!isRecord(entry) || entry.status === 'invalid' || !nonEmptyText(entry.text)) return null;
+  const title = textOf(entry.title).trim();
+  const body = textOf(entry.text).trim();
+  const text = title && !body.includes(title) ? `${title}：${body}` : body;
+  const id = `m_team_${String(entry.id).replace(/[^\w:-]/g, '').slice(0, 60)}`;
+  const history = Array.isArray(entry.history) ? entry.history : [];
+  return {
+    id, text: text.slice(0, 1000), kind: ITEM_KIND[effectiveKind(entry)], source: 'legacy',
+    sourceRef: entry.sourceRunId ? `team-run:${entry.sourceRunId}` : 'team-memory',
+    ...(entry.status === 'adopted' ? {} : { status: 'candidate' as const }),
+    applicability: textOf(entry.applicability), evidence: textOf(entry.evidence),
+    keywords: effectiveScope(entry) === 'task' ? entry.keywords : undefined,
+    expiresAt: entry.expiresAt,
+    createdAt: history.length && Number.isFinite(history[0]?.at) ? history[0].at : undefined,
+  };
+}
+
+/** 把旧版经验并进项目记忆；同一条（同 id 或同内容）不会加第二遍 */
+export function migrateTeamMemories(items: ProjectMemoryItem[], entries: readonly TeamMemoryEntry[], now = Date.now()): { items: ProjectMemoryItem[]; added: number } {
+  let next = items, added = 0;
+  for (const entry of entries.filter(isLegacyTeamMemory)) {
+    const input = teamEntryToMemoryInput(entry);
+    if (!input || next.some(m => m.id === input.id)) continue;
+    const result = addMemory(next, input, now);
+    if (result.error || result.duplicate || !result.item) continue;
+    next = result.items; added++;
+  }
+  return { items: next, added };
+}
+
+/** 项目记忆条目 → 协作运行用的镜像。只放正在用的（已批准、没过期、没删除）和待批准的候选 */
+export function memoryItemsToTeamEntries(items: ProjectMemoryItem[], now = Date.now()): TeamMemoryEntry[] {
+  return items
+    .filter(m => !m.deletedAt && (!m.expiresAt || m.expiresAt > now))
+    .map(m => {
+      const entry: TeamMemoryEntry = {
+        id: m.id, title: MEMORY_KIND_LABEL[m.kind], text: m.text,
+        applicability: m.applicability ?? '', evidence: m.evidence ?? '',
+        status: m.status === 'candidate' ? 'candidate' : 'adopted',
+        revision: m.revision ?? 1, history: [], kind: TEAM_KIND[m.kind],
+        scope: m.keywords?.length ? 'task' : 'project',
+      };
+      if (m.keywords?.length) entry.keywords = [...m.keywords];
+      if (m.expiresAt) entry.expiresAt = m.expiresAt;
+      return entry;
+    })
+    .sort((a, b) => compareText(a.id, b.id));
+}

@@ -216,3 +216,32 @@ test('没有上下文就没有代价',()=>{
   assert.deepEqual(compactionCost(0),{tokens:0,turns:0});
   assert.deepEqual(compactionCost(-1),{tokens:0,turns:0});
 });
+
+/* ---- 回想的小型评测集（2.20.0）：换个说法也要找得到，无关的不能混进来 ---- */
+test('回想评测集：换说法、词序不同、中英混写都能排在第一',()=>{
+  const corpus=[
+    rec({q:'修复导出 CSV 时日期格式错误的问题',at:100}),
+    rec({q:'给设置页加上深色模式切换',at:200}),
+    rec({q:'Fix date parsing bug in the export pipeline',at:300}),
+    rec({q:'把项目记忆改成一条一条的条目，支持删除和置顶',at:400}),
+    rec({q:'升级 electron 到最新版本并修复打包脚本',at:500}),
+  ];
+  const cases=[
+    ['日期错误 导出',/日期格式错误/],
+    ['CSV 日期',/日期格式错误/],
+    ['暗色主题',null],               // 同义词不在字面里：宁可找不到，也不要乱配
+    ['深色模式',/深色模式/],
+    ['export dates',/date parsing/],
+    ['记忆 置顶',/项目记忆/],
+    ['打包 electron',/electron/],
+  ];
+  let hit=0;
+  for(const [query,expect] of cases){
+    const found=recallFrom(corpus,null,{query});
+    if(expect===null){assert.equal(found.length,0,`「${query}」不该找到东西：${found.map(f=>f.title)}`);hit++;continue;}
+    assert.ok(found.length,`「${query}」一条都没找到`);
+    assert.match(found[0].title,expect,`「${query}」排第一的是：${found[0].title}`);
+    hit++;
+  }
+  assert.equal(hit,cases.length);
+});

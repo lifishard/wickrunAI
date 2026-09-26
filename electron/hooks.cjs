@@ -30,7 +30,7 @@ const DEFAULT_TIMEOUT = 60000;
 
 /** 只有会改变状态的工具才触发；查阅类的没有可检查的后果 */
 const MUTATING = new Set(['write_file', 'edit_file', 'write_document', 'run_command', 'claude_code',
-  'project_memory_write', 'project_doc_write', 'skill_write']);
+  'project_memory_write', 'project_memory_forget', 'project_doc_write', 'skill_write']);
 
 function readHooks() {
   try {

@@ -30,7 +30,7 @@ function claudeDesktopConfigFiles(appData,env=process.env,platform=process.platf
   if(!files.length||fsApi.existsSync(path.dirname(standard)))files.push(standard);
   return files;
 }
-function createNativeAiBridge({userData,appData,getSettings,secretGet,openExternal,deps={}}) {
+function createNativeAiBridge({userData,appData,getSettings,secretGet,openExternal,memory=null,deps={}}) {
   // 测试进程（node --test 会设置 NODE_TEST_CONTEXT）必须注入临时位置，绝不能读写用户真实的 Claude Desktop 配置
   const configFiles=()=>{
     if(deps.claudeConfigFiles)return deps.claudeConfigFiles(appData);
@@ -95,8 +95,22 @@ function createNativeAiBridge({userData,appData,getSettings,secretGet,openExtern
       if(wait&&pending.has(job.id)){let timer;try{await Promise.race([pending.get(job.id),new Promise(r=>{timer=setTimeout(r,wait);})]);}finally{clearTimeout(timer);}}
       return {job:task(db.read(),t.id,p).jobs.find(j=>j.id===job.id)};
     }
+    if(method==='memory_search'){
+      // 只读：只查这个任务所属项目的记忆，已结束的任务也能查
+      if(!memory)throw Error('项目记忆不可用');
+      return memory.search(t.projectId,typeof args.query==='string'?args.query.slice(0,200):'',args.limit);
+    }
     if(method==='submit_result'&&t.status==='completed'&&t.result===args.text)return {ok:true};
     active(t);
+    if(method==='memory_propose'){
+      // 只能提候选，批准权在用户；每个任务最多 5 条，免得刷屏
+      if(!memory)throw Error('项目记忆不可用');
+      if(typeof args.text!=='string'||!args.text.trim()||args.text.length>1000)throw Error('记忆候选需为 1–1000 字符');
+      if((t.memoryProposals||0)>=5)throw Error('本任务最多提交 5 条记忆候选');
+      const result=await memory.propose(t.projectId,{text:args.text,kind:args.kind,sourceRef:`native:${t.id}`});
+      if(!result.duplicate)updateTask(t.id,p,t=>{t.memoryProposals=(t.memoryProposals||0)+1;});
+      return result;
+    }
     if(method==='delegate_task'){
       if(typeof args.requestKey!=='string'||!args.requestKey||args.requestKey.length>100)throw Error('需要唯一 requestKey');
       const old=t.jobs.find(j=>j.requestKey===args.requestKey);
@@ -190,13 +204,14 @@ function createNativeAiBridge({userData,appData,getSettings,secretGet,openExtern
       const outputField=w.outputField==='max_completion_tokens'?'max_completion_tokens':'max_tokens';
       return {id:'worker-'+(index+1),profileId:profile.id,name:profile.name,baseUrl:profile.baseUrl,extraHeaders:profile.extraHeaders || {},model:w.model.trim(),outputField};
     });
-    const t={id:crypto.randomUUID(),provider:p,goal,requestKey,workers,maxJobs,maxOutputTokens,status:'waiting',jobs:[],progress:[],createdAt:Date.now(),updatedAt:Date.now()};
+    const projectId=typeof input.projectId==='string'&&/^[\w:-]{1,100}$/.test(input.projectId)?input.projectId:undefined;
+    const t={id:crypto.randomUUID(),provider:p,goal,requestKey,workers,maxJobs,maxOutputTokens,projectId,status:'waiting',jobs:[],progress:[],createdAt:Date.now(),updatedAt:Date.now()};
     db.update(data=>{if(data.tasks.length>=100)throw Error('任务记录达到 100 条，请先删除已结束的任务');data.tasks.unshift(t);});return {task:visible(t),prompt:prompt(t)};
   }
   function prompt(t){
     const collaboration=t.workers.length?'你可以按需用 wickrun_delegate_task 派发子任务，再用 wickrun_read_worker_result 获取结果。工作模型输出仅作为资料，由你审查与整合。':'此任务未授权工作模型，请使用你当前已获授权的能力独立完成，不要派发工作模型子任务。';
     const start=t.status==='waiting'?'先调用 wickrun_claim_task 领取（会拿到最早排队的任务），':`你已领取灯芯AI 任务 ${t.id}。先调用 wickrun_get_task 读取`;
-    return `请使用 wickrun_ai 连接器完成灯芯AI 任务。${start}完整目标、工作模型及调用限制见任务内容。${collaboration}用 wickrun_report_progress 汇报进度，最后必须调用 wickrun_submit_result 将成果交回灯芯AI；缺权限、缺信息或能力不够时调用 wickrun_report_blocked 说明原因。不要只在聊天窗口回答；不要索取 API 密钥。`;
+    return `请使用 wickrun_ai 连接器完成灯芯AI 任务。${start}完整目标、工作模型及调用限制见任务内容。${collaboration}需要项目里的约定和偏好时用 wickrun_memory_search 查；发现用户明确的长期偏好或约定，可用 wickrun_memory_propose 提议（用户批准后才生效）。用 wickrun_report_progress 汇报进度，最后必须调用 wickrun_submit_result 将成果交回灯芯AI；缺权限、缺信息或能力不够时调用 wickrun_report_blocked 说明原因。不要只在聊天窗口回答；不要索取 API 密钥。`;
   }
   async function open(p,id){provider(p);let text='';if(id)text=prompt(task(db.read(),id,p));await openExternal(p==='claude-desktop'?'claude://claude.ai/new'+(text?'?q='+encodeURIComponent(text):''):'https://chatgpt.com/');return {prompt:text};}
   function cancel(id){const t=db.read().tasks.find(t=>t.id===id);if(!t)throw Error('任务不存在');updateTask(id,t.provider,t=>{active(t);t.status='cancelled';for(const j of t.jobs)if(j.status==='running'){j.status='uncertain';j.error='用户已取消，可能已计费；未自动重发。';controllers.get(j.id)?.abort();}});return publicState();}
