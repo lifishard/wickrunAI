@@ -4,6 +4,7 @@ import { desktop } from '../lib/transport';
 import { CLIENT_LABELS, type BrainGlobalStatus, type ClientBrain, type ClientSelection } from '../lib/connections';
 import { EFFORT_LEVELS, effortFields, type EffortLevel } from '../lib/effort';
 import { routeKey } from '../lib/adaptive';
+import { clientText } from '../lib/client-text';
 import type { AppSettings, KeyProfile } from '../types';
 
 /**
@@ -114,7 +115,7 @@ export default function BrainPicker({ kind, selection, settings, onSelect, clien
           onSelect({ ...selection, model: event.target.value, effort: next?.defaultEffort });
         }}>
           {!clientModels.some((item) => item.id === selection.model) ? <option value={selection.model}>{selection.model === 'default' ? t('官方客户端默认模型') : selection.model}</option> : null}
-          {clientModels.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+          {clientModels.map((item) => <option key={item.id} value={item.id}>{clientText(t, item.label)}</option>)}
         </select>
       </label>
       <label>

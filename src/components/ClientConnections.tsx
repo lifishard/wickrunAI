@@ -6,6 +6,7 @@ import type { AppSettings } from '../types';
 import './ClientConnections.css';
 import ClaudeRepair from './ClaudeRepair';
 import NativeAiPanel from './NativeAiPanel';
+import { clientText } from '../lib/client-text';
 import WebRelayToggle from './WebRelayToggle';
 import BrainPicker from './BrainPicker';
 
@@ -208,7 +209,7 @@ export default function ClientConnections({ selection, onSelect, settings, onSet
                 {t(configBroken ? '网关需检查' : status ? STATUS_LABEL[status.status] : '检测中')}
               </span>
             </div>
-            <p>{status?.message || t(kind === 'codex' ? '可用 ChatGPT 订阅，或把 wickrunAI 里的任一路由当作 Codex 的大脑。' : kind === 'claude' ? '可用 Claude 订阅、现有配置，或把 wickrunAI 里的任一路由当作 Claude Code 的大脑。' : kind === 'grok' ? '使用官方 Grok 登录与本机 Grok Desktop 订阅模型。' : '通过 Kimi 官方 ACP 接口连接。')}</p>
+            <p>{status?.message ? clientText(t, status.message) : t(kind === 'codex' ? '可用 ChatGPT 订阅，或把 wickrunAI 里的任一路由当作 Codex 的大脑。' : kind === 'claude' ? '可用 Claude 订阅、现有配置，或把 wickrunAI 里的任一路由当作 Claude Code 的大脑。' : kind === 'grok' ? '使用官方 Grok 登录与本机 Grok Desktop 订阅模型。' : '通过 Kimi 官方 ACP 接口连接。')}</p>
 
             {selected && (kind === 'claude' || kind === 'codex') ? (
               <BrainPicker kind={kind} selection={selection} settings={settings} onSelect={onSelect} clientModels={status?.models ?? []} clientEfforts={efforts} configIssue={status?.configIssue} />
@@ -221,7 +222,7 @@ export default function ClientConnections({ selection, onSelect, settings, onSet
                     onSelect({ ...selection, model: event.target.value, effort: next?.defaultEffort });
                   }}>
                     {!status?.models.some((item) => item.id === selection.model) ? <option value={selection.model}>{selection.model === 'default' ? t('官方客户端默认模型') : selection.model}</option> : null}
-                    {status?.models.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+                    {status?.models.map((item) => <option key={item.id} value={item.id}>{clientText(t, item.label)}</option>)}
                   </select>
                 </label>
                 <label>
@@ -258,7 +259,7 @@ export default function ClientConnections({ selection, onSelect, settings, onSet
         onSelect={() => onSelect({ kind: 'claude-desktop', model: 'desktop' })}
       />
       <WebRelayToggle />
-      {error ? <p className="connection-error" role="alert">{error}</p> : null}
+      {error ? <p className="connection-error" role="alert">{clientText(t, error.replace(/^Error invoking remote method '[^']+':\s*(?:Error:\s*)?/, ''))}</p> : null}
     </section>
   );
 }

@@ -1,6 +1,7 @@
 import React from 'react';
 import { useT } from '../lib/i18n';
 import { desktop, type CloudRelayState } from '../lib/transport';
+import { clientText } from '../lib/client-text';
 
 const readable = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause)).replace(/^Error invoking remote method '[^']+':\s*(?:Error:\s*)?/, '');
 
@@ -49,7 +50,7 @@ export default function WebRelayToggle() {
     {state.enabled && state.clients.length ? <p className="hint">{t('网页版可见：{list}', { list: state.clients.join('、') })}</p> : null}
     {state.enabled && !state.clients.length && !state.error ? <p className="hint">{t('还没有就绪的客户端。先在上面连接 Claude Code、Codex、Kimi 或 Grok。')}</p> : null}
     {state.current ? <p className="hint">{t('正在处理：{title}', { title: state.current.title })}</p> : null}
-    {state.error ? <p className="connection-error" role="alert">{state.error}</p> : null}
-    {error ? <p className="connection-error" role="alert">{error}</p> : null}
+    {state.error ? <p className="connection-error" role="alert">{clientText(t, state.error)}</p> : null}
+    {error ? <p className="connection-error" role="alert">{clientText(t, error)}</p> : null}
   </div>;
 }

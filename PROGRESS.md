@@ -1,5 +1,10 @@
 # wickrunAI 工程进度
 
+## 2026-09-25 2.19.8：本机 AI 面板的英文
+
+- 本机 AI 里各客户端的状态说明、模型名、连接报错来自主进程，写死的是简体，切到英文也不变。新增 `src/lib/client-text.ts`：固定句子查词典，带地址、模型 ID、HTTP 状态的句式先拆出变量再翻译；补齐 Codex / Claude Code / Kimi / Grok 状态、客户端查找、OmniRoute 网关恢复和「允许网页版使用」报错的英文。网页版同批（2.19.6）给设备上报的模型名接上同样的翻译。
+- 验证：新增 `tests/client-text.test.cjs`；全量回归与构建。
+
 ## 2026-09-25 2.19.7：Claude Code 网关误判、大脑模型下拉
 
 - **Claude Code「连线异常」**：以前只要 Claude Code 自己 settings.json 里配置的本机网关（如 OmniRoute）不通，整个 Claude Code 就判成异常、没有模型；现在只影响「沿用 Claude Code 自己的配置」这个大脑，选本机订阅或 wickrunAI 路由照常可用，状态和大脑选择里分别提示，仍可点「修复连接」。
