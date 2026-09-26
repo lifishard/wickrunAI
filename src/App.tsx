@@ -64,8 +64,7 @@ import { loadSkills, recordSkillOutcome, saveSkills, skillSystemBlock, type Skil
 import { recallFrom } from './lib/recall';
 import { observationSnapshot, routeAliasOf, type CorrectionKind } from './lib/observations';
 import { routeScores, type RouteScore } from './lib/routing-memory';
-import { DEFAULT_RUNTIME } from './lib/task-context';
-import { ABLATIONS, ablationConfig, caseFromRecord, evalRequirements, loadEvals, resultFromRun, type Ablation, saveEvals, worthKeeping, type EvalStore } from './lib/evals';
+import { evalRequirements, loadEvals, resultFromRun, saveEvals, type EvalStore } from './lib/evals';
 import { collectArtifacts } from './lib/artifacts';
 import { applyPlan, describeSync, planSync } from './lib/skillsync';
 import { loadProjects, makeProject, projectSystemBlock, saveProjects, type Project } from './lib/projects';
@@ -190,11 +189,6 @@ export default function App() {
    * 界面手里那份不刷新的话，下次保存项目会把它们盖掉 —— 所以跑完一轮、打开工作区时
    * 把盘上的记忆逐条合回来（按 id 新的赢，删除留墓碑，两边的改动都不丢）。
    */
-  /* 回归题排队：批量跑时一道结束（完成或出错）才开下一道；用户暂停就清空队列 */
-  type EvalJob = { caseId: string; ablation?: Ablation };
-  const evalQueueRef = React.useRef<EvalJob[]>([]);
-  const runEvalCaseRef = React.useRef<(job: EvalJob) => void>(() => {});
-  const nextEvalCase = () => { const next = evalQueueRef.current.shift(); if (next) setTimeout(() => runEvalCaseRef.current(next), 0); };
   const updateProjectMemory = React.useCallback((projectId: string, update: (items: ProjectMemoryItem[]) => ProjectMemoryItem[]) => {
     setProjects(all => all.map(p => p.id === projectId ? { ...p, memoryItems: update(memoryItemsOf(p)) } : p));
   }, []);
@@ -1383,7 +1377,6 @@ export default function App() {
           },
           onPaused(reason) {
             finishUi(); pauseQueue(convId);
-            if(nextConv.evalCaseId)evalQueueRef.current=[];
             const interrupted=finishInterruption();
             const answeredWhileSaving=!latestState?.userQuestion&&!latestState?.uncertainCallId&&latestState?.pendingInputMessages?.some(m=>m.id.startsWith('answer-'));
             if(!interrupted&&answeredWhileSaving&&latestState)setResumeInput({convId,state:latestState});
@@ -1417,7 +1410,6 @@ export default function App() {
               writeEvals({...store,results:[...store.results,result],
                 cases:store.cases.map(c=>c.id===nextConv.evalCaseId?{...c,uses:c.uses+1,lastUsedAt:Date.now()}:c)});
             }
-            if(nextConv.evalCaseId)nextEvalCase();
             notifyTask('completed',`${requestId}:completed`,convId,t('任务已完成'),buf.content.slice(-240)||nextConv.title);
             /*
              * 从用户这一轮的原话里找值得跨对话记住的偏好和约定。只生成候选，
@@ -1457,7 +1449,6 @@ export default function App() {
             finishUi(); pauseQueue(convId);
             const interrupted = finishInterruption();
             if(!interrupted)notifyTask('error',`${requestId}:error`,convId,t('任务遇到问题'),msg);
-            if(nextConv.evalCaseId&&!interrupted)nextEvalCase();
             // 记一笔健康度：确定性的服务端崩溃和「模型不存在」会让这个 ID
             // 从默认模型列表里消失，限流和超时不算
             const health = info.blameModel
@@ -1553,26 +1544,6 @@ export default function App() {
     // '继续处理新输入' 是发给模型的续跑指令，不跟界面语言走
     void send('继续处理新输入',undefined,state,{text:'',attachments:[],quotes:[],quoteOnly:false,conversationId:convId});
   },[resumeInput,runs,send]);
-
-  runEvalCaseRef.current = ({ caseId, ablation }: EvalJob) => {
-    const item = evalsRef.current?.cases.find(c => c.id === caseId);
-    if (!settings || !item) { nextEvalCase(); return; }
-    const conv = newConversation(settings.defaultConfig, settings.activeKeyProfileId);
-    const label = ABLATIONS.find(a => a.id === ablation)?.label;
-    conv.title = label ? t('回归题（去掉{component}）：{title}', { component: t(label), title: item.title }) : t('回归题：{title}', { title: item.title });
-    conv.evalCaseId = item.id;
-    conv.evalConfig = ablationConfig(conv.config.model, ablation);
-    if (ablation) conv.evalAblation = ablation;
-    if (ablation === 'harness') conv.config = { ...conv.config, runtime: { ...DEFAULT_RUNTIME, ...conv.config.runtime, harness: 'off' } };
-    // 回放放回原来的项目，项目规范和记忆才和当时一致
-    const projectId = item.projectId ?? runRecord(item.fromRecordId ?? '')?.projectId ?? null;
-    if (projectId && projects.some(p => p.id === projectId)) conv.projectId = projectId;
-    setConversations(all => [conv, ...all]);
-    setActiveId(conv.id);
-    setObservationsOpen(false);
-    setTimeout(() => { void send(item.task, undefined, undefined,
-      { text: '', attachments: [], quotes: [], quoteOnly: false, conversationId: conv.id }); }, 0);
-  };
 
   function sendNow(input:QueuedInput):boolean {
     const convId=input.conversationId??activeId;
@@ -2323,26 +2294,7 @@ export default function App() {
 
       {observationsOpen ? <React.Suspense fallback={<Modal title={t('任务记录与分析')} onClose={()=>setObservationsOpen(false)}><div className="modal-body">{t('正在读取记录…')}</div></Modal>}>
         <ObservationPanel onClose={()=>setObservationsOpen(false)}
-          onOpenTask={(conversationId,answerId)=>{setActiveId(conversationId);setObservationsOpen(false);setTimeout(()=>document.getElementById(`msg-${answerId}`)?.scrollIntoView({block:'center'}),150);}}
-          evals={evals}
-          onSaveCase={recordId=>{
-            const rec=runRecord(recordId);
-            if(!rec||!evals)return;
-            writeEvals({...evals,cases:[...evals.cases,caseFromRecord(rec)]});
-            toast.show(t('已存为回归题（先进 dev）'));
-          }}
-          onSplit={(caseId,split)=>{
-            if(!evals)return;
-            // 转到 holdout 时把跑过的次数清零：它要重新开始当留出集
-            writeEvals({...evals,cases:evals.cases.map(c=>c.id===caseId?{...c,split,uses:split==='holdout'?0:c.uses}:c)});
-          }}
-          onRunCase={caseId=>{evalQueueRef.current=[];runEvalCaseRef.current({caseId});}}
-          onRunCases={ids=>{const jobs=ids.map(caseId=>({caseId}));evalQueueRef.current=jobs.slice(1);if(jobs[0])runEvalCaseRef.current(jobs[0]);}}
-          onRunAblation={(ids,ablation)=>{
-            // 先按原配置跑一遍，再去掉这个组件跑一遍；同一道题两边配置标签不同，结果分开记
-            const jobs=[...ids.map(caseId=>({caseId})),...ids.map(caseId=>({caseId,ablation}))];
-            evalQueueRef.current=jobs.slice(1);if(jobs[0])runEvalCaseRef.current(jobs[0]);
-          }}/>
+          onOpenTask={(conversationId,answerId)=>{setActiveId(conversationId);setObservationsOpen(false);setTimeout(()=>document.getElementById(`msg-${answerId}`)?.scrollIntoView({block:'center'}),150);}}/>
       </React.Suspense>:null}
       {settingsOpen ? (
         <ErrorBoundary label={t('设置')} onReset={() => setSettingsTab('keys')}>

@@ -6,19 +6,14 @@ import { acceptanceLabel, acceptanceVars, buildAnalysisFiles, filterTasks, outco
 import { zipTextFiles } from '../lib/export-zip';
 import { runRecord, runTitle } from '../lib/runs';
 import { routeScores, MIN_RANK_SAMPLES, MIN_COST_SAMPLES, type ScoreSource } from '../lib/routing-memory';
-import { ABLATIONS, ABLATION_MIN_CASES, ablationRuns, ablationVerdict, report, staleHoldout, worthKeeping, HOLDOUT_STALE_USES, type Ablation, type EvalStore } from '../lib/evals';
 import { desktop } from '../lib/transport';
 
-export default function ObservationPanel({onClose,onOpenTask,evals,onSaveCase,onRunCase,onRunCases,onRunAblation,onSplit}:{
+/*
+ * 回归集与组件对照是开发者判断组件去留的内部工具，不放在用户界面里（2.20.2）。
+ * 代码和已存的数据保留在 lib/evals.ts，需要对照时在本机用脚本跑。
+ */
+export default function ObservationPanel({onClose,onOpenTask}:{
   onClose:()=>void;onOpenTask:(conversationId:string,answerId:string)=>void;
-  evals?:EvalStore;
-  onSaveCase?:(recordId:string)=>void;
-  onRunCase?:(caseId:string)=>void;
-  /** 按顺序一道接一道地跑，前一道结束才开始下一道 */
-  onRunCases?:(caseIds:string[])=>void;
-  /** 组件对照：先按原配置、再去掉这个组件，把同一批题各跑一遍 */
-  onRunAblation?:(caseIds:string[],ablation:Ablation)=>void;
-  onSplit?:(caseId:string,split:'dev'|'holdout')=>void;
 }) {
   const t = useT();
   const [store,setStore]=React.useState<ObservationStore>();const [from,setFrom]=React.useState(''),[to,setTo]=React.useState('');
@@ -112,50 +107,10 @@ export default function ObservationPanel({onClose,onOpenTask,evals,onSaveCase,on
         </tr>)}
       </tbody></table>:<p className="hint">{t('这个范围里还没有可统计的任务。')}</p>}
     </div>
-    {evals?<div className="observation-summary">
-      <strong>{t('回归集')}</strong>
-      <p className="hint">
-        {t('题目来自真实失败：下面标了「未解决」的任务可以一键存成回归题。改了提示词、换了路由、加了技能之后，拿同一批题各跑一遍，比同一把尺子。')}
-        <br />
-        {t('dev 用来调，holdout 只在最后跑。但用来调过的题目就已经是开发数据了 —— holdout 跑满 {n} 次就该换一批，否则你量的只是自己的过拟合。',{n:HOLDOUT_STALE_USES})}
-      </p>
-      {staleHoldout(evals.cases).length?<p className="hint"><strong>{t('有 {n} 道 holdout 题已经跑满次数，建议换一批。',{n:staleHoldout(evals.cases).length})}</strong></p>:null}
-      {evals.cases.length&&onRunCases?<div className="row" style={{gap:8,flexWrap:'wrap'}}>
-        {(['dev','holdout'] as const).map(split=>{const ids=evals.cases.filter(c=>c.split===split).map(c=>c.id);
-          return ids.length?<button key={split} className="btn sm" onClick={()=>onRunCases(ids)}>{t('按顺序跑完 {split}（{n} 道）',{split,n:ids.length})}</button>:null;})}
-        <span className="hint">{t('一道跑完再开始下一道；中途暂停就停在那里。')}</span>
-      </div>:null}
-      {evals.cases.length&&onRunAblation?<AblationPanel evals={evals} onRun={onRunAblation}/>:null}
-      {evals.cases.length?<><ul className="eval-cases">
-        {evals.cases.map(c=><li key={c.id}>
-          <span className="eval-title">{c.title}</span>
-          <span className="failover-actions">
-            <small>{t('{split} · 跑过 {n} 次',{split:c.split,n:c.uses})}</small>
-            {onSplit?<button className="btn sm ghost" onClick={()=>onSplit(c.id,c.split==='dev'?'holdout':'dev')}>{t('改到 {to}',{to:c.split==='dev'?'holdout':'dev'})}</button>:null}
-            {onRunCase?<button className="btn sm" onClick={()=>onRunCase(c.id)}>{t('跑这道题')}</button>:null}
-          </span>
-        </li>)}
-      </ul>
-      {(['dev','holdout'] as const).map(split=>{
-        const rows=report(evals,split);
-        return rows.length?<div key={split}><strong>{split}</strong><table className="route-scores"><thead><tr>
-          <th>{t('配置')}</th><th>{t('做成率')}</th><th>{t('题数')}</th><th>{t('耗时中位数')}</th><th>{t('每次做成的 token')}</th><th>{t('错误完成率')}</th>
-        </tr></thead><tbody>{rows.map(r=><tr key={r.config}>
-          <td><code>{r.config}</code></td>
-          <td>{r.doneRate===null?'—':`${Math.round(r.doneRate*100)}%`}</td>
-          <td>{r.done}/{r.cases}</td>
-          <td>{r.medianActiveMs===null?'—':`${Math.round(r.medianActiveMs/1000)}s`}</td>
-          <td>{r.tokensPerDone===null?'—':r.tokensPerDone.toLocaleString()}</td>
-          <td>{r.falseDoneRate===null?'—':`${Math.round(r.falseDoneRate*100)}%`}</td>
-        </tr>)}</tbody></table></div>:null;
-      })}</>:<p className="hint">{t('还没有回归题。')}</p>}
-    </div>:null}
     <div className="observation-task-list">{tasks.slice().reverse().map(item=><article key={item.id} className={selected===item.id?'selected':''}>
       <div><strong>{runTitle(item.recordId)??t('已保存的任务')}</strong><small> · {new Date(item.startedAt).toLocaleString()}</small><p>{t(statusLabel[item.status]??'未知')} · {t(acceptanceLabel(item),acceptanceVars(item))} · {item.feedback?(isCurrentFeedback(item)?'':t('较早阶段反馈：'))+t(outcomeLabel[item.feedback.outcome]):t('未反馈')}</p>
         <small>{t('续跑 {resumes} 次 · 暂停 {pauses} 次',{resumes:item.resumeCount,pauses:item.pauseCount})} · {item.attempts.map(a=>a.model).filter((x,i,a)=>a.indexOf(x)===i).join(' → ')}</small>
-        {item.missing.length||item.droppedEvents||item.detailLimitReached?<p className="hint">{t('有观测缺口或明细裁剪，导出报告中会注明。')}</p>:null}
-        {onSaveCase&&worthKeeping(item)&&!evals?.cases.some(c=>c.fromRecordId===item.recordId)
-          ?<button className="btn sm" onClick={()=>onSaveCase(item.recordId)}>{t('存为回归题')}</button>:null}</div>
+        {item.missing.length||item.droppedEvents||item.detailLimitReached?<p className="hint">{t('有观测缺口或明细裁剪，导出报告中会注明。')}</p>:null}</div>
       <div className="recovery-actions"><button className="btn sm" onClick={()=>onOpenTask(item.conversationId,item.answerId)}>{t('查看任务')}</button><button className="btn sm" aria-pressed={selected===item.id} onClick={()=>{setSelected(selected===item.id?'':item.id);setInclude([]);setPreview(undefined);}}>{t('选择排查')}</button></div>
     </article>)}</div>
     <div className="observation-export"><strong>{selectedTask?t('导出指定任务排查包'):t('导出使用分析包')}</strong>
@@ -178,39 +133,3 @@ export default function ObservationPanel({onClose,onOpenTask,evals,onSaveCase,on
   </div></Modal>;
 }
 
-/**
- * 组件对照：同一批题先按原配置跑、再去掉一个组件跑，两边都跑过的题按 preserve-and-extend 比。
- * 结论只说「这批题上去掉有没有坏处」，删不删由人决定；dev 上看着能删，还要在 holdout 上再确认。
- */
-function AblationPanel({evals,onRun}:{evals:EvalStore;onRun:(caseIds:string[],ablation:Ablation)=>void}){
-  const t=useT();
-  const [ablation,setAblation]=React.useState<Ablation>('harness');
-  const [split,setSplit]=React.useState<'dev'|'holdout'>('dev');
-  const ids=evals.cases.filter(c=>c.split===split).map(c=>c.id);
-  const runs=ablationRuns(evals);
-  const verdictText={insufficient:'题太少，还不能下结论',keep:'去掉后有退步，保留',removable:'这批题上去掉没有坏处'} as const;
-  const pct=(x:number|null)=>x===null?'—':`${Math.round(x*100)}%`;
-  return <div className="ablation">
-    <strong>{t('组件对照')}</strong>
-    <p className="hint">{t('先按原配置把这批题跑一遍，再去掉一个组件跑一遍，比较两边都跑过的题。至少 {n} 道才给结论；dev 上看着能删，还要在 holdout 上再确认。',{n:ABLATION_MIN_CASES})}</p>
-    <div className="row" style={{gap:8,flexWrap:'wrap'}}>
-      <select aria-label={t('要去掉的组件')} value={ablation} onChange={e=>setAblation(e.target.value as Ablation)}>
-        {ABLATIONS.map(a=><option key={a.id} value={a.id}>{t(a.label)}</option>)}
-      </select>
-      <select aria-label={t('题目集')} value={split} onChange={e=>setSplit(e.target.value as 'dev'|'holdout')}>
-        <option value="dev">dev</option><option value="holdout">holdout</option>
-      </select>
-      <button className="btn sm" disabled={!ids.length} onClick={()=>onRun(ids,ablation)}>{t('开始对照（{n} 道 × 2）',{n:ids.length})}</button>
-    </div>
-    <p className="hint">{t(ABLATIONS.find(a=>a.id===ablation)!.hint)}</p>
-    {runs.length?<table className="route-scores"><thead><tr>
-      <th>{t('组件')}</th><th>{t('模型')}</th><th>{t('题目集')}</th><th>{t('对比题数')}</th><th>{t('做成率（原 → 去掉后）')}</th><th>{t('错误完成率（原 → 去掉后）')}</th><th>{t('退步 / 新做成')}</th><th>{t('结论')}</th>
-    </tr></thead><tbody>
-      {runs.flatMap(r=>(['dev','holdout'] as const).map(s=>({...r,split:s,v:ablationVerdict(evals,r.model,r.ablation,s)}))).filter(x=>x.v.compared||x.split==='dev').map(x=><tr key={`${x.model}:${x.ablation}:${x.split}`}>
-        <td>{t(ABLATIONS.find(a=>a.id===x.ablation)!.label)}</td><td><code>{x.model}</code></td><td>{x.split}</td><td>{x.v.compared}</td>
-        <td>{pct(x.v.baseRate)} → {pct(x.v.candRate)}</td><td>{pct(x.v.baseFalseDone)} → {pct(x.v.candFalseDone)}</td>
-        <td>{x.v.regressed.length} / {x.v.gained.length}</td><td className={`ablation-${x.v.verdict}`}>{t(verdictText[x.v.verdict])}</td>
-      </tr>)}
-    </tbody></table>:<p className="hint">{t('还没有跑过对照。')}</p>}
-  </div>;
-}
