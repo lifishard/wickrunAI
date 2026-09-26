@@ -20,6 +20,7 @@ import ClaudeRepair from './ClaudeRepair';
 import SubagentProgress from './SubagentProgress';
 import type { KeyProfile } from '../types';
 import type { GatewayRecoveryResult } from '../lib/gateway-recovery';
+import { clientText } from '../lib/client-text';
 
 /** finish_reason 的人话注解，鼠标悬停时显示 */
 const STOP_HINT: Record<string, string> = {
@@ -371,7 +372,7 @@ export default function AnswerBlock(props: {
         </details>
       ) : null}
 
-      {answer?.notice ? <div className="answer-notice">{answer.notice}</div> : null}
+      {answer?.notice ? <div className="answer-notice">{clientText(t, answer.notice)}</div> : null}
       {answer?.subagents?.length ? <SubagentProgress jobs={answer.subagents}/> : null}
       {answer?.harness?.review ? <details className="task-review"><summary>{t('完成自查 · 模型复核')}</summary><p>{answer.harness.review.summary}</p><p>{answer.harness.review.checks}</p>{answer.harness.review.nextAction?<p>可选下一步：{answer.harness.review.nextAction}</p>:null}</details>:null}
       {answer?.supplementalInputs?.length ? <details className="delivery-panel"><summary>{t('已补充的信息 · {n} 条', { n: answer.supplementalInputs.length })}</summary>{answer.supplementalInputs.map(m=><blockquote key={m.id}>{m.content}</blockquote>)}</details>:null}

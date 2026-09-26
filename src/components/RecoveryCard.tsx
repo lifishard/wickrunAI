@@ -2,6 +2,7 @@ import React from 'react';
 import { useT } from '../lib/i18n';
 import type { RunState } from '../types';
 import { recoveryInfo } from '../lib/delivery';
+import { clientText } from '../lib/client-text';
 
 export default function RecoveryCard({state,onResume,onCompact,onHandoff,onAddInput,onResolve}:{state:RunState;onResume:()=>void;onCompact?:()=>void;onHandoff?:()=>void;onAddInput?:(text:string)=>void;onResolve?:(choice:'skip'|'retry')=>void}) {
   const t = useT();
@@ -9,7 +10,7 @@ export default function RecoveryCard({state,onResume,onCompact,onHandoff,onAddIn
   const info = recoveryInfo(state);
   return <section className="recovery-card" aria-label={t('任务恢复')}>
     <strong>{t('进度已保存 · ')}{t(info.kind === 'uncertain' ? '需要核实操作结果':'可以从这里继续')}</strong>
-    <p>{t(info.reason)}{info.blocked ? t('。具体阻塞：{notes}', { notes: info.blocked }) : ''}</p>
+    <p>{clientText(t, info.reason)}{info.blocked ? t('。具体阻塞：{notes}', { notes: info.blocked }) : ''}</p>
     {info.completed.length ? <p>{t('已完成步骤：')}{info.completed.join('；')}{t('（交付检查见下方）')}</p>:null}
     {info.outputPaths.length ? <details><summary>{t('已保存 {n} 个成果文件', { n: info.outputPaths.length })}</summary>{info.outputPaths.map(p=><p className="delivery-path" key={p}>{p}</p>)}<small>{t('可从本条回答的文件卡片打开。')}</small></details>:null}
     {info.target ? <p className="delivery-path">{t('当前操作：')}{info.target}</p>:null}
