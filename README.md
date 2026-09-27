@@ -8,7 +8,7 @@
 
 Open or closed, paid or free. Bring your own keys; they never leave your machine.
 
-[![Version](https://img.shields.io/badge/version-2.20.7-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
+[![Version](https://img.shields.io/badge/version-2.20.8-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-lightgrey)](#install)
 [![CI](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml/badge.svg)](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml)
@@ -264,3 +264,6 @@ Desktop and web keep separate repositories and share one backend. Chats, project
 ## 2.20.7 更新
 
 Claude 专属任务指令一键复制、真实文件回传、支持的平台默认自动更新。旧用户先手动安装本版，并更新 Claude 扩展一次。详见 [升级说明](docs/releases/v2.20.7.md)。
+
+
+Large artifact return: up to 100 MB/file, 50 files and 500 MB/task, with resumable 512 KB chunks and SHA-256 verification. See [2.20.8 release notes](docs/releases/v2.20.8.md).

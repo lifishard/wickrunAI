@@ -57,6 +57,7 @@ const TOOLS = [
   ['wickrun_delegate_task', '把子任务派给授权的 API 工作模型'],
   ['wickrun_read_worker_result', '读取工作模型的结果'],
   ['wickrun_report_progress', '向灯芯AI 汇报进度'],
+  ['wickrun_upload_artifact', '大文件分块上传、续传与完成校验'],
   ['wickrun_publish_artifact', '回传真实图片和生成文件'],
   ['wickrun_submit_result', '把最终成果交回灯芯AI'],
   ['wickrun_memory_search', '查这个任务所属项目的记忆（只读）'],

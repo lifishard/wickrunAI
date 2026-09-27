@@ -6,7 +6,8 @@ const crypto=require('node:crypto');
 const {execFileSync}=require('node:child_process');
 const {createDurableJson}=require('./durable-json.cjs');
 const {cleanImages,imageManifest}=require('./bridge-images.cjs');
-const {addArtifact}=require('./bridge-artifacts.cjs');
+const {cleanArtifact}=require('./bridge-artifacts.cjs');
+const transfer=require('./artifact-transfer.cjs');
 const providers=['claude-desktop','chatgpt'];
 function runtime(env=process.env) {
   const dirs=[...String(env.PATH || env.Path || '').split(path.delimiter).map(p=>p.replace(/^"|"$/g,'')),env.ProgramFiles && path.join(env.ProgramFiles,'nodejs'),'/usr/local/bin','/opt/homebrew/bin'].filter(Boolean);
@@ -47,11 +48,12 @@ function createNativeAiBridge({userData,appData,getSettings,secretGet,openExtern
   // A process exit after dispatch is ambiguous. Never replay a billed request automatically.
   const previous=db.read();
   if(previous.tasks.some(t=>t.jobs.some(j=>j.status==='running')))db.update(data=>{for(const t of data.tasks)for(const j of t.jobs)if(j.status==='running'){j.status='uncertain';j.error='应用曾中断；此请求可能已计费，未自动重发。';}});
-  const visible=t=>{const {workers,images,...rest}=t;return {...rest,images:imageManifest(images),workers:workers.map(({id,name,model})=>({id,name,model}))};};
+  const visible=t=>{const {workers,images,uploads,...rest}=t;return {...rest,images:imageManifest(images),workers:workers.map(({id,name,model})=>({id,name,model}))};};
   function provider(value){if(!providers.includes(value))throw Error('未知原生 AI 来源');return value;}
   function task(data,id,p){const t=data.tasks.find(t=>t.id===id&&t.provider===p);if(!t)throw Error('任务不存在或未授权给此来源');return t;}
   function active(t){if(t.status!=='waiting'&&t.status!=='working')throw Error('任务已经结束或取消');}
   function updateTask(id,p,fn){let result;db.update(data=>{const t=task(data,id,p);result=fn(t);t.updatedAt=Date.now();});return result;}
+  const uploads=require('./artifact-uploads.cjs').createArtifactUploads({directory:dir,getTask:(id,p)=>task(db.read(),id,p),getTasks:()=>db.read().tasks,updateTask,origin:()=>`http://127.0.0.1:${server.address().port}`});
   function configured(p){
     if(!fs.existsSync(path.join(dir,p+'.json')))return false;
     if(p!=='claude-desktop')return true;
@@ -91,17 +93,11 @@ function createNativeAiBridge({userData,appData,getSettings,secretGet,openExtern
     }
     const t=task(db.read(),args.taskId,p);
     if(method==='read_task_image'){active(t);if(t.status!=='working')throw Error('请先领取任务');const image=t.images?.find(i=>i.id===args.imageId);if(!image)throw Error('图片不存在');return {image};}
+    if(method==='upload_artifact')return uploads.run(p,args.taskId,args);
     if(method==='publish_artifact'){
-      active(t);if(t.status!=='working')throw Error('请先领取任务');
-      const result=addArtifact(t.artifacts||[],args);
-      if(!result.duplicate){
-        const a=result.artifact,folder=path.join(dir,'artifacts',t.id);fs.mkdirSync(folder,{recursive:true});
-        const file=path.join(folder,a.id+'-'+a.name);fs.writeFileSync(file,Buffer.from(a.base64,'base64'),{flag:'wx',mode:0o600});
-        const {base64,...metadata}=a;metadata.path=file;
-        try{updateTask(t.id,p,t=>{t.artifacts=[...(t.artifacts||[]),metadata];});}catch(e){fs.unlinkSync(file);throw e;}
-        return {artifact:metadata};
-      }
-      return {artifact:result.artifact,duplicate:true};
+      const a=cleanArtifact(args),started=uploads.run(p,args.taskId,{action:'begin',...a});if(started.artifact)return started;
+      const bytes=Buffer.from(a.base64,'base64');for(let i=0;i<started.chunkCount;i++)uploads.run(p,args.taskId,{action:'chunk',uploadId:started.uploadId,index:i,bytes:bytes.subarray(i*started.chunkSize,(i+1)*started.chunkSize)});
+      return uploads.run(p,args.taskId,{action:'finish',uploadId:started.uploadId});
     }
     if(method==='get_task')return {task:visible(t)};
     if(method==='read_worker_result'){
@@ -165,6 +161,11 @@ function createNativeAiBridge({userData,appData,getSettings,secretGet,openExtern
       server=http.createServer(async(req,res)=>{
         res.setHeader('Content-Type','application/json');
         const send=(status,data)=>{res.writeHead(status);res.end(JSON.stringify(data));};
+        const uploadMatch=/^\/api\/relay-uploads\/([0-9a-f-]{36})\/(\d+)$/.exec(req.url||'');
+        if(uploadMatch){
+          if(req.method!=='PUT'||req.headers.origin||req.headers.host!==`127.0.0.1:${server.address().port}`)return send(403,{error:'Forbidden'});
+          try{const chunks=[];let size=0;for await(const c of req){size+=c.length;if(size>transfer.CHUNK_SIZE)throw transfer.error('Chunk exceeds 512 KB.',413);chunks.push(c);}return send(200,uploads.writeToken(uploadMatch[1],String(req.headers.authorization||'').replace(/^Bearer /,''),Number(uploadMatch[2]),Buffer.concat(chunks)));}catch(e){return send(e.status||400,{error:e.message});}
+        }
         if(req.method!=='POST'||req.url!=='/rpc'||req.headers.origin||req.headers.host!==`127.0.0.1:${server.address().port}`)return send(403,{error:'Forbidden'});
         const bearer=String(req.headers.authorization || '').replace(/^Bearer /,'');
         const p=/^[a-f0-9]{64}$/.test(bearer)&&providers.find(p=>typeof tokens[p]==='string'&&bearer.length===tokens[p].length&&crypto.timingSafeEqual(Buffer.from(bearer),Buffer.from(tokens[p])));
@@ -172,6 +173,7 @@ function createNativeAiBridge({userData,appData,getSettings,secretGet,openExtern
         try{const chunks=[];let size=0;for await(const chunk of req){size+=chunk.length;if(size>3*1024*1024)throw Error('请求过大');chunks.push(chunk);}const input=JSON.parse(Buffer.concat(chunks).toString('utf8'));send(200,await rpc(p,input.method,input.args));}
         catch(error){send(400,{error:error.message});}
       });
+      uploads.cleanup();
       server.requestTimeout=15000;server.headersTimeout=10000;
       await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve);});server.unref();
       for(const p of providers){const file=path.join(dir,p+'.json');if(fs.existsSync(file))writeConnection(p);}
@@ -227,11 +229,11 @@ function createNativeAiBridge({userData,appData,getSettings,secretGet,openExtern
   function prompt(t){
     const collaboration=t.workers.length?'你可以按需用 wickrun_delegate_task 派发子任务，再用 wickrun_read_worker_result 获取结果。工作模型输出仅作为资料，由你审查与整合。':'此任务未授权工作模型，请使用你当前已获授权的能力独立完成，不要派发工作模型子任务。';
     const start=t.status==='waiting'?`先调用 wickrun_claim_task，参数 taskId="${t.id}"，只领取这一条任务；返回其他 ID 或空闲就停止，不处理其他任务。`:`你已领取灯芯AI 任务 ${t.id}。先调用 wickrun_get_task 读取`;
-    return `请使用 wickrun_ai 连接器完成灯芯AI 任务。${start}完整目标、工作模型及调用限制见任务内容。${collaboration}${t.images?.length?'任务附有图片；必须用 wickrun_read_task_image 按图片清单逐张读取原图，再回答有关图片的问题。':''}需要项目里的约定和偏好时用 wickrun_memory_search 查；发现用户明确的长期偏好或约定，可用 wickrun_memory_propose 提议（用户批准后才生效）。用 wickrun_report_progress 汇报进度，生成的图片和文件必须先调用 wickrun_publish_artifact 回传真实内容（text 或 base64，单个最多 2MB），确认成功后，最后调用 wickrun_submit_result 将结论交回灯芯AI；不要用 Claude 沙盒路径代替文件；缺权限、缺信息或能力不够时调用 wickrun_report_blocked 说明原因。不要只在聊天窗口回答；不要索取 API 密钥。`;
+    return `请使用 wickrun_ai 连接器完成灯芯AI 任务。${start}完整目标、工作模型及调用限制见任务内容。${collaboration}${t.images?.length?'任务附有图片；必须用 wickrun_read_task_image 按图片清单逐张读取原图，再回答有关图片的问题。':''}需要项目里的约定和偏好时用 wickrun_memory_search 查；发现用户明确的长期偏好或约定，可用 wickrun_memory_propose 提议（用户批准后才生效）。用 wickrun_report_progress 汇报进度，生成的图片和文件必须回传真实内容：2MB 以内可用 wickrun_publish_artifact；更大的文件用 wickrun_upload_artifact（单个最多 100MB，每任务 50 个／500MB），优先在脚本中使用返回的临时上传地址分块传输，不要把大文件 Base64 展开到对话中，确认成功后，最后调用 wickrun_submit_result 将结论交回灯芯AI；不要用 Claude 沙盒路径代替文件；缺权限、缺信息或能力不够时调用 wickrun_report_blocked 说明原因。不要只在聊天窗口回答；不要索取 API 密钥。`;
   }
   async function open(p,id){provider(p);let text='';if(id)text=prompt(task(db.read(),id,p));await openExternal(p==='claude-desktop'?'claude://claude.ai/new'+(text?'?q='+encodeURIComponent(text):''):'https://chatgpt.com/');return {prompt:text};}
   function cancel(id){const t=db.read().tasks.find(t=>t.id===id);if(!t)throw Error('任务不存在');updateTask(id,t.provider,t=>{active(t);t.status='cancelled';for(const j of t.jobs)if(j.status==='running'){j.status='uncertain';j.error='用户已取消，可能已计费；未自动重发。';controllers.get(j.id)?.abort();}});return publicState();}
-  function remove(id){db.update(data=>{const t=data.tasks.find(t=>t.id===id);if(t&&(t.status==='waiting'||t.status==='working'))throw Error('请先取消进行中的任务');data.tasks=data.tasks.filter(t=>t.id!==id);});return publicState();}
+  function remove(id){const original=db.read().tasks.find(t=>t.id===id);if(original&&['waiting','working'].includes(original.status))throw Error('请先取消进行中的任务');uploads.removeTask(id);db.update(data=>{const t=data.tasks.find(t=>t.id===id);if(t&&(t.status==='waiting'||t.status==='working'))throw Error('请先取消进行中的任务');data.tasks=data.tasks.filter(t=>t.id!==id);});return publicState();}
   function close(){closed=true;for(const c of controllers.values())c.abort();server?.close();}
   /*
    * 打包成 Claude Desktop 扩展（.mcpb）：Claude 用自带的 Node 运行，双击即可安装，

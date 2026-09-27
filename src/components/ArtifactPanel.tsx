@@ -178,7 +178,7 @@ export default function ArtifactPanel(props: { artifact: Artifact; onClose: () =
       <div className="artifact-panel-body">
         {err ? <div className="picker-error">{err}</div> : null}
 
-        {a.type==='image' && a.path ? <ArtifactImage path={a.path} name={a.name}/> : editable ? <ArtifactTextEditor key={a.path} path={a.path!} markdown={a.type === 'markdown'} busy={props.busy} onRequestEdit={props.onRequestEdit} onPropose={props.onPropose} /> : documentPreview ? <React.Suspense fallback={<div className="empty">正在加载预览…</div>}><ArtifactDocument key={a.path} path={a.path!} type={a.type} busy={props.busy} onPropose={props.onPropose} /></React.Suspense> : binaryLike ? (
+        {a.size&&a.size>(editable?1024*1024:25*1024*1024) ? <p>文件已保存。较大文件请另存为，或使用默认程序打开。</p> : a.type==='image' && a.path ? <ArtifactImage path={a.path} name={a.name}/> : editable ? <ArtifactTextEditor key={a.path} path={a.path!} markdown={a.type === 'markdown'} busy={props.busy} onRequestEdit={props.onRequestEdit} onPropose={props.onPropose} /> : documentPreview ? <React.Suspense fallback={<div className="empty">正在加载预览…</div>}><ArtifactDocument key={a.path} path={a.path!} type={a.type} busy={props.busy} onPropose={props.onPropose} /></React.Suspense> : binaryLike ? (
           <div className="empty" style={{ lineHeight: 1.9 }}>
             {a.type} {t('不在应用里预览。')}
             <br />

@@ -23,7 +23,7 @@ test('real stdio MCP handshake, bounded delegation and final result round trip',
   const client=new Client({name:'fixture-desktop',version:'1.0.0'});
   const transport=new StdioClientTransport({...config,stderr:'pipe'});
   t.after(()=>client.close());await client.connect(transport);
-  const list=await client.listTools();assert.equal(list.tools.length,12);
+  const list=await client.listTools();assert.equal(list.tools.length,13);
   const task=f.create();
   const call=async(name,args)=>{const result=await client.callTool({name:'wickrun_'+name,arguments:args});assert.notEqual(result.isError,true,result.content[0].text);return JSON.parse(result.content[0].text);};
   const detail=await call('get_task',{taskId:task.id});
@@ -229,4 +229,25 @@ test('exact task handoff and real generated files return through MCP, with bound
  assert.equal(JSON.stringify(f.bridge.state()).includes(png),false);
  await call('submit_result',{taskId:second.id,text:'Both files delivered'});assert.equal(f.bridge.state().tasks.find(t=>t.id===second.id).artifacts.length,2);
  assert.equal((await call('publish_artifact',{...input,requestKey:'after'})).isError,true);
+});
+
+
+test('large native artifacts use scoped binary chunks, survive restart, and verify before publishing',async t=>{
+ const f=fixture(t);await f.bridge.config('claude-desktop');const task=f.create();
+ const call=async(method,args)=>{const response=await f.rpc('claude-desktop',method,{taskId:task.id,...args});const data=await response.json();assert.equal(response.status,200,JSON.stringify(data));return data;};
+ await call('claim_task',{});
+ const bytes=Buffer.alloc(6*1024*1024+17,65),sha256=require('node:crypto').createHash('sha256').update(bytes).digest('hex');
+ const input={action:'begin',name:'large.txt',requestKey:'large-file',size:bytes.length,sha256},upload=await call('upload_artifact',input);
+ assert.equal(upload.chunkCount,13);assert.equal((await call('upload_artifact',input)).uploadId,upload.uploadId);
+ assert.ok(!JSON.stringify(f.bridge.state()).includes(upload.transfer.headers.Authorization));
+ const put=async(index,data=bytes.subarray(index*upload.chunkSize,(index+1)*upload.chunkSize),auth=upload.transfer.headers)=>fetch(upload.transfer.urlTemplate.replace('{index}',index),{method:'PUT',headers:auth,body:data});
+ assert.equal((await put(0,undefined,{})).status,401);assert.equal((await put(0)).status,200);assert.equal((await(await put(0)).json()).duplicate,true);
+ const changed=Buffer.alloc(upload.chunkSize,66);assert.equal((await put(0,changed)).status,409);
+ const incomplete=await f.rpc('claude-desktop','upload_artifact',{taskId:task.id,action:'finish',uploadId:upload.uploadId});assert.equal(incomplete.status,400);assert.equal(f.bridge.state().tasks[0].artifacts?.length||0,0);
+ f.bridge.close();const next=createNativeAiBridge({userData:f.root,appData:path.join(f.root,'roaming'),getSettings:()=>f.settings,secretGet:()=>'',openExternal:async()=>{},deps:{claudeConfigFiles:()=>[]}});t.after(()=>next.close());await next.start();
+ const resumed=await call('upload_artifact',{action:'status',uploadId:upload.uploadId});assert.equal(resumed.received,1);assert.equal(resumed.missing.length,12);
+ for(const index of resumed.missing){const res=await fetch(resumed.transfer.urlTemplate.replace('{index}',index),{method:'PUT',headers:resumed.transfer.headers,body:bytes.subarray(index*resumed.chunkSize,(index+1)*resumed.chunkSize)});assert.equal(res.status,200,await res.text());}
+ const finished=await call('upload_artifact',{action:'finish',uploadId:upload.uploadId});assert.deepEqual(fs.readFileSync(finished.artifact.path),bytes);assert.equal(next.state().tasks[0].artifacts.length,1);
+ assert.equal((await call('upload_artifact',{action:'finish',uploadId:upload.uploadId})).duplicate,true);
+ assert.equal((await call('upload_artifact',input)).artifact.id,finished.artifact.id);
 });
