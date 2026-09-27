@@ -246,7 +246,9 @@ export function mergeParamDefaults(cfg: GenerationConfig): GenerationConfig {
 /** 多模态消息里的一段内容 */
 export type ContentPart =
   | { type: 'text'; text: string }
-  | { type: 'image_url'; image_url: { url: string } };
+  | { type: 'image_url'; image_url: { url: string } }
+  | { type: 'input_audio'; input_audio: { data: string; format: 'wav' | 'mp3' } }
+  | { type: 'video_url'; video_url: { url: string } };
 
 /** 直接放进请求体 messages 数组的那种消息 */
 export interface WireMessage {

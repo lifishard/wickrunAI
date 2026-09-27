@@ -104,6 +104,11 @@ export async function fetchModels(
     if (!id) continue;
     out.push({
       id,
+      inputModalities: (() => {
+        const architecture = o.architecture as { input_modalities?: unknown } | undefined;
+        const values = architecture?.input_modalities ?? o.input_modalities;
+        return Array.isArray(values) ? values.filter((v): v is 'text' | 'image' | 'audio' | 'video' => ['text', 'image', 'audio', 'video'].includes(String(v))) : undefined;
+      })(),
       label: typeof o.display_name === 'string' ? o.display_name : undefined,
       ownedBy: typeof o.owned_by === 'string' ? o.owned_by : undefined,
       contextWindow: Number(o.context_window ?? o.context_length) > 0 ? Number(o.context_window ?? o.context_length) : undefined,

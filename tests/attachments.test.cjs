@@ -19,6 +19,8 @@ test('attachment limits replace the old 1MB text cap and keep shared policy expl
   assert.deepEqual(shared.ATTACHMENT_LIMITS, {
     textBytes: attachments.MAX_TEXT,
     imageBytes: attachments.MAX_IMAGE,
+    audioBytes: 12 * attachments.MIB,
+    videoBytes: 12 * attachments.MIB,
     batchBytes: attachments.MAX_BATCH,
   });
   assert.equal(shared.validateAttachmentSize('text', 2 * attachments.MIB), undefined);

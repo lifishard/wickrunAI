@@ -280,6 +280,13 @@ button {
   min-height: 0;
 }
 .messages-shell { position: relative; display: flex; flex: 1; min-height: 0; min-width: 0; }
+.media-input-dialog { display: grid; gap: 14px; }
+.media-input-dialog label { display: grid; gap: 6px; }
+.media-input-dialog textarea { min-height: 160px; width: 100%; box-sizing: border-box; }
+.media-preview img, .media-preview video { max-width: 100%; max-height: 260px; }
+.media-preview audio, .media-attachment audio { width: min(100%, 320px); }
+.media-attachment { display: inline-flex; flex-direction: column; gap: 6px; max-width: 100%; font-size: 12px; }
+.media-attachment video { max-width: 320px; width: 100%; max-height: 220px; }
 .messages-shell > .messages { min-width: 0; }
 .jump-latest { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); z-index: 2; box-shadow: 0 2px 12px #0002; white-space: nowrap; }
 
@@ -3014,3 +3021,22 @@ kbd {
 .ablation-keep { color: var(--danger); }
 .ablation-removable { color: var(--ok); }
 .ablation-insufficient { color: var(--fg-dim); }
+
+.question-markdown { white-space: normal; font-size: 16px; font-weight: 400; letter-spacing: normal; }
+.question-markdown .md > :first-child { margin-top: 0; }
+.question-markdown .md > :last-child { margin-bottom: 0; }
+
+.composer-rich-host { min-width: 0; width: 100%; }
+.composer-rich-input { outline: none; white-space: pre-wrap; overflow-wrap: anywhere; padding: 2px 0; font-size: 15px; line-height: 1.65; min-height: calc(1lh + 4px); max-height: calc(3lh + 4px); overflow-y: auto; }
+.composer-home .composer-rich-input { min-height: calc(2lh + 4px); max-height: min(40vh, 320px); }
+.composer-rich-input > p { margin: 0; }
+.composer-rich-input > :first-child { margin-top: 0; }
+.composer-rich-input > :last-child { margin-bottom: 0; }
+.composer-rich-input:has(> p:only-child > br.ProseMirror-trailingBreak:only-child)::before { content: attr(data-placeholder); color: var(--muted); float: left; height: 0; pointer-events: none; }
+.composer-rich-input :is(h1,h2,h3) { font-size: 1.15em; margin: 6px 0; }
+.composer-rich-input :is(ul,ol) { margin: 4px 0; padding-left: 24px; }
+.composer-rich-input blockquote { border-left: 2px solid var(--border); padding-left: 10px; margin: 4px 0; }
+.composer-rich-input pre { white-space: pre-wrap; background: var(--bg-elev); padding: 6px 8px; border-radius: 6px; }
+.composer-rich-input code { font-family: var(--mono, monospace); font-size: .9em; }
+.composer-rich-input a { color: var(--accent); }
+.composer-rich-input.ProseMirror-focused { outline: none; }

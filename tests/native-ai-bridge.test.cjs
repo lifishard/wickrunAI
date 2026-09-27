@@ -23,7 +23,7 @@ test('real stdio MCP handshake, bounded delegation and final result round trip',
   const client=new Client({name:'fixture-desktop',version:'1.0.0'});
   const transport=new StdioClientTransport({...config,stderr:'pipe'});
   t.after(()=>client.close());await client.connect(transport);
-  const list=await client.listTools();assert.equal(list.tools.length,10);
+  const list=await client.listTools();assert.equal(list.tools.length,11);
   const task=f.create();
   const call=async(name,args)=>{const result=await client.callTool({name:'wickrun_'+name,arguments:args});assert.notEqual(result.isError,true,result.content[0].text);return JSON.parse(result.content[0].text);};
   const detail=await call('get_task',{taskId:task.id});
@@ -191,4 +191,21 @@ test('project memory: search is read-only and scoped to the task project; propos
   // 不属于项目的任务查不到任何项目的记忆
   const loose=f.bridge.create({provider:'claude-desktop',goal:'随便问问',workers:[],maxJobs:1,maxOutputTokens:512}).task;
   assert.match((await call('memory_search',{taskId:loose.id})).error,/不属于任何项目/);
+});
+
+
+test('MCP returns real image blocks with provider isolation and no binary in task metadata',async t=>{
+  const f=fixture(t);const config=await f.bridge.config('claude-desktop');await f.bridge.config('chatgpt');
+  const png='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a8MsAAAAASUVORK5CYII=';
+  const image={name:'pixel.png',dataUrl:'data:image/png;base64,'+png};const task=f.create({images:[image],requestKey:'image-test'});
+  assert.equal(JSON.stringify(f.bridge.state()).includes(png),false);
+  assert.throws(()=>f.create({images:[{...image,name:'changed.png'}],requestKey:'image-test'}),/不同内容/);
+  assert.equal((await f.rpc('claude-desktop','read_task_image',{taskId:task.id,imageId:'image-1'})).status,400);
+  const client=new Client({name:'image-fixture',version:'1'});t.after(()=>client.close());await client.connect(new StdioClientTransport({...config,stderr:'pipe'}));
+  await client.callTool({name:'wickrun_claim_task',arguments:{}});
+  const result=await client.callTool({name:'wickrun_read_task_image',arguments:{taskId:task.id,imageId:'image-1'}});
+  assert.equal(result.isError,undefined);assert.equal(result.content[1].type,'image');assert.equal(result.content[1].data,png);assert.equal(result.content[1].mimeType,'image/png');
+  assert.equal((await f.rpc('chatgpt','read_task_image',{taskId:task.id,imageId:'image-1'})).status,400);
+  f.bridge.cancel(task.id);assert.equal((await f.rpc('claude-desktop','read_task_image',{taskId:task.id,imageId:'image-1'})).status,400);
+  assert.throws(()=>f.create({images:[{name:'fake.png',dataUrl:'data:image/png;base64,YQ=='}]}),/格式/);
 });

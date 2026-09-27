@@ -10,6 +10,10 @@ export default function RouteSettings({ profile, config, onChange }: {
   const update = (patch: Partial<RouteOverrides>) => onChange({ ...profile,routeProfiles:{ ...profile.routeProfiles,[key]:{ ...route,...patch } } });
   return <div className="section route-settings">
     <div className="section-title">{t('当前路由能力')}</div>
+    <details><summary>图片、音频与视频输入</summary><p className="hint">默认读取服务端模型信息；仅在确认当前端点支持后手动设置。</p>
+      <label><input type="checkbox" checked={route.inputModalities !== undefined} onChange={e => update({ inputModalities: e.target.checked ? ['text'] : undefined })} />手动设置此模型的输入类型</label>
+      {route.inputModalities !== undefined ? (['image', 'audio', 'video'] as const).map((kind, i) => <label key={kind}><input type="checkbox" checked={route.inputModalities!.includes(kind)} onChange={e => update({ inputModalities: e.target.checked ? [...route.inputModalities!, kind] : route.inputModalities!.filter(v => v !== kind) })} />{['图片', '音频', '视频'][i]}</label>) : null}
+    </details>
     <p className="hint">{t('适用于 {profile} · {model}。留空表示未知，优先读取模型元数据和上游明确限额。网关地址改变后重新记录。', { profile: profile.name, model: config.model })}</p>
     {([['contextWindow',t('模型上下文窗口')],['maxOutput',t('单次输出上限（含思考）')],['tpm',t('每分钟总 token')],['itpm',t('每分钟输入 token')],['otpm',t('每分钟输出 token')],['rpm',t('每分钟请求数')]] as const).map(([key,label]) =>
       <Field key={key} label={label}><input aria-label={label} type="number" min={1} placeholder={t('未知 / 自动学习')} value={route[key] ?? ''} onChange={e => update({ [key]:Number(e.target.value)>0 ? Math.floor(Number(e.target.value)) : undefined })} /></Field>)}

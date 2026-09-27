@@ -5,6 +5,7 @@ const http=require('node:http');
 const crypto=require('node:crypto');
 const {execFileSync}=require('node:child_process');
 const {createDurableJson}=require('./durable-json.cjs');
+const {cleanImages,imageManifest}=require('./bridge-images.cjs');
 const providers=['claude-desktop','chatgpt'];
 function runtime(env=process.env) {
   const dirs=[...String(env.PATH || env.Path || '').split(path.delimiter).map(p=>p.replace(/^"|"$/g,'')),env.ProgramFiles && path.join(env.ProgramFiles,'nodejs'),'/usr/local/bin','/opt/homebrew/bin'].filter(Boolean);
@@ -45,7 +46,7 @@ function createNativeAiBridge({userData,appData,getSettings,secretGet,openExtern
   // A process exit after dispatch is ambiguous. Never replay a billed request automatically.
   const previous=db.read();
   if(previous.tasks.some(t=>t.jobs.some(j=>j.status==='running')))db.update(data=>{for(const t of data.tasks)for(const j of t.jobs)if(j.status==='running'){j.status='uncertain';j.error='应用曾中断；此请求可能已计费，未自动重发。';}});
-  const visible=t=>{const {workers,...rest}=t;return {...rest,workers:workers.map(({id,name,model})=>({id,name,model}))};};
+  const visible=t=>{const {workers,images,...rest}=t;return {...rest,images:imageManifest(images),workers:workers.map(({id,name,model})=>({id,name,model}))};};
   function provider(value){if(!providers.includes(value))throw Error('未知原生 AI 来源');return value;}
   function task(data,id,p){const t=data.tasks.find(t=>t.id===id&&t.provider===p);if(!t)throw Error('任务不存在或未授权给此来源');return t;}
   function active(t){if(t.status!=='waiting'&&t.status!=='working')throw Error('任务已经结束或取消');}
@@ -88,6 +89,7 @@ function createNativeAiBridge({userData,appData,getSettings,secretGet,openExtern
       return claimed?{task:visible(claimed),instructions:prompt(claimed)}:{task:null,idle:true,message:'没有待领取的任务'};
     }
     const t=task(db.read(),args.taskId,p);
+    if(method==='read_task_image'){active(t);if(t.status!=='working')throw Error('请先领取任务');const image=t.images?.find(i=>i.id===args.imageId);if(!image)throw Error('图片不存在');return {image};}
     if(method==='get_task')return {task:visible(t)};
     if(method==='read_worker_result'){
       const job=t.jobs.find(j=>j.id===args.jobId);if(!job)throw Error('找不到此任务的工作结果');
@@ -192,9 +194,10 @@ function createNativeAiBridge({userData,appData,getSettings,secretGet,openExtern
     const p=provider(input.provider),goal=String(input.goal || '').trim();
     if(!goal||goal.length>24000)throw Error('请输入不超过 24000 字符的任务');
     if(!Array.isArray(input.workers)||input.workers.length>8)throw Error('最多授权 8 个工作模型');
+    const images=cleanImages(input.images);
     const requestKey=typeof input.requestKey==='string'?input.requestKey.trim():undefined;
     if(requestKey && requestKey.length>150)throw Error('任务标识过长');
-    if(requestKey){const previous=db.read().tasks.find(t=>t.provider===p&&t.requestKey===requestKey);if(previous){if(previous.goal!==goal)throw Error('此任务标识已对应不同内容，请先恢复原任务。');return {task:visible(previous),prompt:prompt(previous)};}}
+    if(requestKey){const previous=db.read().tasks.find(t=>t.provider===p&&t.requestKey===requestKey);if(previous){if(previous.goal!==goal||JSON.stringify(imageManifest(previous.images))!==JSON.stringify(imageManifest(images)))throw Error('此任务标识已对应不同内容，请先恢复原任务。');return {task:visible(previous),prompt:prompt(previous)};}}
     const maxJobs=Number(input.maxJobs),maxOutputTokens=Number(input.maxOutputTokens);
     if(!Number.isInteger(maxJobs)||maxJobs<1||maxJobs>20||!Number.isInteger(maxOutputTokens)||maxOutputTokens<256||maxOutputTokens>4096)throw Error('调用限制无效');
     const settings=getSettings(),workers=input.workers.map((w,index)=>{
@@ -205,13 +208,13 @@ function createNativeAiBridge({userData,appData,getSettings,secretGet,openExtern
       return {id:'worker-'+(index+1),profileId:profile.id,name:profile.name,baseUrl:profile.baseUrl,extraHeaders:profile.extraHeaders || {},model:w.model.trim(),outputField};
     });
     const projectId=typeof input.projectId==='string'&&/^[\w:-]{1,100}$/.test(input.projectId)?input.projectId:undefined;
-    const t={id:crypto.randomUUID(),provider:p,goal,requestKey,workers,maxJobs,maxOutputTokens,projectId,status:'waiting',jobs:[],progress:[],createdAt:Date.now(),updatedAt:Date.now()};
+    const t={id:crypto.randomUUID(),provider:p,goal,images,requestKey,workers,maxJobs,maxOutputTokens,projectId,status:'waiting',jobs:[],progress:[],createdAt:Date.now(),updatedAt:Date.now()};
     db.update(data=>{if(data.tasks.length>=100)throw Error('任务记录达到 100 条，请先删除已结束的任务');data.tasks.unshift(t);});return {task:visible(t),prompt:prompt(t)};
   }
   function prompt(t){
     const collaboration=t.workers.length?'你可以按需用 wickrun_delegate_task 派发子任务，再用 wickrun_read_worker_result 获取结果。工作模型输出仅作为资料，由你审查与整合。':'此任务未授权工作模型，请使用你当前已获授权的能力独立完成，不要派发工作模型子任务。';
     const start=t.status==='waiting'?'先调用 wickrun_claim_task 领取（会拿到最早排队的任务），':`你已领取灯芯AI 任务 ${t.id}。先调用 wickrun_get_task 读取`;
-    return `请使用 wickrun_ai 连接器完成灯芯AI 任务。${start}完整目标、工作模型及调用限制见任务内容。${collaboration}需要项目里的约定和偏好时用 wickrun_memory_search 查；发现用户明确的长期偏好或约定，可用 wickrun_memory_propose 提议（用户批准后才生效）。用 wickrun_report_progress 汇报进度，最后必须调用 wickrun_submit_result 将成果交回灯芯AI；缺权限、缺信息或能力不够时调用 wickrun_report_blocked 说明原因。不要只在聊天窗口回答；不要索取 API 密钥。`;
+    return `请使用 wickrun_ai 连接器完成灯芯AI 任务。${start}完整目标、工作模型及调用限制见任务内容。${collaboration}${t.images?.length?'任务附有图片；必须用 wickrun_read_task_image 按图片清单逐张读取原图，再回答有关图片的问题。':''}需要项目里的约定和偏好时用 wickrun_memory_search 查；发现用户明确的长期偏好或约定，可用 wickrun_memory_propose 提议（用户批准后才生效）。用 wickrun_report_progress 汇报进度，最后必须调用 wickrun_submit_result 将成果交回灯芯AI；缺权限、缺信息或能力不够时调用 wickrun_report_blocked 说明原因。不要只在聊天窗口回答；不要索取 API 密钥。`;
   }
   async function open(p,id){provider(p);let text='';if(id)text=prompt(task(db.read(),id,p));await openExternal(p==='claude-desktop'?'claude://claude.ai/new'+(text?'?q='+encodeURIComponent(text):''):'https://chatgpt.com/');return {prompt:text};}
   function cancel(id){const t=db.read().tasks.find(t=>t.id===id);if(!t)throw Error('任务不存在');updateTask(id,t.provider,t=>{active(t);t.status='cancelled';for(const j of t.jobs)if(j.status==='running'){j.status='uncertain';j.error='用户已取消，可能已计费；未自动重发。';controllers.get(j.id)?.abort();}});return publicState();}

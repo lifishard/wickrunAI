@@ -1,4 +1,5 @@
 import { acceptLiveAnswer } from './live-input';
+import { mediaParts, validateMediaRoute } from './media-input';
 import { reconcileProgress, qualityLoop, qualityCheckpoint } from './task-progress';
 import type {
   AccessRequest,
@@ -204,7 +205,7 @@ function toWire(
     if (!m.content.trim() && atts.length === 0) continue;
 
     const texts = atts.filter((a) => a.kind === 'text');
-    const images = atts.filter((a) => a.kind === 'image' && a.dataUrl);
+    const media = mediaParts(atts);
 
     // 文本附件直接拼进正文，用围栏标出来源文件名
     let text = m.content;
@@ -214,16 +215,14 @@ function toWire(
       text += `\n\n附件《${a.name}》的内容：\n\`\`\`\n${a.text ?? ''}\n\`\`\``;
     }
 
-    if (images.length === 0) {
+    if (media.length === 0) {
       out.push({ role: m.role, content: text });
       continue;
     }
 
     // 有图就必须用分段数组，字符串形式塞不进图片
     const parts: ContentPart[] = [{ type: 'text', text: text || '（见图）' }];
-    for (const a of images) {
-      parts.push({ type: 'image_url', image_url: { url: a.dataUrl as string } });
-    }
+    parts.push(...media);
     out.push({ role: m.role, content: parts });
   }
 
@@ -861,6 +860,7 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
           const extra = (state.extraSystem ?? args.extraSystem)+harnessInstructions(cfg,state)+memoryInstructions(state,harnessMode(cfg)==='guided'&&!final&&toolNames.includes('update_plan'),!final&&readable)+codeReviewInstructions;
           if (final) view = [...view, { id: 'wrap-up', role: 'user', content: '本阶段轮次已到。请如实汇总已完成与尚未完成的事项，不要声称未实际交付的文件已经生成。', createdAt: Date.now() }];
           const build = (v: ChatMessage[]) => prepareBody(buildRequestBody(cfg,toWire(v,cfg,!final && toolNames.length > 0,extra),final ? [] : toolNames,args.effortMappings),cfg,cap);
+          validateMediaRoute(view, args.profile, cfg.model, args.modelInfo);
           let body = build(view);
           let bodyTokens = calibratedTokens(body,args.profile,cfg);
           let crossedAdvisory = nearContextSuggestion(bodyTokens,cfg);

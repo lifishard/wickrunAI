@@ -2,11 +2,13 @@ import React from 'react';
 import { desktop } from '../lib/transport';
 import { replaceArtifactSelection, artifactSourceOffset, applyArtifactTextareaChange, type ArtifactSnapshot } from '../lib/artifact-edit';
 import Markdown from './Markdown';
+import ArtifactAiEdit, { type ProposeArtifactEdit } from './ArtifactAiEdit';
+import { findArtifactSelection } from '../lib/artifact-proposal';
 
 // Keep unsaved edits when the user closes or switches the preview within this session.
 const drafts = new Map<string, { text: string; hash: string }>();
-export default function ArtifactTextEditor({ path, markdown, busy, onRequestEdit }: {
-  path: string; markdown: boolean; busy: boolean; onRequestEdit: (prompt: string) => void;
+export default function ArtifactTextEditor({ path, markdown, busy, onRequestEdit, onPropose }: {
+  path: string; markdown: boolean; busy: boolean; onRequestEdit: (prompt: string) => void; onPropose: ProposeArtifactEdit;
 }) {
   const [snapshot, setSnapshot] = React.useState<ArtifactSnapshot | null>(null);
   const [draft, setDraft] = React.useState(drafts.get(path)?.text ?? '');
@@ -19,6 +21,20 @@ export default function ArtifactTextEditor({ path, markdown, busy, onRequestEdit
   const [status, setStatus] = React.useState('');
   const [error, setError] = React.useState('');
   const editor = React.useRef<HTMLTextAreaElement>(null);
+  const [undo, setUndo] = React.useState<{ before: string; after: string } | null>(null);
+  const blocks = React.useMemo(() => [{start:0,raw:draft}], [draft]);
+  const captureSelection = (root: HTMLElement) => {
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed || !selection.rangeCount) return;
+    const range = selection.getRangeAt(0);
+    const blockOf = (node: Node) => (node instanceof Element ? node : node.parentElement)?.closest<HTMLElement>('[data-artifact-block]');
+    const first = blockOf(range.startContainer), last = blockOf(range.endContainer);
+    if (!first || first !== last || !root.contains(first)) { setStatus('跨段选区请在「编辑文本」中选择，以准确限定修改范围。'); return; }
+    const block = blocks[Number(first.dataset.artifactBlock)];
+    const found = findArtifactSelection(block.raw, selection.toString());
+    if (!found) { setStatus('这段选区含重复文字或跨越格式标记，请在「编辑文本」中精确选择。'); return; }
+    setSelected({ start: block.start + found.start, end: block.start + found.end }); setStatus('已选中预览文字，可在下方提出修改要求。');
+  };
   const dirty = snapshot ? draft !== snapshot.text : drafts.has(path);
   const conflict = !!snapshot && baseHash !== snapshot.hash;
   const setContent = (text: string) => { setDraft(text); drafts.set(path, { text, hash: baseHash }); setStatus(''); };
@@ -45,7 +61,7 @@ export default function ArtifactTextEditor({ path, markdown, busy, onRequestEdit
     {error ? <p className="picker-error" role="alert">{error}</p> : null}
     {status ? <p role="status">{status}</p> : null}
     {conflict ? <p role="alert">磁盘内容已变化。草稿保留如下，请对照最新内容，合并后再保存。</p> : null}
-    {mode === 'preview' ? <div className="artifact-md">{markdown ? <Markdown text={draft} /> : <pre className="artifact-source">{draft}</pre>}</div> : null}
+    {mode === 'preview' ? <div className="artifact-md" onMouseUp={e => captureSelection(e.currentTarget)} onKeyUp={e => captureSelection(e.currentTarget)}>{blocks.map((block, i) => <div key={i} data-artifact-block={i}>{markdown ? <Markdown text={block.raw} /> : <pre className="artifact-source">{block.raw}</pre>}</div>)}</div> : null}
     {mode === 'edit' ? <>
       <label className="hint" htmlFor="artifact-text-editor">可直接编辑全文，或选中文字后在下方替换。</label>
       <textarea id="artifact-text-editor" ref={editor} className="artifact-textarea" value={draft} disabled={!snapshot || working} onChange={e => { setContent(applyArtifactTextareaChange(draft, e.target.value)); setSelected({ start: 0, end: 0 }); }} onSelect={e => setSelected({ start: artifactSourceOffset(draft, e.currentTarget.selectionStart), end: artifactSourceOffset(draft, e.currentTarget.selectionEnd) })} spellCheck={false} />
@@ -56,8 +72,10 @@ export default function ArtifactTextEditor({ path, markdown, busy, onRequestEdit
         <button className="btn sm" disabled={working || dirty || conflict || selected.end <= selected.start} title={dirty ? '请先保存草稿，再让 AI 修改文件' : '将选中文字带入对话，补充要求后发送'} onClick={() => onRequestEdit(`请局部修改文件 ${snapshot!.path}。先读取文件核对内容，只修改下列选中段落，保留其余内容。\n\n选中内容：\n${draft.slice(selected.start, selected.end)}\n\n修改要求：`)}>带入对话修改</button>
       </div>
     </> : null}
+    {mode !== 'history' && selected.end > selected.start ? <ArtifactAiEdit key={`${selected.start}:${selected.end}`} source={draft} start={selected.start} end={selected.end} onPropose={onPropose} onApply={text => { setUndo({ before: draft, after: text }); setContent(text); setSelected({ start: 0, end: 0 }); setStatus('已应用到草稿。检查预览后保存，AI 修改会和其他编辑一样保留历史版本。'); }} /> : null}
+    {undo && draft === undo.after ? <button className="btn sm" onClick={() => { setContent(undo.before); setUndo(null); setSelected({ start: 0, end: 0 }); }}>撤销本次 AI 草稿修改</button> : null}
     {mode === 'history' ? <div className="artifact-history">
-      <p className="hint">保留最近 20 个不同内容版本（含当前文件），只记录在这里保存过的内容。</p>
+      <p className="hint">保留最近 20 个不同内容版本（含当前文件），手动和 AI 建议在这里保存后都会留下记录。</p>
       <select aria-label="历史版本" value={version} onChange={e => setVersion(e.target.value)}><option value="">当前文件</option>{snapshot?.versions.map(v => <option value={v.hash} key={v.hash}>{new Date(v.at).toLocaleString()} · {v.hash.slice(0, 6)}</option>)}</select>
       <pre className="artifact-source">{chosen?.text ?? snapshot?.text ?? ''}</pre>
       <button className="btn sm" disabled={!chosen || working || busy || dirty || conflict} onClick={() => void action(async () => { accept(await desktop()!.artifactEdit('restore', { path: snapshot!.path, expectedHash: snapshot!.hash, version })); setStatus('已恢复。恢复前的内容仍可在历史版本中找回。'); })}>恢复此版本</button>

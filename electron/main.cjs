@@ -556,11 +556,21 @@ function registerIpc() {
 
   const artifacts = require('./artifact-workspace.cjs');
   const artifactWorkspace = artifacts.createArtifactWorkspace(path.join(app.getPath('userData'), 'artifact-versions'));
+  const binaryWorkspace = require('./artifact-binary.cjs').createBinaryWorkspace(path.join(app.getPath('userData'), 'artifact-binary-versions'));
   const artifactSender = e => {
     if (!mainWindow || e.sender !== mainWindow.webContents || e.senderFrame !== mainWindow.webContents.mainFrame) throw Error('请在应用的文件预览中操作。');
     dataAvailable();
   };
   ipcMain.handle('snc:artifactDocument', (e, p) => { artifactSender(e); return artifacts.readDocument(p); });
+  ipcMain.handle('snc:artifactWordPreview', (e, p) => { artifactSender(e); return require('./office-preview.cjs').previewWord(p); });
+  ipcMain.handle('snc:artifactBinary', (e, { action, input }) => {
+    artifactSender(e);
+    if (action === 'read') return binaryWorkspace.read(input.path);
+    if (inflight.size || activeToolControllers.size || activeRunIds.size) throw Error('请等待正在运行的任务结束后保存文档。');
+    if (action === 'save') return binaryWorkspace.save(input);
+    if (action === 'restore') return binaryWorkspace.restore(input);
+    throw Error('不支持的文档操作。');
+  });
   ipcMain.handle('snc:artifactEdit', (e, { action, input }) => {
     artifactSender(e);
     if (action === 'read') return artifactWorkspace.read(input.path);

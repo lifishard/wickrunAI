@@ -8,7 +8,7 @@
 
 开源的、闭源的，付费的、免费的，都能调度。Key 自己带，只留在你本机。
 
-[![Version](https://img.shields.io/badge/version-2.20.4-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
+[![Version](https://img.shields.io/badge/version-2.20.5-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-lightgrey)](#安装)
 [![CI](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml/badge.svg)](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml)
@@ -259,3 +259,6 @@ wickrunAI 是独立服务，与 Anthropic、OpenAI、Google、xAI、商汤、月
 ## Google account and cloud sync
 
 Desktop and web keep separate repositories and share one backend. Chats, projects, skills, task history and model API keys can follow the same Google account. [Setup, import and limits](docs/cloud-accounts.md).
+
+
+本版变更与支持范围见 [2.20.5 更新说明](docs/UPGRADE-2.20.5.md)。

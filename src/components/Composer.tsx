@@ -1,4 +1,5 @@
 import React from 'react';
+import MarkdownInput, {type MarkdownInputHandle} from './MarkdownInput';
 import AnchoredPopover from './AnchoredPopover';
 import './Composer.css';
 import type {
@@ -74,6 +75,7 @@ export default function Composer(props: {
 
   attachments: Attachment[];
   onAddAttachments: (mode: 'file' | 'image') => void;
+  onAddMedia?: () => void;
   onPasteImage: (dataUrl: string, name: string, mime: string, size: number) => void;
   onRemoveAttachment: (id: string) => void;
   onPickWorkspace: () => void;
@@ -170,7 +172,7 @@ export default function Composer(props: {
   }, [props.busy]);
   const [caret, setCaret] = React.useState(0);
   const [slashIndex, setSlashIndex] = React.useState(0);
-  const ref = React.useRef<HTMLTextAreaElement>(null);
+  const ref = React.useRef<MarkdownInputHandle>(null);
   const plusRef = React.useRef<HTMLDivElement>(null);
   const approvalRef = React.useRef<HTMLDivElement>(null);
   React.useEffect(() => { if (props.quotes.length) ref.current?.focus(); }, [props.quotes.length]);
@@ -204,34 +206,6 @@ export default function Composer(props: {
     });
   }
 
-  const resizeInput = React.useCallback(() => {
-    const el = ref.current;
-    if (!el) return;
-    const style = window.getComputedStyle(el);
-    const line = parseFloat(style.lineHeight);
-    const padding = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
-    const home = props.layout === 'home';
-    const minimum = line * (home ? 2 : 1) + padding;
-    const maximum = home ? Infinity : line * 3 + padding;
-    el.style.height = '0px';
-    el.style.overflowY = 'hidden';
-    const contentHeight = el.scrollHeight;
-    el.style.height = `${Math.max(minimum, Math.min(contentHeight, maximum))}px`;
-    el.style.overflowY = contentHeight > maximum ? 'auto' : 'hidden';
-  }, [props.layout]);
-  React.useLayoutEffect(resizeInput, [text, resizeInput]);
-  React.useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    let width = el.getBoundingClientRect().width;
-    const observer = new ResizeObserver(() => {
-      const next = el.getBoundingClientRect().width;
-      if (next !== width) { width = next; resizeInput(); }
-    });
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [resizeInput]);
-
   function submit() {
     const t = text.trim();
     // 生成中不拦：App 会把它排进队列，等这一轮结束自动发
@@ -252,8 +226,8 @@ export default function Composer(props: {
     }
   }
 
-  function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (isCompositionKey(e.nativeEvent, composing.current)) return;
+  function onKeyDown(e: KeyboardEvent) {
+    if (isCompositionKey(e, composing.current)) return;
     if (slashOpen) {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
@@ -286,7 +260,7 @@ export default function Composer(props: {
   }
 
   /** 剪贴板里有图就直接变成附件；截图工具、网页右键复制图片都走这条 */
-  function onPaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
+  function onPaste(e: ClipboardEvent) {
     const items = e.clipboardData?.items;
     if (!items) return;
     const images: File[] = [];
@@ -415,7 +389,7 @@ export default function Composer(props: {
                   {a.kind === 'image' && a.dataUrl ? (
                     <img src={a.dataUrl} alt="" />
                   ) : (
-                    <span className="attach-icon">📄</span>
+                    <span className="attach-icon">{a.kind === 'audio' ? '♫' : a.kind === 'video' ? '▶' : '📄'}</span>
                   )}
                   <span className="attach-name" title={a.name}>
                     {a.name}
@@ -486,30 +460,9 @@ export default function Composer(props: {
 
           {props.controls}
           {attachmentError?<p role="alert" className="hint">{attachmentError}</p>:null}
-          <textarea
-            ref={ref}
-            rows={props.layout === 'home' ? 2 : 1}
-            value={text}
-            placeholder={
-              props.disabled
-                ? (props.disabledReason ?? t('请先完成配置'))
-                : props.busy
-                  ? t('还在生成，现在输入会排到队尾…')
-                  : t('问点什么…（图片可以直接粘贴）')
-            }
-            disabled={props.disabled}
-            onChange={(e) => {
-              setText(e.target.value);
-              setCaret(e.target.selectionStart ?? e.target.value.length);
-            }}
-            onKeyUp={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
-            onClick={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
-            onKeyDown={onKeyDown}
-            onCompositionStart={() => { composing.current = true; }}
-            onCompositionEnd={() => { composing.current = false; }}
-            onBlur={() => { composing.current = false; }}
-            onPaste={onPaste}
-          />
+          <MarkdownInput ref={ref} value={text} disabled={props.disabled}
+            placeholder={props.disabled ? (props.disabledReason ?? t('请先完成配置')) : props.busy ? t('还在生成，现在输入会排到队尾…') : t('问点什么…（图片可以直接粘贴）')}
+            onChange={setText} onCaret={setCaret} onKeyDown={onKeyDown} onPaste={onPaste} />
 
           {compact && moreOpen ? <div className="composer-options" id={optionsId} role="group" aria-label={t('输入设置')}>
             {secondaryControls}
@@ -577,6 +530,7 @@ export default function Composer(props: {
                       <small>{t('也可以直接 Ctrl+V 粘贴。需要模型支持多模态')}</small>
                     </span>
                   </button>
+                  {props.onAddMedia ? <button className="popup-item" onClick={() => { setPlusOpen(false); props.onAddMedia?.(); }}><span className="popup-icon" aria-hidden="true">◉</span><span><strong>添加图片、音频或视频</strong><small>原始媒体、转文字或带时间标记的视频抽帧</small></span></button> : null}
                   {!props.canPickLocal ? (
                     <div className="popup-note">{t('这台设备读不了本地文件，去设置里配好遥控。')}</div>
                   ) : null}

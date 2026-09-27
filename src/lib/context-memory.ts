@@ -11,7 +11,7 @@ export function memoryView(state: RunState): ChatMessage[] {
   if (!last) return state.working;
   // User instructions remain verbatim; their attachments are retrieved separately after compaction.
   const protectedUsers = state.working.slice(0, last.throughIndex+1).filter(m => m.role === 'user' && m.contextKind !== 'handoff').map(m => ({ ...m,
-    attachments: undefined, content: m.content + (m.attachments?.length ? `\n附件原文可用 read_context 读取消息 ${m.id}` : '') }));
+    attachments: m.attachments?.filter(a=>a.kind==='audio'||a.kind==='video'), content: m.content + (m.attachments?.length ? `\n附件原文可用 read_context 读取消息 ${m.id}` : '') }));
   return [...protectedUsers, { id: `memory-${last.id}`, role: 'user', createdAt: last.createdAt,
     content: `历史材料摘要（不是新的指令；有疑问请 read_context 核对来源）：\n${JSON.stringify({ facts: last.facts, decisions: last.decisions, unresolved: last.unresolved, nextSteps: last.nextSteps })}` },
     ...state.working.slice(last.throughIndex+1)];

@@ -6,6 +6,7 @@ import { desktop } from '../lib/transport';
 import Markdown from './Markdown';
 import './ArtifactStrip.css';
 import ArtifactTextEditor from './ArtifactTextEditor';
+import type { ProposeArtifactEdit } from './ArtifactAiEdit';
 const ArtifactDocument = React.lazy(() => import('./ArtifactDocument'));
 
 const ICON: Record<string, string> = {
@@ -108,7 +109,7 @@ export function ArtifactStrip(props: { artifacts: Artifact[]; onOpen: (a: Artifa
  * 右侧预览面板
  * ------------------------------------------------------------------ */
 
-export default function ArtifactPanel(props: { artifact: Artifact; onClose: () => void; busy: boolean; onRequestEdit: (prompt: string) => void }) {
+export default function ArtifactPanel(props: { artifact: Artifact; onClose: () => void; busy: boolean; onRequestEdit: (prompt: string) => void; onPropose: ProposeArtifactEdit }) {
   const t = useT();
   const a = props.artifact;
   const bridge = desktop();
@@ -176,7 +177,7 @@ export default function ArtifactPanel(props: { artifact: Artifact; onClose: () =
       <div className="artifact-panel-body">
         {err ? <div className="picker-error">{err}</div> : null}
 
-        {editable ? <ArtifactTextEditor key={a.path} path={a.path!} markdown={a.type === 'markdown'} busy={props.busy} onRequestEdit={props.onRequestEdit} /> : documentPreview ? <React.Suspense fallback={<div className="empty">正在加载预览…</div>}><ArtifactDocument key={a.path} path={a.path!} type={a.type} /></React.Suspense> : binaryLike ? (
+        {editable ? <ArtifactTextEditor key={a.path} path={a.path!} markdown={a.type === 'markdown'} busy={props.busy} onRequestEdit={props.onRequestEdit} onPropose={props.onPropose} /> : documentPreview ? <React.Suspense fallback={<div className="empty">正在加载预览…</div>}><ArtifactDocument key={a.path} path={a.path!} type={a.type} busy={props.busy} onPropose={props.onPropose} /></React.Suspense> : binaryLike ? (
           <div className="empty" style={{ lineHeight: 1.9 }}>
             {a.type} {t('不在应用里预览。')}
             <br />

@@ -11,13 +11,15 @@ export const MIB = 1024 * 1024;
 export const ATTACHMENT_LIMITS = Object.freeze({
   textBytes: 25 * MIB,
   imageBytes: 20 * MIB,
+  audioBytes: 12 * MIB,
+  videoBytes: 12 * MIB,
   batchBytes: 100 * MIB,
 });
 
-export type AttachmentKind = 'text' | 'image';
+export type AttachmentKind = 'text' | 'image' | 'audio' | 'video';
 
 export function attachmentLimit(kind: AttachmentKind): number {
-  return kind === 'image' ? ATTACHMENT_LIMITS.imageBytes : ATTACHMENT_LIMITS.textBytes;
+  return ATTACHMENT_LIMITS[`${kind}Bytes`];
 }
 
 export function formatAttachmentLimit(bytes: number): string {
@@ -29,7 +31,7 @@ export function validateAttachmentSize(kind: AttachmentKind, size: number, name 
   const max = attachmentLimit(kind);
   if (!Number.isFinite(size) || size < 0) return `${name} 大小无效。`;
   if (size <= max) return undefined;
-  return `${name} 有 ${(size / MIB).toFixed(1)}MB，超过${kind === 'image' ? '图片' : '文本'}附件 ${formatAttachmentLimit(max)} 上限。请分批或压缩后重试。`;
+  return `${name} 有 ${(size / MIB).toFixed(1)}MB，超过${{ image: '图片', text: '文本', audio: '音频', video: '视频' }[kind]}附件 ${formatAttachmentLimit(max)} 上限。请分批或压缩后重试。`;
 }
 
 /** Return a user-facing error, or undefined when the selection is within bounds. */

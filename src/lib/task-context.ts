@@ -58,6 +58,7 @@ export function contextView(original: ChatMessage[], steps: ToolStep[], budget: 
     for (const { m,a,i } of images.slice(0,-2)) {
       if (size() <= budget) break;
       a.dataUrl = undefined;
+      a.contextOmitted = true;
       m.content += `\n图片《${a.name}》未放入本次请求，需要查看时调用 read_context(id="${m.id}", image_index=${i})；原图已保存。`;
     }
   }

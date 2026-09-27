@@ -1,3 +1,4 @@
+import { bridgeImages } from './bridge-images';
 import { addRunInput } from './delivery';
 import { reconcileProgress } from './task-progress';
 import { deliveryReport } from './delivery';
@@ -29,12 +30,12 @@ export function runDesktopConversation(args:RunAgentArgs):AgentHandle {
       const reviewBlocked=await reviewGuard(args,'claude-desktop');
       if(reviewBlocked)throw Error(reviewBlocked);
       if(!bridge?.nativeAiCreate)throw Error('Claude Desktop 连接需要桌面版。');
-      if(state.working.some(m=>m.attachments?.some(a=>a.kind==='image')))throw Error('Claude Desktop 交接暂不自动传图片。图片已保留，可在官方应用添加，或切换 Claude Code、Codex 等支持图片的连接。');
       if(!state.nativeDesktop?.taskId){
-        const goal=JSON.stringify(buildWire(state.working,{...args.config,toolsEnabled:false,historyLimit:0},args.extraSystem+harnessInstructions(args.config,state)+nativeProgressInstructions(state)));
+        const {images,history}=bridgeImages(state.working);
+        const goal=JSON.stringify(buildWire(history,{...args.config,toolsEnabled:false,historyLimit:0},args.extraSystem+harnessInstructions(args.config,state)+nativeProgressInstructions(state)));
         if(goal.length>24000)throw Error('Claude Desktop 的交接材料超过 24000 字符。请使用新对话明确本次目标，或改用 Claude Code / API 模型处理长上下文；原文未裁剪。');
         await save();
-        const created=await bridge.nativeAiCreate({provider:'claude-desktop',goal,requestKey:state.runId,projectId:args.toolCtx?.()?.projectId??undefined,
+        const created=await bridge.nativeAiCreate({provider:'claude-desktop',goal,images,requestKey:state.runId,projectId:args.toolCtx?.()?.projectId??undefined,
           workers:args.config.subagents?.enabled?args.config.subagents.workers.map(w=>({profileId:w.profileId,model:w.model,outputField:'max_tokens' as const})):[],
           maxJobs:Math.max(1,Math.min(8,args.config.subagents?.maxCalls||4)),maxOutputTokens:2048});
         state.nativeDesktop={taskId:created.task.id,prompt:created.prompt,status:created.task.status};await save();

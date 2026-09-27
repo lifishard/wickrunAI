@@ -148,7 +148,7 @@ export function estimateTokens(text: string): number {
  */
 export const IMAGE_TOKEN_ALLOWANCE = 2048;
 export function estimateRequestTokens(request: unknown): number {
-  let images = 0;
+  let images = 0, media = 0;
   const messageView = (message: unknown): unknown => {
     if (!message || typeof message !== 'object') return message;
     const m = message as Record<string, unknown>;
@@ -156,6 +156,7 @@ export function estimateRequestTokens(request: unknown): number {
     return { ...m, content: m.content.map((part: unknown) => {
       if (!part || typeof part !== 'object') return part;
       const p = part as Record<string, unknown>;
+      if(p.type==='input_audio'||p.type==='video_url'){media++;return {type:p.type};}
       const image = p.image_url as { url?: unknown; detail?: unknown } | undefined;
       if (p.type !== 'image_url' || !image || typeof image.url !== 'string') return part;
       images++;
@@ -168,7 +169,7 @@ export function estimateRequestTokens(request: unknown): number {
     const body = request as Record<string, unknown>;
     if (Array.isArray(body.messages)) view = { ...body, messages: body.messages.map(messageView) };
   }
-  return estimateTokens(JSON.stringify(view) ?? '') + images * IMAGE_TOKEN_ALLOWANCE;
+  return estimateTokens(JSON.stringify(view) ?? '') + images * IMAGE_TOKEN_ALLOWANCE + media * 16384;
 }
 
 /** Count the material that will be sent, without serializing attachment images as text. */
@@ -176,8 +177,8 @@ export function estimateChatTokens(messages: ChatMessage[]): number {
   return estimateRequestTokens(messages.map((m) => {
     const text = [m.content, ...(m.quotes ?? []).map((q) => q.text),
       ...(m.attachments ?? []).filter((a) => a.kind === 'text').map((a) => `附件《${a.name}》：\n${a.text ?? ''}`)].join('\n');
-    const images = (m.attachments ?? []).filter((a) => a.kind === 'image' && a.dataUrl)
-      .map((a) => ({ type: 'image_url', image_url: { url: a.dataUrl! } }));
+    const images = (m.attachments ?? []).filter((a) => a.kind !== 'text' && a.dataUrl)
+      .map((a) => a.kind==='image'?({type:'image_url',image_url:{url:a.dataUrl!}}):({type:a.kind==='audio'?'input_audio':'video_url'}));
     return { role: m.role, content: images.length ? [{ type: 'text', text }, ...images] : text,
       tool_calls: m.toolCalls, tool_call_id: m.toolCallId, name: m.toolName };
   }));

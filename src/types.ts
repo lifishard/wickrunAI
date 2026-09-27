@@ -27,6 +27,7 @@ export interface KeyProfile {
 }
 
 export interface RouteOverrides {
+  inputModalities?: ('text' | 'image' | 'audio' | 'video')[];
   contextWindow?: number;
   maxOutput?: number;
   rpm?: number;
@@ -159,6 +160,7 @@ export interface RunRequestStat {
 }
 
 export interface ModelInfo {
+  inputModalities?: ('text' | 'image' | 'audio' | 'video')[];
   id: string;
   label?: string;
   ownedBy?: string;
@@ -247,7 +249,7 @@ export type Role = 'system' | 'user' | 'assistant' | 'tool';
 /** 随消息一起发出去的附件 */
 export interface Attachment {
   id: string;
-  kind: 'text' | 'image';
+  kind: 'text' | 'image' | 'audio' | 'video';
   name: string;
   mime: string;
   size: number;
@@ -255,6 +257,11 @@ export interface Attachment {
   text?: string;
   /** kind === 'image' 时的 data: URL */
   dataUrl?: string;
+  /** Explicit permission is bound to the endpoint and model, never reused after a switch. */
+  mediaRoute?: string;
+  /** Ephemeral context view only; original media remains in history. */
+  contextOmitted?: boolean;
+  duration?: number;
   path?: string;
 }
 

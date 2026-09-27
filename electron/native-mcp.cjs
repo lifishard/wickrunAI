@@ -1,6 +1,7 @@
 'use strict';
 // This process only translates MCP messages. Credentials and execution stay in Electron.
 const fs = require('node:fs');
+const {imageResult}=require('./bridge-images.cjs');
 const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
 const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js');
 const { z } = require('zod');
@@ -22,6 +23,7 @@ const tools = [
   ['claim_task','Claim the oldest task waiting for this client. Returns the task with its instructions, or idle when nothing is queued. A claimed task is not handed to another session.',{},false],
   ['list_tasks','List tasks explicitly sent to this native AI client.',{},true],
   ['get_task','Read the goal, allowed workers, limits, progress and results.',{taskId:id},true],
+  ['read_task_image','Read an attached image as actual image content, using its id from the task manifest. Claim the task first.',{taskId:id,imageId:z.string().regex(/^image-[1-9][0-9]?$/)},true],
   ['delegate_task','Start one bounded API worker request; requestKey makes retries idempotent. Returns a job id immediately. Read its result separately. No file, shell or browser tools are exposed to workers.',{taskId:id,workerId:z.string().min(1).max(200),requestKey:z.string().min(1).max(100),prompt:z.string().min(1).max(24000)},false],
   ['read_worker_result','Read a worker job; waitMs can wait up to 8 seconds for completion.',{taskId:id,jobId:id,waitMs:z.number().int().min(0).max(8000).optional()},true],
   ['report_progress','Report concise progress visible in the app.',{taskId:id,text:z.string().min(1).max(2000)},false],
@@ -32,7 +34,7 @@ const tools = [
 ];
 for (const [name,description,inputSchema,readOnlyHint] of tools) {
   server.registerTool(`wickrun_${name}`, {description,inputSchema,annotations:{readOnlyHint,destructiveHint:false,idempotentHint:!['report_progress','claim_task'].includes(name),openWorldHint:name==='delegate_task'}}, async args => {
-    try { const value=await rpc(name,args); return {content:[{type:'text',text:JSON.stringify(value)}],structuredContent:value}; }
+    try { const value=await rpc(name,args); if(name==='read_task_image')return imageResult(value); return {content:[{type:'text',text:JSON.stringify(value)}],structuredContent:value}; }
     catch (error) { return {isError:true,content:[{type:'text',text:error.message}]}; }
   });
 }

@@ -231,7 +231,20 @@
 .artifact-editor textarea:focus-visible, .artifact-document select:focus-visible, .artifact-history select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .artifact-history { min-width: 0; display: flex; flex-direction: column; gap: 12px; }
 .artifact-history select { max-width: 100%; }
+.artifact-ai-edit { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--border); border-radius: 10px; }
+.artifact-ai-edit textarea { min-height: 75px; width: 100%; box-sizing: border-box; }
+.artifact-change { display: grid; gap: 8px; border-top: 1px solid var(--border); padding-top: 10px; }
+.artifact-change pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 4px 0; font: inherit; }
+.artifact-change-before, .artifact-change-after { padding: 8px; border-radius: 6px; }
+.artifact-change-before { background: color-mix(in srgb, var(--danger) 9%, transparent); }
+.artifact-change-after { background: color-mix(in srgb, var(--ok) 9%, transparent); }
+.artifact-change button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
 .artifact-pdf-page { max-width: 100%; height: auto; background: white; }
+.artifact-pdf-scroll { width: 100%; overflow: auto; }
+.artifact-pdf-sheet { position: relative; background: white; flex: none; }
+.artifact-pdf-sheet canvas { display: block; }
+.artifact-pdf-sheet .textLayer { position: absolute; inset: 0; }
+.artifact-pdf-sheet .textLayer .artifact-pdf-match { background: #ffce4080; }
 .artifact-docx { overflow-wrap: anywhere; }
 .artifact-docx img { max-width: 100%; height: auto; }
 .artifact-table-scroll { overflow: auto; max-height: 70vh; }

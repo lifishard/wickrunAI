@@ -325,7 +325,7 @@ export default function AnswerBlock(props: {
             </div>
           </div>
         ) : (
-          <h2 className="question" id={`msg-${question.id}`} data-message-id={question.id}>
+          <div className="question" id={`msg-${question.id}`} data-message-id={question.id}>
             {question.skillNames?.length ? (
               <span className="q-attach">
                 {question.skillNames.map((n) => (
@@ -341,6 +341,8 @@ export default function AnswerBlock(props: {
                 {question.attachments.map((a) =>
                   a.kind === 'image' && a.dataUrl ? (
                     <img key={a.id} src={a.dataUrl} alt={a.name} title={a.name} />
+                  ) : (a.kind === 'audio' || a.kind === 'video') && a.dataUrl ? (
+                    <span className="media-attachment" key={a.id}><span>{a.name}</span>{a.kind === 'audio' ? <audio controls preload="metadata" src={a.dataUrl} aria-label={a.name} /> : <video controls preload="metadata" src={a.dataUrl} aria-label={a.name} />}</span>
                   ) : (
                     <span key={a.id} className="chip" title={a.name}>
                       📄 {a.name}
@@ -349,13 +351,13 @@ export default function AnswerBlock(props: {
                 )}
               </span>
             ) : null}
-            {question.content}
+            <div className="question-markdown"><Markdown text={question.content} /></div>
             {props.onEditQuestion ? (
               <button className="icon-btn q-edit-btn" title={t('改问题重问')} onClick={() => setEditing(true)}>
                 ✎
               </button>
             ) : null}
-          </h2>
+          </div>
         )
       ) : null}
 
