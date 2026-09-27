@@ -1,0 +1,75 @@
+name: iOS build
+
+on:
+  push:
+    branches: [main, feat/apple-mobile-release-2209]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      distribution:
+        description: simulator 仅构建模拟器；app-store 导出签名归档但不上传
+        type: choice
+        options: [simulator, app-store]
+        default: simulator
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  simulator:
+    name: iOS unsigned simulator build
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: 同步 Capacitor 工程和版本
+        run: npm run mobile:prepare -- ios
+      - name: 签名规则回归
+        run: python3 -m unittest discover -s tests -p ios_profile_test.py
+      - name: 构建模拟器应用
+        run: bash scripts/ios-archive.sh simulator
+      - uses: actions/upload-artifact@v6
+        with:
+          name: ios-simulator-${{ github.run_number }}
+          path: release/ios/wickrunAI-ios-simulator.zip
+          if-no-files-found: error
+          retention-days: 14
+
+  app-store:
+    name: Export App Store archive (no upload)
+    needs: simulator
+    if: github.event_name == 'workflow_dispatch' && inputs.distribution == 'app-store' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/feat/apple-mobile-release-2209')
+    runs-on: macos-26
+    environment: apple-app-store
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run mobile:prepare -- ios
+      - name: 验证凭据、归档、导出并验签
+        run: bash scripts/ios-archive.sh app-store
+        env:
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+          IOS_DISTRIBUTION_P12_BASE64: ${{ secrets.IOS_DISTRIBUTION_P12_BASE64 }}
+          IOS_DISTRIBUTION_P12_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_P12_PASSWORD }}
+          IOS_PROVISION_PROFILE_BASE64: ${{ secrets.IOS_PROVISION_PROFILE_BASE64 }}
+      - uses: actions/upload-artifact@v6
+        with:
+          name: ios-app-store-${{ github.run_number }}
+          path: |
+            release/ios/app-store/*.ipa
+            release/ios/wickrunAI-ios-archive.zip
+            release/ios/ios-signing-verification.json
+          if-no-files-found: error
+          retention-days: 14
