@@ -279,6 +279,9 @@ button {
   padding: 20px 0 8px;
   min-height: 0;
 }
+.messages-shell { position: relative; display: flex; flex: 1; min-height: 0; min-width: 0; }
+.messages-shell > .messages { min-width: 0; }
+.jump-latest { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); z-index: 2; box-shadow: 0 2px 12px #0002; white-space: nowrap; }
 
 .messages-inner {
   max-width: 820px;

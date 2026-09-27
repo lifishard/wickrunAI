@@ -16,6 +16,8 @@ export const LOCALES: { value: Locale; label: string; label2: string; lang: stri
  * 英文查词典，查不到就退回简体原文 —— 半翻译的界面也比缺字的界面好用。
  */
 const EN: Record<string, string> = {
+  '当前任务继续执行；模式切换仅对下一条消息生效。需要停止请点停止按钮。': 'The current task continues. The new mode applies to your next message. Use Stop to stop the task.',
+  '回到最新内容': 'Jump to latest',
   '代码改动': 'Code changes',
   '显示代码改动面板与对话摘要': 'Show code changes panel and conversation summaries',
   '逐项修改前确认（可选）': 'Confirm each edit before applying (optional)',

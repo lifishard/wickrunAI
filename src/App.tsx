@@ -1,4 +1,5 @@
 import React from 'react';
+import MessageViewport, { type ReadingPosition } from './components/MessageViewport';
 import StartupWelcome from './components/StartupWelcome';
 import BrandLogo, { BrandLoading } from './components/BrandLogo';
 import type {
@@ -248,7 +249,7 @@ export default function App() {
   const questionSubmitRef = React.useRef(new Set<string>());
 
   const toast = useToast();
-  const scrollRef = React.useRef<HTMLDivElement>(null);
+  const readingPositions = React.useRef(new Map<string, ReadingPosition>());
 
   React.useEffect(()=>{
     if(!settings||!queueLoaded.current)return;
@@ -1767,15 +1768,6 @@ export default function App() {
     sendRef.current(t.prompt);
   }
 
-  /* ---------------- 滚动跟随 ---------------- */
-
-  React.useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 220;
-    if (nearBottom) el.scrollTop = el.scrollHeight;
-  }, [active?.messages]);
-
   /* ---------------- 渲染 ---------------- */
 
   if (bootError) return <div className="empty" role="alert" style={{padding: 48}}><h2>{t('本地数据未能读取')}</h2><p>{bootError}</p><p>{t('原记录已保留。修复文件或恢复备份后重试。')}</p><button className="btn" onClick={() => setBootAttempt(n => n + 1)}>{t('重新读取')}</button><button className="btn" onClick={() => void desktop()?.info().then(i => desktop()?.revealPath(i.storePath))}>{t('打开数据位置')}</button><DataBackupPanel/></div>;
@@ -1856,9 +1848,8 @@ export default function App() {
       sendMode={config.toolsEnabled ? "work" : "chat"}
       onSendMode={(mode) => {
         setConfig({ toolsEnabled: mode === 'work' });
-        if (mode === 'chat' && busy) {
-          busy.handle.abort();
-          toast.show(t('已停止后续工具调度，正在保存当前检查点'), 5000);
+        if (busy) {
+          toast.show(t('当前任务继续执行；模式切换仅对下一条消息生效。需要停止请点停止按钮。'));
         } else if (mode === 'work' && active?.messages.length) {
           toast.show(t(busy ? '当前回复会继续完成；下一条消息将带上已有对话，由 Work 接着处理' : '已切换为 Work，已有对话和附件会继续作为上下文'));
         }
@@ -2079,8 +2070,7 @@ export default function App() {
           </div>
         ) : (
           <>
-            <div className="messages" ref={scrollRef}>
-              <div className="messages-inner">
+            <MessageViewport conversationId={active!.id} positions={readingPositions.current}>
                 {turns.map((turn, i) => (
                   <AnswerBlock
                     key={(turn.a ?? turn.q)!.id}
@@ -2176,8 +2166,7 @@ export default function App() {
                     }
                   />
                 ))}
-              </div>
-            </div>
+            </MessageViewport>
             {grantBanner}
             {composer}
           </>

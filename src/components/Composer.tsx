@@ -20,6 +20,7 @@ import ContextMeter, { type ContextPreview } from './ContextMeter';
 import { routeKey } from '../lib/adaptive';
 import {validateAttachmentSize,validateAttachmentBatch} from '../lib/attachment-limits';
 import { useT } from '../lib/i18n';
+import { isCompositionKey } from '../lib/composer-keyboard';
 
 /** label / desc 是简体源文案，同时充当翻译 key。 */
 const APPROVAL_OPTIONS: { value: ApprovalMode; label: string; desc: string }[] = [
@@ -133,6 +134,7 @@ export default function Composer(props: {
   const [attachmentError,setAttachmentError]=React.useState('');
   // Keep keystrokes local; synchronizing every key repaints and saves the entire conversation.
   const draftSink = React.useRef(props.onDraftChange);
+  const composing = React.useRef(false);
   draftSink.current = props.onDraftChange;
   const latestDraft = React.useRef(text); latestDraft.current = text;
   React.useEffect(() => {
@@ -251,6 +253,7 @@ export default function Composer(props: {
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (isCompositionKey(e.nativeEvent, composing.current)) return;
     if (slashOpen) {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
@@ -502,6 +505,9 @@ export default function Composer(props: {
             onKeyUp={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
             onClick={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
             onKeyDown={onKeyDown}
+            onCompositionStart={() => { composing.current = true; }}
+            onCompositionEnd={() => { composing.current = false; }}
+            onBlur={() => { composing.current = false; }}
             onPaste={onPaste}
           />
 

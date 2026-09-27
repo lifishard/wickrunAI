@@ -8,7 +8,7 @@
 
 Open or closed, paid or free. Bring your own keys; they never leave your machine.
 
-[![Version](https://img.shields.io/badge/version-2.20.2-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
+[![Version](https://img.shields.io/badge/version-2.20.3-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-lightgrey)](#install)
 [![CI](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml/badge.svg)](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml)
@@ -32,6 +32,12 @@ the saved progress carries over.
 ```
 
 Three routes, two handovers, one task, nobody watching. The order is a list **you** wrote — the program walks it, it does not decide for you which of your routes is the cheap one. [How it decides](docs/llm-failover.md).
+
+## 2.20.3 Desktop interactions
+
+IME composition keys no longer send a message; ordinary Enter keeps its existing behavior. Switching Chat/Work applies to the next message, while Stop controls the current task. Streaming follows new content until you scroll up or select text; use Jump to latest to resume following.
+
+Closing the window keeps the app and its tasks running. Return through the system tray (or the Dock on macOS); use Quit in the tray or app menu to exit. The computer must remain awake for background work. Existing task recovery handles app exits and restarts. If a tray cannot be created, the window minimizes to keep a taskbar entry available.
 
 ## 60 seconds to your first answer
 

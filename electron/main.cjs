@@ -1,7 +1,7 @@
 'use strict';
 
 const path = require('node:path');
-const { app, BrowserWindow, ipcMain, shell, Menu, nativeTheme, dialog, Notification, safeStorage } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, Menu, nativeTheme, dialog, Notification, safeStorage, Tray, nativeImage } = require('electron');
 require('./app-identity.cjs').configureIdentity(app);
 const cloudAccount = require('./cloud-account.cjs').createCloudAccount({ app, safeStorage, openExternal: url => shell.openExternal(url) });
 const store = require('./store.cjs');
@@ -24,6 +24,10 @@ const isDev = Boolean(DEV_URL);
 const inflight = new Map();
 
 let mainWindow = null;
+const backgroundWindow = require('./background-window.cjs').createBackgroundWindow({
+  app, Tray, Menu, nativeImage, getWindow: () => mainWindow, createWindow,
+  iconPath: path.join(__dirname, '..', 'dist', 'brand', 'icon.png'),
+});
 let dataBackup = null;
 let restoringData = false;
 let storageStartupError = null;
@@ -121,6 +125,8 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       spellcheck: false,
+      // Task execution currently lives in this renderer; hiding must not throttle it.
+      backgroundThrottling: false,
     },
   });
 
@@ -133,7 +139,7 @@ function createWindow() {
     mainWindow.on(ev, () => rememberBounds(mainWindow));
   }
   // 关窗那一下也存一次：防抖的 400ms 可能还没到就退出了
-  mainWindow.on('close', () => {
+  mainWindow.on('close', (event) => {
     if(quitFlushed)return;
     if (boundsTimer) clearTimeout(boundsTimer);
     try {
@@ -144,7 +150,9 @@ function createWindow() {
     } catch {
       /* 同上 */
     }
+    backgroundWindow.close(event, mainWindow);
   });
+  mainWindow.on('query-session-end', () => backgroundWindow.beginQuit());
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//i.test(url)) shell.openExternal(url);
@@ -600,12 +608,7 @@ function registerIpc() {
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on('second-instance', () => {
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.focus();
-    }
-  });
+  app.on('second-instance', () => backgroundWindow.show());
 
   app.setAppUserModelId('dev.anyai.desktop');
 
@@ -620,9 +623,10 @@ if (!app.requestSingleInstanceLock()) {
     }
     buildMenu();
     createWindow();
+    backgroundWindow.install();
 
     app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) createWindow();
+      backgroundWindow.show();
     });
   });
 
@@ -631,6 +635,7 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.on('before-quit', (event) => {
+    backgroundWindow.beginQuit();
     if(quitFlushed)return;
     event.preventDefault();
     if(quitFlushing)return;
@@ -660,4 +665,5 @@ if (!app.requestSingleInstanceLock()) {
       }
     })();
   });
+  app.on('will-quit', () => backgroundWindow.destroy());
 }

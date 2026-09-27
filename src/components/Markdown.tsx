@@ -4,6 +4,7 @@ import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import hljs from 'highlight.js/lib/common';
 import type { SourceRef } from '../types';
+import { hasReadingSelection } from '../lib/reading-selection';
 
 /**
  * Markdown 渲染。
@@ -54,10 +55,28 @@ export default function Markdown(props: {
   const ref = React.useRef<HTMLDivElement>(null);
   const sources = props.sources ?? EMPTY_SOURCES;
   const html = React.useMemo(() => render(props.text, sources), [props.text, sources]);
+  const originalMarkup = React.useRef(new WeakMap<Node, string>());
+  const appliedHtml = React.useRef<string | null>(null);
 
-  React.useEffect(() => {
+  const syncContent = React.useCallback(() => {
     const root = ref.current;
-    if (!root) return;
+    if (!root || appliedHtml.current === html || hasReadingSelection(root)) return;
+
+    // Preserve unchanged blocks (including code highlighting and copy buttons).
+    // The template receives only the sanitized result from render().
+    const template = document.createElement('template');
+    template.innerHTML = html;
+    const incoming = Array.from(template.content.childNodes);
+    incoming.forEach((node, index) => {
+      const markup = node.nodeType === Node.ELEMENT_NODE ? (node as Element).outerHTML : node.textContent ?? '';
+      const existing = root.childNodes[index];
+      if (existing && originalMarkup.current.get(existing) === markup) return;
+      originalMarkup.current.set(node, markup);
+      if (existing) root.replaceChild(node, existing);
+      else root.appendChild(node);
+    });
+    while (root.childNodes.length > incoming.length) root.lastChild!.remove();
+    appliedHtml.current = html;
 
     root.querySelectorAll('pre code').forEach((block) => {
       const el = block as HTMLElement;
@@ -95,7 +114,14 @@ export default function Markdown(props: {
       });
       pre.appendChild(btn);
     });
-  }, [html]);
+  }, [html, t]);
+
+  React.useLayoutEffect(syncContent, [syncContent]);
+  React.useEffect(() => {
+    // Resume the latest buffered render as soon as the user releases the selection.
+    document.addEventListener('selectionchange', syncContent);
+    return () => document.removeEventListener('selectionchange', syncContent);
+  }, [syncContent]);
 
   // 角标点击：有外链就开浏览器，否则交给上层滚动到来源卡片
   React.useEffect(() => {
@@ -116,5 +142,5 @@ export default function Markdown(props: {
     return () => root.removeEventListener('click', onClick);
   }, [html, sources, props]);
 
-  return <div className="md" ref={ref} dangerouslySetInnerHTML={{ __html: html }} />;
+  return <div className="md" ref={ref} />;
 }

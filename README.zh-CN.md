@@ -8,7 +8,7 @@
 
 开源的、闭源的，付费的、免费的，都能调度。Key 自己带，只留在你本机。
 
-[![Version](https://img.shields.io/badge/version-2.20.2-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
+[![Version](https://img.shields.io/badge/version-2.20.3-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-lightgrey)](#安装)
 [![CI](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml/badge.svg)](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml)
@@ -30,6 +30,12 @@
 ```
 
 三条路由、两次交接、一个任务，没人盯着。名单是**你自己**排的顺序——程序照着走，不替你判断哪条路由是免费的那条。[它怎么决定交不交接](docs/llm-failover.md)。
+
+## 2.20.3 桌面交互
+
+中文输入法选词时不会触发发送，普通 Enter 发送规则保持不变。Chat/Work 切换只影响下一条消息，正在执行的任务由“停止”按钮控制。流式回复会跟随最新内容；向上阅读或选中文字后暂停跟随，可点“回到最新内容”恢复。
+
+关闭窗口后，应用和任务仍在后台运行。点击系统托盘图标（macOS 也可点 Dock）返回；需要结束程序时，选择托盘或应用菜单中的“退出”。后台继续要求电脑保持运行；程序退出或系统重启后使用已有任务恢复功能。托盘不可用时窗口会最小化，保留可返回的任务栏入口。
 
 ## 60 秒拿到第一个回答
 
