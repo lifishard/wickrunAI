@@ -16,6 +16,13 @@ export const LOCALES: { value: Locale; label: string; label2: string; lang: stri
  * 英文查词典，查不到就退回简体原文 —— 半翻译的界面也比缺字的界面好用。
  */
 const EN: Record<string, string> = {
+  '本机工作目录仅在桌面版可用；仍可添加文件和图片。': 'Local workspaces are available in the desktop app. You can still attach files and images.',
+  '仅存本机': 'On this device',
+  '此移动应用的账号同步尚未接通。聊天和设置保存在此设备，不会自动出现在其他设备。': 'Account sync is not connected in this mobile app yet. Chats and settings stay on this device and do not appear automatically on other devices.',
+  '需要跨设备同步时，可在网页版登录。网页与此应用的本地数据目前分别保存。': 'Sign in to the web app for cross-device sync. The web app and this app currently store their local data separately.',
+  '打开网页版': 'Open web app',
+  '请上传 PNG、JPEG、WebP 或 GIF 图片。': 'Choose a PNG, JPEG, WebP, or GIF image.',
+  '请上传文本或代码文件；PDF 和 Word 可先导出为文本。': 'Choose a text or code file. Export PDF and Word documents as text first.',
   "交给 Claude": "Hand off to Claude",
   "Claude 正在处理": "Claude is working",
   "任务指令已准备好": "Task instructions are ready",

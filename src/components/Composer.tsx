@@ -81,6 +81,7 @@ export default function Composer(props: {
   onPickWorkspace: () => void;
   workspaceCount: number;
   canPickLocal: boolean;
+  canPickFiles: boolean;
 
   sendMode?: SendMode;
   onSendMode?: (mode: SendMode) => void;
@@ -504,7 +505,7 @@ export default function Composer(props: {
                   </button>
                   <button
                     className="popup-item"
-                    disabled={!props.canPickLocal}
+                    disabled={!props.canPickFiles}
                     onClick={() => {
                       setPlusOpen(false);
                       props.onAddAttachments('file');
@@ -518,7 +519,7 @@ export default function Composer(props: {
                   </button>
                   <button
                     className="popup-item"
-                    disabled={!props.canPickLocal}
+                    disabled={!props.canPickFiles}
                     onClick={() => {
                       setPlusOpen(false);
                       props.onAddAttachments('image');
@@ -532,7 +533,7 @@ export default function Composer(props: {
                   </button>
                   {props.onAddMedia ? <button className="popup-item" onClick={() => { setPlusOpen(false); props.onAddMedia?.(); }}><span className="popup-icon" aria-hidden="true">◉</span><span><strong>添加图片、音频或视频</strong><small>原始媒体、转文字或带时间标记的视频抽帧</small></span></button> : null}
                   {!props.canPickLocal ? (
-                    <div className="popup-note">{t('这台设备读不了本地文件，去设置里配好遥控。')}</div>
+                    <div className="popup-note">{t('本机工作目录仅在桌面版可用；仍可添加文件和图片。')}</div>
                   ) : null}
                 </AnchoredPopover>
               ) : null}

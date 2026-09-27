@@ -6,6 +6,7 @@ const MediaInputDialog = React.lazy(() => import('./components/MediaInputDialog'
 import { requestAssistant } from './lib/assistant-request';
 import MessageViewport, { type ReadingPosition } from './components/MessageViewport';
 import StartupWelcome from './components/StartupWelcome';
+import { pickBrowserAttachments } from './web/attachments';
 import BrandLogo, { BrandLoading } from './components/BrandLogo';
 import type {
   AccessRequest,
@@ -735,7 +736,14 @@ export default function App() {
   async function addAttachments(mode: 'file' | 'image') {
     const bridge = desktop();
     if (!bridge) {
-      toast.show(t('这台设备读不了本地文件'));
+      try {
+        const added = await pickBrowserAttachments(mode);
+        const error = validateAttachmentBatch([...attachments, ...added].reduce((sum, item) => sum + item.size, 0));
+        if (error) toast.show(error, 4000);
+        else if (added.length) setAttachments(previous => [...previous, ...added]);
+      } catch (error) {
+        toast.show(error instanceof Error ? error.message : t('读取失败'), 4000);
+      }
       return;
     }
     const picked = await bridge.pickFiles(mode);
@@ -1888,6 +1896,7 @@ export default function App() {
       onPickWorkspace={() => void pickWorkspace()}
       workspaceCount={settings.tools.workspaceRoots.length}
       canPickLocal={Boolean(desktop())}
+      canPickFiles={true}
       approvalMode={config.approvalMode}
       onApprovalMode={(m: ApprovalMode) => setConfig({ approvalMode: m })}
       profiles={settings.keyProfiles}

@@ -1,4 +1,5 @@
 import React from 'react';
+import { Capacitor } from '@capacitor/core';
 import { flushSync } from 'react-dom';
 import { Modal } from './ui';
 import { useT } from '../lib/i18n';
@@ -12,6 +13,23 @@ type Remote = {revision:number;data:CloudData};
 type ConflictReview = {records:string[];revision:number;fingerprint:string;importGuest:boolean};
 type Props={local:Omit<CloudLocal,'observations'>;blocked:boolean;isBlocked:()=>boolean;onApply:(next:CloudLocal)=>Promise<void>;beforeSwitch:()=>Promise<void>};
 export default function CloudSyncControl(props:Props){
+  return Capacitor.isNativePlatform() ? <NativeCloudNotice/> : <ConnectedCloudSyncControl {...props}/>;
+}
+
+function NativeCloudNotice(){
+  const t=useT();
+  const [open,setOpen]=React.useState(false);
+  return <>
+    <button className="btn sm cloud-account-trigger" onClick={()=>setOpen(true)} title={t('账号与云同步')}>{t('仅存本机')}</button>
+    {open?<Modal title={t('账号与云同步')} onClose={()=>setOpen(false)}><div className="modal-body" style={{display:'grid',gap:14}}>
+      <p>{t('此移动应用的账号同步尚未接通。聊天和设置保存在此设备，不会自动出现在其他设备。')}</p>
+      <p>{t('需要跨设备同步时，可在网页版登录。网页与此应用的本地数据目前分别保存。')}</p>
+      <a className="btn primary" href="https://wickrunai.com" target="_blank" rel="noopener noreferrer">{t('打开网页版')}</a>
+    </div></Modal>:null}
+  </>;
+}
+
+function ConnectedCloudSyncControl(props:Props){
   const t=useT(), current=React.useRef(props);current.current=props;
   const [open,setOpen]=React.useState(false),[status,setStatus]=React.useState<CloudStatus|null>(null),[native,setNative]=React.useState<DesktopCloudState|null>(null);
   const [working,setWorking]=React.useState(false),[error,setError]=React.useState(''),[notice,setNotice]=React.useState('');
