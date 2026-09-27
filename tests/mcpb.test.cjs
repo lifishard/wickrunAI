@@ -38,6 +38,7 @@ test('extension bundle contains a valid manifest, the server and the private con
   assert.deepEqual(m.server.mcp_config.args,['${__dirname}/server/index.js',conn]);
   assert.equal(m.version,'2.19.3');assert.equal(m.icon,'icon.png');
   assert.ok(m.tools.some(x=>x.name==='wickrun_claim_task'));
+  assert.ok(m.tools.some(x=>x.name==='wickrun_read_task_image'), 'image capability must be discoverable in the installed extension');
   assert.equal(files['server/index.js'].toString(),'console.log("server")');
   const noIcon=buildMcpb({outFile:path.join(dir,'b.mcpb'),serverFile:server,connectionFile:conn,version:'x',iconFile:path.join(dir,'missing.png')});
   assert.equal(noIcon.manifest.icon,undefined);assert.equal(noIcon.manifest.version,'1.0.0');

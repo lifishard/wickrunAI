@@ -1,3 +1,4 @@
+import { replayUserQuestion } from './lib/replay-question';
 import React from 'react';
 import { validateMediaRoute } from './lib/media-input';
 const MediaInputDialog = React.lazy(() => import('./components/MediaInputDialog'));
@@ -1111,7 +1112,8 @@ export default function App() {
       const resumeIndex = resumeFrom ? conv.messages.findIndex((m) => m.runState === resumeFrom ||
         (resumeFrom.runId && m.runState?.runId === resumeFrom.runId)) : -1;
       const resumeAnswer = resumeIndex >= 0 ? conv.messages[resumeIndex] : undefined;
-      const previousQuestion = resumeIndex > 0 ? conv.messages[resumeIndex-1] : undefined;
+      const previousQuestion = resumeIndex > 0 ? conv.messages[resumeIndex-1]
+        : replaceFromIndex !== undefined ? replayUserQuestion(conv.messages[replaceFromIndex], text) : undefined;
       const kept = resumeFrom ? conv.messages.slice(0, Math.max(0, resumeIndex-1))
         : replaceFromIndex === undefined ? conv.messages : conv.messages.slice(0, replaceFromIndex);
       if (!resumeFrom && replaceFromIndex !== undefined) {
