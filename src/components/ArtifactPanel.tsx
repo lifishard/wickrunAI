@@ -5,6 +5,8 @@ import { previewable, toPreviewHtml } from '../lib/artifacts';
 import { desktop } from '../lib/transport';
 import Markdown from './Markdown';
 import './ArtifactStrip.css';
+import ArtifactTextEditor from './ArtifactTextEditor';
+const ArtifactDocument = React.lazy(() => import('./ArtifactDocument'));
 
 const ICON: Record<string, string> = {
   ics: '🗓',
@@ -106,10 +108,12 @@ export function ArtifactStrip(props: { artifacts: Artifact[]; onOpen: (a: Artifa
  * 右侧预览面板
  * ------------------------------------------------------------------ */
 
-export default function ArtifactPanel(props: { artifact: Artifact; onClose: () => void }) {
+export default function ArtifactPanel(props: { artifact: Artifact; onClose: () => void; busy: boolean; onRequestEdit: (prompt: string) => void }) {
   const t = useT();
   const a = props.artifact;
   const bridge = desktop();
+  const editable = !!bridge && !!a.path && ['markdown', 'text'].includes(a.type);
+  const documentPreview = !!a.path && ['pdf', 'docx', 'xlsx'].includes(a.type);
   const [text, setText] = React.useState<string | null>(a.text ?? null);
   const [err, setErr] = React.useState<string | null>(null);
   const [mode, setMode] = React.useState<'preview' | 'source'>(
@@ -118,6 +122,7 @@ export default function ArtifactPanel(props: { artifact: Artifact; onClose: () =
   const [copied, setCopied] = React.useState(false);
 
   React.useEffect(() => {
+    let disposed = false;
     setText(a.text ?? null);
     setErr(null);
     setMode(previewable(a.type) && a.type !== 'code' ? 'preview' : 'source');
@@ -127,13 +132,15 @@ export default function ArtifactPanel(props: { artifact: Artifact; onClose: () =
       setErr(t('这台设备读不了本地文件'));
       return;
     }
-    if (!previewable(a.type)) return; // pdf/docx/xlsx 不在应用里预览，交给系统程序
+    if (!previewable(a.type) || editable) return;
 
     void bridge.readArtifact(a.path).then((r) => {
+      if (disposed) return;
       if (r.ok) setText(r.text ?? '');
       else setErr(r.error ?? t('读不出来'));
-    });
-  }, [a.id, a.kind, a.path, a.type, a.text, bridge]);
+    }).catch(e => { if (!disposed) setErr(String(e)); });
+    return () => { disposed = true; };
+  }, [a.id, a.kind, a.path, a.type, a.text, bridge, editable]);
 
   const srcDoc = React.useMemo(() => {
     if (a.type === 'html') return a.kind === 'file' ? (text ?? '') : toPreviewHtml(a);
@@ -151,7 +158,7 @@ export default function ArtifactPanel(props: { artifact: Artifact; onClose: () =
         <span className="artifact-panel-name" title={a.path ?? a.name}>
           {a.name}
         </span>
-        {canPreviewHere && (a.type === 'html' || a.type === 'svg' || a.type === 'markdown') ? (
+        {!editable && canPreviewHere && (a.type === 'html' || a.type === 'svg' || a.type === 'markdown') ? (
           <div className="seg">
             <button className={mode === 'preview' ? 'on' : ''} onClick={() => setMode('preview')}>
               {t('预览')}
@@ -169,7 +176,7 @@ export default function ArtifactPanel(props: { artifact: Artifact; onClose: () =
       <div className="artifact-panel-body">
         {err ? <div className="picker-error">{err}</div> : null}
 
-        {binaryLike ? (
+        {editable ? <ArtifactTextEditor key={a.path} path={a.path!} markdown={a.type === 'markdown'} busy={props.busy} onRequestEdit={props.onRequestEdit} /> : documentPreview ? <React.Suspense fallback={<div className="empty">正在加载预览…</div>}><ArtifactDocument key={a.path} path={a.path!} type={a.type} /></React.Suspense> : binaryLike ? (
           <div className="empty" style={{ lineHeight: 1.9 }}>
             {a.type} {t('不在应用里预览。')}
             <br />

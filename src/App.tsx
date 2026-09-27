@@ -2188,7 +2188,14 @@ export default function App() {
           />
           <div style={{ width: panelW, flex: `0 0 ${panelW}px`, display: 'flex', minWidth: 0 }}>
             <ErrorBoundary label={t('产物预览')} onReset={() => setOpenArtifact(null)}>
-              <ArtifactPanel artifact={openArtifact} onClose={() => setOpenArtifact(null)} />
+              <ArtifactPanel key={openArtifact.path ?? openArtifact.id} artifact={openArtifact} onClose={() => setOpenArtifact(null)}
+                busy={runningRef.current.size > 0 || startingRef.current.size > 0 || Object.values(teamRuntime.data?.projects ?? {}).some(p => p.runs.some(r => ['running', 'pausing', 'waiting_approval', 'waiting_user'].includes(r.status)))}
+                onRequestEdit={prompt => {
+                  if (!active) return;
+                  window.dispatchEvent(new Event('wickrun:flush-draft'));
+                  updateConv(active.id, c => ({ ...c, draft: c.draft?.trim() ? `${c.draft}\n\n${prompt}` : prompt }));
+                  requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('.composer-wrap textarea')?.focus());
+                }} />
             </ErrorBoundary>
           </div>
         </>

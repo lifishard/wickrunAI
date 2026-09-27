@@ -109,6 +109,8 @@ interface ElectronBridge extends CloudBridge {
   exchanges(runId?: string): Promise<Exchange[]>;
   verifyFiles(paths: string[], roots: string[]): Promise<{ files: FileRecord[]; errors: { path: string; error: string }[] }>;
   saveArtifact(name: string, text?: string, sourcePath?: string): Promise<FileRecord | null>;
+  artifactDocument(p: string): Promise<Uint8Array>;
+  artifactEdit(action: 'read' | 'save' | 'restore', input: { path: string; expectedHash?: string; text?: string; version?: string }): Promise<import('./artifact-edit').ArtifactSnapshot>;
   saveAnalysisExport?(name:string,bytes:Uint8Array):Promise<FileRecord|null>;
   chat(init: ChatRequestInit): Promise<void>;
   abort(requestId: string): Promise<void>;

@@ -554,6 +554,22 @@ function registerIpc() {
     }
   });
 
+  const artifacts = require('./artifact-workspace.cjs');
+  const artifactWorkspace = artifacts.createArtifactWorkspace(path.join(app.getPath('userData'), 'artifact-versions'));
+  const artifactSender = e => {
+    if (!mainWindow || e.sender !== mainWindow.webContents || e.senderFrame !== mainWindow.webContents.mainFrame) throw Error('请在应用的文件预览中操作。');
+    dataAvailable();
+  };
+  ipcMain.handle('snc:artifactDocument', (e, p) => { artifactSender(e); return artifacts.readDocument(p); });
+  ipcMain.handle('snc:artifactEdit', (e, { action, input }) => {
+    artifactSender(e);
+    if (action === 'read') return artifactWorkspace.read(input.path);
+    if (inflight.size || activeToolControllers.size || activeRunIds.size) throw Error('请等待正在运行的任务结束后保存文件。');
+    if (action === 'save') return artifactWorkspace.save(input);
+    if (action === 'restore') return artifactWorkspace.restore(input);
+    throw Error('不支持的文件操作。');
+  });
+
   // 技能文件夹同步。刻意只走 IPC，不进 registry ——
   // 那个目录在工作目录白名单之外，做成模型工具等于给它一条绕过白名单的路。
   ipcMain.handle('snc:skillsRead', (_e, dir) => skillFolder.read(dir));

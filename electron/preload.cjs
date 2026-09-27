@@ -93,6 +93,8 @@ contextBridge.exposeInMainWorld('snc', {
   revealPath: (p) => ipcRenderer.invoke('snc:revealPath', p),
   openPath: (p) => ipcRenderer.invoke('snc:openPath', p),
   readArtifact: (p, maxBytes) => ipcRenderer.invoke('snc:readArtifact', { path: p, maxBytes }),
+  artifactDocument: p => ipcRenderer.invoke('snc:artifactDocument', p),
+  artifactEdit: (action, input) => ipcRenderer.invoke('snc:artifactEdit', { action, input }),
 
   skillsRead: (dir) => ipcRenderer.invoke('snc:skillsRead', dir),
   skillsWrite: (dir, items) => ipcRenderer.invoke('snc:skillsWrite', { dir, items }),
