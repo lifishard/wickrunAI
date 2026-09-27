@@ -1,3 +1,4 @@
+import ClaudeHandoff from './ClaudeHandoff';
 import React from 'react';
 import { CodeChangeSummary } from './CodeChanges';
 import BrandLogo, { BrandLoading } from './BrandLogo';
@@ -408,6 +409,7 @@ export default function AnswerBlock(props: {
         断线保护的入口。放在错误卡**上面**：先告诉人「东西还在」，
         再让他看出了什么事 —— 顺序反过来的话，人已经准备重问了
       */}
+      {answer?.runState?.nativeDesktop ? <ClaudeHandoff task={answer.runState.nativeDesktop}/> : null}
       {answer?.pending && answer.contextSnapshot?.advisory ? <section className="recovery-card" aria-label={t('上下文建议')}>
         <strong>{t('上下文整理建议 · 任务仍在继续')}</strong>
         <p>{answer.contextSnapshot.advisory}</p>

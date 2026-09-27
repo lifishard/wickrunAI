@@ -1,3 +1,4 @@
+import { flushSync } from 'react-dom';
 import { replayUserQuestion } from './lib/replay-question';
 import React from 'react';
 import { validateMediaRoute } from './lib/media-input';
@@ -372,6 +373,13 @@ export default function App() {
     if (!bootReady) return;
     void Promise.all([saveProjects(projects), saveSkills(skills), saveTasks(tasks)]).catch(reportSaveError);
   }, [projects, skills, tasks, bootReady]);
+
+  const quitSnapshot=React.useRef({settings,conversations,projects,skills,tasks,bootReady});quitSnapshot.current={settings,conversations,projects,skills,tasks,bootReady};
+  React.useEffect(()=>desktop()?.onPrepareQuit?.(async()=>{
+    flushSync(()=>window.dispatchEvent(new Event('wickrun:flush-draft')));
+    const latest=quitSnapshot.current;if(!latest.settings||!latest.bootReady)return;
+    await Promise.all([saveSettings(latest.settings),saveConversationsNow(latest.conversations),saveProjects(latest.projects),saveSkills(latest.skills),saveTasks(latest.tasks)]);
+  }),[]);
 
   /* ---------------- 启动时自动同步技能文件夹 ---------------- */
 

@@ -69,7 +69,7 @@ function createArtifactWorkspace(directory) {
 }
 
 function readDocument(p) {
-  const extensions = ['.pdf', '.docx', '.xlsx', '.xlsm'];
+  const extensions = ['.pdf', '.docx', '.xlsx', '.xlsm', '.png', '.jpg', '.jpeg', '.gif', '.webp'];
   if (typeof p !== 'string' || !extensions.includes(path.extname(p).toLowerCase())) throw Error('不支持此文件格式。');
   const stat = fs.statSync(p);
   if (!stat.isFile() || stat.size > 25 * 1024 * 1024) throw Error('文档预览支持 25 MB 以内的文件。');

@@ -1,3 +1,4 @@
+import ArtifactImage from './ArtifactImage';
 import React from 'react';
 import { useT } from '../lib/i18n';
 import type { Artifact } from '../types';
@@ -150,7 +151,7 @@ export default function ArtifactPanel(props: { artifact: Artifact; onClose: () =
   }, [a, text]);
 
   const canPreviewHere = previewable(a.type);
-  const binaryLike = ['pdf', 'docx', 'xlsx', 'other'].includes(a.type);
+  const binaryLike = ['pdf', 'docx', 'xlsx', 'other', 'binary'].includes(a.type);
 
   return (
     <aside className="artifact-panel">
@@ -177,7 +178,7 @@ export default function ArtifactPanel(props: { artifact: Artifact; onClose: () =
       <div className="artifact-panel-body">
         {err ? <div className="picker-error">{err}</div> : null}
 
-        {editable ? <ArtifactTextEditor key={a.path} path={a.path!} markdown={a.type === 'markdown'} busy={props.busy} onRequestEdit={props.onRequestEdit} onPropose={props.onPropose} /> : documentPreview ? <React.Suspense fallback={<div className="empty">正在加载预览…</div>}><ArtifactDocument key={a.path} path={a.path!} type={a.type} busy={props.busy} onPropose={props.onPropose} /></React.Suspense> : binaryLike ? (
+        {a.type==='image' && a.path ? <ArtifactImage path={a.path} name={a.name}/> : editable ? <ArtifactTextEditor key={a.path} path={a.path!} markdown={a.type === 'markdown'} busy={props.busy} onRequestEdit={props.onRequestEdit} onPropose={props.onPropose} /> : documentPreview ? <React.Suspense fallback={<div className="empty">正在加载预览…</div>}><ArtifactDocument key={a.path} path={a.path!} type={a.type} busy={props.busy} onPropose={props.onPropose} /></React.Suspense> : binaryLike ? (
           <div className="empty" style={{ lineHeight: 1.9 }}>
             {a.type} {t('不在应用里预览。')}
             <br />

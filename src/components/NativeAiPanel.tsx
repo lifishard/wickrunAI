@@ -148,7 +148,7 @@ export default function NativeAiPanel({ selected = false, onSelect }: { selected
         {loaded && connection?.configured && onSelect ? (
           <button className="btn sm" disabled={selected} onClick={choose}>{t(selected ? '正在对话中使用' : '在对话中使用')}</button>
         ) : null}
-        {loaded && !connection?.connected ? (
+        {loaded ? (
           <button className={`btn sm${connection?.configured ? ' ghost' : ''}`} disabled={busy !== null} onClick={() => void installExtension()}>
             {t(busy === 'extension' ? '正在生成…' : '安装为 Claude 扩展（推荐）')}
           </button>

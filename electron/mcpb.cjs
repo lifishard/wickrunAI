@@ -57,6 +57,7 @@ const TOOLS = [
   ['wickrun_delegate_task', '把子任务派给授权的 API 工作模型'],
   ['wickrun_read_worker_result', '读取工作模型的结果'],
   ['wickrun_report_progress', '向灯芯AI 汇报进度'],
+  ['wickrun_publish_artifact', '回传真实图片和生成文件'],
   ['wickrun_submit_result', '把最终成果交回灯芯AI'],
   ['wickrun_memory_search', '查这个任务所属项目的记忆（只读）'],
   ['wickrun_memory_propose', '提议一条项目记忆，用户批准后才会用到'],
@@ -92,7 +93,8 @@ function buildMcpb({ outFile, serverFile, connectionFile, version, iconFile }) {
   };
   const entries = [
     { name: 'manifest.json', data: Buffer.from(JSON.stringify(manifest, null, 2)) },
-    { name: 'server/index.js', data: fs.readFileSync(serverFile) },
+    { name: 'server/index.js', data: Buffer.from("'use strict'; const fs=require('node:fs'),path=require('node:path'); const current=path.join(path.dirname(process.argv[2]),'wickrun-mcp.cjs'); require(fs.existsSync(current)?current:'./fallback.cjs');") },
+    { name: 'server/fallback.cjs', data: fs.readFileSync(serverFile) },
   ];
   if (icon) entries.push({ name: 'icon.png', data: icon });
   fs.mkdirSync(path.dirname(outFile), { recursive: true });

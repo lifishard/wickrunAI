@@ -8,7 +8,7 @@
 
 开源的、闭源的，付费的、免费的，都能调度。Key 自己带，只留在你本机。
 
-[![Version](https://img.shields.io/badge/version-2.20.6-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
+[![Version](https://img.shields.io/badge/version-2.20.7-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-lightgrey)](#安装)
 [![CI](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml/badge.svg)](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml)
@@ -262,3 +262,7 @@ Desktop and web keep separate repositories and share one backend. Chats, project
 
 
 本版变更与支持范围见 [2.20.5 更新说明](docs/UPGRADE-2.20.5.md)。
+
+## 2.20.7 更新
+
+Claude 专属任务指令一键复制、真实文件回传、支持的平台默认自动更新。旧用户先手动安装本版，并更新 Claude 扩展一次。详见 [升级说明](docs/releases/v2.20.7.md)。

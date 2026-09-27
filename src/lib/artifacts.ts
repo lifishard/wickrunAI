@@ -13,6 +13,8 @@ import type { Artifact, ToolStep } from '../types';
  * ------------------------------------------------------------------ */
 
 const TYPE_BY_EXT: Record<string, string> = {
+  '.zip':'binary', '.pptx':'binary',
+  '.png':'image', '.jpg':'image', '.jpeg':'image', '.webp':'image', '.gif':'image',
   '.html': 'html',
   '.htm': 'html',
   '.svg': 'svg',
@@ -55,7 +57,7 @@ function fromSteps(steps: ToolStep[]): Artifact[] {
       if (seen.has(key)) continue;
       seen.add(key);
       out.push({ id: `file-${key}`, kind: 'file', name: f.name, path: f.path,
-        type: typeOfPath(f.path), size: f.size, verifiedAt: f.verifiedAt,
+        type: typeOfPath(f.name), size: f.size, verifiedAt: f.verifiedAt,
         direction: f.direction, createdAt: f.verifiedAt });
     }
     if (s.files?.length) continue;

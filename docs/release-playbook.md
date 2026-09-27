@@ -10,7 +10,7 @@ Related: [Building](BUILD.md) for the build and tag mechanics, [Repository metad
 
 ## Why a Release page is worth writing
 
-The packages are published either way — `发布三平台版本.bat` pushes the tag and GitHub Actions builds and attaches eighteen files. So the Release page exists regardless. The question is only whether it says anything.
+Since 2.20.7, a stable version increase pushed to main is tagged and published automatically after CI passes. Existing tags are never overwritten. The packages can also be published explicitly — `发布三平台版本.bat` pushes the tag and GitHub Actions builds and attaches eighteen files. So the Release page exists regardless. The question is only whether it says anything.
 
 Two reasons it should.
 
@@ -44,7 +44,7 @@ checked. If one change dominates, say so here and let the rest be a list.>
   <If there are none, write: None.>
 
 ## Upgrade notes
-- Quit the running version before installing. There is no auto-update.
+- For pre-2.20.7 installations, manually install 2.20.7 once. Supported packages then check and download updates automatically; normal app exit installs them.
 - <Anything version-specific: a setting that must be re-entered, a
   migration that runs once, a file that moves.>
 - Data directory is still `anyai`, deliberately, for compatibility with
@@ -217,7 +217,7 @@ addresses, which were never a supported configuration.
 
 ## Upgrade notes
 
-- Quit the running version before installing. There is no auto-update.
+- For pre-2.20.7 installations, manually install 2.20.7 once. Supported packages then check and download updates automatically; normal app exit installs them.
 - **API keys do not sync, and never will.** Keys are encrypted by the OS
   keystore with key material bound to that machine's identity — Windows
   DPAPI, macOS Keychain, Linux libsecret — so the ciphertext would not

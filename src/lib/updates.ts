@@ -1,0 +1,1 @@
+export interface UpdateState {enabled:boolean;mode:'automatic'|'manual'|'development';status:'idle'|'checking'|'current'|'available'|'downloading'|'downloaded'|'error';currentVersion:string;version:string|null;percent:number;error:string|null;checkedAt:number|null}

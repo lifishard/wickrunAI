@@ -1,3 +1,4 @@
+import UpdatePanel from './UpdatePanel';
 import { usesCloudKey } from '../lib/cloud-api';
 import React from 'react';
 import { useT, LOCALES } from '../lib/i18n';
@@ -1165,7 +1166,7 @@ export default function SettingsDialog(props: {
         {tab === 'effort' ? EffortTab() : null}
         {tab === 'remote' ? <RemoteTab settings={s} onChange={props.onChange} /> : null}
         {tab === 'sync' ? <SyncTab settings={s} onChange={props.onChange} /> : null}
-        {tab === 'look' ? LookTab() : null}
+        {tab === 'look' ? <>{LookTab()}<UpdatePanel/></> : null}
       </div>
     </Modal>
   );

@@ -1,7 +1,7 @@
 'use strict';
 
 const path = require('node:path');
-const { app, BrowserWindow, ipcMain, shell, Menu, nativeTheme, dialog, Notification, safeStorage, Tray, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, Menu, nativeTheme, dialog, Notification, powerMonitor, safeStorage, Tray, nativeImage } = require('electron');
 require('./app-identity.cjs').configureIdentity(app);
 const cloudAccount = require('./cloud-account.cjs').createCloudAccount({ app, safeStorage, openExternal: url => shell.openExternal(url) });
 const store = require('./store.cjs');
@@ -24,6 +24,18 @@ const isDev = Boolean(DEV_URL);
 const inflight = new Map();
 
 let mainWindow = null;
+let appUpdates = null;
+async function prepareRendererQuit(){
+ if(!mainWindow||mainWindow.isDestroyed())return;
+ const sender=mainWindow.webContents,id=require('node:crypto').randomUUID();
+ await new Promise((resolve,reject)=>{
+  const cleanup=()=>{clearTimeout(timer);ipcMain.removeListener('snc:quitPrepared',listener);};
+  const listener=(e,response)=>{if(e.sender!==sender||e.senderFrame!==sender.mainFrame||response?.id!==id)return;cleanup();response.error?reject(Error(response.error)):resolve();};
+  const timer=setTimeout(()=>{cleanup();reject(Error('保存界面记录超时，未安装更新。'));},10000);
+  ipcMain.on('snc:quitPrepared',listener);sender.send('snc:prepareQuit',id);
+ });
+}
+
 const backgroundWindow = require('./background-window.cjs').createBackgroundWindow({
   app, Tray, Menu, nativeImage, getWindow: () => mainWindow, createWindow,
   iconPath: path.join(__dirname, '..', 'dist', 'brand', 'icon.png'),
@@ -152,7 +164,7 @@ function createWindow() {
     }
     backgroundWindow.close(event, mainWindow);
   });
-  mainWindow.on('query-session-end', () => backgroundWindow.beginQuit());
+  mainWindow.on('query-session-end', () => {appUpdates?.suspendInstall();backgroundWindow.beginQuit();});
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//i.test(url)) shell.openExternal(url);
@@ -373,6 +385,12 @@ function registerIpc() {
   const collaboration = require('./collaboration-store.cjs').createCollaborationStore(app.getPath('userData'));
   const gatewayRecovery = require('./gateway-recovery.cjs').createGatewayRecovery({getSettings:()=>JSON.parse(store.kvGet('snc:settings:v1')||'{}'),secretGet:id=>store.secretGet(id),getClaudeConnection:()=>require('./claude-connection.cjs').readClaudeConnection()});
   const nativeBridge=()=>{dataAvailable();if(!nativeAiBridge)nativeAiBridge=require('./native-ai-bridge.cjs').createNativeAiBridge({userData:app.getPath('userData'),appData:app.getPath('appData'),getSettings:()=>JSON.parse(store.kvGet('snc:settings:v1')||'{}'),secretGet:id=>store.secretGet(id),openExternal:url=>shell.openExternal(url),memory:require('./tools/knowledge.cjs').nativeMemory});return nativeAiBridge;};
+  const updaterSender=e=>{if(!mainWindow||e.sender!==mainWindow.webContents||e.senderFrame!==e.sender.mainFrame)throw Error('Update request must come from the main window.');if(!appUpdates)throw Error('更新器尚未就绪。');};
+  ipcMain.handle('snc:updateState',e=>{updaterSender(e);return appUpdates.state();});
+  ipcMain.handle('snc:updateCheck',e=>{updaterSender(e);return appUpdates.check();});
+  ipcMain.handle('snc:updateSetEnabled',(e,value)=>{updaterSender(e);return appUpdates.setEnabled(value);});
+  ipcMain.handle('snc:updateInstall',e=>{updaterSender(e);return appUpdates.install();});
+  ipcMain.handle('snc:updateOpenRelease',e=>{updaterSender(e);return appUpdates.openRelease();});
   ipcMain.handle('snc:nativeAiState',async()=>{const bridge=nativeBridge();await bridge.start();return bridge.state();});
   ipcMain.handle('snc:nativeAiConfigure',(_e,options)=>nativeBridge().configureClaude({replace:options?.replace===true}));
   ipcMain.handle('snc:nativeAiExtension',async()=>{
@@ -638,7 +656,7 @@ if (!app.requestSingleInstanceLock()) {
 
   app.setAppUserModelId('dev.anyai.desktop');
 
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
     registerIpc();
     if(!storageStartupError){
       void chromeLaunch.restore().catch(error=>console.error('Chrome connection restore:',error.message));
@@ -650,6 +668,13 @@ if (!app.requestSingleInstanceLock()) {
     buildMenu();
     createWindow();
     backgroundWindow.install();
+    appUpdates=require('./app-updates.cjs').createAppUpdates({updater:require('electron-updater').autoUpdater,packaged:app.isPackaged,version:app.getVersion(),
+      isBusy:()=>activeRunIds.size>0||inflight.size>0||activeToolControllers.size>0||localClients?.busy()||conversationClients?.busy()||nativeAiBridge?.busy()||cloudRelay?.busy()||false,
+      beforeInstall:async()=>{await prepareRendererQuit();await store.flush();},persist:enabled=>store.kvSet('wickrun:auto-update:v1',JSON.stringify(enabled)),openExternal:url=>shell.openExternal(url),
+      notify:body=>{if(Notification.isSupported())new Notification({title:'wickrunAI 更新',body}).show();}});
+    let updateEnabled=true;try{updateEnabled=(await store.kvGet('wickrun:auto-update:v1'))!=='false';}catch{updateEnabled=false;}
+    appUpdates.start(updateEnabled);
+    powerMonitor.on('shutdown',()=>appUpdates?.suspendInstall());
 
     app.on('activate', () => {
       backgroundWindow.show();
@@ -679,6 +704,7 @@ if (!app.requestSingleInstanceLock()) {
     remote.stop();
     void (async()=>{
       try{
+        await prepareRendererQuit();
         if(mainWindow&&!mainWindow.isDestroyed()&&!restoringData){
           const maximized=mainWindow.isMaximized(),b=maximized?mainWindow.getNormalBounds():mainWindow.getBounds();
           await store.kvSet(BOUNDS_KEY,JSON.stringify({...b,maximized}));
@@ -691,5 +717,5 @@ if (!app.requestSingleInstanceLock()) {
       }
     })();
   });
-  app.on('will-quit', () => backgroundWindow.destroy());
+  app.on('will-quit', () => {appUpdates?.close();backgroundWindow.destroy();});
 }

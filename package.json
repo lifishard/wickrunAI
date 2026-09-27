@@ -1,6 +1,6 @@
 {
   "name": "wickrunai",
-  "version": "2.20.6",
+  "version": "2.20.7",
   "description": "灯芯AI（wickrunAI）：使用自己的 API Key，在同一任务中切换模型，查资料、处理文件、运行本地工具。",
   "private": true,
   "type": "module",
@@ -42,6 +42,7 @@
     "@xmldom/xmldom": "^0.9.12",
     "docx": "^9.1.0",
     "dompurify": "^3.2.4",
+    "electron-updater": "^6.8.10",
     "highlight.js": "^11.11.1",
     "jszip": "^3.10.2",
     "mammoth": "^1.9.0",
@@ -163,7 +164,9 @@
     "publish": [
       {
         "provider": "github",
-        "releaseType": "release"
+        "releaseType": "release",
+        "owner": "lifishard",
+        "repo": "wickrunAI"
       }
     ]
   },

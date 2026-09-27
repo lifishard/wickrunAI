@@ -23,7 +23,7 @@ test('real stdio MCP handshake, bounded delegation and final result round trip',
   const client=new Client({name:'fixture-desktop',version:'1.0.0'});
   const transport=new StdioClientTransport({...config,stderr:'pipe'});
   t.after(()=>client.close());await client.connect(transport);
-  const list=await client.listTools();assert.equal(list.tools.length,11);
+  const list=await client.listTools();assert.equal(list.tools.length,12);
   const task=f.create();
   const call=async(name,args)=>{const result=await client.callTool({name:'wickrun_'+name,arguments:args});assert.notEqual(result.isError,true,result.content[0].text);return JSON.parse(result.content[0].text);};
   const detail=await call('get_task',{taskId:task.id});
@@ -208,4 +208,25 @@ test('MCP returns real image blocks with provider isolation and no binary in tas
   assert.equal((await f.rpc('chatgpt','read_task_image',{taskId:task.id,imageId:'image-1'})).status,400);
   f.bridge.cancel(task.id);assert.equal((await f.rpc('claude-desktop','read_task_image',{taskId:task.id,imageId:'image-1'})).status,400);
   assert.throws(()=>f.create({images:[{name:'fake.png',dataUrl:'data:image/png;base64,YQ=='}]}),/格式/);
+});
+
+
+test('exact task handoff and real generated files return through MCP, with bounded idempotent writes',async t=>{
+ const f=fixture(t);const cfg=await f.bridge.config('claude-desktop');await f.bridge.config('chatgpt');
+ const first=f.create(),second=f.create({goal:'make a file'});
+ const client=new Client({name:'artifact-test',version:'1'});await client.connect(new StdioClientTransport({...cfg,stderr:'pipe'}));t.after(()=>client.close());
+ const call=async(name,args)=>client.callTool({name:'wickrun_'+name,arguments:args});
+ const claimed=await call('claim_task',{taskId:second.id});assert.equal(claimed.structuredContent.task.id,second.id);assert.equal(f.bridge.state().tasks.find(t=>t.id===first.id).status,'waiting');
+ const input={taskId:second.id,name:'result.md',requestKey:'one',text:'# Delivered\n\nActual content'};
+ const result=await call('publish_artifact',input);assert.notEqual(result.isError,true);const a=result.structuredContent.artifact;assert.equal(fs.readFileSync(a.path,'utf8'),input.text);
+ assert.equal((await call('publish_artifact',input)).structuredContent.artifact.id,a.id);
+ assert.equal((await call('publish_artifact',{...input,text:'different'})).isError,true);
+ assert.equal((await call('publish_artifact',{...input,name:'../secret.txt',requestKey:'bad'})).isError,true);
+ assert.equal((await f.rpc('chatgpt','publish_artifact',input)).status,400);
+ assert.equal((await call('publish_artifact',{...input,taskId:first.id})).isError,true);
+ const png='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a8MsAAAAASUVORK5CYII=';
+ const image=await call('publish_artifact',{taskId:second.id,name:'picture.png',requestKey:'image',base64:png});assert.equal(fs.readFileSync(image.structuredContent.artifact.path).toString('base64'),png);
+ assert.equal(JSON.stringify(f.bridge.state()).includes(png),false);
+ await call('submit_result',{taskId:second.id,text:'Both files delivered'});assert.equal(f.bridge.state().tasks.find(t=>t.id===second.id).artifacts.length,2);
+ assert.equal((await call('publish_artifact',{...input,requestKey:'after'})).isError,true);
 });

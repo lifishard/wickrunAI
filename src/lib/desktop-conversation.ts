@@ -45,7 +45,7 @@ export function runDesktopConversation(args:RunAgentArgs):AgentHandle {
       // 领取模式：任务进队列，已连接的 Claude 会话调用 wickrun_claim_task 自行领取。
       // 没有在线的 Claude 时才用深链接打开官方应用，预填一句「领取任务」的话。
       const live=(await bridge.nativeAiState()).connections?.find(c=>c.provider==='claude-desktop')?.connected;
-      if(live)events.onNotice('任务已排队，等待 Claude 领取（在 Claude 里说「领取灯芯AI 任务」，或让它的定时任务自动领取）。进度和结果会回到此处。');
+      if(live)events.onNotice('任务已排队，请复制本条回答中的完整任务指令，到 Claude 发送。进度和成果会回到此处。');
       else{await bridge.nativeAiOpen('claude-desktop',taskId);events.onNotice('已打开 Claude Desktop。请在官方应用发送预填的话并授权连接器，Claude 会领取此任务；进度和结果会回到此处。');}
       const deadline=Date.now()+(args.config.runtime?.maxMinutes||60)*60000;
       let signature='';
@@ -57,6 +57,11 @@ export function runDesktopConversation(args:RunAgentArgs):AgentHandle {
           signature=next;state.nativeDesktop.status=task.status;
           state.subagents=task.jobs.map(j=>({id:j.id,requestKey:j.id,workerId:j.workerId,model:task.workers.find(w=>w.id===j.workerId)?.model||'',task:j.prompt,
             status:j.status,content:j.text||'',error:j.error,startedAt:task.createdAt,steps:0,tokens:(j.usage?.prompt_tokens||0)+(j.usage?.completion_tokens||0)}));
+          for(const artifact of task.artifacts??[]){
+            const id='native-artifact-'+artifact.id;if((state.steps??=[]).some(s=>s.id===id))continue;
+            const step:import('../types').ToolStep={id,callId:id,name:'wickrun_publish_artifact',args:{name:artifact.name},status:'ok',summary:artifact.name,startedAt:artifact.createdAt,files:[{path:artifact.path,name:artifact.name,size:artifact.size,verifiedAt:artifact.createdAt,direction:'output'}]};
+            (state.steps??=[]).push(step);events.onStep(step);
+          }
           const progress=task.progress.at(-1)?.text;
           if(progress)events.onNotice(progress);
           if(task.result){state.content=task.result;events.onContentReplace?.(task.result,'');}
