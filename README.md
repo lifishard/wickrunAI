@@ -13,7 +13,7 @@ Open or closed, paid or free. Bring your own keys; they never leave your machine
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-lightgrey)](#install)
 [![CI](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml/badge.svg)](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml)
 
-[Download](https://github.com/lifishard/wickrunAI/releases) · [Docs](docs/README.md) · [Configuration](docs/CONFIGURATION.md) · [Building](docs/BUILD.md) · [Security](SECURITY.md)
+[Download](https://wickrunai.com/download) · [Docs](docs/README.md) · [Configuration](docs/CONFIGURATION.md) · [Building](docs/BUILD.md) · [Security](SECURITY.md)
 
 **English** · [简体中文](README.zh-CN.md)
 
@@ -41,7 +41,7 @@ Closing the window keeps the app and its tasks running. Return through the syste
 
 ## 60 seconds to your first answer
 
-1. **Download.** Grab the file for your platform from [Releases](https://github.com/lifishard/wickrunAI/releases) and run it. No account, no sign-up.
+1. **Download.** Open the [download chooser](https://wickrunai.com/download), select your system and configuration, and install. No account, no sign-up.
 2. **Add one key.** Settings → API credentials → paste a Base URL and an API key, press **Test connection**. Pick the OpenRouter preset if you want a free route to start with. The key is encrypted into your OS keystore — Windows DPAPI, macOS Keychain, Linux libsecret.
 3. **Send a message.** Choose a model next to the composer and ask something. That is the whole setup.
 
@@ -176,14 +176,17 @@ Models differ in what they support for tool calls, images, and reasoning paramet
 
 ## Install
 
-Download the file for your platform from [Releases](https://github.com/lifishard/wickrunAI/releases). Recent files use the `wickrunAI` prefix; older versions keep the names they were published under.
+Open **[Download wickrunAI](https://wickrunai.com/download)** to choose an operating system, or use a configuration below. These links follow published versions automatically, without sorting through Release assets.
 
-| Platform | File |
-|---|---|
-| Windows 64-bit | `wickrunAI-x.y.z-win-x64-setup.exe`, or `-portable.exe` to run without installing |
-| macOS Apple Silicon | `wickrunAI-x.y.z-mac-arm64.dmg` |
-| macOS Intel | `wickrunAI-x.y.z-mac-x64.dmg` |
-| Linux 64-bit | `wickrunAI-x.y.z-linux-x64.AppImage` or `.deb` |
+| Operating system | Configuration | Download |
+|---|---|---|
+| [Windows](https://wickrunai.com/download?platform=windows) | Intel / AMD · x64 | [EXE installer](https://wickrunai.com/download/windows/x64/setup) · [Portable EXE](https://wickrunai.com/download/windows/x64/portable) |
+| [macOS](https://wickrunai.com/download?platform=macos) | Apple silicon (M series) | [DMG installer](https://wickrunai.com/download/macos/arm64/dmg) · [ZIP](https://wickrunai.com/download/macos/arm64/zip) |
+| macOS | Intel | [DMG installer](https://wickrunai.com/download/macos/x64/dmg) · [ZIP](https://wickrunai.com/download/macos/x64/zip) |
+| [Linux](https://wickrunai.com/download?platform=linux) | Intel / AMD · x64 | [AppImage](https://wickrunai.com/download/linux/x64/appimage) · [Debian / Ubuntu DEB](https://wickrunai.com/download/linux/x64/deb) |
+| [Android](https://wickrunai.com/download?platform=android) | Phones and tablets | [Preview APK](https://wickrunai.com/download/android/universal/apk) |
+
+Android is a debug-signed engineering preview. Device acceptance is pending; account sync and large file export are not available. See [GitHub Releases](https://github.com/lifishard/wickrunAI/releases) for release notes, checksums, and older versions.
 
 The packages are not code-signed, so Windows and macOS may warn about the publisher. Verify a download against `SHA256SUMS.txt` in the Release, or build from source as described below.
 
