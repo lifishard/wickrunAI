@@ -1,3 +1,5 @@
+import { libraryRoles } from './lib/office-library';
+import { withRequestedDelegation } from './lib/role-delegation';
 import AgentRolePicker from './components/AgentRolePicker';
 import { roleSystem } from './lib/office';
 import './components/collaboration/AgentOffice.css';
@@ -1210,7 +1212,8 @@ export default function App() {
         conv = newConversation(settings.defaultConfig, profile.id);
       }
       if(conv.workspaceError&&(queuedInput?.toolsEnabled??conv.config.toolsEnabled)){startingRef.current.delete(startKey);toast.show('独立工作区未准备好，任务未执行。请修正目录后重新创建 Work 会话。',6000);return;}
-      const cfg = queuedInput?.toolsEnabled===undefined?conv.config:{...conv.config,toolsEnabled:queuedInput.toolsEnabled};
+      const roleCatalog=libraryRoles(settings.officeLibrary,conv.projectId?teamRuntime.project(conv.projectId).office?.customRoles:undefined);
+      const cfg = withRequestedDelegation(queuedInput?.toolsEnabled===undefined?conv.config:{...conv.config,toolsEnabled:queuedInput.toolsEnabled},text,roleCatalog,profile.id);
       // 新任务重新开始数：已试过的名单只在一次任务内有效，不该拖累下一个问题
       if(!resumeFrom)failoverTriedRef.current.delete(conv.id);
 
@@ -1367,6 +1370,7 @@ export default function App() {
         coordinationInbox: async()=>conversationsRef.current.find(c=>c.id===convId)?.coordinationMessages??[],
         profile,
         autoProbe: true,
+        roleCatalog,
         apiKey,
         config: cfg,
         resolveWorker: async profileId => {
@@ -1957,7 +1961,7 @@ export default function App() {
   const composer = (
     <Composer
       layout={turns.length === 0 ? 'home' : 'conversation'}
-      barControls={<><AgentRolePicker value={config.agentRole} projectId={active?.projectId} onChange={agentRole=>setConfig({agentRole})} onBrain={(id,model)=>{if(active)updateConv(active.id,c=>({...c,keyProfileId:id,config:{...c.config,model,client:undefined}}));else setSettings(s=>s?{...s,activeKeyProfileId:id,defaultConfig:{...s.defaultConfig,model,client:undefined}}:s);}}/><ConversationControls config={config} profiles={settings.keyProfiles} modelsByProfile={Object.fromEntries(settings.keyProfiles.map(p=>[p.id,[...(settings.cachedModels[p.id]||[]),...(settings.customModels[p.id]||[])]]))} onChange={setConfig}/></>}
+      barControls={<><AgentRolePicker settings={settings} config={config} profileId={active?.keyProfileId??settings.activeKeyProfileId??undefined} onConfig={setConfig} value={config.agentRole} projectId={active?.projectId} onChange={agentRole=>setConfig({agentRole})} onBrain={(id,model)=>{if(active)updateConv(active.id,c=>({...c,keyProfileId:id,config:{...c.config,model,client:undefined}}));else setSettings(s=>s?{...s,activeKeyProfileId:id,defaultConfig:{...s.defaultConfig,model,client:undefined}}:s);}}/><ConversationControls config={config} profiles={settings.keyProfiles} modelsByProfile={Object.fromEntries(settings.keyProfiles.map(p=>[p.id,[...(settings.cachedModels[p.id]||[]),...(settings.customModels[p.id]||[])]]))} onChange={setConfig}/></>}
       controls={active?.messages.filter(m=>m.runState?.userQuestion&&!m.runState.userQuestion.answers).map(m=><button className="btn sm" key={m.id} onClick={()=>document.getElementById(`question-${m.runState!.userQuestion!.request.id}`)?.scrollIntoView({block:'center',behavior:'smooth'})}>{t('Answer Question · 回答问题')}</button>)}
       key={active?.id ?? 'new'}
       initialDraft={active?.draft}

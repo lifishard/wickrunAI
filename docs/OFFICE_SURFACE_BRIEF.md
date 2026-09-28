@@ -13,3 +13,19 @@ FORM: Extend the existing collaboration shell. No replacement navigation or new 
 FINISH: Verify fresh/empty and populated offices, drag and keyboard placement, nesting/cycle rejection, independent copying, plan adoption without execution, output preservation and narrow-window reachability. Seed: user-pinned office/role metaphor and confirmed conversation-first interaction; local extension, no direction roll.
 
 DOCUMENTED DISPOSITION (2026-09-28): Fresh visual review: ship, with all five required screenshots valid and no material fixes. The inherited visual world remains authoritative. This ordinary extension does not establish a new DESIGN.md, theme or shared token set. See [Office design verification](OFFICE_DESIGN_VERIFICATION.md) for the evidence and its limits; the FINISH list is the intended verification scope, not a claim that screenshots prove every behavior.
+
+## Library and role delegation extension, 2.20.13
+
+THESIS: Find reusable expertise and assemble it without engineering a workflow first.
+
+OWN-WORLD: Preserve the current office shelf, department floor, neutral surfaces, blue controls and user-requested character tiles. This is a local extension; no new visual world or concept roll.
+
+STORY: Search or filter the complete role directory, select roles or a department composition, and create independent instances. The user confirmed built-in department combinations plus a cross-project personal library. Source changes are previewed and selected before adoption; existing member prompts and saved department snapshots remain independent.
+
+FIRST VIEWPORT: The existing shelf switches between roles and departments, with search, category and explicit batch actions. Lists remain bounded and scrollable; narrow windows stack shelf and office. The chat composer exposes search and multiple role selection in its existing role menu. Compact instructions, paired search/category fields and a collapsed enabled-worker roster leave a complete selectable role row and its checkbox visible before scrolling in the captured desktop and narrow states, including eight enabled workers. The popup is positioned within the available viewport.
+
+FORM: Roles retain their original prompts and source; department details show membership before assembly. Chat workers use actual bounded subagent execution and expose per-role status and full results. API execution is distinguished from external-client capabilities. Organizing never starts tasks.
+
+FINISH: Check source-diff adoption, batch imports, cross-project reuse, independent instances, multi-role selection and actual worker prompt propagation. Capture desktop and narrow office states plus the chat role menu, obtain a fresh finish review and document the outcome without changing shared design tokens.
+
+DOCUMENTED DISPOSITION (2026-09-28, 2.20.13): This extension exposes the bundled 279-role, 18-category directory, batch import and source-change previews, built-in department combinations, a cross-project personal department library and chat role delegation. The initial fresh review requested one fix: role rows were hidden below the chat menu's first viewport. After the local layout fix, the same reviewer marked that finding **Resolved**, reported no visible regressions from the fix and returned **ship at the scored-fix scope**. This is not blanket approval of the whole surface. The inherited visual system remains authoritative; no new DESIGN.md, sidecar or shared tokens were introduced. Captures, runtime evidence and mock-upstream/model limits are recorded in [Office design verification](OFFICE_DESIGN_VERIFICATION.md#library-and-role-delegation-extension-22013).

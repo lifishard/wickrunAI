@@ -89,6 +89,7 @@ export interface AgentEvents {
 }
 
 export interface RunAgentArgs {
+  roleCatalog?: import('./office').AgentRole[];
   autoProbe?: boolean;
   /** Trusted task goal supplied by an orchestrator, without protocol and permission help text. */
   taskGoal?: string;

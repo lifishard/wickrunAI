@@ -2,7 +2,7 @@ import catalog from '../data/agency-catalog.json';
 import { z } from 'zod';
 import { uid } from './store';
 import { newNode, newWorkflow, type TeamProject, type Member, type Workflow, type FlowNode } from './collaboration';
-export interface AgentRole {id:string;name:string;division:string;summary:string;strengths:string[];instructions:string;source?:string;color:string}
+export interface AgentRole {id:string;name:string;division:string;summary:string;strengths:string[];instructions:string;source?:string;color:string;category?:string;originalName?:string;sourcePath?:string;sourceRevision?:string}
 export const AGENT_ROLES:AgentRole[]=catalog;
 export interface Department {id:string;name:string;purpose:string;parentId?:string;memberIds:string[];workflowIds:string[]}
 export interface DepartmentModule {id:string;name:string;departments:Department[];members:Member[];workflows:Workflow[]}

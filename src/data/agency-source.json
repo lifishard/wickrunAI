@@ -1,0 +1,97 @@
+{
+  "repo": "msitarzewski/agency-agents",
+  "revision": "68f01534ef30805ed3764f2d302ad03fe443707a",
+  "roleCount": 279,
+  "divisions": {
+    "academic": {
+      "label": "学术研究",
+      "icon": "GraduationCap",
+      "color": "#8B5CF6"
+    },
+    "design": {
+      "label": "设计",
+      "icon": "PenTool",
+      "color": "#EC4899"
+    },
+    "engineering": {
+      "label": "工程研发",
+      "icon": "Code",
+      "color": "#3B82F6"
+    },
+    "finance": {
+      "label": "财务",
+      "icon": "DollarSign",
+      "color": "#22C55E"
+    },
+    "game-development": {
+      "label": "游戏开发",
+      "icon": "Gamepad2",
+      "color": "#A855F7"
+    },
+    "gis": {
+      "label": "地理信息",
+      "icon": "Map",
+      "color": "#14B8A6"
+    },
+    "healthcare": {
+      "label": "医疗健康",
+      "icon": "Stethoscope",
+      "color": "#0D9488"
+    },
+    "marketing": {
+      "label": "市场营销",
+      "icon": "Megaphone",
+      "color": "#F97316"
+    },
+    "paid-media": {
+      "label": "付费投放",
+      "icon": "Target",
+      "color": "#EAB308"
+    },
+    "product": {
+      "label": "产品",
+      "icon": "Box",
+      "color": "#D946EF"
+    },
+    "project-management": {
+      "label": "项目管理",
+      "icon": "ClipboardList",
+      "color": "#0EA5E9"
+    },
+    "research": {
+      "label": "调研",
+      "icon": "Search",
+      "color": "#7C3AED"
+    },
+    "sales": {
+      "label": "销售",
+      "icon": "TrendingUp",
+      "color": "#10B981"
+    },
+    "security": {
+      "label": "安全",
+      "icon": "ShieldCheck",
+      "color": "#EF4444"
+    },
+    "spatial-computing": {
+      "label": "空间计算",
+      "icon": "Boxes",
+      "color": "#06B6D4"
+    },
+    "specialized": {
+      "label": "专项能力",
+      "icon": "Sparkles",
+      "color": "#6366F1"
+    },
+    "support": {
+      "label": "运营支持",
+      "icon": "LifeBuoy",
+      "color": "#84CC16"
+    },
+    "testing": {
+      "label": "质量测试",
+      "icon": "FlaskConical",
+      "color": "#F59E0B"
+    }
+  }
+}

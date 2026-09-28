@@ -1,3 +1,4 @@
+import { libraryRoles } from '../../lib/office-library';
 import ButlerPreferences from './ButlerPreferences';
 import ProjectMemoryPanel from '../ProjectMemoryPanel';
 import { addMemory, redactSecrets, type ProjectMemoryItem } from '../../lib/memory-core';
@@ -14,6 +15,7 @@ import { probeCompatibility } from '../../lib/compatibility-probe';
 import Markdown from '../Markdown';
 export default function OfficePlanner({project,settings,update,onTask,onSettings,onSettingsChange,memoryItems=[],onMemory}:{project:TeamProject;settings:AppSettings;update:(fn:(p:TeamProject)=>void)=>Promise<unknown>;onTask:(id:string)=>void;onSettings:()=>void;onSettingsChange?:(fn:(s:AppSettings)=>AppSettings)=>void;memoryItems?:ProjectMemoryItem[];onMemory?:(fn:(items:ProjectMemoryItem[])=>ProjectMemoryItem[])=>void}){
   const [skills,setSkills]=React.useState<Skill[]>([]);React.useEffect(()=>{void loadSkills().then(setSkills).catch(()=>{});},[]);
+  const roles=libraryRoles(settings.officeLibrary,project.office?.customRoles);
   const office=officeOf(project),[draft,setDraft]=React.useState(office.draft??''),[busy,setBusy]=React.useState(false),[error,setError]=React.useState('');
   const [brain,setBrain]=React.useState(office.brain??{profileId:settings.activeKeyProfileId??settings.keyProfiles[0]?.id??'',model:settings.defaultConfig.model});
   const control=React.useRef<AbortController|null>(null);React.useEffect(()=>{if(office.planning?.some(t=>t.pending))void update(p=>{for(const t of ensureOffice(p).planning??[])if(t.pending){t.pending=false;t.error='上次筹备中断，可继续说明你的想法；已有记录保留。';}}).catch(()=>{});return()=>control.current?.abort();},[]);
@@ -30,8 +32,8 @@ export default function OfficePlanner({project,settings,update,onTask,onSettings
       const cfg={...settings.defaultConfig,model:brain.model,client:undefined,effortLevel:'off' as const,thinkingStyle:'auto' as const,stream:true,params:{...settings.defaultConfig.params,max_tokens:{enabled:true,value:4096},max_completion_tokens:{enabled:false,value:4096}}};
       const completedRuns=project.runs.filter(r=>['completed','failed','cancelled'].includes(r.status)).slice(-5).map(r=>({id:r.id,goal:r.goal,status:r.status,results:r.attempts.map(a=>({output:redactSecrets(a.output).text.slice(-4000),error:a.error}))}));
       const context={completedRuns,existingDepartments:office.departments.map(d=>({name:d.name,purpose:d.purpose,members:d.memberIds.map(id=>project.members.find(m=>m.id===id)?.name)})),conversation:[...history.filter(t=>!t.pending).map(t=>({role:t.role,text:t.text,proposal:t.proposal,questions:t.questions,learning:t.learning,learningDecisions:t.learningDecisions})),{role:'user',text:user.text}]};
-      raw=await requestAssistant(profile,cfg,JSON.stringify(context),controller.signal,plannerSystem()+'\n\n'+butlerContext(settings,office.instructions??'',memoryItems,skills,text),value=>{raw=value;});
-      const reply=parsePlannerReply(raw);
+      raw=await requestAssistant(profile,cfg,JSON.stringify(context),controller.signal,plannerSystem(roles)+'\n\n'+butlerContext(settings,office.instructions??'',memoryItems,skills,text),value=>{raw=value;});
+      const reply=parsePlannerReply(raw,roles);
       const evidence=[...history.filter(t=>t.role==='user').map(t=>t.text),user.text,JSON.stringify(completedRuns)].join('\n');
       const learning=settings.butler?.learning===false?[]:validLearning(reply.learning,evidence);
       await update(p=>{const t=ensureOffice(p).planning?.find(t=>t.id===answer.id);if(t)Object.assign(t,{text:reply.message,questions:reply.questions,proposal:reply.proposal,learning,pending:false});});
@@ -51,8 +53,8 @@ export default function OfficePlanner({project,settings,update,onTask,onSettings
       {turn.proposal&&<details className="office-proposal" open={i===history.length-1}><summary>方案草案 · {turn.proposal.title}</summary><p><strong>会交给你：</strong>{turn.proposal.deliverable}</p><p><strong>怎样判断做好了：</strong>{turn.proposal.acceptance}</p>
         {!!turn.proposal.assumptions.length&&<div className="office-assumptions"><strong>这份方案采用的假设</strong><ul>{turn.proposal.assumptions.map(a=><li key={a}>{a}</li>)}</ul></div>}
         <p><strong>团队分工：</strong>{turn.proposal.departments.map(d=>`${d.name}（${d.purpose}）`).join('；')}</p>
-        <p>{turn.proposal.mode==='parallel'?'这些工作并行开展':'按下面顺序接力'}</p><ol>{turn.proposal.steps.map((s,index)=><li key={index}><strong>{AGENT_ROLES.find(r=>r.id===s.roleId)?.name}</strong>：{s.instruction}<small>交付：{s.output}</small></li>)}<li>{turn.proposal.reviewRoleId?'独立复核后，交给你验收':'交给你验收（本方案未配置独立质检）'}</li></ol>
-        <div className="team-actions">{turn.adoptedTaskId?<button className="btn" onClick={()=>onTask(turn.adoptedTaskId!)}>打开已准备的任务</button>:<button className="btn primary" disabled={busy||!!turn.questions?.length} onClick={()=>{setError('');void update(p=>{adoptProposal(p,turn,brain);}).catch(e=>setError(String(e)));}}>采用方案，建立团队和任务草案</button>}<button className="btn" disabled={busy} onClick={()=>setDraft(`关于“${turn.proposal!.title}”，我想调整：`)}>继续商量</button></div><small>采用会新增独立团队与流程，不会执行任务；之后在任务页检查并开始。当前快捷方案交付文本，文件、视频制作和外部发布需另配能力。</small>
+        <p>{turn.proposal.mode==='parallel'?'这些工作并行开展':'按下面顺序接力'}</p><ol>{turn.proposal.steps.map((s,index)=><li key={index}><strong>{roles.find(r=>r.id===s.roleId)?.name}</strong>：{s.instruction}<small>交付：{s.output}</small></li>)}<li>{turn.proposal.reviewRoleId?'独立复核后，交给你验收':'交给你验收（本方案未配置独立质检）'}</li></ol>
+        <div className="team-actions">{turn.adoptedTaskId?<button className="btn" onClick={()=>onTask(turn.adoptedTaskId!)}>打开已准备的任务</button>:<button className="btn primary" disabled={busy||!!turn.questions?.length} onClick={()=>{setError('');void update(p=>{adoptProposal(p,turn,brain,roles);}).catch(e=>setError(String(e)));}}>采用方案，建立团队和任务草案</button>}<button className="btn" disabled={busy} onClick={()=>setDraft(`关于“${turn.proposal!.title}”，我想调整：`)}>继续商量</button></div><small>采用会新增独立团队与流程，不会执行任务；之后在任务页检查并开始。当前快捷方案交付文本，文件、视频制作和外部发布需另配能力。</small>
       </details>}
     </article>)}</div>
     <form onSubmit={e=>{e.preventDefault();void send(draft);}}><textarea aria-label="告诉协作设计助手你的想法" placeholder="例如：我想每周做两条短视频，面向刚开始健身的人。先帮我想想怎样开始。" rows={3} value={draft} onChange={e=>{const value=e.target.value;setDraft(value);void update(p=>{ensureOffice(p).draft=value;}).catch(()=>{});}}/><div className="team-actions"><small>先筹备，后启动。也可以直接说出对方案的修改意见。</small>{busy?<button type="button" className="btn" onClick={()=>control.current?.abort()}>停止筹备</button>:<button className="btn primary" disabled={!draft.trim()}>一起想清楚</button>}</div></form>

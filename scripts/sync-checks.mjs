@@ -26,7 +26,20 @@ export function scanWorkingFiles(root, files) {
     const stat = fs.lstatSync(target);
     if (!stat.isFile()) return [];
     if (stat.size > 32 * 1024 * 1024) throw new Error(`文件过大，无法完成扫描：${file}`);
-    return scanText(fs.readFileSync(target, 'utf8'), file);
+    let text=fs.readFileSync(target, 'utf8');
+    // This pinned public role teaches how to detect keys: three empty BEGIN
+    // signatures followed immediately by the next heading, never key material.
+    // Scan every other byte/field normally, including any real key added here.
+    if(file.replaceAll('\\','/')==='src/data/agency-catalog.json'){
+      try {
+        const roles=JSON.parse(text);
+        const emptyHeaders=['RSA','EC','PGP'].map(kind=>['-----BEGIN',kind,'PRIVATE KEY-----'].join(' '));
+        const example=['# Private key material',...emptyHeaders,'','# Cloud provider credentials'].join('\n');
+        for(const role of roles)if(role.id==='security-senior-secops'&&role.source==='https://github.com/msitarzewski/agency-agents/blob/68f01534ef30805ed3764f2d302ad03fe443707a/security/security-senior-secops.md'&&typeof role.instructions==='string')role.instructions=role.instructions.replace(example,'[public empty-header detection examples]\n# Cloud provider credentials');
+        text=JSON.stringify(roles);
+      }catch{/* Invalid JSON still goes through the conservative raw scan. */}
+    }
+    return scanText(text, file);
   });
 }
 
