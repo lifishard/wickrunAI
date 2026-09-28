@@ -22,7 +22,13 @@ struct SncUTF8Decoder {
             }
             if pending.count - start < expected { end = start }
         }
-        guard let text = String(bytes: pending[..<end], encoding: .utf8) else {
+        let units = pending[..<end]
+        // Foundation's encoding initializer strips a BOM at the start of each
+        // chunk. The standard-library decoder preserves that Unicode scalar.
+        // Exact byte round-trip rejects any repaired malformed sequence while
+        // keeping compatibility with the app's pre-iOS-18 deployment target.
+        let text = String(decoding: units, as: UTF8.self)
+        guard text.utf8.elementsEqual(units) else {
             throw DecodingError.invalidUTF8
         }
         pending.removeFirst(end)
