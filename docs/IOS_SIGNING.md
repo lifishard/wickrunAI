@@ -1,6 +1,6 @@
 # iPhone / iPad 的 App Store 构建准备
 
-目标是个人开发者账号的 App Store 发布。用户当前没有 Mac、iPhone 或 iPad；本仓库使用 GitHub 托管 Mac 构建原生 Capacitor 工程。Electron 桌面工程不能直接打包 iOS。当前流程只构建并导出产物，不自动上传、提交审核或发布，也没有完成真机验收。
+目标是个人开发者账号的 App Store 发布。本仓库使用 GitHub 托管 Mac 构建原生 Capacitor 工程，用户将借朋友的 Mac 和 iPad 测试，iPhone 真机尚未安排。Electron 桌面工程不能直接打包 iOS。当前流程只构建并导出产物，不自动上传、提交审核或发布，也没有完成真机验收。
 
 ## 没有签名凭据也能先验证
 

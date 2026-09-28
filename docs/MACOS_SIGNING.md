@@ -1,6 +1,6 @@
 # macOS 官网下载版：Developer ID 签名和公证
 
-用户选择个人 Apple Developer Program 账号，Mac 通过官网下载；没有本地 Mac 或 Apple 真机，先使用 GitHub 托管 macOS runner。当前提交只准备发布链路，尚无证书、公证成功记录或真机验收。
+用户选择个人 Apple Developer Program 账号，Mac 通过官网下载；构建使用 GitHub 托管 macOS runner，随后借朋友的 Mac 和 iPad 测试。当前提交只准备发布链路，尚无证书、公证成功记录或真机验收。
 
 `package.json` 继续保留 `identity: null`、`notarize: false`。只有仓库变量 `MACOS_SIGNING_ENABLED` **精确为 `true`**，Release 工作流才使用 `build/mac-signed.cjs`。开启后缺少凭据、签名、公证或验签失败都会阻断 macOS 产物上传及三平台发布，绝不退回未签名包。Windows、Linux 发布规则不变。
 

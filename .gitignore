@@ -4,10 +4,22 @@ dist/
 release/
 *.tsbuildinfo
 
-# Capacitor 生成的原生工程，不进版本库
-# 重新生成后记得跑 npm run cap:patch 把流式插件装回去
-/android/
-/ios/
+# Native project sources are tracked. Each platform ignores derived assets.
+/mobile-artifacts/
+*.jks
+*.keystore
+*.p12
+*.p8
+*.key
+*.mobileprovision
+*.provisionprofile
+*.xcarchive/
+*.ipa
+*.apk
+*.aab
+keystore.properties
+ExportOptions.local.plist
+__pycache__/
 
 # 运行期数据（真跑起来不会写到仓库里，这几条是保险）
 *.log

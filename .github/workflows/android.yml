@@ -1,0 +1,109 @@
+name: Android APK
+
+on:
+  push:
+    branches: [feat/apple-mobile-release-2209]
+  pull_request:
+    paths: ['src/**', 'native/**', 'android/**', 'scripts/mobile*', 'scripts/install-android-plugin.mjs', 'package*.json', 'capacitor.config.ts', '.github/workflows/android.yml']
+  workflow_dispatch:
+    inputs:
+      variant:
+        description: Debug test APK or signed release APK (never publishes automatically)
+        type: choice
+        options: [debug, release]
+        default: debug
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.ref }}-${{ inputs.variant || 'debug' }}
+  cancel-in-progress: true
+
+jobs:
+  debug:
+    if: github.event_name != 'workflow_dispatch' || inputs.variant == 'debug'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: npm ci
+      - run: npm test
+      - run: npm run android:apk
+      - name: Verify and collect debug APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          signer="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          "$signer" verify --verbose android/app/build/outputs/apk/debug/app-debug.apk
+          mkdir -p mobile-artifacts
+          version=$(node -p 'require("./package.json").version')
+          cp android/app/build/outputs/apk/debug/app-debug.apk "mobile-artifacts/wickrunAI-${version}-android-debug.apk"
+          cd mobile-artifacts
+          sha256sum *.apk > SHA256SUMS.txt
+      - uses: actions/upload-artifact@v6
+        with:
+          name: android-debug-${{ github.sha }}
+          path: mobile-artifacts/
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    if: github.event_name == 'workflow_dispatch' && inputs.variant == 'release' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/feat/apple-mobile-release-2209')
+    runs-on: ubuntu-latest
+    environment: android-release
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: npm ci
+      - run: npm test
+      - name: Build with the permanent release key and verify its certificate
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          EXPECTED_CERT_SHA256: ${{ vars.ANDROID_SIGNING_CERT_SHA256 }}
+        run: |
+          set -euo pipefail
+          umask 077
+          : "${ANDROID_KEYSTORE_BASE64:?Missing release keystore}"
+          : "${EXPECTED_CERT_SHA256:?Missing expected public certificate fingerprint}"
+          keydir=$(mktemp -d "$RUNNER_TEMP/wickrun-android.XXXXXX")
+          trap 'rm -rf "$keydir"' EXIT
+          export ANDROID_KEYSTORE_PATH="$keydir/release.jks"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$ANDROID_KEYSTORE_PATH"
+          unset ANDROID_KEYSTORE_BASE64
+          npm run android:release
+          signer="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          "$signer" verify --verbose --print-certs android/app/build/outputs/apk/release/app-release.apk > "$keydir/verification.txt"
+          actual=$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' "$keydir/verification.txt" | tr '[:upper:]' '[:lower:]')
+          expected=$(printf '%s' "$EXPECTED_CERT_SHA256" | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')
+          [[ "$expected" =~ ^[0-9a-f]{64}$ && "$actual" == "$expected" ]] || { echo '::error::APK certificate fingerprint does not match'; exit 1; }
+          mkdir -p mobile-artifacts
+          version=$(node -p 'require("./package.json").version')
+          cp android/app/build/outputs/apk/release/app-release.apk "mobile-artifacts/wickrunAI-${version}-android-release.apk"
+          printf '%s\n' "$actual" > mobile-artifacts/SIGNING_CERT_SHA256.txt
+          cd mobile-artifacts
+          sha256sum *.apk > SHA256SUMS.txt
+      - uses: actions/upload-artifact@v6
+        with:
+          name: android-release-${{ github.sha }}
+          path: mobile-artifacts/
+          if-no-files-found: error
+          retention-days: 14

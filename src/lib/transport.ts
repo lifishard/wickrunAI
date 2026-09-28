@@ -1,4 +1,5 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
+import { nativeSecretGet, nativeSecretSet, nativeSecretDelete } from './native-secrets';
 import { Preferences } from '@capacitor/preferences';
 import type {
   ChatRequestInit,
@@ -502,17 +503,23 @@ class ElectronTransport implements Transport {
 }
 
 /* ================================================================== *
- * Capacitor (Android)
+ * Capacitor (Android / iOS)
  * ================================================================== */
 
 class CapacitorTransport implements Transport {
   kind = 'capacitor' as const;
+  private active = new Map<string, {cancelled: boolean; started: boolean}>();
 
   async chat(init: ChatRequestInit, h: ChatStreamHandlers): Promise<void> {
     const { consumer, finish } = wireHandlers(h, init);
     let settled = false;
+    const state = {cancelled: false, started: false};
+    if (this.active.has(init.requestId)) throw new Error('Request ID is already active.');
+    this.active.set(init.requestId, state);
 
-    const handle = await SncHttp.addListener('sncHttpEvent', (e) => {
+    let handle: {remove: () => Promise<void>} | undefined;
+    try {
+    handle = await SncHttp.addListener('sncHttpEvent', (e) => {
       if (e.requestId !== init.requestId) return;
       switch (e.type) {
         case 'chunk':
@@ -536,7 +543,8 @@ class CapacitorTransport implements Transport {
       }
     });
 
-    try {
+      if (state.cancelled) { settled = true; finish(); return; }
+      state.started = true;
       const res = await SncHttp.request({
         requestId: init.requestId,
         url: init.url,
@@ -549,7 +557,8 @@ class CapacitorTransport implements Transport {
 
       const bodyText = typeof res.body === 'string' ? res.body : '';
 
-      if (res.status >= 400) {
+      if (state.cancelled || res.status === 499) { if (!settled) { settled = true; finish(); } return; }
+      if (res.status < 200 || res.status >= 300) {
         let parsed: unknown = bodyText;
         try {
           parsed = JSON.parse(bodyText);
@@ -563,7 +572,7 @@ class CapacitorTransport implements Transport {
         return;
       }
 
-      if (!init.stream && bodyText) {
+      if (!init.stream) {
         consumer.body(bodyText);
         if (!settled) {
           settled = true;
@@ -589,17 +598,21 @@ class CapacitorTransport implements Transport {
         h.onError(err instanceof Error ? err.message : String(err));
       }
     } finally {
-      await handle.remove();
+      this.active.delete(init.requestId);
+      await handle?.remove();
     }
   }
 
   async abort(requestId: string) {
-    await SncHttp.abort({ requestId });
+    const state = this.active.get(requestId);
+    if (!state) return;
+    state.cancelled = true;
+    if (state.started) await SncHttp.abort({ requestId });
   }
 
   async getJson(url: string, headers: Record<string, string>, timeoutMs: number) {
     const res = await SncHttp.request({
-      requestId: `get-${Date.now()}`,
+      requestId: `get-${crypto.randomUUID()}`,
       url,
       method: 'GET',
       headers,
@@ -614,7 +627,7 @@ class CapacitorTransport implements Transport {
     } catch {
       /* 保持原文 */
     }
-    if (res.status >= 400) throw new Error(extractErrorMessage(parsed, `HTTP ${res.status}`));
+    if (res.status < 200 || res.status >= 300) throw new Error(extractErrorMessage(parsed, `HTTP ${res.status}`));
     return parsed;
   }
 
@@ -633,14 +646,13 @@ class CapacitorTransport implements Transport {
     await Preferences.set({ key, value });
   }
   async secretGet(id: string) {
-    const { value } = await Preferences.get({ key: `secret:${id}` });
-    return value ?? null;
+    return nativeSecretGet(id);
   }
   async secretSet(id: string, value: string) {
-    await Preferences.set({ key: `secret:${id}`, value });
+    await nativeSecretSet(id, value);
   }
   async secretDelete(id: string) {
-    await Preferences.remove({ key: `secret:${id}` });
+    await nativeSecretDelete(id);
   }
 }
 

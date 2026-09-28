@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { createPrivateKey } from 'node:crypto';
 import { signingSettings } from './mac-signing.cjs';
 
 // The workflow only calls this on a disposable hosted Mac. No key reaches the checkout.
@@ -12,7 +13,9 @@ if (process.argv.includes('--cleanup')) {
 } else {
   if (!process.env.GITHUB_ENV) throw new Error('GITHUB_ENV is required');
   const privateKey = process.env.MACOS_NOTARY_KEY_P8;
-  if (!privateKey?.includes('-----BEGIN PRIVATE KEY-----') || !privateKey.includes('-----END PRIVATE KEY-----')) {
+  try {
+    if (!privateKey || createPrivateKey(privateKey).asymmetricKeyType !== 'ec') throw new Error();
+  } catch {
     throw new Error('MACOS_NOTARY_KEY_P8 must contain the downloaded team API private key');
   }
   signingSettings({ ...process.env, APPLE_API_KEY: keyFile }, { checkKeyFile: false });

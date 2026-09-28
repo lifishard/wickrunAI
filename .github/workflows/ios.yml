@@ -34,6 +34,10 @@ jobs:
         run: npm run mobile:prepare -- ios
       - name: 签名规则回归
         run: python3 -m unittest discover -s tests -p ios_profile_test.py
+      - name: 原生 UTF-8 流式边界回归
+        run: |
+          swiftc native/ios/SncUTF8Decoder.swift native/ios/tests/main.swift -o "$RUNNER_TEMP/wickrun-utf8-tests"
+          "$RUNNER_TEMP/wickrun-utf8-tests"
       - name: 构建模拟器应用
         run: bash scripts/ios-archive.sh simulator
       - uses: actions/upload-artifact@v6

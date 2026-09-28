@@ -1,0 +1,21 @@
+// Secret values come from the process environment, never source-controlled files.
+def secretNames = ['ANDROID_KEYSTORE_PATH', 'ANDROID_KEYSTORE_PASSWORD', 'ANDROID_KEY_ALIAS', 'ANDROID_KEY_PASSWORD']
+def releaseRequested = gradle.startParameter.taskNames.any { it.toLowerCase().contains('release') }
+def allProvided = secretNames.every { System.getenv(it)?.trim() }
+if (releaseRequested && !allProvided) {
+    throw new GradleException('Android release signing requires all ANDROID_KEYSTORE_* and ANDROID_KEY_* environment variables.')
+}
+if (allProvided) {
+    def keyFile = file(System.getenv('ANDROID_KEYSTORE_PATH'))
+    if (!keyFile.exists()) throw new GradleException('Android signing keystore does not exist.')
+    android.signingConfigs {
+        release {
+            storeFile keyFile
+            storePassword System.getenv('ANDROID_KEYSTORE_PASSWORD')
+            keyAlias System.getenv('ANDROID_KEY_ALIAS')
+            keyPassword System.getenv('ANDROID_KEY_PASSWORD')
+        }
+    }
+    android.buildTypes.release.signingConfig = android.signingConfigs.release
+}
+android.buildTypes.release.debuggable = false
