@@ -10,13 +10,20 @@
 | --- | --- | --- |
 | Apple 个人会员 | 点击 Enroll 后立即显示未知错误；双重认证已确认开启 | 解决注册错误、完成本人核验/付款/协议、会员激活 |
 | Mac 官网正式签名 | 已准备独立签名配置及 CI 验证路径 | 按 [MACOS_SIGNING.md](MACOS_SIGNING.md) 配置凭据，实际签名、公证、验包并在 Mac 安装 |
-| iPhone/iPad | 工程、原生插件和签名流程准备阶段 | 在 macOS 构建；设备验收；补齐下列移动功能和审核材料后再提交 |
-| Android APK | 已提供工程生成、debug/release 构建入口 | 工具链就绪、生成产物；release 使用长期密钥；OPPO Pad 2 验收 |
+| iPhone/iPad | macOS CI 已成功编译未签名模拟器应用 | 签名归档；设备验收；补齐下列移动功能和审核材料后再提交 |
+| Android APK | CI 已成功生成并验证 debug APK | release 使用长期密钥；OPPO Pad 2 验收 |
 | 原生账号同步 | 当前明确为“仅存本机” | 完成移动端认证与同步实现并验收，或重新明确首版产品范围 |
 | 原生文件回传/导出 | 大型任务产物的原生接收、保存和导出尚未完成 | 完成 Android/iOS 系统文件保存及分享流程，验证大小、数量、恢复与错误处理 |
 | 真机记录 | 本文不声明任何设备已通过 | 按文末模板记录设备、安装包、结果与证据 |
 
 签名证明发布者身份；macOS 公证是自动安全检查；App Store 审核评估应用及材料。三者不能互相替代。Electron 只用于现有桌面版本，iPhone/iPad 使用独立 Capacitor iOS 工程。[Apple 公证说明](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution)、[Capacitor 平台要求](https://capacitorjs.com/docs/v7/getting-started/environment-setup)
+
+### 已验证的构建记录
+
+- Android：提交 `fb2e261` 的[构建记录](https://github.com/lifishard/wickrunAI/actions/runs/36360598119)已通过完整测试、APK 编译、debug 签名验证和上传；[测试包 artifact](https://github.com/lifishard/wickrunAI/actions/runs/36360598119/artifacts/10945228724)内含 APK 和校验和。
+- iOS：提交 `4365ed1` 的[构建记录](https://github.com/lifishard/wickrunAI/actions/runs/36361316699)已通过签名规则测试、Swift UTF-8 边界测试和 Xcode 模拟器编译；[模拟器 artifact](https://github.com/lifishard/wickrunAI/actions/runs/36361316699/artifacts/10945921254)用于 Mac 上的 iOS Simulator，不能直接安装到 iPad。
+- 两次早期 iOS CI 分别发现并推动修复了分块 BOM 字符丢失和读取 Xcode 版本时的管道异常。成功编译不代表已在模拟器启动验收、完成真机测试或生成正式签名安装包。
+- GitHub Actions artifact 需要有权访问的 GitHub 会话，保留期为 14 天。上述记录引用具体提交，不自动代表后续提交也已通过。
 
 ## Apple 注册：处理当前的 Enroll 错误
 
