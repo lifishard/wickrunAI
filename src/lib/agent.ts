@@ -44,6 +44,7 @@ import { contextView, runtimePolicy } from './task-context';
 import { filePathsInText } from './artifacts';
 import { endExchange } from './wiretap';
 import { calibratedTokens, capabilities, dispatchBudget, nearContextSuggestion, observeInput, outputReserve, prepareBody, quotaKey, routeKey, snapshot, workingBudget, RUNTIME_VERSION } from './adaptive';
+import { probeCompatibility } from './compatibility-probe';
 import { compressionCandidate, memoryInstructions, memoryView, readContext, recentOutputFiles, updatePlan, validateCompaction } from './context-memory';
 import { handoffInfo, repeatedWithoutProgress, type ConversationMemory } from './handoff';
 import { foldedSkillNames, readSkill, type Skill } from './skills';
@@ -88,6 +89,7 @@ export interface AgentEvents {
 }
 
 export interface RunAgentArgs {
+  autoProbe?: boolean;
   /** Trusted task goal supplied by an orchestrator, without protocol and permission help text. */
   taskGoal?: string;
   requestId: string;
@@ -476,6 +478,13 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
 
   void (async () => {
     try {
+      if(args.autoProbe&&cfg.thinkingStyle==='auto'&&args.profile.protocol!=='anthropic'){
+        events.onNotice('正在核对当前模型的请求格式…');
+        const report=await probeCompatibility(args.profile,cfg.model,args.apiKey,{signal:control.signal});
+        if(control.signal.aborted)throw abortError();
+        if(report.status!=='ready')throw Error(`兼容性检测暂未完成：${report.note}。可在输入框下方重新检测。`);
+        events.onNotice('');
+      }
       const usable = new Set(availableTools(args.canRunHostTools).map((t) => t.name));
       // request_user_input is renderer-owned and remains available in Chat;
       // host tools continue to obey the Work/toolsEnabled switch.

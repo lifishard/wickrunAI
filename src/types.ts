@@ -8,6 +8,8 @@ import type { UserQuestionAnswers, UserQuestionHistoryItem, UserQuestionRequest 
 
 /** 一份 API 凭据（可以登记多份，例如免费额度号 / 付费号 / 自建网关） */
 export interface KeyProfile {
+  credentialRevision?: number;
+  probeRequests?: boolean;
   id: string;
   /** 显示名，例如 "日日新免费额度" */
   name: string;
@@ -27,6 +29,7 @@ export interface KeyProfile {
 }
 
 export interface RouteOverrides {
+  compatibility?: import('./lib/compatibility-cache').CompatibilityReport;
   inputModalities?: ('text' | 'image' | 'audio' | 'video')[];
   contextWindow?: number;
   maxOutput?: number;
@@ -189,6 +192,7 @@ export interface ParamState {
 
 /** 一次会话的全部生成配置 */
 export interface GenerationConfig {
+  agentRole?: {id:string;name:string;instructions:string};
   /** 失灵交接名单：用户自己排的顺序。会话级，空名单 = 不交接 */
   failover?: import('./lib/failover').FailoverConfig;
   subagents?: import('./lib/subagents').SubagentConfig;
@@ -366,6 +370,8 @@ export interface ChatMessage {
   role: Role;
   content: string;
   reasoning?: string;
+  outputHistory?: import('./lib/output-history').OutputSnapshot[];
+  previousReplies?: ChatMessage[];
   createdAt: number;
   pending?: boolean;
   error?: string;
@@ -427,6 +433,8 @@ export interface ChatMessage {
 
 /** 中断现场。够用来无缝续跑，也够小到能塞进 localStorage */
 export interface RunState {
+  outputHistory?: import('./lib/output-history').OutputSnapshot[];
+  previousReplies?: ChatMessage[];
   coordinationSeen?: string[];
   nativeDesktop?:{taskId?:string;prompt?:string;status?:string};
   harness?: import('./lib/harness').HarnessCheckpoint;
@@ -586,6 +594,7 @@ export interface RemoteConfig {
 }
 
 export interface AppSettings {
+  butler?: {instructions?:string;learning?:boolean;skillIds?:string[]};
   clients?: { codexBin:string; kimiBin?:string; grokBin?:string };
   collaborationView?: { visible:boolean; projectId?:string };
   keyProfiles: KeyProfile[];

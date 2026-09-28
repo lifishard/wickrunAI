@@ -1,5 +1,7 @@
+import PreviousReplies from './PreviousReplies';
 import ClaudeHandoff from './ClaudeHandoff';
 import React from 'react';
+import OutputHistory from './OutputHistory';
 import { CodeChangeSummary } from './CodeChanges';
 import BrandLogo, { BrandLoading } from './BrandLogo';
 import type { Artifact, ChatMessage, ErrorInfo, MessageAnnotation, SourceRef, ToolStep } from '../types';
@@ -367,6 +369,8 @@ export default function AnswerBlock(props: {
 
       {sources.length ? <SourcesRow sources={sources} /> : null}
 
+      <OutputHistory items={answer?.outputHistory}/>
+      <PreviousReplies items={answer?.previousReplies}/>
       {answer?.reasoning && answer.reasoning.trim() ? (
         <details className="reasoning" open={props.showReasoning && live && !answer.content}>
           <summary>

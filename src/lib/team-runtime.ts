@@ -1,3 +1,4 @@
+import { preserveOutput, type OutputSnapshot } from './output-history';
 import type { AppSettings, ToolStep, RunState, GenerationConfig } from '../types';
 import { runAgent, type AgentHandle } from './agent';
 import { uid, secretGet, toolContextOf } from './store';
@@ -566,8 +567,10 @@ export class TeamRuntime {
    : `\nreview 类验收的证据：填你本轮发起那次工具调用的 id，或 text: 加上你已输出答复里的原文片段；空着或写理由都不算证据。`;
   const prompt=`${r.intent==='explore'?EXPLORE_PROMPT_PREFIX:''}${textMode?TEXT_REVIEW_INSTRUCTIONS+'\n':node.type==='review'?'本步骤只读复核。不要修改文件，不要运行测试；读取产物并给出复核结论。\n':''}任务契约：${JSON.stringify(teamTaskContract(r,node,member.id,inputs,roots))}\n已接收产物版本：${JSON.stringify(inputArtifacts)}\n${textMode?`文本产物快照：${JSON.stringify(inputTexts)}\n`:``}目标：${r.goal}\n验收：${r.acceptance}\n步骤：${node.instructions}\n输出要求：${node.outputRequirement}\n允许工作目录：${roots.join('、')||'无'}${isolationNote}\n声明验收要求（update_requirements）时：sourceId 必须写 ${taskMessageId}，sourceQuote 必须是上面「目标」或「验收」里的原文片段；文件类检查（file_exists / file_contains / json）的 path 必须是绝对路径，以上面的允许工作目录开头。verify_requirements 的 ids 是你自己起的要求 id，不是文件名。${evidenceNote}\n前置记录：\n${sources}\n本轮讨论：\n${discussion}\n补充指令：\n${supplementalInstructions.join('\n')}`;
 
+  let reasoning=resume?.reasoning??'';
+  let outputHistory:OutputSnapshot[]=structuredClone(r.attempts.find(a=>a.id===attemptId)?.memberOutputHistory?.[member.id]??resume?.outputHistory??[]);
   let output=resume?.content??'',state:RunState|undefined=resume,usage=resume?.spentTokens??0,handle:AgentHandle|undefined;
-  const persist=()=>this.runUpdate(projectId,runId,run=>{const a=run.attempts.find(x=>x.id===attemptId)!;a.output=output;a.state=state;if(state)(a.memberStates??={})[member.id]=state;});
+  const persist=()=>this.runUpdate(projectId,runId,run=>{const a=run.attempts.find(x=>x.id===attemptId)!;a.output=output;a.state=state;(a.memberOutputHistory??={})[member.id]=outputHistory;(a.memberReasoning??={})[member.id]=reasoning;if(state)(a.memberStates??={})[member.id]=state;});
   const reservationKey=attemptId+':'+member.id;let remaining=0;
   await this.runUpdate(projectId,runId,run=>{
    const reserved=Object.values(run.reservations).reduce((sum,n)=>sum+n,0);
@@ -625,7 +628,7 @@ export class TeamRuntime {
     await this.runUpdate(projectId,runId,run=>{const item={nodeId:attemptId,codeChanges:step.codeChanges,text:`${member.name} 请求 ${step.name}\n${JSON.stringify(step.args,null,2)}`};run.approvalQueue=[...(run.approvalQueue??[]),item];run.pendingApproval=run.approvalQueue[0];});
     return new Promise<boolean>((res)=>{this.approvals.set(runId+':'+attemptId,ok=>{this.approvals.delete(runId+':'+attemptId);void this.runUpdate(projectId,runId,run=>{run.approvalQueue=(run.approvalQueue??[]).filter(x=>x.nodeId!==attemptId);run.pendingApproval=run.approvalQueue[0];run.events.push({id:uid(),at:Date.now(),kind:'permission',text:`${member.name} 的 ${step.name}：${ok?'批准':'拒绝'}`,nodeId:node.id});}).then(()=>res(ok)).catch(()=>res(false));});});
    };
-   handle=runAgent({resume,resolveUncertain:resume?'retry':undefined,requestId:uid('teamrequest'),profile:profile!,apiKey:key!,config,
+   handle=runAgent({autoProbe:profile!.probeRequests===true,resume,resolveUncertain:resume?'retry':undefined,requestId:uid('teamrequest'),profile:profile!,apiKey:key!,config,
     taskGoal:r.fileScope?(node.type==='review'?'读取产物，检查本次交付。不要修改文件，不要运行测试，不要推送。':[r.goal,r.acceptance,...supplementalInstructions].join('\n')):undefined,
     // 任务消息的 id 必须跨派发稳定，而且要短到模型抄得动。
     //
@@ -643,7 +646,7 @@ export class TeamRuntime {
     recallTasks:async(query,limit)=>recallFrom(await loadRuns(),await observationSnapshot(),{query,limit,projectId}),toolCtx:()=>({...toolContextOf(settings,projectId),teamExecution:{projectId,runId,attemptId,memberId:member.id,fileSessionId},workspaceRoots:roots,grants:{extraRoots:[],screen:false,admin:false}}),effortMappings:settings.effortMappings,extraSystem:[projectSystemBlock(this.projects().find(x=>x.id===projectId)??null,'',{memory:false}),
     `你是项目成员 ${member.name}。\n${member.instructions}\n${memories}\n${node.type==='review'?reviewInstructions:''}`,
     skillSystemBlock(chosen)].filter(Boolean).join('\n\n'),timeoutMs:settings.requestTimeoutMs,canRunHostTools:true,autoRetry:settings.autoRetry,confirm,grantAccess:async()=>({ok:false,content:'',error:'协作运行权限固定；请暂停后在项目设置调整并创建新运行。'}),events:{
-    onContentDelta(text){output+=text;},onContentReplace(text){output=text;},onReasoningDelta(){},onSources(){},onRound(){},
+    onContentDelta(text){output+=text;},onContentReplace(text,thought){outputHistory=preserveOutput(outputHistory,{content:output,reasoning},{content:text,reasoning:thought});output=text;reasoning=thought;},onReasoningDelta(text){reasoning+=text;},onSources(){},onRound(){},
     /*
      * 限流、重试、等待都走这条。原来这里是个空函数，于是运行详情页从头到尾只有一个
      * 「运行中」：模型在等 429 退避、等了几次、下一次什么时候，你一个字都看不到。

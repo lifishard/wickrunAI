@@ -2,6 +2,8 @@ import type { GenerationConfig, RunState, ToolStep } from '../types';
 import { desktop } from './transport';
 import { uid } from './store';
 import type { FailoverConfig } from './failover';
+export interface Member {roleTemplateId?:string}
+export interface TeamProject {office?:import('./office').Office}
 
 export type NodeKind = 'start' | 'agent' | 'discussion' | 'condition' | 'parallel' | 'join' | 'review' | 'approval' | 'handoff' | 'end';
 /** skills：这位成员要带的技能名单。刻意由用户勾选，不按指令自动匹配 —— 自动塞技能等于替用户改了他没写的要求。 */
@@ -30,7 +32,7 @@ export interface TeamArtifact { id:string;sessionId:string;projectId:string;task
 export interface TeamTextArtifact { id:string;attemptId:string;nodeId:string;version:number;digest:string;text:string }
 export interface FlowNode { reviewMode?:'files'|'text' }
 export interface MemoryEntry { kind?:'fact'|'preference'|'experience';scope?:'project'|'task';keywords?:string[];expiresAt?:number }
-export interface NodeAttempt { inputTexts?:TeamTextArtifact[];textReview?:{verdict:'pass'|'fail'|'unverifiable';artifactIds:string[];textEvidence:{artifactId:string;quote:string}[];changes:string;method:'model'} }
+export interface NodeAttempt { memberOutputHistory?:Record<string,import('./output-history').OutputSnapshot[]>; memberReasoning?:Record<string,string>; inputTexts?:TeamTextArtifact[];textReview?:{verdict:'pass'|'fail'|'unverifiable';artifactIds:string[];textEvidence:{artifactId:string;quote:string}[];changes:string;method:'model'} }
 export interface NodeAttempt { reviewInstructionSnapshot?:string[];reviewStagnation?:{fingerprint:string;repeats:2} }
 export interface NodeAttempt { artifacts?:TeamArtifact[];inputArtifacts?:TeamArtifact[];review?:{verdict:'pass'|'fail'|'unverifiable';evidence:string[];changes:string;method:'model';artifactIds:string[]} }
 export interface NodeAttempt { notice?:string; routeLog?:RouteAttempt[]; memberStates?:Record<string,RunState>; memberOutputs?:Record<string,string>; resolution?:string; id: string; nodeId: string; visit: number; status: 'running'|'completed'|'failed'|'uncertain'|'waiting_user'; startedAt: number; endedAt?: number; output: string; steps: ToolStep[]; state?: RunState; error?: string; outcome?: string }

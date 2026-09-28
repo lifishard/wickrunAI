@@ -1,8 +1,13 @@
+import AgentRolePicker from './components/AgentRolePicker';
+import { roleSystem } from './lib/office';
+import './components/collaboration/AgentOffice.css';
 import { relatedConversations } from './lib/conversation-coordination';
 import { conversationCommand, parseConversationRequest, conversationRequestIdentity, requestedConversation, type ConversationRequest } from './lib/create-conversation';
 import { flushSync } from 'react-dom';
 import { replayUserQuestion } from './lib/replay-question';
 import React from 'react';
+import { preserveOutput } from './lib/output-history';
+import { probeCompatibility } from './lib/compatibility-probe';
 import { validateMediaRoute } from './lib/media-input';
 const MediaInputDialog = React.lazy(() => import('./components/MediaInputDialog'));
 import { requestAssistant } from './lib/assistant-request';
@@ -1262,6 +1267,7 @@ export default function App() {
         model: cfg.model,
         steps: resumeFrom?.steps ?? resumeAnswer?.steps ?? [],
         sources: resumeFrom?.sources ?? [],
+        previousReplies: resumeAnswer?.previousReplies ?? (replaceFromIndex!==undefined ? conv.messages.slice(replaceFromIndex+1).filter(m=>m.role==='assistant') : undefined),
       };
 
       const convId = conv.id;
@@ -1300,13 +1306,13 @@ export default function App() {
       resumeQueue(convId);
 
       /* --- 流式缓冲：按 60ms 节流刷进 state，不然一个 token 一次 setState --- */
-      const buf = { content: answerMsg.content, reasoning: answerMsg.reasoning ?? '', dirty: false };
+      const buf = { content: answerMsg.content, reasoning: answerMsg.reasoning ?? '', outputHistory: answerMsg.outputHistory ?? [], dirty: false };
       const flush = () => {
         if (!buf.dirty) return;
         buf.dirty = false;
         const content = buf.content;
         const reasoning = buf.reasoning;
-        patchMessage(convId, answerMsg.id, { content, reasoning });
+        patchMessage(convId, answerMsg.id, { content, reasoning, outputHistory: buf.outputHistory });
       };
       const timer = setInterval(flush, 120);
 
@@ -1360,6 +1366,7 @@ export default function App() {
         coordinateTasks: (input,key)=>coordinateTasks(convId,input,key),
         coordinationInbox: async()=>conversationsRef.current.find(c=>c.id===convId)?.coordinationMessages??[],
         profile,
+        autoProbe: true,
         apiKey,
         config: cfg,
         resolveWorker: async profileId => {
@@ -1421,6 +1428,7 @@ export default function App() {
         recallTasks: async (query, limit) => recallFrom(await loadRuns(), await observationSnapshot(),
           { query, limit, projectId: conv!.projectId ?? null, excludeConversationId: conv!.id }),
         extraSystem: [
+          roleSystem(cfg.agentRole),
           ...(conv.workspace?[`本任务使用独立文件副本：${conv.workspace.isolatedRoot}。所有文件操作必须在此目录内，不要写入原目录 ${conv.workspace.root}，不要自行合并或推送。完成后报告成果，用户会核对差异再应用。副本不含 .git、node_modules 和构建目录。`]:[]),
           projectSystemBlock(projects.find((p) => p.id === conv.projectId) ?? null, text, { memory: conv.evalAblation !== 'project_memory' }),
           skillSystemBlock(turnSkills),
@@ -1455,6 +1463,7 @@ export default function App() {
         },
         events: {
           onContentReplace(content, reasoning) {
+            buf.outputHistory = preserveOutput(buf.outputHistory, buf, {content,reasoning});
             buf.content = content; buf.reasoning = reasoning; buf.dirty = true; flush();
           },
           onContentDelta(d) {
@@ -1485,6 +1494,7 @@ export default function App() {
             patchMessage(convId, answerMsg.id, { stopReason: reason ?? undefined });
           },
           async onRunState(state) {
+            if(state){state.outputHistory=buf.outputHistory;state.previousReplies=answerMsg.previousReplies;}
             if (state) {
               latestState = state;
               await saveRun({ id: state.runId ?? requestId, conversationId: convId, answerId: answerMsg.id,
@@ -1947,7 +1957,7 @@ export default function App() {
   const composer = (
     <Composer
       layout={turns.length === 0 ? 'home' : 'conversation'}
-      barControls={<ConversationControls config={config} profiles={settings.keyProfiles} modelsByProfile={Object.fromEntries(settings.keyProfiles.map(p=>[p.id,[...(settings.cachedModels[p.id]||[]),...(settings.customModels[p.id]||[])]]))} onChange={setConfig}/>}
+      barControls={<><AgentRolePicker value={config.agentRole} projectId={active?.projectId} onChange={agentRole=>setConfig({agentRole})} onBrain={(id,model)=>{if(active)updateConv(active.id,c=>({...c,keyProfileId:id,config:{...c.config,model,client:undefined}}));else setSettings(s=>s?{...s,activeKeyProfileId:id,defaultConfig:{...s.defaultConfig,model,client:undefined}}:s);}}/><ConversationControls config={config} profiles={settings.keyProfiles} modelsByProfile={Object.fromEntries(settings.keyProfiles.map(p=>[p.id,[...(settings.cachedModels[p.id]||[]),...(settings.customModels[p.id]||[])]]))} onChange={setConfig}/></>}
       controls={active?.messages.filter(m=>m.runState?.userQuestion&&!m.runState.userQuestion.answers).map(m=><button className="btn sm" key={m.id} onClick={()=>document.getElementById(`question-${m.runState!.userQuestion!.request.id}`)?.scrollIntoView({block:'center',behavior:'smooth'})}>{t('Answer Question · 回答问题')}</button>)}
       key={active?.id ?? 'new'}
       initialDraft={active?.draft}
@@ -1958,7 +1968,7 @@ export default function App() {
       onConnectionSettings={patch=>setSettings(s=>s?{...s,...patch}:s)}
       contextPreview={profile && !config.client ? { profile,config,history:(active?.messages ?? []).filter(m => !m.pending),
         handoffSourceRunId:active?.handoffSourceRunId,
-        extraSystem:[projectSystemBlock(activeProject),skillSystemBlock(activeSkills)].filter(Boolean).join('\n\n'),
+        extraSystem:[roleSystem(config.agentRole),projectSystemBlock(activeProject),skillSystemBlock(activeSkills)].filter(Boolean).join('\n\n'),
         toolNames,mappings:settings.effortMappings,learned:settings.modelLimits?.[limitKey(profile.id,config.model,profile.baseUrl)],
         modelInfo:models.find(m => m.id === config.model), current:busy ? [...(active?.messages ?? [])].reverse().find(m => m.pending)?.contextSnapshot : undefined } : undefined}
       busy={Boolean(busy)}
@@ -2055,6 +2065,7 @@ export default function App() {
             else if (active) moveToProject(active.id, id || null);
             else if (id) newChat(id);
           }}
+          onButler={()=>{const id=activeProject?.id??settings.collaborationView?.projectId??projects[0]?.id;if(id){void (async()=>{if(!teamRuntime.data)await teamRuntime.load();await teamRuntime.update(id,p=>{p.preferences.page='butler';});setSettings(s=>s?{...s,collaborationView:{visible:true,projectId:id}}:s);})().catch(e=>toast.show(String(e)));}else setTeamVisible(true);}}
           onMode={setTeamVisible}
           onHide={() => { setSidebarOpen(false); setSidebarHidden(true); }} />
         <div className="sidebar-body" hidden={teamVisible}>
@@ -2441,7 +2452,9 @@ export default function App() {
               setSettings((s) =>
                 s ? { ...s, cachedModels: { ...s.cachedModels, [p.id]: list } } : s,
               );
-              return t('连上了，拿到 {n} 个模型', { n: list.length });
+              const model=list.some(m=>m.id===config.model)?config.model:list.length===1?list[0].id:undefined;
+              const report=model?await probeCompatibility(p,model,key):undefined;
+              return t('连上了，拿到 {n} 个模型', { n: list.length })+(report?`。${report.note}`:'。选择模型后自动检测请求格式。');
             } catch (e) {
               return t('失败：{error}', { error: e instanceof Error ? e.message : String(e) });
             }

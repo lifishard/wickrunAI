@@ -16,6 +16,9 @@ export const LOCALES: { value: Locale; label: string; label2: string; lang: stri
  * 英文查词典，查不到就退回简体原文 —— 半翻译的界面也比缺字的界面好用。
  */
 const EN: Record<string, string> = {
+  '＋ 说说想做什么': '+ Tell me what you want to do',
+  '管家': 'Assistant',
+  '办公室': 'Office',
   '协调并行任务': "Coordinate parallel tasks",
   '新建对话': "Create conversation",
   '并行任务': "Parallel tasks",

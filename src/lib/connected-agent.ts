@@ -102,7 +102,7 @@ export function runConnectedAgent(args:RunAgentArgs):AgentHandle {
       off=bridge.onClientEvent(event=>{
         if(event.requestId!==nativeRequestId || cancelled)return;
         if(event.type==='reasoning' && event.text){
-          state.reasoning=((state.reasoning??'')+event.text).slice(-200000);
+          state.reasoning=(state.reasoning??'')+event.text;
           events.onContentReplace?.(state.content??'',state.reasoning);
           events.onNotice('Grok 正在思考');saveProgress();
         }

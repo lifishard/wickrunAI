@@ -582,6 +582,7 @@ export default function SettingsDialog(props: {
       name: t('凭据 {n}', { n: s.keyProfiles.length + 1 }),
       baseUrl: BASE_URL_PRESETS[0].url,
       hasSecret: false,
+      probeRequests: true,
       extraHeaders: {},
       createdAt: Date.now(),
     };
@@ -593,6 +594,13 @@ export default function SettingsDialog(props: {
 
   const [testing, setTesting] = React.useState<string | null>(null);
   const [testResult, setTestResult] = React.useState<Record<string, string>>({});
+  async function autoTestProfile(p:KeyProfile){
+    if(!p.hasSecret||!p.baseUrl||p.protocol==='anthropic')return;
+    setTesting(p.id);
+    try{const message=await props.onTestProfile(p);setTestResult(r=>({...r,[p.id]:message}));}
+    catch{setTestResult(r=>({...r,[p.id]:'检测未完成，可点击测试连接重试'}));}
+    finally{setTesting(null);}
+  }
 
   function KeysTab() {
     return (
@@ -654,7 +662,7 @@ export default function SettingsDialog(props: {
                 type="text"
                 value={p.baseUrl}
                 onChange={(e) => updateProfile(p.id, { baseUrl: e.target.value })}
-                onBlur={(e) => updateProfile(p.id, { baseUrl: normalizeBaseUrl(e.target.value) })}
+                onBlur={(e) => {const baseUrl=normalizeBaseUrl(e.target.value);updateProfile(p.id,{baseUrl});void autoTestProfile({...p,baseUrl});}}
                 list={`presets-${p.id}`}
               />
               <datalist id={`presets-${p.id}`}>
@@ -683,7 +691,7 @@ export default function SettingsDialog(props: {
               <SecretInput
                 secretId={p.id}
                 placeholder={t('粘贴 API Key')}
-                onSaved={() => updateProfile(p.id, { hasSecret: true })}
+                onSaved={() => {const patch={hasSecret:true,credentialRevision:Date.now()};updateProfile(p.id,patch);void autoTestProfile({...p,...patch});}}
               />
             </Field>
 
