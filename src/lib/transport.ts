@@ -89,6 +89,7 @@ interface ElectronBridge extends CloudBridge {
   collaborationRead(): Promise<import('./collaboration').CollaborationData>;
   collaborationUpdate(revision:number, project:import('./collaboration').TeamProject): Promise<import('./collaboration').CollaborationData>;
   collaborationClaim(projectId:string,runId:string): Promise<import('./collaboration').CollaborationData>;
+  conversationWorkspaceCreate(id:string,root:string):Promise<{id:string;root:string;isolatedRoot:string}>;
   teamFilesCreate(projectId:string,taskId:string,memberId:string,root:string): Promise<import('./collaboration').FileSession>;
   teamFilesDiff(id:string): Promise<import('./collaboration').FileSession>;
   teamArtifactsPublish(scope:{projectId:string;runId:string;attemptId:string;memberId:string},sessionId:string):Promise<import('./collaboration').TeamArtifact>;

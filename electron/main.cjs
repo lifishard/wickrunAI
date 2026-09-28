@@ -408,6 +408,8 @@ function registerIpc() {
   if(require('node:fs').existsSync(path.join(app.getPath('userData'),'native-ai')))try{void nativeBridge().start().catch(error=>console.error('Native AI bridge:',error.message));}catch(error){console.error('Native AI bridge:',error.message);}
   ipcMain.handle('snc:gatewayRepair',(_event,profileId)=>{dataAvailable();return gatewayRecovery.repair(profileId);});
   const teamFiles = require('./team-files.cjs').createTeamFiles(app.getPath('userData'));
+  const conversationWorkspaces=require('./conversation-workspaces.cjs').createConversationWorkspaces({teamFiles,conversations:()=>JSON.parse(store.kvGet('snc:conversations:v1')||'[]'),settings:()=>JSON.parse(store.kvGet('snc:settings:v1')||'{}')});
+  ipcMain.handle('snc:conversationWorkspaceCreate',(_e,{id,root})=>{dataAvailable();return conversationWorkspaces.create(id,root);});
   try{if(!dataBackup.recoveryError)localClients=require('./local-clients.cjs').createLocalClients({userData:app.getPath('userData'),collaboration,teamFiles,getSettings:()=>JSON.parse(store.kvGet('snc:settings:v1')||'{}'),openExternal:url=>shell.openExternal(url)});}catch(error){storageStartupError=String(error);}
   ipcMain.handle('snc:pickClientBinary',async()=>{const chosen=await dialog.showOpenDialog(mainWindow,{title:'选择官方原生客户端',properties:['openFile'],...(process.platform==='win32'?{filters:[{name:'原生程序',extensions:['exe']}]}:{})});return chosen.canceled?null:chosen.filePaths[0];});
   ipcMain.handle('snc:clientCheck',(_e,kind)=>{dataAvailable();if(!['codex','claude'].includes(kind))throw Error('未知客户端');return localClients.check(kind);});
@@ -415,7 +417,7 @@ function registerIpc() {
   // 大脑代理：Claude Code / Codex 通过它用 wickrunAI 里登记的任意路由；只监听 127.0.0.1
   brainProxy=require('./brain-proxy.cjs').createBrainProxy({userData:app.getPath('userData'),getSettings:()=>JSON.parse(store.kvGet('snc:settings:v1')||'{}'),secretGet:id=>store.secretGet(id)});
   const brainGlobal=require('./brain-config.cjs').createBrainGlobal({userData:app.getPath('userData')});
-  conversationClients=require('./conversation-clients.cjs').createConversationClients({userData:app.getPath('userData'),getSettings:()=>JSON.parse(store.kvGet('snc:settings:v1')||'{}'),store:runtimeStore(),openExternal:url=>shell.openExternal(url),deps:{brainProxy,claudeGatewayCheck:()=>gatewayRecovery.checkClaude(),repairClaudeGateway:()=>gatewayRecovery.repairClaude()}});
+  conversationClients=require('./conversation-clients.cjs').createConversationClients({userData:app.getPath('userData'),getSettings:()=>JSON.parse(store.kvGet('snc:settings:v1')||'{}'),store:runtimeStore(),openExternal:url=>shell.openExternal(url),deps:{brainProxy,workspaceForRun:record=>conversationWorkspaces.resolve(record.conversationId)?.isolatedRoot,claudeGatewayCheck:()=>gatewayRecovery.checkClaude(),repairClaudeGateway:()=>gatewayRecovery.repairClaude()}});
   // 允许网页版使用本机 AI：独立执行记录目录，不混进本机会话；默认关闭
   const relayRunStore=require('./run-store.cjs').createRunStore(path.join(app.getPath('userData'),'cloud-relay-runs'));
   cloudRelay=require('./cloud-relay.cjs').createCloudRelay({userData:app.getPath('userData'),account:cloudAccount,clients:conversationClients,store:relayRunStore,
@@ -501,6 +503,7 @@ function registerIpc() {
 
   ipcMain.handle('snc:tool', async (_e, { name, args, ctx }) => {
     dataAvailable();
+    if(ctx?.conversationId)ctx=conversationWorkspaces.tool(ctx);
     if(ctx?.teamExecution){
       ctx=require('./team-execution-guard.cjs').createTeamExecutionGuard({collaboration,teamFiles}).tool(name==='preview_code_change'?args?.name:name,ctx);
     }

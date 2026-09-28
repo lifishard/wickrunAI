@@ -427,6 +427,7 @@ export interface ChatMessage {
 
 /** 中断现场。够用来无缝续跑，也够小到能塞进 localStorage */
 export interface RunState {
+  coordinationSeen?: string[];
   nativeDesktop?:{taskId?:string;prompt?:string;status?:string};
   harness?: import('./lib/harness').HarnessCheckpoint;
   subagents?: import('./lib/subagents').SubagentJob[];
@@ -517,6 +518,12 @@ export interface RunRecord {
 }
 
 export interface Conversation {
+  /** Idempotent application-owned new-conversation request. */
+  coordinationGroupId?: string;
+  creationFingerprint?: string;
+  workspace?: {id:string;root:string;isolatedRoot:string};
+  workspaceError?: string;
+  coordinationMessages?: {id:string;fromId:string;fromTitle:string;text:string;at:number}[];
   /** Editable, unsent context handoff. Creating it never starts a request. */
   draft?: string;
   handoffSourceRunId?: string;
@@ -811,6 +818,7 @@ export interface Artifact {
 
 /** 工具执行时传给原生层的上下文（不含明文密钥，密钥由原生层自己从安全存储取） */
 export interface ToolContext {
+  conversationId?: string;
   postReviewCodeChanges?: boolean;
   reviewCodeChanges?: boolean;
   codeReviewToken?: string;

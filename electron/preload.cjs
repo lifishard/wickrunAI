@@ -36,6 +36,7 @@ contextBridge.exposeInMainWorld('snc', {
   collaborationRead: () => ipcRenderer.invoke('snc:collaborationRead'),
   collaborationUpdate: (revision, project) => ipcRenderer.invoke('snc:collaborationUpdate', { revision, project }),
   collaborationClaim: (projectId, runId) => ipcRenderer.invoke('snc:collaborationClaim', { projectId, runId }),
+  conversationWorkspaceCreate: (id,root)=>ipcRenderer.invoke('snc:conversationWorkspaceCreate',{id,root}),
   teamFilesCreate: (projectId,taskId,memberId,root) => ipcRenderer.invoke('snc:teamFilesCreate',{projectId,taskId,memberId,root}),
   teamFilesDiff: id => ipcRenderer.invoke('snc:teamFilesDiff',id),
   teamArtifactsPublish: (scope,sessionId) => ipcRenderer.invoke('snc:teamArtifactsPublish',{scope,sessionId}),

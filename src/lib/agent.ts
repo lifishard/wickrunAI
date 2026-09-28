@@ -1,3 +1,5 @@
+import { receiveCoordination, type CoordinationMessage } from './conversation-coordination';
+import { parseConversationRequest, type ConversationRequest } from './create-conversation';
 import { acceptLiveAnswer } from './live-input';
 import { mediaParts, validateMediaRoute } from './media-input';
 import { reconcileProgress, qualityLoop, qualityCheckpoint } from './task-progress';
@@ -89,6 +91,9 @@ export interface RunAgentArgs {
   /** Trusted task goal supplied by an orchestrator, without protocol and permission help text. */
   taskGoal?: string;
   requestId: string;
+  coordinateTasks?: (input:Record<string,unknown>,operationKey:string)=>Promise<ToolResult>;
+  coordinationInbox?: ()=>Promise<CoordinationMessage[]>;
+  createConversation?: (request: ConversationRequest, operationKey: string) => Promise<ToolResult>;
   profile: KeyProfile;
   apiKey: string;
   config: GenerationConfig;
@@ -490,9 +495,11 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
             : ['update_plan', 'update_requirements', 'verify_requirements']),
         ] : []),
         ...uiQuestionTool,
+        ...(args.createConversation ? ['create_conversation'] : []),
+        ...(args.coordinateTasks ? ['coordinate_tasks'] : []),
         ...(!cfg.toolsEnabled&&state.working.some(m=>m.attachments?.some(a=>(a.text?.length || 0)>100000))?['read_context']:[]),
         ...(subagents.enabled?['spawn_subagent','list_subagents','wait_subagents']:[]),
-      ])].filter((n) => usable.has(n) && TOOL_BY_NAME[n] && (n!=='complete_task'||harnessMode(cfg)==='guided') && (subagents.enabled || !['spawn_subagent','list_subagents','wait_subagents'].includes(n)));
+      ])].filter((n) => usable.has(n) && TOOL_BY_NAME[n] && (n!=='create_conversation'||Boolean(args.createConversation)) && (n!=='coordinate_tasks'||Boolean(args.coordinateTasks)) && (n!=='complete_task'||harnessMode(cfg)==='guided') && (subagents.enabled || !['spawn_subagent','list_subagents','wait_subagents'].includes(n)));
       if (cfg.toolsEnabled && !toolNames.length) {
         await finishPause('工具开关已开启，但没有可用工具', { ...pauseInfo('没有可用工具'), kind: 'tools_unsupported', fixes: ['在配置中选择至少一个当前平台可用的工具'] });
         return;
@@ -749,6 +756,8 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
                   if (control.signal.aborted) throw abortError();
                   try {
                     result = ['spawn_subagent','list_subagents','wait_subagents'].includes(call.name) ? await interrupted(subagents.tool(call.name,parsed))
+                      : call.name === 'coordinate_tasks' ? await interrupted(args.coordinateTasks!(parsed,state.runId!))
+                      : call.name === 'create_conversation' ? await interrupted(args.createConversation!(parseConversationRequest(parsed), state.runId!))
                       : call.name === 'complete_task' ? recordTaskReview(state,parsed)
                       : call.name === 'read_context' ? readContext(state, parsed)
                       : call.name === 'read_skill' ? readSkill(args.skills ?? [], parsed)
@@ -833,6 +842,7 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
           state.round++; state.pendingCalls = []; state.toolCursor = 0;
           await save();
         }
+        if(await receiveCoordination(state,args.coordinationInbox))await save();
         const final = state.phase === 'final';
         let attempts = 0;
         const recoveryStarted = Date.now();
@@ -999,9 +1009,9 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
           const info = incomplete ? { ...pauseInfo(failure.message), kind: 'network' as const, retryable: true }
             : classifyError(failure.message, failure.status, { model: cfg.model, profileName: args.profileName, sentTools: toolNames.length > 0 });
           stat.failureKind=info.kind;
-          if(info.kind==='tools_unsupported' && !cfg.toolsEnabled && toolNames.length===1 && toolNames[0]==='request_user_input'){
-            toolNames.splice(0,1);
-            events.onNotice('此模型不支持提问卡片，正在继续普通聊天');
+          if(info.kind==='tools_unsupported' && !cfg.toolsEnabled && toolNames.length>0 && toolNames.every(n=>['request_user_input','create_conversation','coordinate_tasks'].includes(n))){
+            toolNames.splice(0);
+            events.onNotice('此模型不支持交互工具，正在继续普通聊天；可用 /chat 或 /work 新建对话');
             await save();continue;
           }
           const recoveryLimit = policy.recoveryMinutes*60_000;
