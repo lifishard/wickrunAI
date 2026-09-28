@@ -16,6 +16,11 @@ export const LOCALES: { value: Locale; label: string; label2: string; lang: stri
  * 英文查词典，查不到就退回简体原文 —— 半翻译的界面也比缺字的界面好用。
  */
 const EN: Record<string, string> = {
+  '对话菜单': 'Conversation menu',
+  '提问、写作、整理文件，从这里开始。': 'Ask, write, and organize files. Start here.',
+  '帮我整理今天的计划': 'Help me plan my day',
+  '帮我润色一段文字': 'Help me polish some writing',
+
   '本机工作目录仅在桌面版可用；仍可添加文件和图片。': 'Local workspaces are available in the desktop app. You can still attach files and images.',
   '仅存本机': 'On this device',
   '此移动应用的账号同步尚未接通。聊天和设置保存在此设备，不会自动出现在其他设备。': 'Account sync is not connected in this mobile app yet. Chats and settings stay on this device and do not appear automatically on other devices.',

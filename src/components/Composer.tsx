@@ -1,3 +1,4 @@
+import { desktop } from '../lib/transport';
 import React from 'react';
 import MarkdownInput, {type MarkdownInputHandle} from './MarkdownInput';
 import AnchoredPopover from './AnchoredPopover';
@@ -254,6 +255,8 @@ export default function Composer(props: {
 
     const mod = e.metaKey || e.ctrlKey;
     if (e.key !== 'Enter') return;
+    // A phone keyboard Return inserts a newline; sending requires the visible button.
+    if (matchMedia('(pointer: coarse)').matches && !e.ctrlKey && !e.metaKey) return;
     if (props.sendKey === 'enter' ? !e.shiftKey && !mod : mod) {
       e.preventDefault();
       submit();
@@ -540,7 +543,7 @@ export default function Composer(props: {
             </div>
 
             <ModelPicker
-              clientSlot={props.connectionSettings && props.onClient && props.onConnectionSettings ? <ClientConnections selection={props.client} onSelect={props.onClient} settings={props.connectionSettings} onSettings={props.onConnectionSettings}/> : undefined}
+              clientSlot={desktop() && props.connectionSettings && props.onClient && props.onConnectionSettings ? <ClientConnections selection={props.client} onSelect={props.onClient} settings={props.connectionSettings} onSettings={props.onConnectionSettings}/> : undefined}
               displayModel={props.client ? `${CLIENT_LABELS[props.client.kind]} · ${props.client.model==='default'?t('默认'):props.client.model}` : undefined}
               profiles={props.profiles}
               profileId={props.profileId}

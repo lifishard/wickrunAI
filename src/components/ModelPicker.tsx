@@ -80,7 +80,7 @@ export default function ModelPicker(props: {
   const inputRef = React.useRef<HTMLInputElement>(null);
 
   React.useEffect(() => {
-    if (open) setTimeout(() => inputRef.current?.focus(), 0);
+    if (open && !matchMedia('(max-width: 860px)').matches) setTimeout(() => inputRef.current?.focus(), 0);
     else {
       setQ('');
       setShowBad(false);
