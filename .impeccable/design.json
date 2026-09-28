@@ -1,0 +1,228 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-28T07:07:45.916Z",
+  "title": "Design System: wickrunAI Platform",
+  "extensions": {
+    "colorMeta": {
+      "bg": {
+        "role": "neutral",
+        "displayName": "bg"
+      },
+      "bg-elev": {
+        "role": "neutral",
+        "displayName": "bg elev"
+      },
+      "bg-sunken": {
+        "role": "neutral",
+        "displayName": "bg sunken"
+      },
+      "fg": {
+        "role": "neutral",
+        "displayName": "fg"
+      },
+      "fg-dim": {
+        "role": "neutral",
+        "displayName": "fg dim"
+      },
+      "border": {
+        "role": "neutral",
+        "displayName": "border"
+      },
+      "accent": {
+        "role": "primary",
+        "displayName": "accent"
+      },
+      "accent-hover": {
+        "role": "primary",
+        "displayName": "accent hover"
+      },
+      "accent-fg": {
+        "role": "primary",
+        "displayName": "accent fg"
+      },
+      "bg-hover": {
+        "role": "neutral",
+        "displayName": "bg hover"
+      },
+      "dark-bg": {
+        "role": "neutral",
+        "displayName": "dark bg"
+      },
+      "dark-bg-elev": {
+        "role": "neutral",
+        "displayName": "dark bg elev"
+      },
+      "dark-bg-sunken": {
+        "role": "neutral",
+        "displayName": "dark bg sunken"
+      },
+      "dark-fg": {
+        "role": "neutral",
+        "displayName": "dark fg"
+      },
+      "dark-fg-dim": {
+        "role": "neutral",
+        "displayName": "dark fg dim"
+      },
+      "dark-border": {
+        "role": "neutral",
+        "displayName": "dark border"
+      },
+      "dark-accent": {
+        "role": "primary",
+        "displayName": "dark accent"
+      },
+      "dark-accent-hover": {
+        "role": "primary",
+        "displayName": "dark accent hover"
+      },
+      "dark-accent-fg": {
+        "role": "primary",
+        "displayName": "dark accent fg"
+      }
+    },
+    "typographyMeta": {
+      "headline": {
+        "displayName": "Mobile greeting",
+        "purpose": "Existing mobile interface greeting; not a new global display face."
+      }
+    },
+    "shadows": [
+      {
+        "name": "inherited-overlay-light",
+        "value": "0 8px 28px rgba(15, 20, 35, 0.14)",
+        "purpose": "Existing elevated overlays; mobile composer remains shadowless."
+      },
+      {
+        "name": "inherited-overlay-dark",
+        "value": "0 10px 34px rgba(0, 0, 0, 0.5)",
+        "purpose": "Dark-theme overlays."
+      }
+    ],
+    "motion": [
+      {
+        "name": "button-state",
+        "value": "background 0.12s, border-color 0.12s",
+        "purpose": "Inherited button transition."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "mobile-max-width",
+        "value": "860px"
+      },
+      {
+        "name": "mobile-short-max-height",
+        "value": "550px"
+      }
+    ],
+    "evidence": {
+      "sources": [
+        "src/styles.css",
+        "src/mobile.css",
+        "src/lib/mobile-layout.ts",
+        "PRODUCT.md",
+        "docs/MOBILE_C_DESIGN.md"
+      ],
+      "screenshots": [
+        ".impeccable/review/mobile.png",
+        ".impeccable/review/menu.png",
+        ".impeccable/review/keyboard.png",
+        ".impeccable/review/desktop.png"
+      ],
+      "visualDisposition": "No material visual defect found; C matches or reasonably adapts.",
+      "workflowDisposition": "fix",
+      "missing": [
+        "Full comp-build automation records",
+        "Formal comp-build spec",
+        "Comp-build diff artifacts"
+      ],
+      "unverified": [
+        "Physical POCO F5 acceptance",
+        "Actual Android keyboard and system bars",
+        "Exhaustive dark-theme states",
+        "End-to-end account/model/network behavior"
+      ],
+      "tonalRamps": "Omitted: no mobile tonal-ramp primitive is implemented; do not treat synthesized ramps as shipped tokens.",
+      "snippetBoundary": "Illustrative static extracted component previews; browser-default focus fallback where no shared rule exists. Not executable application behavior."
+    }
+  },
+  "components": [
+    {
+      "name": "Mobile send",
+      "kind": "button",
+      "refersTo": "mobile-send",
+      "description": "Round primary send action; disabled state inherits reduced opacity.",
+      "html": "<button class=\"ds-send\" aria-label=\"Send\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\"><path d=\"M12 19V5m-6 6 6-6 6 6\"/></svg></button>",
+      "css": ".ds-send{font-family:-apple-system, BlinkMacSystemFont, \"Segoe UI\", \"PingFang SC\", \"Hiragino Sans GB\", \"Microsoft YaHei\", \"Noto Sans CJK SC\", Roboto, sans-serif;display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;padding:0;border:1px solid var(--accent,#4f6bed);border-radius:50%;background:var(--accent,#4f6bed);color:var(--accent-fg,#fff);transition:background .12s,border-color .12s}.ds-send:hover:not(:disabled){background:var(--accent-hover,#3f59d6);border-color:var(--accent-hover,#3f59d6)}.ds-send:disabled{opacity:.45;cursor:not-allowed}.ds-send:focus-visible{outline:auto}"
+    },
+    {
+      "name": "Mobile model selector",
+      "kind": "button",
+      "refersTo": "mobile-model",
+      "description": "Flexible selector, with truncation and a substantial touch target.",
+      "html": "<button class=\"ds-model\">选模型 <svg width=\"12\" height=\"12\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\"><path d=\"m6 9 6 6 6-6\"/></svg></button>",
+      "css": ".ds-model{font-family:-apple-system, BlinkMacSystemFont, \"Segoe UI\", \"PingFang SC\", \"Hiragino Sans GB\", \"Microsoft YaHei\", \"Noto Sans CJK SC\", Roboto, sans-serif;min-height:48px;max-width:100%;padding:8px 6px;border:0;border-radius:12px;background:var(--bg-sunken,#eceef2);color:var(--fg,#1b1f27);font-size:13px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.ds-model:hover{background:var(--bg-hover,rgba(0,0,0,.045))}.ds-model:focus-visible{outline:auto}"
+    },
+    {
+      "name": "Mobile composer",
+      "kind": "input",
+      "refersTo": "mobile-composer",
+      "description": "Flat input shell; the production toolbar is composed separately.",
+      "html": "<div class=\"ds-composer\"><div class=\"ds-input\" contenteditable=\"true\" role=\"textbox\" aria-label=\"Message\">发消息…</div></div>",
+      "css": ".ds-composer{padding:10px 8px 6px;border:1px solid var(--border,#dfe3ea);border-radius:20px;background:var(--bg-elev,#ffffff)}.ds-composer:focus-within{border-color:var(--fg-dim,#606a7b);box-shadow:none}.ds-input{font-family:-apple-system, BlinkMacSystemFont, \"Segoe UI\", \"PingFang SC\", \"Hiragino Sans GB\", \"Microsoft YaHei\", \"Noto Sans CJK SC\", Roboto, sans-serif;padding:6px 8px;font-size:16px;line-height:1.55;min-height:44px;max-height:min(24dvh,160px);overflow:auto;color:var(--fg,#1b1f27)}.ds-input:focus-visible{outline:none}"
+    },
+    {
+      "name": "Mobile suggestion row",
+      "kind": "button",
+      "refersTo": "mobile-suggestion",
+      "description": "Unboxed suggestion with a separator and trailing chevron.",
+      "html": "<button class=\"ds-suggestion\"><span>帮我整理今天的计划</span><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\"><path d=\"m9 5 7 7-7 7\"/></svg></button>",
+      "css": ".ds-suggestion{font-family:-apple-system, BlinkMacSystemFont, \"Segoe UI\", \"PingFang SC\", \"Hiragino Sans GB\", \"Microsoft YaHei\", \"Noto Sans CJK SC\", Roboto, sans-serif;display:flex;align-items:center;justify-content:space-between;gap:14px;width:100%;min-height:56px;padding:12px 8px;border:0;border-bottom:1px solid var(--border,#dfe3ea);border-radius:0;background:transparent;color:var(--fg,#1b1f27);font-size:14px;text-align:left;box-shadow:none}.ds-suggestion:focus-visible{outline:auto}"
+    },
+    {
+      "name": "Mobile preferences sheet",
+      "kind": "card",
+      "refersTo": "mobile-sheet",
+      "description": "Flat list sheet; this preview shows its container, not a working modal.",
+      "html": "<section class=\"ds-sheet\"><header>对话设置</header><button class=\"ds-row\">API 凭据</button><button class=\"ds-row\">对话偏好</button></section>",
+      "css": ".ds-sheet{font-family:-apple-system, BlinkMacSystemFont, \"Segoe UI\", \"PingFang SC\", \"Hiragino Sans GB\", \"Microsoft YaHei\", \"Noto Sans CJK SC\", Roboto, sans-serif;border-radius:22px 22px 0 0;background:var(--bg-elev,#ffffff);color:var(--fg,#1b1f27);padding-bottom:env(safe-area-inset-bottom)}.ds-sheet header{display:flex;align-items:center;min-height:64px;padding:8px 20px;font-size:17px;font-weight:600}.ds-row{font-family:-apple-system, BlinkMacSystemFont, \"Segoe UI\", \"PingFang SC\", \"Hiragino Sans GB\", \"Microsoft YaHei\", \"Noto Sans CJK SC\", Roboto, sans-serif;display:block;min-height:56px;width:calc(100% - 40px);margin:0 20px;padding:12px 4px;border:0;border-bottom:1px solid var(--border,#dfe3ea);border-radius:0;background:transparent;color:inherit;text-align:left;font-size:15px}.ds-row:focus-visible{outline:auto}"
+    },
+    {
+      "name": "Mobile header",
+      "kind": "nav",
+      "description": "Compact navigation title with a thin menu icon; account capability is surface specific.",
+      "html": "<nav class=\"ds-nav\"><button aria-label=\"Open sidebar\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" stroke=\"currentColor\" fill=\"none\"><path d=\"M4 6h16M4 12h16M4 18h16\"/></svg></button><strong>wickrunAI</strong></nav>",
+      "css": ".ds-nav{font-family:-apple-system, BlinkMacSystemFont, \"Segoe UI\", \"PingFang SC\", \"Hiragino Sans GB\", \"Microsoft YaHei\", \"Noto Sans CJK SC\", Roboto, sans-serif;display:flex;align-items:center;gap:8px;min-height:56px;padding:0 12px;background:var(--bg-elev,#ffffff);color:var(--fg,#1b1f27)}.ds-nav strong{font-size:17px;font-weight:600}.ds-nav button{display:flex;align-items:center;justify-content:center;width:48px;height:48px;padding:0;border:0;background:transparent;color:var(--fg-dim,#606a7b)}.ds-nav button:focus-visible{outline:auto}"
+    }
+  ],
+  "narrative": {
+    "northStar": "Compact conversation within the existing wickrunAI world",
+    "overview": "A compact conversation workspace within the existing wickrunAI identity. White or charcoal surfaces, restrained separators, thin action icons, and a blue send action keep attention on starting and continuing a conversation. This is an existing-system mobile extension; desktop composition and brand assets remain authoritative for desktop.",
+    "keyCharacteristics": [
+      "One composer with one mobile toolbar.",
+      "Compact visible controls with substantial touch areas.",
+      "Unboxed suggestion and preference rows.",
+      "Theme-aware surfaces and safe-area-aware docking."
+    ],
+    "rules": [
+      {
+        "name": "The Semantic Surface Rule",
+        "body": "Use existing theme variables for mobile components so dark mode follows the incumbent palette.",
+        "section": "colors"
+      }
+    ],
+    "dos": [
+      "Do preserve each surface's existing logo and desktop identity.",
+      "Do keep model and Chat/Work controls beside the send action.",
+      "Do allow content to scroll inside constrained panels and inputs.",
+      "Do distinguish browser evidence from physical-device acceptance."
+    ],
+    "donts": [
+      "Don't ship generated mockup pixels as functional UI.",
+      "Don't duplicate account entry points on web.",
+      "Don't turn mobile dimensions into global desktop rules.",
+      "Don't describe unperformed automation or device gates as passed."
+    ]
+  }
+}

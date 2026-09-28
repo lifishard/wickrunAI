@@ -1,3 +1,4 @@
+import MobileIcon from './components/MobileIcon';
 import { usePhoneLayout } from './lib/mobile-layout';
 import { relatedConversations } from './lib/conversation-coordination';
 import { conversationCommand, parseConversationRequest, conversationRequestIdentity, requestedConversation, type ConversationRequest } from './lib/create-conversation';
@@ -2126,14 +2127,14 @@ export default function App() {
         {active?.workspaceError?<div className="grant-banner" role="alert">{active.workspaceError}</div>:active?.workspace?<div className="grant-banner">{t('当前 Work 使用独立文件副本；在「并行任务」中检查并应用改动。')}</div>:null}
         {saveError ? <div className="grant-banner" role="alert">{saveError}<button className="btn sm" onClick={() => { void Promise.all([saveSettings(settings), saveConversationsNow(conversations),saveProjects(projects),saveSkills(skills),saveTasks(tasks)]).then(() => setSaveError(null)).catch(reportSaveError); }}>{t('重试保存')}</button></div> : null}
         <div className="mobile-topbar">
-          <button className="icon-btn" aria-label={t('展开侧栏')} onClick={() => { setSidebarHidden(false); setSidebarOpen(true); }}>☰</button>
-          <span className="page-title">{active ? conversationTitle(active.title, t) : t('新对话')}</span>
-          <button className="icon-btn" aria-label={t('对话菜单')} onClick={() => setPhoneMenu(true)}>•••</button>
+          <button className="icon-btn" aria-label={t('展开侧栏')} onClick={() => { setSidebarHidden(false); setSidebarOpen(true); }}><MobileIcon name="menu"/></button>
+          <span className="page-title">{active ? conversationTitle(active.title, t) : 'wickrunAI'}</span>
+          <button className="icon-btn" aria-label={t('对话菜单')} onClick={() => setPhoneMenu(true)}><MobileIcon name="more"/></button>
         </div>
-        {phoneMenu && <Modal title={t('对话菜单')} onClose={() => setPhoneMenu(false)}>
+        {phoneMenu && <Modal title={t('对话设置')} onClose={() => setPhoneMenu(false)}>
           <div className="mobile-actions">
-            <button className="btn" onClick={() => {setPhoneMenu(false);setSettingsTab('keys');setSettingsOpen(true);}}>{t('API 凭据')}</button>
-            <button className="btn" onClick={() => {setPhoneMenu(false);setConfigOpen(true);}}>{t('⚙ 配置')}</button>
+            <button className="btn" onClick={() => {setPhoneMenu(false);setSettingsTab('keys');setSettingsOpen(true);}}><MobileIcon name="key"/><span>{t('API 凭据')}</span><MobileIcon name="chevron"/></button>
+            <button className="btn" onClick={() => {setPhoneMenu(false);setConfigOpen(true);}}><MobileIcon name="settings"/><span>{t('对话偏好')}</span><MobileIcon name="chevron"/></button>
             {canRunHostTools && <button className="btn" onClick={() => {setPhoneMenu(false);setCodeChangesOpen(true);setActivityOpen(false);setConfigOpen(false);setOpenArtifact(null);}}>{t('代码改动')}</button>}
             {msgs.some(hasActivity) && <button className="btn" onClick={() => {setPhoneMenu(false);setActivityOpen(true);setConfigOpen(false);setOpenArtifact(null);}}>{t('任务动态')}</button>}
             <LocaleSwitch onChange={locale => setSettings(prev => prev ? {...prev,locale} : prev)} />
@@ -2186,9 +2187,9 @@ export default function App() {
         {turns.length === 0 ? (
           <div className="hero">
             <BrandLogo size={48} label="wickrunAI" />
-            <h1 className="hero-title">{t(active?.handoffKey ? '审阅交接内容' : '问点什么')}</h1>
+            <h1 className="hero-title">{t(active?.handoffKey ? '审阅交接内容' : phone ? '开始新的想法' : '问点什么')}</h1>
             <p className="hero-sub">
-              {t(active?.handoffKey ? '新对话已准备好，由你决定下一步。' : phone ? '提问、写作、整理文件，从这里开始。' : '会自己联网查证、读你本地的文件、翻 Chrome 里的页面，答案里带可点的来源编号。')}
+              {t(active?.handoffKey ? '新对话已准备好，由你决定下一步。' : phone ? '提问、写作、整理资料' : '会自己联网查证、读你本地的文件、翻 Chrome 里的页面，答案里带可点的来源编号。')}
             </p>
             <div className="hero-box">
               {active?.handoffKey ? <section className="recovery-card" aria-label={t('交接草稿')}>
@@ -2201,8 +2202,8 @@ export default function App() {
             </div>
             {!active?.handoffKey ? <div className="hero-examples">
               {(phone ? ['帮我整理今天的计划', '帮我润色一段文字'] : EXAMPLES).map((e) => (
-                <button key={e} className="example-chip" onClick={() => void send(t(e))}>
-                  {t(e)}
+                <button key={e} className="example-chip" onClick={() => phone ? window.dispatchEvent(new CustomEvent('wickrun:prompt',{detail:t(e)})) : void send(t(e))}>
+                  {phone && <MobileIcon name={e.includes('计划') ? 'note' : 'pen'}/>}<span>{t(e)}</span>{phone && <MobileIcon name="chevron"/>}
                 </button>
               ))}
             </div> : null}

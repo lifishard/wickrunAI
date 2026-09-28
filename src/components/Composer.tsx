@@ -1,3 +1,5 @@
+import MobileIcon from './MobileIcon';
+import { usePhoneLayout } from '../lib/mobile-layout';
 import { desktop } from '../lib/transport';
 import React from 'react';
 import MarkdownInput, {type MarkdownInputHandle} from './MarkdownInput';
@@ -134,7 +136,13 @@ export default function Composer(props: {
   onDropQueued: (index: number) => void;
 }) {
   const t = useT();
+  const phone = usePhoneLayout();
   const [text, setText] = React.useState(props.initialDraft ?? '');
+  React.useEffect(() => {
+    const fill = (event: Event) => { setText(String((event as CustomEvent).detail)); };
+    window.addEventListener('wickrun:prompt', fill);
+    return () => window.removeEventListener('wickrun:prompt', fill);
+  }, []);
   const [attachmentError,setAttachmentError]=React.useState('');
   // Keep keystrokes local; synchronizing every key repaints and saves the entire conversation.
   const draftSink = React.useRef(props.onDraftChange);
@@ -465,7 +473,7 @@ export default function Composer(props: {
           {props.controls}
           {attachmentError?<p role="alert" className="hint">{attachmentError}</p>:null}
           <MarkdownInput ref={ref} value={text} disabled={props.disabled}
-            placeholder={props.disabled ? (props.disabledReason ?? t('请先完成配置')) : props.busy ? t('还在生成，现在输入会排到队尾…') : t('问点什么…（图片可以直接粘贴）')}
+            placeholder={props.disabled ? (props.disabledReason ?? t('请先完成配置')) : props.busy ? t('还在生成，现在输入会排到队尾…') : t(phone ? '发消息…' : '问点什么…（图片可以直接粘贴）')}
             onChange={setText} onCaret={setCaret} onKeyDown={onKeyDown} onPaste={onPaste} />
 
           {compact && moreOpen ? <div className="composer-options" id={optionsId} role="group" aria-label={t('输入设置')}>
@@ -484,7 +492,7 @@ export default function Composer(props: {
                   setApprovalOpen(false);
                 }}
               >
-                ＋
+                <MobileIcon name="plus"/>
               </button>
               {plusOpen ? (
                 <AnchoredPopover anchorRef={plusRef} onClose={() => setPlusOpen(false)} className="popup" label={t('添加附件与工作目录')}>
@@ -568,12 +576,12 @@ export default function Composer(props: {
               onManageRouteGroups={props.onManageRouteGroups}
             />
 
-            {!compact ? secondaryControls : <button className="btn sm ghost composer-more" aria-expanded={moreOpen} aria-controls={optionsId}
-              title={t(current.desc)} onClick={() => setMoreOpen(value => !value)}>{props.approvalMode === 'all' ? '⚡' : props.approvalMode === 'auto' ? '◐' : '🔒'} {t('更多')}</button>}
+            {!compact ? secondaryControls : <button className="btn sm ghost composer-more" aria-label={t("更多")} aria-expanded={moreOpen} aria-controls={optionsId}
+              title={t(current.desc)} onClick={() => setMoreOpen(value => !value)}>{phone ? <MobileIcon name="more"/> : t("更多")}</button>}
             <span className="spacer" />
 
             {/* ---- 右下角 ---- */}
-            <div className="composer-mode-switch" role="group" aria-label={t('请求模式')} title={t('沿用同一段对话和附件；Chat 讨论，Work 接着执行。切换后对下一条消息生效。')}>
+            {phone ? <select className="mobile-mode" aria-label={t('请求模式')} value={mode} onChange={event => setSendMode(event.target.value as SendMode)}><option value="chat">Chat</option><option value="work">Work</option></select> : (<div className="composer-mode-switch" role="group" aria-label={t('请求模式')} title={t('沿用同一段对话和附件；Chat 讨论，Work 接着执行。切换后对下一条消息生效。')}>
               <button
                 type="button"
                 aria-pressed={mode === 'chat'}
@@ -604,7 +612,7 @@ export default function Composer(props: {
               >
                 Work
               </button>
-            </div>
+            </div>)}
 
             {props.busy ? (
               /* 运行期间三项操作保持同一组，窄屏以图标显示。 */
@@ -624,8 +632,8 @@ export default function Composer(props: {
                 {props.onSendNow?<button className="btn sm primary" data-short-label="↗" disabled={props.disabled||!canSend} title={t('保存当前执行现场，立即处理这条新要求')} onClick={()=>{if(props.onSendNow?.(text.trim()))setText('');}}>{t('立即送出')}</button>:null}
               </div>
             ) : (
-              <button className="btn sm primary" onClick={submit} disabled={props.disabled || !canSend}>
-                {t('发送')}
+              <button className="btn sm primary mobile-send" aria-label={t("发送")} onClick={submit} disabled={props.disabled || !canSend}>
+                {phone ? <MobileIcon name="send"/> : t('发送')}
               </button>
             )}
           </div>

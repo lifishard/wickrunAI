@@ -1175,6 +1175,11 @@ const EN: Record<string, string> = {
     'Codex subscription quota',
 
   /* 面板、注释与反馈 */
+  '开始新的想法': 'Start a new idea',
+  '提问、写作、整理资料': 'Ask, write, organize',
+  '发消息…': 'Message…',
+  '对话偏好': 'Conversation preferences',
+  '对话设置': 'Conversation settings',
   '关闭': 'Close',
   '隐藏': 'Hide',
   '编辑': 'Edit',
