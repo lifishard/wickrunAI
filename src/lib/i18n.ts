@@ -1,3 +1,4 @@
+import { OFFICE_EN } from './i18n-office';
 import * as React from 'react';
 // cn2t 子路径同时给出 ESM 和 UMD，Vite 和 node 测试都能解析，且只打包简转繁这一个方向。
 import * as OpenCC from 'opencc-js/cn2t';
@@ -16,6 +17,7 @@ export const LOCALES: { value: Locale; label: string; label2: string; lang: stri
  * 英文查词典，查不到就退回简体原文 —— 半翻译的界面也比缺字的界面好用。
  */
 const EN: Record<string, string> = {
+  ...OFFICE_EN,
   '＋ 说说想做什么': '+ Tell me what you want to do',
   '管家': 'Assistant',
   '办公室': 'Office',

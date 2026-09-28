@@ -1,3 +1,4 @@
+import { localizeRoles } from './lib/role-locale';
 import { libraryRoles } from './lib/office-library';
 import { withRequestedDelegation } from './lib/role-delegation';
 import AgentRolePicker from './components/AgentRolePicker';
@@ -1212,7 +1213,7 @@ export default function App() {
         conv = newConversation(settings.defaultConfig, profile.id);
       }
       if(conv.workspaceError&&(queuedInput?.toolsEnabled??conv.config.toolsEnabled)){startingRef.current.delete(startKey);toast.show('独立工作区未准备好，任务未执行。请修正目录后重新创建 Work 会话。',6000);return;}
-      const roleCatalog=libraryRoles(settings.officeLibrary,conv.projectId?teamRuntime.project(conv.projectId).office?.customRoles:undefined);
+      const roleCatalog=localizeRoles(libraryRoles(settings.officeLibrary,conv.projectId?teamRuntime.project(conv.projectId).office?.customRoles:undefined),locale);
       const cfg = withRequestedDelegation(queuedInput?.toolsEnabled===undefined?conv.config:{...conv.config,toolsEnabled:queuedInput.toolsEnabled},text,roleCatalog,profile.id);
       // 新任务重新开始数：已试过的名单只在一次任务内有效，不该拖累下一个问题
       if(!resumeFrom)failoverTriedRef.current.delete(conv.id);
@@ -2173,7 +2174,7 @@ export default function App() {
             </button>
           ) : null}
 
-          {settings.tools.showCodeChanges !== false ? <button className="btn sm" aria-pressed={codeChangesOpen && !configOpen && !openArtifact} onClick={()=>{setCodeChangesOpen(!(codeChangesOpen && !configOpen && !openArtifact));setActivityOpen(false);setConfigOpen(false);setOpenArtifact(null);}}>代码改动</button> : null}
+          {settings.tools.showCodeChanges !== false ? <button className="btn sm" aria-pressed={codeChangesOpen && !configOpen && !openArtifact} onClick={()=>{setCodeChangesOpen(!(codeChangesOpen && !configOpen && !openArtifact));setActivityOpen(false);setConfigOpen(false);setOpenArtifact(null);}}>{t('代码改动')}</button> : null}
           {msgs.some(hasActivity) ? <button className="btn sm" aria-pressed={activityOpen && !configOpen && !openArtifact} onClick={() => { setCodeChangesOpen(false); setActivityOpen(!(activityOpen && !configOpen && !openArtifact)); setConfigOpen(false); setOpenArtifact(null); }}>{t('任务动态')}</button> : null}
 
           <button className="btn sm" onClick={() => setConfigOpen((v) => !v)}>

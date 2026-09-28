@@ -1,3 +1,4 @@
+import { tr } from './i18n';
 import catalog from '../data/agency-catalog.json';
 import { z } from 'zod';
 import { uid } from './store';
@@ -18,28 +19,28 @@ export function officeOf(p:TeamProject):Office {return p.office??{departments:[]
 export function ensureOffice(p:TeamProject):Office {return p.office??={departments:[],modules:[]};}
 export function descendants(office:Office,id:string):Department[]{const found:Department[]=[],queue=[id],seen=new Set<string>();while(queue.length){const next=queue.shift()!;if(seen.has(next))continue;seen.add(next);const d=office.departments.find(d=>d.id===next);if(d)found.push(d);queue.push(...office.departments.filter(d=>d.parentId===next).map(d=>d.id));}return found;}
 export function moveDepartment(office:Office,id:string,parentId?:string):void {
-  const d=office.departments.find(d=>d.id===id);if(!d)throw Error('部门已不存在');
-  if(parentId&&(!office.departments.some(d=>d.id===parentId)||descendants(office,id).some(d=>d.id===parentId)))throw Error('不能把部门放进自己或自己的子部门');
+  const d=office.departments.find(d=>d.id===id);if(!d)throw Error(tr("部门已不存在"));
+  if(parentId&&(!office.departments.some(d=>d.id===parentId)||descendants(office,id).some(d=>d.id===parentId)))throw Error(tr("不能把部门放进自己或自己的子部门"));
   d.parentId=parentId;
 }
 export function addRole(p:TeamProject,departmentId:string,role:AgentRole,brain:{profileId:string;model:string}):Member {
-  const department=ensureOffice(p).departments.find(d=>d.id===departmentId);if(!department)throw Error('请先选择部门');
+  const department=ensureOffice(p).departments.find(d=>d.id===departmentId);if(!department)throw Error(tr("请先选择部门"));
   const m:Member={id:uid('member'),name:role.name,instructions:role.instructions,connectionId:brain.profileId,model:brain.model,effort:'medium',enabled:true,tools:[],maxTokens:30000,maxMinutes:20,roleTemplateId:role.id};
   p.members.push(m);department.memberIds.push(m.id);return m;
 }
-export function moveMember(p:TeamProject,id:string,targetId:string):void {const o=ensureOffice(p),target=o.departments.find(d=>d.id===targetId);if(!target||!p.members.some(m=>m.id===id))throw Error('成员或部门不存在');for(const d of o.departments)d.memberIds=d.memberIds.filter(m=>m!==id);target.memberIds.push(id);}
+export function moveMember(p:TeamProject,id:string,targetId:string):void {const o=ensureOffice(p),target=o.departments.find(d=>d.id===targetId);if(!target||!p.members.some(m=>m.id===id))throw Error(tr("成员或部门不存在"));for(const d of o.departments)d.memberIds=d.memberIds.filter(m=>m!==id);target.memberIds.push(id);}
 export function dissolveDepartment(p:TeamProject,id:string):void {const o=ensureOffice(p),d=o.departments.find(d=>d.id===id);if(!d)return;const parent=o.departments.find(x=>x.id===d.parentId);if(parent){parent.memberIds=[...new Set([...parent.memberIds,...d.memberIds])];parent.workflowIds=[...new Set([...parent.workflowIds,...d.workflowIds])];}for(const child of o.departments.filter(x=>x.parentId===id))child.parentId=d.parentId;o.departments=o.departments.filter(x=>x.id!==id);}
-export function mergeDepartment(p:TeamProject,id:string,targetId:string):void {const o=ensureOffice(p),source=o.departments.find(d=>d.id===id),target=o.departments.find(d=>d.id===targetId);if(!source||!target||descendants(o,id).some(d=>d.id===targetId))throw Error('请选择其他分支的部门');target.memberIds=[...new Set([...target.memberIds,...source.memberIds])];target.workflowIds=[...new Set([...target.workflowIds,...source.workflowIds])];for(const d of o.departments.filter(d=>d.parentId===id))d.parentId=targetId;o.departments=o.departments.filter(d=>d.id!==id);}
-export function captureModule(p:TeamProject,id:string):DepartmentModule {const departments=descendants(officeOf(p),id);if(!departments.length)throw Error('部门不存在');const ids=new Set(departments.flatMap(d=>d.memberIds)),flows=new Set(departments.flatMap(d=>d.workflowIds));const workflows=p.workflows.filter(f=>flows.has(f.id));for(const f of workflows)for(const n of f.draft.nodes)for(const id of [...(n.participants??[]),...(n.memberId?[n.memberId]:[])])ids.add(id);return structuredClone({id:uid('module'),name:departments[0].name,departments:departments.map((d,i)=>({...d,parentId:i?d.parentId:undefined})),members:p.members.filter(m=>ids.has(m.id)),workflows});}
+export function mergeDepartment(p:TeamProject,id:string,targetId:string):void {const o=ensureOffice(p),source=o.departments.find(d=>d.id===id),target=o.departments.find(d=>d.id===targetId);if(!source||!target||descendants(o,id).some(d=>d.id===targetId))throw Error(tr("请选择其他分支的部门"));target.memberIds=[...new Set([...target.memberIds,...source.memberIds])];target.workflowIds=[...new Set([...target.workflowIds,...source.workflowIds])];for(const d of o.departments.filter(d=>d.parentId===id))d.parentId=targetId;o.departments=o.departments.filter(d=>d.id!==id);}
+export function captureModule(p:TeamProject,id:string):DepartmentModule {const departments=descendants(officeOf(p),id);if(!departments.length)throw Error(tr("部门不存在"));const ids=new Set(departments.flatMap(d=>d.memberIds)),flows=new Set(departments.flatMap(d=>d.workflowIds));const workflows=p.workflows.filter(f=>flows.has(f.id));for(const f of workflows)for(const n of f.draft.nodes)for(const id of [...(n.participants??[]),...(n.memberId?[n.memberId]:[])])ids.add(id);return structuredClone({id:uid('module'),name:departments[0].name,departments:departments.map((d,i)=>({...d,parentId:i?d.parentId:undefined})),members:p.members.filter(m=>ids.has(m.id)),workflows});}
 /** New identities on every instantiation; live runs keep their frozen snapshots. */
 export function installModule(p:TeamProject,module:DepartmentModule,parentId?:string,imported=false):string {
-  if(!moduleSchema.safeParse(module).success)throw Error('部门模块格式无效');
-  if(!module.departments.length||module.departments.length>100||module.members.length>300||module.workflows.length>100)throw Error('部门模块规模无效');
+  if(!moduleSchema.safeParse(module).success)throw Error(tr("部门模块格式无效"));
+  if(!module.departments.length||module.departments.length>100||module.members.length>300||module.workflows.length>100)throw Error(tr("部门模块规模无效"));
   const o=ensureOffice(p),map=new Map<string,string>();
-  for(const item of [...module.departments,...module.members,...module.workflows]){if(map.has(item.id))throw Error('模块编号重复');map.set(item.id,uid('office'));}
-  for(const d of module.departments){if(d.parentId&&!module.departments.some(parent=>parent.id===d.parentId)||d.memberIds.some(id=>!module.members.some(m=>m.id===id))||d.workflowIds.some(id=>!module.workflows.some(f=>f.id===id)))throw Error('模块引用不完整');let cur:Department|undefined=d;const seen=new Set<string>();while(cur){if(seen.has(cur.id))throw Error('模块层级形成循环');seen.add(cur.id);cur=module.departments.find(x=>x.id===cur?.parentId);}}
-  for(const f of module.workflows){const ids=new Set(f.draft.nodes.map(n=>n.id));if(ids.size!==f.draft.nodes.length||f.draft.nodes.some(n=>n.inputRefs.some(id=>!ids.has(id))||(n.condition&&!ids.has(n.condition.source))||[...(n.participants??[]),...(n.memberId?[n.memberId]:[])].some(id=>!module.members.some(m=>m.id===id)))||f.draft.edges.some(e=>!ids.has(e.from)||!ids.has(e.to)))throw Error('模块流程引用不完整');}
-  if(parentId&&!o.departments.some(d=>d.id===parentId))throw Error('目标部门不存在');
+  for(const item of [...module.departments,...module.members,...module.workflows]){if(map.has(item.id))throw Error(tr("模块编号重复"));map.set(item.id,uid('office'));}
+  for(const d of module.departments){if(d.parentId&&!module.departments.some(parent=>parent.id===d.parentId)||d.memberIds.some(id=>!module.members.some(m=>m.id===id))||d.workflowIds.some(id=>!module.workflows.some(f=>f.id===id)))throw Error(tr("模块引用不完整"));let cur:Department|undefined=d;const seen=new Set<string>();while(cur){if(seen.has(cur.id))throw Error(tr("模块层级形成循环"));seen.add(cur.id);cur=module.departments.find(x=>x.id===cur?.parentId);}}
+  for(const f of module.workflows){const ids=new Set(f.draft.nodes.map(n=>n.id));if(ids.size!==f.draft.nodes.length||f.draft.nodes.some(n=>n.inputRefs.some(id=>!ids.has(id))||(n.condition&&!ids.has(n.condition.source))||[...(n.participants??[]),...(n.memberId?[n.memberId]:[])].some(id=>!module.members.some(m=>m.id===id)))||f.draft.edges.some(e=>!ids.has(e.from)||!ids.has(e.to)))throw Error(tr("模块流程引用不完整"));}
+  if(parentId&&!o.departments.some(d=>d.id===parentId))throw Error(tr("目标部门不存在"));
   const members=module.members.map(m=>({...structuredClone(m),id:map.get(m.id)!,...(imported?{connectionId:'',model:'',tools:[],skills:[],failover:undefined,fileScope:undefined,enabled:false}:{})}));
   const workflows=module.workflows.map(f=>{const next=structuredClone(f),nodes=new Map(f.draft.nodes.map(n=>[n.id,uid('node')]));next.id=map.get(f.id)!;next.name=f.name+' · 副本';next.versions=[];next.updatedAt=Date.now();next.draft.nodes=next.draft.nodes.map(n=>({...n,id:nodes.get(n.id)!,memberId:n.memberId?map.get(n.memberId):undefined,participants:n.participants?.map(id=>map.get(id)!).filter(Boolean),inputRefs:n.inputRefs.map(id=>nodes.get(id)!).filter(Boolean),condition:n.condition?{...n.condition,source:nodes.get(n.condition.source)!}:undefined}));next.draft.edges=next.draft.edges.map(e=>({...e,id:uid('edge'),from:nodes.get(e.from)!,to:nodes.get(e.to)!}));return next;});
   o.departments.push(...module.departments.map(d=>({...structuredClone(d),id:map.get(d.id)!,parentId:d.parentId?map.get(d.parentId):parentId,memberIds:d.memberIds.map(id=>map.get(id)!),workflowIds:d.workflowIds.map(id=>map.get(id)!)})));p.members.push(...members);p.workflows.push(...workflows);return map.get(module.departments[0].id)!;
@@ -47,7 +48,7 @@ export function installModule(p:TeamProject,module:DepartmentModule,parentId?:st
 export function proposalFlow(proposal:OfficeProposal,members:Member[],roleMembers:Record<string,string>):Workflow {
   const flow=newWorkflow(proposal.title),[start,end]=flow.draft.nodes;end.outputRequirement=proposal.acceptance;
   const workers=proposal.steps.map((step,i)=>{const n=newNode('agent',320+i*240,160);n.title=members.find(m=>m.id===roleMembers[step.roleId])?.name??'执行';n.memberId=roleMembers[step.roleId];n.instructions=step.instruction;n.outputRequirement=step.output;return n;});
-  if(!workers.length)throw Error('方案需要至少一个工作步骤');
+  if(!workers.length)throw Error(tr("方案需要至少一个工作步骤"));
   const edges:Workflow['draft']['edges']=[],nodes:FlowNode[]=[start,...workers,end];
   const link=(a:FlowNode,b:FlowNode,port='next')=>edges.push({id:uid('edge'),from:a.id,to:b.id,port,label:port==='next'?'继续':port,maxTraversals:1});
   let last:FlowNode=workers.at(-1)!;

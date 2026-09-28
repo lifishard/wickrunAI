@@ -11,3 +11,22 @@
 .office-source-changes pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:260px;overflow:auto;font-size:11px}.agent-role-menu .team-field{display:flex;flex-direction:column;gap:6px;margin-bottom:12px}.agent-role-menu input:not([type=checkbox]),.agent-role-menu select{width:100%;min-width:0;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--fg);font:inherit}.agent-role-menu .office-role-option>span{overflow-wrap:anywhere}.agent-role-menu .agent-avatar{width:34px;height:34px}.subagent-progress details{overflow-wrap:anywhere}
 
 .agent-role-menu>p{margin:0 0 10px}.role-search-fields{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:10px}.agent-role-menu .role-search-fields .team-field{margin-bottom:8px;min-width:0}.role-enabled-summary{margin:8px 0;font-size:11px}.role-enabled-summary p{line-height:1.6}.agent-role-menu .office-batch-actions{gap:6px}.agent-role-menu .office-role-option small{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+
+/* Role selection and its inspector share a row; long prompts never push the
+   reader below the catalog. The department floor stays available below. */
+.agent-office{container-type:inline-size}
+.office-layout.with-inspector{grid-template-columns:minmax(220px,280px) minmax(0,1fr);align-items:start}
+.office-layout.with-inspector>.office-floor{grid-column:1/-1}
+.office-role-details{position:relative;min-width:0;margin:0;padding:0;border:1px solid var(--border);background:var(--bg-elev);max-height:calc(100dvh - 150px);display:flex;flex-direction:column;overflow:hidden}
+.office-role-details>header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:16px;border-bottom:1px solid var(--border)}
+.office-role-details h3{margin:0;font-size:17px;line-height:1.5;overflow-wrap:anywhere}
+.office-role-details>header .btn{flex-shrink:0}
+.office-role-detail-body{padding:16px;overflow:auto;min-height:0;overscroll-behavior:contain;scrollbar-gutter:stable}
+.office-role-detail-body p{line-height:1.7}.office-role-detail-body>details{margin-top:20px}.office-role-detail-body .markdown{max-width:75ch}
+.office-role-reopen{margin-bottom:12px;white-space:normal;text-align:left}
+.office-layout.with-inspector .office-role-list{display:block;max-height:min(480px,55dvh)}
+.office-role-option[aria-pressed=true]{background:var(--bg-hover);border-radius:6px}
+@container(max-width:600px){.office-layout.with-inspector{grid-template-columns:minmax(150px,.8fr) minmax(0,1.2fr);gap:12px}.office-layout.with-inspector .office-role-tile{flex-wrap:wrap}.office-layout.with-inspector .office-role-option{min-width:100px}.office-layout.with-inspector .agent-avatar{display:none}.office-role-details>header{flex-wrap:wrap;padding:12px}.office-role-detail-body{padding:12px}}
+@container(max-width:400px){.office-layout.with-inspector{grid-template-columns:minmax(120px,.8fr) minmax(0,1.2fr);gap:8px}.office-role-details h3{font-size:14px}.office-role-detail-body{font-size:13px}.office-role-details{max-height:75dvh}}
+
+.office-layout.with-inspector>.office-shelf{position:static}

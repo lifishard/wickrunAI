@@ -41,7 +41,7 @@ export default function SubagentProgress({ jobs }: { jobs: SubagentJob[] }) {
               <span>{t('{n} 步', { n: job.steps })}</span>
             </header>
             <p>{t(summaryOf(job))}</p>
-            <details><summary>查看子任务与完整结果</summary><p>{job.task}</p><small>{job.model}</small><Markdown text={job.content||job.error||'尚未返回结果'}/></details>
+            <details><summary>{t('查看子任务与完整结果')}</summary><p>{job.task}</p><small>{job.model}</small><Markdown text={job.content||job.error||t('尚未返回结果')}/></details>
           </article>
         ))}
       </div>
