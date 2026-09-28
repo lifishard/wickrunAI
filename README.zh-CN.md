@@ -8,12 +8,12 @@
 
 开源的、闭源的，付费的、免费的，都能调度。Key 自己带，只留在你本机。
 
-[![Version](https://img.shields.io/badge/version-2.20.10-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
+[![Version](https://img.shields.io/badge/version-2.20.11-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-lightgrey)](#安装)
 [![CI](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml/badge.svg)](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml)
 
-[下载](https://github.com/lifishard/wickrunAI/releases) · [文档](docs/README.md) · [配置说明](docs/CONFIGURATION.md) · [构建方法](docs/BUILD.md) · [安全说明](SECURITY.md)
+[下载](https://wickrunai.com/download) · [文档](docs/README.md) · [配置说明](docs/CONFIGURATION.md) · [构建方法](docs/BUILD.md) · [安全说明](SECURITY.md)
 
 [English](README.md) · **简体中文**
 
@@ -39,7 +39,7 @@
 
 ## 60 秒拿到第一个回答
 
-1. **下载。** 到 [Releases](https://github.com/lifishard/wickrunAI/releases) 拿对应平台的文件运行。不用注册，不用登录。
+1. **下载。** 打开[下载入口](https://wickrunai.com/download)，选择系统和配置后安装。不用注册，不用登录。
 2. **填一个 Key。** 设置 → API 凭据 → 填 Base URL 和 API Key，点「测试连接」。想先用免费路由就选 OpenRouter 那个预设。Key 会经系统密钥库加密保存——Windows 走 DPAPI，macOS 走 Keychain，Linux 走 libsecret。
 3. **发一条消息。** 在输入框旁边选一个模型，问点什么。配置到这里就结束了。
 
@@ -174,14 +174,17 @@ Chat 与 Work 都支持 AI 提问卡片，可选择选项或填写自己的回�
 
 ## 安装
 
-从 [Releases](https://github.com/lifishard/wickrunAI/releases) 下载对应平台的文件。新版文件使用 `wickrunAI` 前缀；历史版本仍保留发布时的名称。
+从 **[下载 wickrunAI](https://wickrunai.com/download)** 选择操作系统，也可直接点击下表对应配置。入口自动跟随公开版本，无需在 Release 文件列表中筛选。
 
-| 平台 | 文件 |
-|---|---|
-| Windows 64 位 | `wickrunAI-x.y.z-win-x64-setup.exe`；免安装版为 `-portable.exe` |
-| macOS Apple Silicon | `wickrunAI-x.y.z-mac-arm64.dmg` |
-| macOS Intel | `wickrunAI-x.y.z-mac-x64.dmg` |
-| Linux 64 位 | `wickrunAI-x.y.z-linux-x64.AppImage` 或 `.deb` |
+| 操作系统 | 配置 | 下载 |
+|---|---|---|
+| [Windows](https://wickrunai.com/download?platform=windows) | Intel / AMD · x64 | [安装版 EXE](https://wickrunai.com/download/windows/x64/setup) · [免安装版 EXE](https://wickrunai.com/download/windows/x64/portable) |
+| [macOS](https://wickrunai.com/download?platform=macos) | Apple 芯片（M 系列） | [DMG 安装包](https://wickrunai.com/download/macos/arm64/dmg) · [ZIP](https://wickrunai.com/download/macos/arm64/zip) |
+| macOS | Intel | [DMG 安装包](https://wickrunai.com/download/macos/x64/dmg) · [ZIP](https://wickrunai.com/download/macos/x64/zip) |
+| [Linux](https://wickrunai.com/download?platform=linux) | Intel / AMD · x64 | [AppImage](https://wickrunai.com/download/linux/x64/appimage) · [Debian / Ubuntu DEB](https://wickrunai.com/download/linux/x64/deb) |
+| [Android](https://wickrunai.com/download?platform=android) | 手机与平板 | [APK 预览版](https://wickrunai.com/download/android/universal/apk) |
+
+Android 为测试签名的工程预览，尚未完成真机验收，账号同步和大型文件导出暂未提供。版本说明、校验和与历史版本见 [GitHub Releases](https://github.com/lifishard/wickrunAI/releases)。
 
 当前安装包没有代码签名，Windows 或 macOS 可能显示发布者提示。下载后可使用 Release 中的 `SHA256SUMS.txt` 核对文件；也可以按下面的方法从源码构建。
 
