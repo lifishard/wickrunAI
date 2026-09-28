@@ -70,7 +70,7 @@ export function createSubagentRuntime(args:RunAgentArgs,state:RunState,save:()=>
           params:{...args.config.params,max_tokens:{enabled:true,value:2048},max_completion_tokens:{enabled:false,value:2048}},
           runtime:{contextTokens:32000,tpm:0,rpm:0,maxTokens:WORKER_BUDGET,maxMinutes:10,recoveryMinutes:1,harness:'guided',semanticCompression:true}};
         job.status='running';await save();
-        running.handle=run({...args,requestId:`${args.requestId}-sub-${job.id}`,profile:selected.profile,apiKey:selected.apiKey,config,
+        running.handle=run({...args,createConversation:undefined,coordinateTasks:undefined,coordinationInbox:undefined,requestId:`${args.requestId}-sub-${job.id}`,profile:selected.profile,apiKey:selected.apiKey,config,
           history:[{id:'subtask-'+job.id,role:'user',content:task,createdAt:Date.now()}],resume:undefined,conversationMemory:undefined,compactBeforeRun:false,
           resolveWorker:undefined,previousModel:undefined,limitOf:()=>args.limits?.get(selected.profile.id,worker.model,selected.profile.baseUrl),onLearnLimit:l=>args.limits?.learn(selected.profile.id,worker.model,selected.profile.baseUrl,l),modelInfo:selected.models?.find(m=>m.id===worker.model),autoRetry:0,
           extraSystem:'你是临时子代理，只完成指定子任务并返回结果、证据与局限。不要假设拥有父任务的完整历史，不要派发其他子代理，不要扩大范围。'+(pool!.allowEdits?'编辑仍需遵守用户当前权限和逐步审批。':'仅可查阅资料和给出文字结果，不能修改文件或执行写操作。'),

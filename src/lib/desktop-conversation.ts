@@ -1,3 +1,4 @@
+import { receiveCoordination } from './conversation-coordination';
 import { bridgeImages } from './bridge-images';
 import { addRunInput } from './delivery';
 import { reconcileProgress } from './task-progress';
@@ -31,6 +32,7 @@ export function runDesktopConversation(args:RunAgentArgs):AgentHandle {
       if(reviewBlocked)throw Error(reviewBlocked);
       if(!bridge?.nativeAiCreate)throw Error('Claude Desktop 连接需要桌面版。');
       if(!state.nativeDesktop?.taskId){
+        await receiveCoordination(state,args.coordinationInbox);
         const {images,history}=bridgeImages(state.working);
         const goal=JSON.stringify(buildWire(history,{...args.config,toolsEnabled:false,historyLimit:0},args.extraSystem+harnessInstructions(args.config,state)+nativeProgressInstructions(state)));
         if(goal.length>24000)throw Error('Claude Desktop 的交接材料超过 24000 字符。请使用新对话明确本次目标，或改用 Claude Code / API 模型处理长上下文；原文未裁剪。');

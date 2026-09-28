@@ -228,7 +228,8 @@ function createConversationClients({ userData, getSettings, store, openExternal,
     let cwd=scratch;
     if(work && args.cwd){
       const requested=fs.realpathSync(args.cwd);
-      const allowed=(settings.tools?.workspaceRoots||[]).some(root=>{try{guardPath(requested,[fs.realpathSync(root)],{mustExist:true});return true;}catch{return false;}});
+      const isolated=deps.workspaceForRun?.(record);
+      const allowed=(isolated?[isolated]:(settings.tools?.workspaceRoots||[])).some(root=>{try{guardPath(requested,[fs.realpathSync(root)],{mustExist:true});return true;}catch{return false;}});
       if(!allowed)throw Error('请先将工作目录加入应用的授权目录');
       if(!fs.statSync(requested).isDirectory())throw Error('工作目录无效');cwd=requested;
     }

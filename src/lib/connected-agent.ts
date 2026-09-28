@@ -1,3 +1,4 @@
+import { receiveCoordination } from './conversation-coordination';
 import { acceptLiveAnswer, consumeLiveInputs } from './live-input';
 import { addRunInput } from './delivery';
 import { reconcileProgress } from './task-progress';
@@ -145,6 +146,7 @@ export function runConnectedAgent(args:RunAgentArgs):AgentHandle {
       if(cancelled)throw Error('已暂停并保存当前执行现场');
       nativeRequestId=turn===0?args.requestId:`${args.requestId}-followup-${turn}`;streamed='';visibleStream='';streamStarted=false;
       if(!recovered)consumeLiveInputs(state);
+      if(!recovered&&await receiveCoordination(state,args.coordinationInbox))await save();
       if(!recovered && state.working.some(m=>m.attachments?.some(a=>a.kind==='image'&&!a.dataUrl)))throw Error('图片附件数据缺失，请重新添加图片后继续；原对话已保留。');
       const context=recovered?[]:buildWire(state.working,{...args.config,toolsEnabled:false,historyLimit:0},args.extraSystem+harnessInstructions(args.config,state)+nativeProgressInstructions(state));
       const {transcript,images}=clientContent(context);

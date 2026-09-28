@@ -1,3 +1,5 @@
+import { relatedConversations } from './lib/conversation-coordination';
+import { conversationCommand, parseConversationRequest, conversationRequestIdentity, requestedConversation, type ConversationRequest } from './lib/create-conversation';
 import { flushSync } from 'react-dom';
 import { replayUserQuestion } from './lib/replay-question';
 import React from 'react';
@@ -82,7 +84,7 @@ import { conversationQueue, nextQueuedIndex, type QueuedInput } from './lib/run-
 import { teamNotifications } from './lib/team-notify';
 import { I18nProvider, LOCALES, setActiveLocale, translate, type Locale } from './lib/i18n';
 import LocaleSwitch from './components/LocaleSwitch';
-import { claimRoots, holdersOf, releaseRoots } from './lib/workspace-guard';
+import { claimRoots, holdersOf, releaseRoots, claimedRoots } from './lib/workspace-guard';
 import DataBackupPanel from './components/collaboration/DataBackupPanel';
 import {
   dueTasks,
@@ -113,6 +115,7 @@ import WorkspaceDialog from './components/WorkspaceDialog';
 import { Modal, Toast, useToast } from './components/ui';
 const ObservationPanel = React.lazy(()=>import('./components/ObservationPanel'));
 const ExportDialog = React.lazy(()=>import('./components/ExportDialog'));
+const ConversationCoordination = React.lazy(()=>import('./components/ConversationCoordination'));
 const TeamWorkspace = React.lazy(()=>import('./components/collaboration/TeamWorkspace'));
 
 const EXAMPLES = [
@@ -787,6 +790,94 @@ export default function App() {
     toast.show(t('已加入工作目录：{dir}', { dir }));
   }
 
+
+  const conversationsRef = React.useRef(conversations); conversationsRef.current = conversations;
+  const activeIdRef = React.useRef(activeId); activeIdRef.current = activeId;
+  const [coordinationOpen,setCoordinationOpen]=React.useState(false);
+  const creationChain = React.useRef(Promise.resolve());
+  const startedCreations = React.useRef(new Set<string>());
+  const queueRef = React.useRef(queue); queueRef.current = queue;
+
+  function createRequestedConversation(input: ConversationRequest, operationKey: string, sourceId: string | null, direct = false, supplied?: QueuedInput): Promise<ToolResult> {
+    const operation = creationChain.current.then(async () => {
+      const current = settingsRef.current;
+      if (!current) throw Error('设置尚未载入。');
+      const source = sourceId ? conversationsRef.current.find(c => c.id === sourceId) : undefined;
+      if (sourceId && !source) throw Error('原会话已不可用，未创建新任务。');
+      const identity = await conversationRequestIdentity(sourceId ?? 'home', operationKey, input);
+      const previous = conversationsRef.current.find(c => c.id === identity.id);
+      if (previous && previous.creationFingerprint !== identity.fingerprint) throw Error('同一次创建请求的内容已改变，请使用新的 request_key。');
+      let next = previous ?? requestedConversation(source, current.defaultConfig, current.activeKeyProfileId, input, identity);
+      if (!previous) {
+        // Persist the independent conversation before acknowledging or dispatching its prompt.
+        flushSync(() => {
+          window.dispatchEvent(new Event('wickrun:flush-draft'));
+          setConversations(all => [next, ...all.map(c => direct && c.id === sourceId ? {...c,draft:''} : c)]);
+        });
+      }
+      await saveConversationsNow(conversationsRef.current);
+      const root=input.workspace_root??source?.workspace?.root??current.tools.workspaceRoots[0];
+      if(input.mode==='work'&&root&&desktop()&&!next.workspace){
+        try{
+          const workspace=await desktop()!.conversationWorkspaceCreate(next.id,root);
+          next={...next,workspace,workspaceError:undefined};
+          flushSync(()=>setConversations(all=>all.map(c=>c.id===next.id?{...c,workspace,workspaceError:undefined}:c)));
+          await saveConversationsNow(conversationsRef.current);
+        }catch(error){
+          flushSync(()=>setConversations(all=>all.map(c=>c.id===next.id?{...c,workspaceError:String(error)}:c)));
+          await saveConversationsNow(conversationsRef.current);setActiveId(next.id);throw Error('新会话已保留，但独立工作区未准备好，未启动任务：'+String(error));
+        }
+      }
+      if (direct) {
+        setActiveId(next.id); setTeamVisible(false); setSidebarOpen(false); setOpenArtifact(null); setConfigOpen(false);
+        if (supplied?.text) { setAttachments([]); setQuotes([]); }
+      }
+      if (input.start && input.prompt && !next.messages.length && !startedCreations.current.has(next.id) && !queueRef.current.some(q=>q.conversationId===next.id)) {
+        startedCreations.current.add(next.id);
+        setQueue(all => [...all, {text:input.prompt,attachments:supplied?.attachments??[],quotes:supplied?.quotes??[],quoteOnly:supplied?.quoteOnly??false,conversationId:next.id,toolsEnabled:input.mode==='work'}]);
+      }
+      return {ok:true,summary:`已创建 ${input.mode==='work'?'Work':'Chat'} 对话`,content:JSON.stringify({id:next.id,title:next.title,mode:input.mode,status:input.start&&input.prompt?'queued':'draft',duplicate:Boolean(previous),workspace:next.workspace,message:'独立上下文已保存。新任务在新会话运行；不要在原会话重复执行。'})};
+    });
+    creationChain.current = operation.then(()=>{},()=>{});
+    return operation;
+  }
+
+  function taskSummaries(sourceId:string){
+    const source=conversationsRef.current.find(c=>c.id===sourceId);if(!source)return [];
+    return relatedConversations(source,conversationsRef.current).map(c=>{
+      const last=[...c.messages].reverse().find(m=>m.role==='assistant'),state=last?.runState;
+      const waiting=blockedOnRoots.current.get(c.id);
+      return {id:c.id,title:c.title||'新对话',mode:c.config.toolsEnabled?'work':'chat',status:c.workspaceError?'blocked':waiting?'waiting_workspace':runningRef.current.has(c.id)?'running':queueRef.current.some(q=>q.conversationId===c.id)?'queued':state?.status??(last?'completed':'draft'),isolated:Boolean(c.workspace),roots:c.workspace?[c.workspace.isolatedRoot]:claimedRoots(c.id),blockedBy:waiting?holdersOf(c.id,waiting):[],progress:(last?.notice||last?.content||'').slice(-1600)};
+    });
+  }
+  async function coordinateTasks(sourceId:string,input:Record<string,unknown>,key:string):Promise<ToolResult>{
+    const source=conversationsRef.current.find(c=>c.id===sourceId);if(!source)throw Error('来源会话不存在。');
+    if(input.action==='list')return {ok:true,content:JSON.stringify({tasks:taskSummaries(sourceId)}),summary:'已读取并行任务状态'};
+    if(input.action!=='message'||typeof input.conversation_id!=='string'||typeof input.text!=='string'||!input.text.trim()||input.text.length>4000||typeof input.request_key!=='string'||! /^[\w-]{1,80}$/.test(input.request_key))throw Error('请输入目标会话、最多 4000 字的协作消息和稳定 request_key。');
+    let target=relatedConversations(source,conversationsRef.current).find(c=>c.id===input.conversation_id&&c.id!==sourceId);if(!target)throw Error('只能向同项目或同组的其他会话发送消息。');
+    const request=parseConversationRequest({mode:'chat',prompt:input.text,request_key:input.request_key,start:false});
+    const identity=await conversationRequestIdentity(sourceId,key,request),id='coord-'+identity.id;
+    target=conversationsRef.current.find(c=>c.id===target!.id);if(!target)throw Error('接收会话已删除。');
+    const previous=target.coordinationMessages?.find(m=>m.id===id);
+    if(previous&&previous.text!==input.text.trim())throw Error('同一 request_key 已用于其他消息。');
+    if(!previous){if((target.coordinationMessages?.length??0)>=200)throw Error('此会话已达到 200 条协调消息，请新建任务继续。');
+      const message={id,fromId:sourceId,fromTitle:source.title||'新对话',text:input.text.trim(),at:Date.now()};
+      flushSync(()=>setConversations(all=>all.map(c=>c.id===target.id?{...c,coordinationMessages:[...(c.coordinationMessages??[]),message],updatedAt:Date.now()}:c)));
+    }
+    await saveConversationsNow(conversationsRef.current);
+    return {ok:true,summary:'协调消息已保存',content:JSON.stringify({conversationId:target.id,messageId:id,status:'queued',duplicate:Boolean(previous),message:'接收方在下一次模型请求前读取；尚未确认处理。暂停或已完成的任务不会自动重启。'})};
+  }
+
+  function sendFromComposer(text: string, mode: 'chat'|'work' = config?.toolsEnabled?'work':'chat') {
+    const input:QueuedInput={toolsEnabled:mode==='work',text,attachments:[...attachments],quotes:[...quotes],quoteOnly,conversationId:active?.id??null};
+    const command=conversationCommand(text,mode);
+    if (!command) { void send(text,undefined,undefined,input); return; }
+    let request:ConversationRequest;
+    try { request=parseConversationRequest({...command,request_key:uid('new')}); }
+    catch(error){if(active)updateConv(active.id,c=>({...c,draft:text}));toast.show(String(error),6000);return;}
+    void createRequestedConversation(request,uid('command'),active?.id??null,true,input).then(result=>toast.show(result.summary||'已创建新对话')).catch(error=>{reportSaveError(error);toast.show(String(error),6000);});
+  }
+
   /** 新建对话。带项目时套上项目的默认模型和凭据 */
   function newChat(projectId: string | null = activeProject?.id ?? null) {
     if (!settings) return;
@@ -1087,8 +1178,10 @@ export default function App() {
   const send = React.useCallback(
     async (text: string, replaceFromIndex?: number, resumeFrom?: RunState, queuedInput?: QueuedInput, resolution?: 'skip' | 'retry', compactBeforeRun = false) => {
       if (!settings) return;
-      const nativeClient=(active?.config ?? settings.defaultConfig).client;
-      const profile:KeyProfile|null=nativeClient ? {id:`client:${nativeClient.kind}`,name:nativeClient.kind,baseUrl:'',hasSecret:false,extraHeaders:{},createdAt:0} : settings.keyProfiles.find(p=>p.id===active?.keyProfileId) ?? settings.keyProfiles.find(p=>p.id===settings.activeKeyProfileId) ?? settings.keyProfiles[0] ?? null;
+      const targetConversation=queuedInput?.conversationId ? conversationsRef.current.find(c=>c.id===queuedInput.conversationId) : active;
+      if(queuedInput?.conversationId&&!targetConversation){toast.show('目标会话已不存在，未发送。');return;}
+      const nativeClient=(targetConversation?.config ?? settings.defaultConfig).client;
+      const profile:KeyProfile|null=nativeClient ? {id:`client:${nativeClient.kind}`,name:nativeClient.kind,baseUrl:'',hasSecret:false,extraHeaders:{},createdAt:0} : settings.keyProfiles.find(p=>p.id===targetConversation?.keyProfileId) ?? settings.keyProfiles.find(p=>p.id===settings.activeKeyProfileId) ?? settings.keyProfiles[0] ?? null;
       // 目标会话由排队条目指定，否则就是当前可见的会话；只有同一个会话在跑才排队。
       const targetId = queuedInput?.conversationId ?? active?.id ?? null;
       const startKey = targetId ?? '__new__';
@@ -1106,14 +1199,11 @@ export default function App() {
       catch (e) { startingRef.current.delete(startKey); toast.show(String(e)); return; }
       if (!apiKey) { startingRef.current.delete(startKey); toast.show(t('这份凭据还没填 API Key')); setSettingsOpen(true); return; }
       // 没有会话就现开一个；排队条目带着会话 id，指向哪个会话就在哪个会话里跑
-      let conv = queuedInput?.conversationId
-        ? conversations.find((c) => c.id === queuedInput.conversationId) ?? active
-        : active;
-      let baseList = conversations;
+      let conv = targetConversation;
       if (!conv) {
         conv = newConversation(settings.defaultConfig, profile.id);
-        baseList = [conv, ...conversations];
       }
+      if(conv.workspaceError&&(queuedInput?.toolsEnabled??conv.config.toolsEnabled)){startingRef.current.delete(startKey);toast.show('独立工作区未准备好，任务未执行。请修正目录后重新创建 Work 会话。',6000);return;}
       const cfg = queuedInput?.toolsEnabled===undefined?conv.config:{...conv.config,toolsEnabled:queuedInput.toolsEnabled};
       // 新任务重新开始数：已试过的名单只在一次任务内有效，不该拖累下一个问题
       if(!resumeFrom)failoverTriedRef.current.delete(conv.id);
@@ -1178,7 +1268,7 @@ export default function App() {
 
       // 会话之间并行没问题，同时往一个目录里写有问题：先登记，占着就等对方放手
       const wantedRoots = cfg.toolsEnabled
-        ? toolContextOf(settings, conv.projectId ?? null, grantsRef.current).workspaceRoots
+        ? (conv.workspace ? [conv.workspace.isolatedRoot] : toolContextOf(settings, conv.projectId ?? null, grantsRef.current).workspaceRoots)
         : [];
       const holders = holdersOf(convId, wantedRoots);
       if (holders.length) {
@@ -1197,15 +1287,15 @@ export default function App() {
       const nextConv: Conversation = {
         ...conv,
         draft: resumeFrom ? conv.draft : '',
-        title: kept.length === 0 ? titleFrom(text) : conv.title,
+        title: kept.length === 0 && !conv.creationFingerprint ? titleFrom(text) : conv.title || titleFrom(text),
         messages: resumeAnswer ? conv.messages.map((m) => m.id === answerMsg.id ? answerMsg : m) : [...history, answerMsg],
         updatedAt: Date.now(),
       };
 
-      setConversations(baseList.map((c) => (c.id === convId ? nextConv : c)));
+      setConversations(all => all.some(c=>c.id===convId) ? all.map(c=>c.id===convId?{...nextConv,coordinationMessages:c.coordinationMessages}:c) : [nextConv,...all]);
       // 后台会话的排队/恢复不抢焦点：只有从当前可见会话发出的才切过去
       if (!queuedInput?.conversationId || queuedInput.conversationId === active?.id) setActiveId(convId);
-      if (!resumeFrom) { setAttachments([]); setQuotes([]); }
+      if (!resumeFrom && (!queuedInput?.conversationId || queuedInput.conversationId===activeIdRef.current)) { setAttachments([]); setQuotes([]); }
       resumeQueue(convId);
 
       /* --- 流式缓冲：按 60ms 节流刷进 state，不然一个 token 一次 setState --- */
@@ -1265,6 +1355,9 @@ export default function App() {
       };
       const handle = runConnectedAgent({
         requestId,
+        createConversation: (input,key) => createRequestedConversation(input,key,convId),
+        coordinateTasks: (input,key)=>coordinateTasks(convId,input,key),
+        coordinationInbox: async()=>conversationsRef.current.find(c=>c.id===convId)?.coordinationMessages??[],
         profile,
         apiKey,
         config: cfg,
@@ -1278,7 +1371,7 @@ export default function App() {
         autoRetry: settings.autoRetry ?? 2,
         profileName: profile.name,
         // 传函数而不是快照：中途拿到的授权要对后面的工具调用立刻生效
-        toolCtx: () => toolContextOf(settings, conv.projectId ?? null, grantsRef.current),
+        toolCtx: () => conv.workspace ? {...toolContextOf(settings,conv.projectId??null),conversationId:conv.id,workspaceRoots:[conv.workspace.isolatedRoot],grants:{extraRoots:[],admin:false,screen:false}} : toolContextOf(settings, conv.projectId ?? null, grantsRef.current),
         effortMappings: settings.effortMappings,
         resume: resumeFrom,
         compactBeforeRun,
@@ -1327,6 +1420,7 @@ export default function App() {
         recallTasks: async (query, limit) => recallFrom(await loadRuns(), await observationSnapshot(),
           { query, limit, projectId: conv!.projectId ?? null, excludeConversationId: conv!.id }),
         extraSystem: [
+          ...(conv.workspace?[`本任务使用独立文件副本：${conv.workspace.isolatedRoot}。所有文件操作必须在此目录内，不要写入原目录 ${conv.workspace.root}，不要自行合并或推送。完成后报告成果，用户会核对差异再应用。副本不含 .git、node_modules 和构建目录。`]:[]),
           projectSystemBlock(projects.find((p) => p.id === conv.projectId) ?? null, text, { memory: conv.evalAblation !== 'project_memory' }),
           skillSystemBlock(turnSkills),
         ]
@@ -1334,7 +1428,7 @@ export default function App() {
           .join('\n\n'),
         timeoutMs: settings.requestTimeoutMs,
         canRunHostTools,
-        grantAccess,
+        grantAccess: conv.workspace ? async()=>({ok:false,content:'',error:'此任务使用独立工作区，不能扩展到原目录或其他会话。请在当前副本内处理。'}) : grantAccess,
         confirm: (step) => {
           // 提权、权限申请和未隔离的本机命令始终逐次确认：
           //   - 提权：它越过的是工作目录白名单之外的一切
@@ -1878,7 +1972,7 @@ export default function App() {
           toast.show(t(busy ? '当前回复会继续完成；下一条消息将带上已有对话，由 Work 接着处理' : '已切换为 Work，已有对话和附件会继续作为上下文'));
         }
       }}
-      onSend={(t, mode) => void send(t, undefined, undefined, {toolsEnabled: mode === 'work', text: t, attachments: [...attachments], quotes: [...quotes], quoteOnly, conversationId: active?.id ?? null})}
+      onSend={sendFromComposer}
       onSendNow={t=>{const accepted=sendNow({text:t,attachments:[...attachments],quotes:[...quotes],quoteOnly,conversationId:active?.id??null});if(accepted){setAttachments([]);setQuotes([]);}return accepted;}}
       onSendQueuedNow={i=>{const entry=activeQueue[i];if(entry&&sendNow(entry.item))setQueue(all=>all.filter((_,j)=>j!==entry.index));}}
       onStop={() => stop()}
@@ -2026,6 +2120,7 @@ export default function App() {
 
       {teamVisible ? <div className="team-workspace-container"><React.Suspense fallback={<div className="empty"><BrandLoading label={t('正在打开协作空间…')} /></div>}><TeamWorkspace sidebarTarget={teamSidebar} sidebarHidden={sidebarHidden} onOpenSidebar={()=>{setSidebarHidden(false);setSidebarOpen(true);}} onNavigate={()=>setSidebarOpen(false)} projects={projects} settings={settings} sourceConversation={active} beforeRestore={async()=>{stopAll();await teamRuntime.pauseAll();await saveConversationsNow(conversations);}} onProject={projectId=>setSettings(s=>s?{...s,collaborationView:{visible:true,projectId}}:s)} onSettingsChange={update=>setSettings(prev=>prev?update(prev):prev)} onProjectMemory={updateProjectMemory} initialProjectId={settings.collaborationView?.projectId??activeProject?.id} onSingle={()=>setTeamVisible(false)} onSettings={()=>{setSettingsTab('keys');setSettingsOpen(true);}} onCreateProject={name=>{const p=makeProject(name);setProjects(all=>[...all,p]);return p.id;}} onHandoff={(text,projectId)=>{const conv=newConversation(settings.defaultConfig,settings.activeKeyProfileId);conv.projectId=projectId;conv.title=titleFrom(text);conv.messages=[{id:uid(),role:'user',content:text,createdAt:Date.now()}];setConversations(all=>[...all,conv]);setActiveId(conv.id);setTeamVisible(false);}}/></React.Suspense></div> : null}
       <main className="main" style={teamVisible?{display:'none'}:undefined}>
+        {active?.workspaceError?<div className="grant-banner" role="alert">{active.workspaceError}</div>:active?.workspace?<div className="grant-banner">{t('当前 Work 使用独立文件副本；在「并行任务」中检查并应用改动。')}</div>:null}
         {saveError ? <div className="grant-banner" role="alert">{saveError}<button className="btn sm" onClick={() => { void Promise.all([saveSettings(settings), saveConversationsNow(conversations),saveProjects(projects),saveSkills(skills),saveTasks(tasks)]).then(() => setSaveError(null)).catch(reportSaveError); }}>{t('重试保存')}</button></div> : null}
         <div className="topbar">
           <button className="btn sm ghost only-narrow" title={t('展开侧栏')} onClick={() => { setSidebarHidden(false); setSidebarOpen(true); }}>
@@ -2056,6 +2151,7 @@ export default function App() {
           <span className="chip">{config.model || t('未选模型')}</span>
           <LocaleSwitch onChange={(locale) => setSettings((prev) => (prev ? { ...prev, locale } : prev))} />
 
+          {active&&<button className="btn sm" onClick={()=>setCoordinationOpen(true)}>{t('并行任务')}</button>}
           {active && turns.length > 0 ? (
             <button className="btn sm" title={t('把这条对话存成文件')} onClick={() => setExportingId(active.id)}>
               {t('导出')}
@@ -2395,6 +2491,7 @@ export default function App() {
       {active ? <SelectionActions key={active.id} messages={active.messages}
         onReply={(quote) => { setQuotes((q) => [...q, quote]); setQuoteOnly(true); }}
         onAnnotate={saveAnnotation} /> : null}
+      {coordinationOpen&&active&&<React.Suspense fallback={<div className="empty">{t('正在打开任务协调…')}</div>}><ConversationCoordination key={active.id} active={active} tasks={taskSummaries(active.id)} busy={runningRef.current.size>0||startingRef.current.size>0||Object.values(teamRuntime.data?.projects??{}).some(p=>p.runs.some(r=>['running','pausing','waiting_approval','waiting_user'].includes(r.status)))} onClose={()=>setCoordinationOpen(false)} onOpen={id=>{setActiveId(id);setCoordinationOpen(false);}} onMessage={async(id,text)=>{await coordinateTasks(active.id,{action:'message',conversation_id:id,text,request_key:uid('message')},'manual');}} onMerged={async()=>{flushSync(()=>updateConv(active.id,c=>({...c,workspaceError:'文件已应用到原目录。后续修改请新建 Work 副本。'})));await saveConversationsNow(conversationsRef.current);}}/></React.Suspense>}
       <Toast message={toast.message} />
     </div>
     </I18nProvider>

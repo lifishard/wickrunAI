@@ -266,4 +266,4 @@ Desktop and web keep separate repositories and share one backend. Chats, project
 Claude 专属任务指令一键复制、真实文件回传、支持的平台默认自动更新。旧用户先手动安装本版，并更新 Claude 扩展一次。详见 [升级说明](docs/releases/v2.20.7.md)。
 
 
-Large artifact return: up to 100 MB/file, 50 files and 500 MB/task, with resumable 512 KB chunks and SHA-256 verification. See [2.20.8 release notes](docs/releases/v2.20.8.md).
+Large artifact return: up to 100 MB/file, 50 files and 500 MB/task, with resumable 512 KB chunks and SHA-256 verification. See [2.20.9 release notes](docs/releases/v2.20.9.md).
