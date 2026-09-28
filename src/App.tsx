@@ -139,6 +139,7 @@ export default function App() {
   const [saveError, setSaveError] = React.useState<string | null>(null);
   const reportSaveError = (error: unknown) => setSaveError(t('尚未保存：{error}', { error: String(error) }));
   const [settings, setSettings] = React.useState<AppSettings | null>(null);
+  const unsentHomeDraft=React.useRef('');
   const teamVisible = Boolean(settings?.collaborationView?.visible);
   const setTeamVisible = (visible:boolean) => setSettings(s=>s?{...s,collaborationView:{...s.collaborationView,visible}}:s);
   const [conversations, setConversations] = React.useState<Conversation[]>([]);
@@ -1947,6 +1948,25 @@ export default function App() {
       </div>
     ) : null;
 
+  const cloudControl = (<CloudSyncControl local={{settings,conversations,projects,skills,tasks}}
+            blocked={Object.values(runs).some(Boolean)||Object.values(teamRuntime.data?.projects??{}).some(p=>p.runs.some(r=>['running','waiting_approval','waiting_user'].includes(r.status)))}
+            isBlocked={()=>runningRef.current.size>0||startingRef.current.size>0||Object.values(teamRuntime.data?.projects??{}).some(p=>p.runs.some(r=>['running','pausing','waiting_approval','waiting_user'].includes(r.status)))}
+            beforeSwitch={async()=>{
+              stopAll();await teamRuntime.pauseAll();
+              let saved=conversations;
+              if(!active&&unsentHomeDraft.current.trim()){
+                const draft=newConversation(config,settings.activeKeyProfileId);draft.draft=unsentHomeDraft.current;
+                saved=[draft,...conversations];setConversations(saved);setActiveId(draft.id);
+              }
+              await Promise.all([saveSettings(settings),saveConversationsNow(conversationsForStorage(saved)),saveProjects(projects),saveSkills(skills),saveTasks(tasks)]);
+            }}
+            onApply={async next=>{
+              for(const old of conversations){const incoming=next.conversations.find(c=>c.id===old.id);if(!incoming)await forgetRuns(old.id);else{const removed=new Set(old.messages.filter(m=>!incoming.messages.some(n=>n.id===m.id)).map(m=>m.id));if(removed.size)await forgetRuns(old.id,removed);}}
+              await applyCloudLocal(next);
+              setSettings(next.settings);setConversations(next.conversations);setProjects(next.projects);setSkills(next.skills);setTasks(next.tasks);
+              if(!next.conversations.some(c=>c.id===activeId))setActiveId(next.conversations[0]?.id??null);
+            }}/>);
+
   const composer = (
     <Composer
       layout={turns.length === 0 ? 'home' : 'conversation'}
@@ -1954,7 +1974,7 @@ export default function App() {
       controls={active?.messages.filter(m=>m.runState?.userQuestion&&!m.runState.userQuestion.answers).map(m=><button className="btn sm" key={m.id} onClick={()=>document.getElementById(`question-${m.runState!.userQuestion!.request.id}`)?.scrollIntoView({block:'center',behavior:'smooth'})}>{t('Answer Question · 回答问题')}</button>)}
       key={active?.id ?? 'new'}
       initialDraft={active?.draft}
-      onDraftChange={text => { if (active) updateConv(active.id, c => c.draft === text ? c : { ...c, draft: text }); }}
+      onDraftChange={text => { if (active) updateConv(active.id, c => c.draft === text ? c : { ...c, draft: text }); else unsentHomeDraft.current=text; }}
       client={config.client}
       onClient={client=>setConfig({client,model:client?client.model:models[0]?.id || ''})}
       connectionSettings={settings}
@@ -2129,6 +2149,7 @@ export default function App() {
         <div className="mobile-topbar">
           <button className="icon-btn" aria-label={t('展开侧栏')} onClick={() => { setSidebarHidden(false); setSidebarOpen(true); }}><MobileIcon name="menu"/></button>
           <span className="page-title">{active ? conversationTitle(active.title, t) : 'wickrunAI'}</span>
+          {phone && cloudControl}
           <button className="icon-btn" aria-label={t('对话菜单')} onClick={() => setPhoneMenu(true)}><MobileIcon name="more"/></button>
         </div>
         {phoneMenu && <Modal title={t('对话设置')} onClose={() => setPhoneMenu(false)}>
@@ -2155,16 +2176,7 @@ export default function App() {
           ) : null}
           <span className="page-title" title={active ? conversationTitle(active.title, t) : undefined}>{active ? conversationTitle(active.title, t) : t('新对话')}</span>
           <span className="spacer" />
-          <CloudSyncControl local={{settings,conversations,projects,skills,tasks}}
-            blocked={Object.values(runs).some(Boolean)||Object.values(teamRuntime.data?.projects??{}).some(p=>p.runs.some(r=>['running','waiting_approval','waiting_user'].includes(r.status)))}
-            isBlocked={()=>runningRef.current.size>0||startingRef.current.size>0||Object.values(teamRuntime.data?.projects??{}).some(p=>p.runs.some(r=>['running','pausing','waiting_approval','waiting_user'].includes(r.status)))}
-            beforeSwitch={async()=>{stopAll();await teamRuntime.pauseAll();await Promise.all([saveSettings(settings),saveConversationsNow(conversationsForStorage(conversations)),saveProjects(projects),saveSkills(skills),saveTasks(tasks)]);}}
-            onApply={async next=>{
-              for(const old of conversations){const incoming=next.conversations.find(c=>c.id===old.id);if(!incoming)await forgetRuns(old.id);else{const removed=new Set(old.messages.filter(m=>!incoming.messages.some(n=>n.id===m.id)).map(m=>m.id));if(removed.size)await forgetRuns(old.id,removed);}}
-              await applyCloudLocal(next);
-              setSettings(next.settings);setConversations(next.conversations);setProjects(next.projects);setSkills(next.skills);setTasks(next.tasks);
-              if(!next.conversations.some(c=>c.id===activeId))setActiveId(next.conversations[0]?.id??null);
-            }}/>
+          {!phone && cloudControl}
           {!profile ? <span className="chip warn">{t('未配置凭据')}</span> : null}
           <span className="chip">{config.model || t('未选模型')}</span>
           <LocaleSwitch onChange={(locale) => setSettings((prev) => (prev ? { ...prev, locale } : prev))} />

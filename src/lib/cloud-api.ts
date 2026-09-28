@@ -1,3 +1,4 @@
+import { androidCloudBridge, isAndroidAccount } from './android-account';
 export type CloudUser = { id: string; name: string; email: string };
 export type CloudStatus = { user: CloudUser | null; available: boolean; googleConfigured?: boolean };
 export type DesktopCloudState = { user: CloudUser | null; origin: string; pending: { code: string; expires: number } | null; ready: CloudUser | null };
@@ -10,6 +11,7 @@ export interface CloudBridge {
   cloudSwitch(logout: boolean): Promise<void>;
 }
 export const cloudBridge = (): CloudBridge | null => {
+  if (isAndroidAccount()) return androidCloudBridge;
   const bridge = typeof window !== 'undefined' ? window.snc : null;
   return bridge && 'cloudCall' in bridge ? bridge as unknown as CloudBridge : null;
 };

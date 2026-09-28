@@ -1,3 +1,4 @@
+import { isAndroidAccount, cancelAndroidLogin } from '../lib/android-account';
 import React from 'react';
 import { Capacitor } from '@capacitor/core';
 import { flushSync } from 'react-dom';
@@ -13,7 +14,7 @@ type Remote = {revision:number;data:CloudData};
 type ConflictReview = {records:string[];revision:number;fingerprint:string;importGuest:boolean};
 type Props={local:Omit<CloudLocal,'observations'>;blocked:boolean;isBlocked:()=>boolean;onApply:(next:CloudLocal)=>Promise<void>;beforeSwitch:()=>Promise<void>};
 export default function CloudSyncControl(props:Props){
-  return Capacitor.isNativePlatform() ? <NativeCloudNotice/> : <ConnectedCloudSyncControl {...props}/>;
+  return Capacitor.isNativePlatform() && !isAndroidAccount() ? <NativeCloudNotice/> : <ConnectedCloudSyncControl {...props}/>;
 }
 
 function NativeCloudNotice(){
@@ -48,9 +49,24 @@ function ConnectedCloudSyncControl(props:Props){
   },[status,props.local.settings.keyProfiles]);
   React.useEffect(()=>{
     if(!native?.pending)return;
-    const timer=setInterval(()=>{void cloudBridge()?.cloudPoll().then(async()=>{const next=await cloudBridge()!.cloudState();setNative(next);}).catch(e=>{setError(String(e.message||e));setNative(value=>value?{...value,pending:null}:value);});},2500);
-    return()=>clearInterval(timer);
+    let alive=true,busy=false;
+    const poll=async()=>{
+      if(busy)return;busy=true;
+      try{await cloudBridge()!.cloudPoll();const next=await cloudBridge()!.cloudState();if(alive){setNative(next);if(!next.pending&&!next.ready)setNotice(t('登录已结束，请重新登录。'));}}
+      catch(e){if(alive)setError(String((e as Error).message||e));}
+      finally{busy=false;}
+    };
+    const timer=setInterval(()=>void poll(),2500);
+    const resume=()=>void poll();window.addEventListener('wickrun:account-return',resume);
+    void poll();
+    return()=>{alive=false;clearInterval(timer);window.removeEventListener('wickrun:account-return',resume);};
   },[native?.pending?.code]);
+  const entering=React.useRef(false);
+  React.useEffect(()=>{
+    if(!isAndroidAccount()||!native?.ready||props.blocked||working||entering.current)return;
+    const timer=setTimeout(()=>{entering.current=true;void switchAccount(false);},0);
+    return()=>clearTimeout(timer);
+  },[native?.ready,props.blocked,working]);
 
   const collect=async():Promise<CloudLocal>=>{
     // Composer debounces draft persistence. Publish the visible text before a
@@ -111,7 +127,7 @@ function ConnectedCloudSyncControl(props:Props){
       if(importGuest&&guestRaw){
         const guestProfiles=(JSON.parse(guestRaw['snc:settings:v1']||'null')?.keyProfiles??[]) as {id:string}[];
         if(cloudBridge()){
-          // Import is an explicit user action; native secrets never enter the renderer.
+          // Import is explicit; account session credentials never enter the renderer.
           const result=await cloudBridge()!.cloudCall('importGuestKeys',{}) as {ids:string[]};
           keyResult.ids=[...new Set([...keyResult.ids,...result.ids])];
         }else for(const profile of guestProfiles){
@@ -149,23 +165,25 @@ function ConnectedCloudSyncControl(props:Props){
   },[conflicts]);
 
   async function switchAccount(logout:boolean){
-    setWorking(true);setError('');
-    try{await current.current.beforeSwitch();await cloudBridge()!.cloudSwitch(logout);}catch(e){setError(String((e as Error).message||e));setWorking(false);}
+    if(lock.current||current.current.isBlocked())return;
+    lock.current=true;setWorking(true);setError('');
+    try{flushSync(()=>window.dispatchEvent(new Event('wickrun:flush-draft')));await current.current.beforeSwitch();await cloudBridge()!.cloudSwitch(logout);}catch(e){setError(String((e as Error).message||e));setWorking(false);lock.current=false;setOpen(true);}
   }
   const unavailable=working||props.blocked;
   return <>
-    <button className="btn sm cloud-account-trigger" onClick={()=>setOpen(true)} title={t('账号与云同步')}>{working?t('同步中…'):error?t('同步需要处理'):status?.user?t('云端同步'):t('Google 账号')}</button>
+    <button className="btn sm cloud-account-trigger" onClick={()=>setOpen(true)} title={t('账号与云同步')}>{isAndroidAccount()?t(native?.user?'账号':'登录'):working?t('同步中…'):error?t('同步需要处理'):status?.user?t('云端同步'):t('Google 账号')}</button>
     {open?<Modal title={t('账号与云同步')} onClose={()=>setOpen(false)}><div className="modal-body" style={{display:'grid',gap:14}}>
-      <p>{t('同一 Google 账号可在桌面版与网页版查看聊天、项目、技能和任务记录，并使用自己的 API 密钥。')}</p>
+      <p>{t('同一 Google 账号可在手机、桌面版与网页版同步聊天、项目、技能和任务记录，并使用自己的 API 密钥。')}</p>
       {status?.user?<p><strong>{status.user.name}</strong><br/>{status.user.email}</p>:native?.user?<p>{native.user.email}</p>:null}
       {error?<p role="alert" style={{color:'var(--danger)'}}>{error}</p>:null}
       {notice?<p role="status">{notice}</p>:null}
       {status&&!status.available?<p>{t('云同步尚未配置。请在 Railway 添加数据库和加密变量。')}</p>:null}
       {props.blocked?<p>{t('请先暂停正在运行的任务，再同步或切换账号。')}</p>:null}
       {cloudBridge()?<>
-        {!native?.pending&&!native?.ready?<button className="btn primary" disabled={unavailable} onClick={()=>{setError('');void cloudBridge()!.cloudLogin().then(async()=>setNative(await cloudBridge()!.cloudState())).catch(e=>setError(String(e.message||e)));}}>{t('使用 Google 登录')}</button>:null}
-        {native?.pending?<div><p>{t('浏览器会打开 Google 登录。请核对两处校验码一致，再批准此桌面程序。')}</p><strong style={{font:'24px monospace',letterSpacing:4}}>{native.pending.code}</strong></div>:null}
-        {native?.ready?<button className="btn primary" disabled={unavailable} onClick={()=>void switchAccount(false)}>{t('登录完成，重启进入账号工作区')}</button>:null}
+        {!native?.user&&!native?.pending&&!native?.ready?<button className="btn primary" disabled={unavailable} onClick={()=>{setError('');setNotice('');setWorking(true);entering.current=false;void cloudBridge()!.cloudLogin().then(async()=>setNative(await cloudBridge()!.cloudState())).catch(e=>setError(String(e.message||e))).finally(()=>setWorking(false));}}>{t('使用 Google 登录')}</button>:null}
+        {native?.pending?<div><p>{t(isAndroidAccount()?'浏览器会打开 Google 登录。核对校验码后批准，再返回 App。':'浏览器会打开 Google 登录。请核对两处校验码一致，再批准此桌面程序。')}</p><strong style={{font:'24px monospace',letterSpacing:4}}>{native.pending.code}</strong></div>:null}
+        {isAndroidAccount()&&(native?.pending||native?.ready)?<button className="btn" disabled={unavailable} onClick={()=>void cancelAndroidLogin().then(async()=>{setNative(await cloudBridge()!.cloudState());setError('');}).catch(e=>setError(String(e.message||e)))}>{t('取消登录')}</button>:null}
+        {native?.ready?<button className="btn primary" disabled={unavailable} onClick={()=>void switchAccount(false)}>{t(isAndroidAccount()?'进入账号工作区':'登录完成，重启进入账号工作区')}</button>:null}
         {native?.user?<button className="btn" disabled={unavailable} onClick={()=>void switchAccount(true)}>{t('退出并返回未登录工作区')}</button>:null}
       </>:!status?.user?<a className="btn primary" href="/api/auth/google">{t('使用 Google 登录')}</a>:null}
       {status?.user&&status.available?<>

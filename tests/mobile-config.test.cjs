@@ -29,6 +29,7 @@ test('Android preparation preserves custom Activity code and is idempotent', asy
   configureAndroid(dir,'2.20.9');
   assert.equal(fs.readFileSync(activity,'utf8'),first);
   assert.ok(first.includes('preserve-me'));
+  assert.equal(first.match(/registerPlugin\(WickrunAccountPlugin.class\)/g).length,1);
   assert.equal(first.match(/registerPlugin\(SncHttpPlugin.class\)/g).length,1);
   assert.ok(first.indexOf('registerPlugin(') < first.indexOf('super.onCreate'));
   assert.match(fs.readFileSync(path.join(dir,'android/app/build.gradle'),'utf8'),/versionCode 2020009/);

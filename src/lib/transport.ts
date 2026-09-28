@@ -1,3 +1,4 @@
+import { accountStorageKey } from './android-account';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { nativeSecretGet, nativeSecretSet, nativeSecretDelete } from './native-secrets';
 import { Preferences } from '@capacitor/preferences';
@@ -640,20 +641,20 @@ class CapacitorTransport implements Transport {
   }
 
   async kvGet(key: string) {
-    const { value } = await Preferences.get({ key });
+    const { value } = await Preferences.get({ key: accountStorageKey(key) });
     return value ?? null;
   }
   async kvSet(key: string, value: string) {
-    await Preferences.set({ key, value });
+    await Preferences.set({ key: accountStorageKey(key), value });
   }
   async secretGet(id: string) {
-    return nativeSecretGet(id);
+    return nativeSecretGet(accountStorageKey(id));
   }
   async secretSet(id: string, value: string) {
-    await nativeSecretSet(id, value);
+    await nativeSecretSet(accountStorageKey(id), value);
   }
   async secretDelete(id: string) {
-    await nativeSecretDelete(id);
+    await nativeSecretDelete(accountStorageKey(id));
   }
 }
 

@@ -21,3 +21,5 @@ html,body,#root{width:100%;overflow:hidden}#root{height:var(--mobile-height,100d
 .main .composer-wrap .composer-bar .composer-more{min-width:44px;min-height:48px;flex:0 0 44px}
 .mobile-topbar .icon-btn,.topbar .phone-menu-trigger,.mobile-actions .locale-switch-btn{color:var(--fg-dim)}
 }
+
+@media(max-width:860px){.mobile-topbar .cloud-account-trigger{flex:none;min-width:48px;min-height:48px;padding:8px;font-size:14px;border:0;background:transparent;color:var(--fg);box-shadow:none}}

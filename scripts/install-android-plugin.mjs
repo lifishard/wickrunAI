@@ -13,7 +13,7 @@ export function installAndroidPlugins(projectRoot) {
   const javaDir = path.join(projectRoot, 'android/app/src/main/java', ...packageName.split('.'));
   const activityPath = path.join(javaDir, 'MainActivity.java');
   let activity = fs.readFileSync(activityPath, 'utf8');
-  for (const plugin of ['SncHttpPlugin', 'WickrunSecretsPlugin']) {
+  for (const plugin of ['SncHttpPlugin', 'WickrunSecretsPlugin', 'WickrunAccountPlugin']) {
     const source = fs.readFileSync(path.join(projectRoot, 'native/android', `${plugin}.java`), 'utf8');
     fs.writeFileSync(path.join(javaDir, `${plugin}.java`), source.replace(/^package [\w.]+;/m, `package ${packageName};`));
   }
@@ -22,7 +22,7 @@ export function installAndroidPlugins(projectRoot) {
     activity = activity.replace(/(class MainActivity extends BridgeActivity\s*\{)/, '$1\n    @Override\n    public void onCreate(Bundle savedInstanceState) {\n        super.onCreate(savedInstanceState);\n    }\n');
   }
   if (!activity.includes('super.onCreate(savedInstanceState);')) throw new Error('Unexpected MainActivity: cannot safely register native plugins.');
-  for (const plugin of ['SncHttpPlugin', 'WickrunSecretsPlugin']) {
+  for (const plugin of ['SncHttpPlugin', 'WickrunSecretsPlugin', 'WickrunAccountPlugin']) {
     if (!activity.includes(`registerPlugin(${plugin}.class);`)) activity = activity.replace('super.onCreate(savedInstanceState);', `registerPlugin(${plugin}.class);\n        super.onCreate(savedInstanceState);`);
   }
   fs.writeFileSync(activityPath, activity);

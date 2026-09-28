@@ -9,6 +9,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(SncHttpPlugin.class);
         registerPlugin(WickrunSecretsPlugin.class);
+        registerPlugin(WickrunAccountPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

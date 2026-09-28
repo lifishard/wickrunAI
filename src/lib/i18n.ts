@@ -16,6 +16,13 @@ export const LOCALES: { value: Locale; label: string; label2: string; lang: stri
  * 英文查词典，查不到就退回简体原文 —— 半翻译的界面也比缺字的界面好用。
  */
 const EN: Record<string, string> = {
+  '取消登录': "Cancel sign-in",
+  '进入账号工作区': "Open account workspace",
+  '浏览器会打开 Google 登录。核对校验码后批准，再返回 App。': "Sign in with Google in your browser. Check the code, approve, then return to the app.",
+  '同一 Google 账号可在手机、桌面版与网页版同步聊天、项目、技能和任务记录，并使用自己的 API 密钥。': "Use the same Google account to sync chats, projects, skills and task records across mobile, desktop and web, with your own API keys.",
+  '登录已结束，请重新登录。': "Sign-in ended. Please try again.",
+  '登录': "Sign in",
+  '账号': "Account",
   '对话菜单': 'Conversation menu',
   '提问、写作、整理文件，从这里开始。': 'Ask, write, and organize files. Start here.',
   '帮我整理今天的计划': 'Help me plan my day',
