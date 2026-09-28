@@ -258,6 +258,9 @@ export default function App() {
   const questionSubmitRef = React.useRef(new Set<string>());
 
   const toast = useToast();
+  React.useEffect(()=>desktop()?.onMeetingQuestion?.(question=>{
+    toast.show(`会议需要你决定：${question.text}（在协作空间 → 会议室中回答）`,10000);
+  }),[]);
   const readingPositions = React.useRef(new Map<string, ReadingPosition>());
 
   React.useEffect(()=>{
@@ -272,6 +275,12 @@ export default function App() {
   }
   React.useEffect(()=>desktop()?.onTaskNotificationClick?.(event=>{
     // 协作空间的通知带的是 team:<projectId>，点开回到那个项目而不是某个会话
+    if(event.conversationId.startsWith('meeting:')){
+      const address=event.conversationId.slice(8),cut=address.lastIndexOf(':');
+      const projectId=address.slice(0,cut),meetingId=address.slice(cut+1);
+      void teamRuntime.update(projectId,p=>{p.preferences.page='meetings';p.preferences.meetingId=meetingId;}).then(()=>setSettings(s=>s?{...s,collaborationView:{visible:true,projectId}}:s)).catch(error=>toast.show(String(error)));
+      return;
+    }
     if(event.conversationId.startsWith('team:')){
       const projectId=event.conversationId.slice(5);
       setSettings(s=>s?{...s,collaborationView:{visible:true,projectId}}:s);

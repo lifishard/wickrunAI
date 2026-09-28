@@ -383,8 +383,19 @@ function registerIpc() {
   });
   ipcMain.handle('snc:toolAbort',(_e,runId)=>{conversationClients?.abort(runId);localClients?.abort(runId);for(const rec of activeToolControllers.values())if(rec.runId===runId||rec.teamRunId===runId)rec.controller.abort();});
   const collaboration = require('./collaboration-store.cjs').createCollaborationStore(app.getPath('userData'));
+  const meetingRooms = require('./meeting-room.cjs').createMeetingRooms({userData:app.getPath('userData'),onQuestion:question=>{
+    mainWindow?.webContents.send('snc:meetingQuestion',question);
+    const preferences=JSON.parse(store.kvGet('snc:settings:v1')||'{}').notifications;
+    if(preferences?.enabled!==false)taskNotifier?.notify({id:question.messageId,conversationId:`meeting:${question.projectId}:${question.roomId}`,kind:'question',title:'会议需要你决定',body:question.text.slice(0,600),silent:preferences?.sound===false});
+  }});
   const gatewayRecovery = require('./gateway-recovery.cjs').createGatewayRecovery({getSettings:()=>JSON.parse(store.kvGet('snc:settings:v1')||'{}'),secretGet:id=>store.secretGet(id),getClaudeConnection:()=>require('./claude-connection.cjs').readClaudeConnection()});
-  const nativeBridge=()=>{dataAvailable();if(!nativeAiBridge)nativeAiBridge=require('./native-ai-bridge.cjs').createNativeAiBridge({userData:app.getPath('userData'),appData:app.getPath('appData'),getSettings:()=>JSON.parse(store.kvGet('snc:settings:v1')||'{}'),secretGet:id=>store.secretGet(id),openExternal:url=>shell.openExternal(url),memory:require('./tools/knowledge.cjs').nativeMemory});return nativeAiBridge;};
+  const nativeBridge=()=>{dataAvailable();if(!nativeAiBridge)nativeAiBridge=require('./native-ai-bridge.cjs').createNativeAiBridge({userData:app.getPath('userData'),appData:app.getPath('appData'),getSettings:()=>JSON.parse(store.kvGet('snc:settings:v1')||'{}'),secretGet:id=>store.secretGet(id),openExternal:url=>shell.openExternal(url),memory:require('./tools/knowledge.cjs').nativeMemory,meetings:meetingRooms});return nativeAiBridge;};
+  const meetingSender=e=>{dataAvailable();if(!mainWindow||e.sender!==mainWindow.webContents||e.senderFrame!==e.sender.mainFrame)throw Error('会议主持操作只能来自主窗口');};
+  app.on('will-quit',()=>meetingRooms.close());
+  ipcMain.handle('snc:meetingState',(e,projectId)=>{meetingSender(e);return meetingRooms.state(projectId);});
+  ipcMain.handle('snc:meetingAction',(e,{action,input})=>{meetingSender(e);return meetingRooms.host(action,input);});
+  ipcMain.handle('snc:meetingPrompt',(e,{roomId,provider})=>{meetingSender(e);return meetingRooms.prompt(roomId,provider);});
+  ipcMain.handle('snc:meetingConnection',async(e,provider)=>{meetingSender(e);const config=await nativeBridge().config(provider);return {...config,args:[...config.args,'--meetings-only']};});
   const updaterSender=e=>{if(!mainWindow||e.sender!==mainWindow.webContents||e.senderFrame!==e.sender.mainFrame)throw Error('Update request must come from the main window.');if(!appUpdates)throw Error('更新器尚未就绪。');};
   ipcMain.handle('snc:updateState',e=>{updaterSender(e);return appUpdates.state();});
   ipcMain.handle('snc:updateCheck',e=>{updaterSender(e);return appUpdates.check();});

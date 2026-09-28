@@ -51,6 +51,11 @@ function zipStore(entries, date = new Date()) {
 }
 
 const TOOLS = [
+  ['wickrun_meeting_list', '查看邀请你参加的会议'],
+  ['wickrun_meeting_wait', '加入自动轮流会议并等待自己的发言邀请'],
+  ['wickrun_meeting_read', '阅读议题、讨论记录和本次发言邀请'],
+  ['wickrun_meeting_post', '建设性发言、提出异议、回应或跳过'],
+  ['wickrun_meeting_ask_user', '在讨论中向用户提问并等待决定'],
   ['wickrun_claim_task', '领取最早排队的一个灯芯AI 任务'],
   ['wickrun_get_task', '读取任务目标、授权的工作模型与限制'],
   ['wickrun_read_task_image', '读取已领取任务的图片原图，用于图片识别'],

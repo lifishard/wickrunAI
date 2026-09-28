@@ -8,7 +8,7 @@
 
 开源的、闭源的，付费的、免费的，都能调度。Key 自己带，只留在你本机。
 
-[![Version](https://img.shields.io/badge/version-2.20.9-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
+[![Version](https://img.shields.io/badge/version-2.20.11-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-lightgrey)](#安装)
 [![CI](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml/badge.svg)](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml)
@@ -269,3 +269,7 @@ Claude 专属任务指令一键复制、真实文件回传、支持的平台默�
 
 
 大文件回传：单文件 100 MB，每任务 50 个/500 MB；支持 512 KB 分块、断点续传和 SHA-256 校验。见 [2.20.9 更新说明](docs/releases/v2.20.9.md)。
+
+## 协作空间会议室
+
+支持共享材料、引用回应、建设性异议、向用户提问和确认纪要。会议结论不替代独立质检。ChatGPT 本体需要另行配置 MCP 接入并验证账户及会话模式，不会自动唤醒普通聊天。见[会议室使用方式与限制](docs/MEETING_ROOM.md)。

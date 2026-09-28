@@ -61,6 +61,11 @@ interface ElectronBridge extends CloudBridge {
   notifyTask(input:TaskNotificationInput):Promise<boolean>;
   onTaskNotificationClick(cb:(event:TaskNotificationClick)=>void):()=>void;
   nativeAiState():Promise<import('./native-ai').NativeAiState>;
+  meetingState(projectId:string):Promise<import('./meeting-room').MeetingRoom[]>;
+  meetingAction(action:string,input:Record<string,unknown>):Promise<unknown>;
+  meetingPrompt(roomId:string,provider:import('./native-ai').NativeAiProvider):Promise<string>;
+  meetingConnection(provider:import('./native-ai').NativeAiProvider):Promise<{command:string;args:string[]}>;
+  onMeetingQuestion(cb:(question:{roomId:string;projectId:string;messageId:string;text:string})=>void):()=>void;
   cloudRelayState?():Promise<CloudRelayState>;
   cloudRelaySet?(enabled:boolean):Promise<CloudRelayState>;
   nativeAiConfigure(options?:{replace?:boolean}):Promise<{state:import('./native-ai').NativeAiState;message:string;files?:string[];conflicts?:{file:string;command:string;args:string[]}[]}>;
