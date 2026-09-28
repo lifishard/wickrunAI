@@ -8,7 +8,8 @@ if [[ "$mode" != simulator && "$mode" != app-store ]]; then
   echo 'Expected simulator or app-store' >&2; exit 1
 fi
 if [[ "$(uname -s)" != Darwin ]]; then echo 'iOS builds require macOS and Xcode' >&2; exit 1; fi
-xcode_version="$(xcodebuild -version | head -n 1 | awk '{print $2}')"
+# Consume all output: closing the pipe after line one can crash xcodebuild.
+xcode_version="$(xcodebuild -version | awk 'NR == 1 {print $2}')"
 sdk_version="$(xcrun --sdk iphoneos --show-sdk-version)"
 if (( ${xcode_version%%.*} < 26 || ${sdk_version%%.*} < 26 )); then
   echo 'Xcode 26+ and iOS 26+ SDK are required' >&2; exit 1
