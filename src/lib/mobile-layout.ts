@@ -1,7 +1,7 @@
 import React from 'react';
 export function usePhoneLayout() {
-  const [phone, setPhone] = React.useState(() => matchMedia('(max-width: 860px)').matches);
-  React.useEffect(() => { const query = matchMedia('(max-width: 860px)'); const update = () => setPhone(query.matches); query.addEventListener('change', update); return () => query.removeEventListener('change', update); }, []);
+  const [phone, setPhone] = React.useState(() => window.matchMedia('(max-width: 860px)').matches);
+  React.useEffect(() => { const query = window.matchMedia('(max-width: 860px)'); const update = () => setPhone(query.matches); query.addEventListener('change', update); return () => query.removeEventListener('change', update); }, []);
   return phone;
 }
 /** Track the visible area, including keyboard resize, without moving document scroll. */
