@@ -140,10 +140,10 @@ export const TOOLS: ToolDef[] = [
     summarize: (a) => tr('回想「{query}」相关的旧任务', { query: clip(a.query) }),
   },
   {
-    name: 'read_review_text', label: '分段读取待复核文本', group: 'agent', hidden: true,
-    description: '文本复核专用：按产物编号和段号（从 1 开始）读取一段待复核原文，原样返回。每段约一万字；判通过前必须读完全部段落。',
-    parameters: { type: 'object', properties: { artifactId: { type: 'string', description: '文本产物目录里的 text: 编号' }, part: { type: 'integer', minimum: 1 } }, required: ['artifactId', 'part'] },
-    summarize: (a) => tr('读取待复核文本第 {part} 段', { part: s(a.part) }),
+    name: 'read_source_text', label: '分段读取前置记录', group: 'agent', hidden: true,
+    description: '按编号和段号（从 1 开始）读取一段前置记录或待复核原文，原样返回，每段约一万字。编号见本步骤消息里的「前置记录目录」或「文本产物目录」；文本复核判通过前必须读完全部段落。',
+    parameters: { type: 'object', properties: { id: { type: 'string', description: '目录里的编号，例如 text:… 或 speech:…' }, part: { type: 'integer', minimum: 1 } }, required: ['id', 'part'] },
+    summarize: (a) => tr('读取前置记录 {id} 第 {part} 段', { id: clip(a.id ?? a.artifactId, 24), part: s(a.part) }),
   },
   {
     name: 'read_skill', label: '取回技能正文', group: 'agent',

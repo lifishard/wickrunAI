@@ -4,7 +4,7 @@ const TEAM_READ_ONLY_TOOLS=Object.freeze([
  'web_search','fetch_url','chrome_tabs','chrome_read_page','chrome_fetch_json','github_search',
  'list_dir','list_directory','read_file','read_document','search_files','inspect_deliverable',
  'read_tool_result','project_memory_read','project_doc_read','recall_past_task','read_skill','read_context',
- 'request_user_input','update_plan','update_requirements','verify_requirements','read_review_text',
+ 'request_user_input','update_plan','update_requirements','verify_requirements','read_review_text','read_source_text',
 ]);
 const TEAM_SCOPED_FILE_TOOLS=Object.freeze([
  'list_dir','list_directory','read_file','read_document','search_files',

@@ -5,6 +5,7 @@ const { createDurableJson } = require('./durable-json.cjs');
 const { validateTaskDependencies, captureTaskDependencies, validateFrozenDependencies } = require('./team-dependencies.cjs');
 const { validateTeamFileScope, validateTeamFileSnapshot } = require('./team-file-scope.cjs');
 const { validateGrant } = require('./team-permissions.cjs');
+const { validateLimitRaise } = require('./team-limits.cjs');
 const equal = (a,b) => JSON.stringify(a) === JSON.stringify(b);
 const STATES = new Set(['ready','running','pausing','paused','waiting_user','uncertain','failed','cancelled','completed']);
 const ATTEMPTS = { running: ['running','completed','failed','uncertain','waiting_user'], waiting_user: ['waiting_user','completed','failed','uncertain'], uncertain: ['uncertain','completed','failed'], failed: ['failed','completed'], completed: ['completed'] };
@@ -80,7 +81,7 @@ function validateNewRun(run,source,project) {
  if((run.dependencyTaskIds!==undefined||run.dependencyInputs!==undefined||dependencies.dependencyTaskIds.length)&&(!equal(run.dependencyTaskIds??[],dependencies.dependencyTaskIds)||!equal(run.dependencyInputs??[],dependencies.dependencyInputs)))throw Error('运行的前置任务快照必须来自已保存的已验收运行');
  validateFrozenDependencies(source,run);
  const emptyMap=value=>value&&typeof value==='object'&&!Array.isArray(value)&&!Object.keys(value).length;
- if(run.status!=='ready'||run.owner!==undefined||run.tokens!==0||run.attempts.length||!emptyMap(run.reservations)||!emptyMap(run.visits)||!emptyMap(run.traversals)||!emptyMap(run.arrivals)||run.pendingApproval||(run.approvalQueue?.length)||(run.routeOverrides?.length)||(run.accessGrants?.length)||!equal(run.queue,version.graph.nodes.filter(n=>n.type==='start').map(n=>n.id)))throw Error('新运行必须从空执行记录和初始队列开始');
+ if(run.status!=='ready'||run.owner!==undefined||run.tokens!==0||run.attempts.length||!emptyMap(run.reservations)||!emptyMap(run.visits)||!emptyMap(run.traversals)||!emptyMap(run.arrivals)||run.pendingApproval||(run.approvalQueue?.length)||(run.routeOverrides?.length)||(run.accessGrants?.length)||(run.limitRaises?.length)||!equal(run.queue,version.graph.nodes.filter(n=>n.type==='start').map(n=>n.id)))throw Error('新运行必须从空执行记录和初始队列开始');
  if(!Number.isFinite(run.createdAt)||run.createdAt<=0||run.updatedAt!==run.createdAt||run.events.length!==1||run.events[0].kind!=='created'||typeof run.events[0].id!=='string'||!run.events[0].id||run.events[0].at!==run.createdAt||typeof run.events[0].text!=='string'||!run.events[0].text.trim())throw Error('新运行只能包含真实创建记录');
  if(run.scheduleKey&&source.runs.some(r=>r.scheduleKey===run.scheduleKey))throw Error('此调度触发已经创建运行');
 }
@@ -106,6 +107,9 @@ function validateRunUpdate(previous,next) {
  appendOnly(previous.routeOverrides||[],next.routeOverrides||[],'成员换路由');
  appendOnly(previous.accessGrants||[],next.accessGrants||[],'成员授权');
  for(const grant of (next.accessGrants||[]).slice((previous.accessGrants||[]).length))validateGrant(grant,next);
+ // 上限只追加、只能调高：每条新记录都和它之前已生效的值比
+ appendOnly(previous.limitRaises||[],next.limitRaises||[],'上限调整');
+ {const raises=next.limitRaises||[];for(let i=(previous.limitRaises||[]).length;i<raises.length;i++)validateLimitRaise(raises[i],{...next,limitRaises:raises.slice(0,i)});}
  for(const o of (next.routeOverrides||[]).slice((previous.routeOverrides||[]).length))if(!o||typeof o.memberId!=='string'||!next.members.some(m=>m.id===o.memberId)||typeof o.profileId!=='string'||!o.profileId||o.profileId.startsWith('client:')||typeof o.model!=='string'||!o.model.trim()||typeof o.effort!=='string')throw Error('成员换路由记录无效');
  if(next.attempts.length<previous.attempts.length)throw Error('步骤历史不可删除');
  for(let i=0;i<previous.attempts.length;i++) {

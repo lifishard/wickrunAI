@@ -1,6 +1,7 @@
 import type { GenerationConfig, RunState, ToolStep } from '../types';
 import { desktop } from './transport';
 import { uid } from './store';
+import { runTokensOf } from './team-limits';
 import type { FailoverConfig } from './failover';
 export interface Member {roleTemplateId?:string}
 export interface TeamProject {office?:import('./office').Office}
@@ -34,6 +35,8 @@ export interface RouteAttempt { memberId:string; profileId:string; model:string;
  */
 export interface RouteOverride { memberId:string; profileId:string; model:string; effort:string; at:number; previous:{profileId:string;model:string} }
 export interface TeamRun { routeOverrides?:RouteOverride[] }
+/** limitRaises：运行停下后你调高的上限。只追加、只能调高；执行时取最后一次的值。 */
+export interface TeamRun { limitRaises?:import('./team-limits').LimitRaise[] }
 /** accessGrants：运行中成员申请、你批准的授权。只追加，只对记录里的成员有效。 */
 export interface TeamRun { accessGrants?:import('./team-permissions').TeamAccessGrant[] }
 export interface TeamArtifact { id:string;sessionId:string;projectId:string;taskId:string;memberId:string;nodeId:string;attemptId:string;version:number;createdAt:number;digest:string;files:{path:string;beforeHash:string|null;afterHash:string|null}[] }
@@ -44,7 +47,7 @@ export interface NodeAttempt { memberOutputHistory?:Record<string,import('./outp
 export interface NodeAttempt { reviewInstructionSnapshot?:string[];reviewStagnation?:{fingerprint:string;repeats:2} }
 export interface NodeAttempt { artifacts?:TeamArtifact[];inputArtifacts?:TeamArtifact[];review?:{verdict:'pass'|'fail'|'unverifiable';evidence:string[];changes:string;method:'model';artifactIds:string[]} }
 export interface NodeAttempt { notice?:string; routeLog?:RouteAttempt[]; memberStates?:Record<string,RunState>; memberOutputs?:Record<string,string>; resolution?:string; id: string; nodeId: string; visit: number; status: 'running'|'completed'|'failed'|'uncertain'|'waiting_user'; startedAt: number; endedAt?: number; output: string; steps: ToolStep[]; state?: RunState; error?: string; outcome?: string }
-export interface RunEvent { approved?:boolean; id: string; at: number; kind: string; text: string; nodeId?: string }
+export interface RunEvent { approved?:boolean; id: string; at: number; kind: string; text: string; nodeId?: string; edgeId?: string }
 export interface TeamRun { approvalQueue?:{nodeId:string;text:string;codeChanges?:import('../types').CodeChange[]}[]; projectSettings:TeamProject["settings"]; memorySnapshot:MemoryEntry[]; reservations:Record<string,number>; id: string; taskId: string; workflowId: string; version: FlowVersion; members: Member[]; config: GenerationConfig; status: TeamRunStatus; goal: string; acceptance: string; queue: string[]; arrivals: Record<string,string[]>; visits: Record<string,number>; traversals: Record<string,number>; attempts: NodeAttempt[]; events: RunEvent[]; tokens: number; createdAt: number; updatedAt: number; owner?: string; pendingApproval?: { nodeId:string; text:string; codeChanges?:import('../types').CodeChange[] }; scheduleKey?: string; memoryIds: string[] }
 export interface MemoryEntry { id: string; title: string; text: string; applicability: string; evidence: string; status: 'candidate'|'validated'|'adopted'|'invalid'; revision: number; history: {at:number;text:string;status:string}[]; sourceRunId?: string }
 export interface TeamSchedule { id:string; name:string; workflowId:string; versionId:string; goal:string; acceptance:string; timezone:string; hour:number; minute:number; catchUp:boolean; overlap:'skip'|'queue'; enabled:boolean; nextAt:number; triggers:{key:string;at:number;runId?:string;reason?:string}[] }
@@ -230,7 +233,7 @@ export function runOverview(run:TeamRun):RunOverview{
   ??nodes.find(n=>n.id===run.queue[0]);
  const named=(ids:(string|undefined)[])=>ids.filter(Boolean).map(id=>run.members.find(m=>m.id===id)?.name).filter(Boolean).join('、');
  const memberName=node?named(node.type==='discussion'?(node.participants??[]):[node.memberId])||'—':'—';
- const cap=run.version.graph.maxTokens||0;
+ const cap=runTokensOf(run)||0;
  const base={nodeTitle:node?.title??'—',memberName,tokens:run.tokens,cap,ratio:cap?Math.min(1,run.tokens/cap):0};
  // 结束节点的待批不是工具调用，是交付验收。都写成「等你确认工具调用」会把人引到错的地方去看。
  if(run.pendingApproval)return {...base,waitingKind:pendingNode?.type==='end'?'accept':'approval',

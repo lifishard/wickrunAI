@@ -3,6 +3,7 @@ const path = require('node:path');
 const { teamFileTools, validateTeamFileScope, validateTeamFileSnapshot } = require('./team-file-scope.cjs');
 const { TEAM_READ_ONLY_TOOLS, TEAM_SCOPED_FILE_TOOLS, teamGrants } = require('./team-permissions.cjs');
 const READ_ONLY = new Set(TEAM_READ_ONLY_TOOLS), SCOPED = new Set(TEAM_SCOPED_FILE_TOOLS);
+const { memberTokensOf, runTokensOf } = require('./team-limits.cjs');
 const WORK = new Set(['agent','discussion','review','handoff']);
 /*
  * 交付闸门自己要用的两件只读工具，不受成员工具白名单限制。
@@ -51,7 +52,7 @@ function createTeamExecutionGuard({ collaboration, teamFiles }) {
     if(run.fileScope&&!HARNESS_TOOLS.has(name)&&SCOPED.has(name)&&!new Set(teamFileTools(run.fileScope.capability,node.type==='review')).has(name))throw Error('工具超出本次任务选择的文件权限');
     if (!Array.isArray(member.tools) || (!member.tools.includes(name) && !(HARNESS_TOOLS.has(name) && member.tools.length))) throw Error('工具不在当前成员授权范围');
     const amount = run.reservations?.[scope.attemptId + ':' + scope.memberId], reserved = Object.values(run.reservations || {}).reduce((sum,n) => sum + n,0);
-    if (!Number.isFinite(amount) || amount <= 0 || amount > member.maxTokens || !Number.isFinite(reserved) || !Number.isFinite(run.version.graph.maxTokens) || (run.tokens || 0) + reserved > run.version.graph.maxTokens) throw Error('工具派发缺少有效的本次用量预留');
+    if (!Number.isFinite(amount) || amount <= 0 || amount > memberTokensOf(run, member) || !Number.isFinite(reserved) || !Number.isFinite(runTokensOf(run)) || (run.tokens || 0) + reserved > runTokensOf(run)) throw Error('工具派发缺少有效的本次用量预留');
     const roots = scope.fileSessionId ? [authorizedFile(scope.fileSessionId,current).isolatedRoot] : [];
     // 授权只来自本次运行里你批准过、记在这位成员名下的记录
     return { ...ctx, projectId: scope.projectId, workspaceRoots: roots, grants: teamGrants(run, member.id) };

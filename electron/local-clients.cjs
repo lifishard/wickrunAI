@@ -2,6 +2,7 @@
 const path = require('node:path'), fs = require('node:fs'), crypto = require('node:crypto');
 const { createCodexClient } = require('./codex-client.cjs');
 const { claudeCode } = require('./tools/claudecode.cjs');
+const { memberTokensOf, runTokensOf } = require('./team-limits.cjs');
 
 function createLocalClients({ userData, collaboration, teamFiles, getSettings, openExternal, deps = {} }) {
   const codexFactory = deps.createCodexClient || createCodexClient, runClaude = deps.claudeCode || claudeCode;
@@ -42,7 +43,7 @@ function createLocalClients({ userData, collaboration, teamFiles, getSettings, o
     const allowed = run.projectSettings?.allowedConnections;
     if (!Array.isArray(allowed) || (allowed.length && !allowed.includes(member.connectionId))) throw Error('项目不允许这个本机接入');
     const amount = run.reservations?.[scope.attemptId + ':' + scope.memberId], reserved = Object.values(run.reservations || {}).reduce((sum, n) => sum + n, 0);
-    if (!Number.isFinite(amount) || amount <= 0 || amount > (member.maxTokens || run.version.graph.maxTokens) || !Number.isFinite(reserved) || !Number.isFinite(run.version.graph.maxTokens) || (run.tokens || 0) + reserved > run.version.graph.maxTokens) throw Error('本机执行缺少有效的用量预留');
+    if (!Number.isFinite(amount) || amount <= 0 || amount > (memberTokensOf(run, member) || runTokensOf(run)) || !Number.isFinite(reserved) || !Number.isFinite(runTokensOf(run)) || (run.tokens || 0) + reserved > runTokensOf(run)) throw Error('本机执行缺少有效的用量预留');
     let cwd = scratch;
     if (scope.fileSessionId) {
       const file = teamFiles.get(scope.fileSessionId);

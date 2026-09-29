@@ -34,7 +34,7 @@ async function localOpenAi(t, respond) {
     const chunks = [];
     for await (const chunk of req) chunks.push(chunk);
     const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-    routeLog.push({ url: req.url, model: body.model, messages: structuredClone(body.messages) });
+    routeLog.push({ url: req.url, model: body.model, messages: structuredClone(body.messages), tools: (body.tools ?? []).map((t) => t.function?.name) });
     const answer = await respond({ req, body, ordinal: routeLog.length });
     res.writeHead(answer.status ?? 200, { 'content-type': 'application/json', ...(answer.headers ?? {}) });
     res.end(JSON.stringify(answer.body));
@@ -136,7 +136,7 @@ function immediatePacer() {
   };
 }
 
-async function fixture(t, server, { tools = [], callTool = async () => ({ ok: true, content: '' }), autoRetry = 0, pacer, failover = true } = {}) {
+async function fixture(t, server, { tools = [], callTool = async () => ({ ok: true, content: '' }), autoRetry = 0, pacer, failover = true, maxVisits, secondAgent = false } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'wickrun-team-http-recovery-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const store = createCollaborationStore(root);
@@ -197,8 +197,13 @@ async function fixture(t, server, { tools = [], callTool = async () => ({ ok: tr
   agent.instructions = 'Return the deterministic fixture result.';
   agent.outputRequirement = 'A concrete result.';
   end.outputRequirement = 'Review the result.';
-  flow.draft.nodes = [start, agent, end];
-  flow.draft.edges = [[start, agent], [agent, end]].map(([from, to], index) => ({
+  if (maxVisits) agent.maxVisits = maxVisits;
+  const second = domain.newNode('agent');
+  second.memberId = 'member-a';
+  second.instructions = 'Summarize the previous result.';
+  second.outputRequirement = 'A summary.';
+  flow.draft.nodes = secondAgent ? [start, agent, second, end] : [start, agent, end];
+  flow.draft.edges = (secondAgent ? [[start, agent], [agent, second], [second, end]] : [[start, agent], [agent, end]]).map(([from, to], index) => ({
     id: `edge-${index}`, from: from.id, to: to.id, port: 'next', label: 'next', maxTraversals: 5,
   }));
   flow.draft.maxTokens = 400000;
@@ -399,4 +404,50 @@ test('a member asks for more access mid-run; approving records the grant for thi
   assert.match(JSON.stringify(server.routeLog[1].messages), /用户已批准/);
   assert.equal(run.status, 'waiting_user');
   await assert.rejects(f.runtime.runUpdate('p', f.runId, (r) => { r.accessGrants[0].target = path.parse(extra).root; }), /成员授权历史不可改写/);
+});
+
+test('a retry continues the same visit, and limits can be raised on the stopped run without starting over', async (t) => {
+  const server = await localOpenAi(t, ({ ordinal }) => ordinal === 1
+    ? { status: 400, body: { error: { message: 'invalid parameter: temperature' } } }
+    : { body: completion('finished on retry', 20) });
+  const f = await fixture(t, server, { failover: false, maxVisits: 1 });
+  await f.runtime.start('p', f.runId);
+  let run = f.runtime.project('p').runs[0];
+  assert.ok(['failed', 'uncertain'].includes(run.status));
+
+  await f.runtime.raiseLimits('p', f.runId, [{ kind: 'runTokens', value: 500000 }]);
+  run = f.runtime.project('p').runs[0];
+  assert.deepEqual(run.limitRaises.map((r) => [r.kind, r.value]), [['runTokens', 500000]]);
+  assert.ok(run.events.some((e) => e.kind === 'limit_raise' && /500000/.test(e.text)));
+  await assert.rejects(f.runtime.raiseLimits('p', f.runId, [{ kind: 'runTokens', value: 450000 }]), /只能调高/);
+  await assert.rejects(f.runtime.runUpdate('p', f.runId, (r) => { r.limitRaises[0].value = 900000; }), /上限调整历史不可改写/);
+  const agentId = run.version.graph.nodes.find((n) => n.type === 'agent').id;
+  await assert.rejects(f.runtime.runUpdate('p', f.runId, (r) => { r.limitRaises.push({ kind: 'visits', target: agentId, value: 1, at: Date.now() }); }), /只能调高/);
+
+  await f.runtime.resolveUncertain('p', f.runId, 'retry', 'request was rejected before any action');
+  await f.runtime.start('p', f.runId);
+  run = f.runtime.project('p').runs[0];
+  assert.equal(run.status, 'waiting_user', 'a retry of the only allowed run is not a second run');
+  const tries = run.attempts.filter((a) => a.nodeId === agentId);
+  assert.deepEqual(tries.map((a) => a.visit), [1, 1]);
+  assert.equal(run.visits[agentId], 1);
+});
+
+test('long upstream output reaches the next step as a document it reads in parts, not pasted into the message', async (t) => {
+  const long = '开头结论。' + '详细过程'.repeat(6000) + '结尾建议。';
+  const server = await localOpenAi(t, ({ ordinal, body }) => {
+    if (ordinal === 1) return { body: completion(long, 30) };
+    const catalog = JSON.parse(String(body.messages.find((m) => m.role === 'user').content).match(/前置记录目录：(\[.*?\])\n/)[1]);
+    const id = catalog.find((d) => d.characters > 20000).id;
+    return ordinal === 2 ? { body: completion('', 30, [toolCall('call-read', 'read_source_text', { id, part: 1 })]) } : { body: completion('summary done', 30) };
+  });
+  const f = await fixture(t, server, { failover: false, secondAgent: true });
+  await f.runtime.start('p', f.runId);
+  const second = server.routeLog[1];
+  const text = JSON.stringify(second.messages);
+  assert.match(text, /前置记录目录/);
+  assert.ok(!text.includes('详细过程'.repeat(50)), 'the long output is not pasted into the message');
+  assert.ok(second.tools.includes('read_source_text'));
+  assert.match(JSON.stringify(server.routeLog[2].messages), /开头结论。/, 'the part it asked for came back verbatim');
+  assert.equal(f.runtime.project('p').runs[0].status, 'waiting_user');
 });
