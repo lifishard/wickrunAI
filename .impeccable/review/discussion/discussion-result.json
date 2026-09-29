@@ -1,0 +1,14 @@
+{
+  "passed": true,
+  "repairedOldDraft": true,
+  "roleModelsPersisted": true,
+  "discussionRounds": 2,
+  "reviewerIndependent": true,
+  "originalMaterialsRetained": true,
+  "runs": 0,
+  "widths": [
+    1440,
+    720
+  ],
+  "errors": []
+}

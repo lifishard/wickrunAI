@@ -74,3 +74,13 @@ The screenshots cover the recorded light-theme desktop and narrow states. They d
 - First inspection found bottom clipping; populated confirmation also exposed sticky overlap with the department floor. The final implementation bounds height and removes sticky behavior while details are open. Narrow capture waits for the existing sidebar animation to finish.
 - Source descriptions and original prompts remain in their source language. User-written records and configured member names remain unchanged. The UI language tests do not assert model output language or translation of third-party prompt bodies.
 - The mechanical detector returned no findings. Evidence is under `.impeccable/review/locale/`.
+
+## 2.20.15 assistant discussion and recovery verification
+
+- Production build, static checks and all 1026 regression tests passed.
+
+- Isolated Electron profile verified local recovery of a previously rejected same-template reviewer proposal, editing and saving two model assignments, adopting a two-round discussion workflow, an independent reviewer, original material transfer, opening the prepared task and persistence after reload. No production user data was modified and no live model requests were made.
+- Desktop and 720px captures preserve the incumbent assistant surface. The narrow capture waits for the sidebar animation to finish. Proposal models remain available before adoption. The workflow preview shows the generated pipeline. Captures and the runtime result are in `.impeccable/review/discussion/`.
+- Runtime tests execute the compiled workflow with controlled model responses, checking per-role model routing, prior-speaker and prior-round visibility, full discussion text available for review, the question-tool scope, and final user acceptance. Unverified review results remain unverified.
+- Read-only review identified cancellation intent persistence and targeting older failed replies. Both were corrected and covered by regression checks. Repairing an older proposal retains its original material boundary rather than later unrelated requests.
+- A single mechanical detector scan of the changed UI returned no findings. This is not evidence of real model reasoning quality, external client participation, supplier compatibility, all themes or all window sizes.

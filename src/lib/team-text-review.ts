@@ -5,7 +5,7 @@ export const TEXT_REVIEW_LIMIT=20000;
 
 /** Sources are immutable completed attempts in the existing durable run. */
 export async function textReviewInputs(run:TeamRun,node:FlowNode):Promise<TeamTextArtifact[]> {
- const inputs=teamInputs(run,node).filter(a=>['agent','handoff'].includes(run.version.graph.nodes.find(n=>n.id===a.nodeId)?.type??''));
+ const inputs=teamInputs(run,node).filter(a=>['agent','handoff','discussion'].includes(run.version.graph.nodes.find(n=>n.id===a.nodeId)?.type??''));
  if(inputs.some(a=>a.artifacts?.some(item=>item.files.length)))throw Error('文本复核不能替代文件变更检查，请选择文件复核');
  if(!inputs.length||inputs.some(a=>!a.output.trim()))throw Error('文本复核缺少已完成的上游文本产物');
  if(inputs.reduce((sum,a)=>sum+a.output.length,0)>TEXT_REVIEW_LIMIT)throw Error('文本产物超过 20000 字符，请拆分任务或交付文件再复核；不会截断后宣告通过');
