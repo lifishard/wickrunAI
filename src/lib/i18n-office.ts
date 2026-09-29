@@ -353,6 +353,7 @@ export const OFFICE_EN: Record<string,string> = {
   '此接入尚未保存 API Key，请到设置中填写。': 'This connection has no saved API key. Add one in Settings.',
   '筹备已停止，已有内容保留。': 'Planning stopped. Existing content preserved.',
   '没有收到完整方案。': 'No complete proposal received.',
+  '等待调用额度，{s} 秒后自动继续；可随时停止。': 'Waiting for API quota. Continuing automatically in {s}s. You can stop at any time.',
   'wickrunAI 管家': 'wickrunAI Assistant',
   '先说说，你想做成什么？': 'What would you like to accomplish?',
   '和管家商量目标、了解客户端、调整团队或复盘经验。它拟方案，你来决定。': 'Discuss goals, learn about the app, adjust your team or review past work. The assistant proposes; you decide.',

@@ -140,6 +140,17 @@ export async function paced<T>(key: string, fn: () => Promise<T>, opts: {
 }
 const RATE_LIMITED = /rate.?limit|\brpm\b|\btpm\b|qps|quota.{0,12}(exceed|exhaust)|too many requests|429|请求过于频繁|并发|限流/i;
 export function isRateLimited(msg: string, status?: number): boolean { return status === 429 || RATE_LIMITED.test(msg || ''); }
+/** Retry-After in milliseconds; unreadable values count as absent. */
+export function retryAfterMs(headers: Record<string,string>, now = Date.now()): number | undefined {
+  const value = headers['retry-after'];
+  if (!value) return undefined;
+  const ms = Number.isFinite(Number(value)) ? Number(value)*1000 : Date.parse(value)-now;
+  return Number.isFinite(ms) ? Math.max(0, ms) : undefined;
+}
+/** One 429 wait for every surface: the upstream's deadline first, else one full minute window. */
+export function rateLimitDelay(headerMs?: number, bodyMs?: number): number {
+  return Math.max(1000, headerMs ?? bodyMs ?? 62_000);
+}
 export function describePace(key: string): string {
   const s = stateOf(key);
   return `发送间隔 ${s.intervalMs}ms；已避让限流 ${s.hits} 次`;

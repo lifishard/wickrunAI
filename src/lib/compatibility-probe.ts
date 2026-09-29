@@ -2,6 +2,7 @@ import type { KeyProfile } from '../types';
 import type { EffortLevel } from './effort';
 import { buildHeaders, endpoint } from './api';
 import { getTransport } from './transport';
+import { quotaKey } from './adaptive';
 import { compatibilityKey, readCompatibility, writeCompatibility, type CompatibilityReport, type ThinkingFields } from './compatibility-cache';
 export interface ProbeReply { accepted:boolean; status?:number; note:string }
 export type ProbeSend=(body:Record<string,unknown>,signal?:AbortSignal)=>Promise<ProbeReply>;
@@ -60,7 +61,7 @@ export function probeCompatibility(profile:KeyProfile,model:string,key:string,op
     const requestId=`compat-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const result:ProbeReply={accepted:false,note:'响应未完成'};let received=false;let stopped=false;let failed=false;
     const abort=()=>{void transport.abort(requestId);};signal?.addEventListener('abort',abort,{once:true});
-    try { await transport.chat({requestId,url:endpoint(profile.baseUrl,'chat/completions'),headers:buildHeaders(key,profile),body,stream:false,timeoutMs:15000,purpose:'probe',paceKey:profile.id,paceTokens:160},{
+    try { await transport.chat({requestId,url:endpoint(profile.baseUrl,'chat/completions'),headers:buildHeaders(key,profile),body,stream:false,timeoutMs:15000,purpose:'probe',paceKey:quotaKey(profile),paceTokens:160},{
       onContent:d=>{received ||= !!d;},onReasoning:d=>{received ||= !!d;},onToolCalls(){},onUsage(){},onStop:info=>{stopped=!!info.reason&&info.droppedCalls===0;},
       onResponse:status=>{result.status=status;},onDone(){},onError:(_message,status)=>{failed=true;result.status=status??result.status;result.note=`上游请求失败${result.status?`（HTTP ${result.status}）`:''}`;},
     });result.accepted=!failed&&(received||stopped);if(result.accepted)result.note='请求被接受';return result;

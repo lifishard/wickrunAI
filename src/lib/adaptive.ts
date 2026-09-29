@@ -1,5 +1,6 @@
 import type { ContextSnapshot, GenerationConfig, KeyProfile, ModelInfo, RouteOverrides } from '../types';
-import { estimateRequestTokens, type LearnedLimit } from './limits';
+import { estimateRequestTokens, pacingFloor, parseRateLimits, type LearnedLimit } from './limits';
+import { paceOf } from './pacer';
 import { runtimePolicy } from './task-context';
 import { compatibilityRoute } from './compatibility-cache';
 
@@ -37,6 +38,16 @@ export function routeKey(profile: KeyProfile, model: string): string {
 }
 export function quotaKey(profile: KeyProfile): string {
   return profile.quotaGroup?.trim() ? `pool:${profile.quotaGroup.trim()}` : `${profile.id}::${profile.baseUrl.trim().replace(/\/+$/, '')}`;
+}
+/** Pacing inputs for one request; every request on a credential shares this ledger. */
+export function paceFields(profile: KeyProfile, cap: ReturnType<typeof capabilities>, learned: LearnedLimit | undefined, input: number, output: number) {
+  return { paceKey: quotaKey(profile), paceTokens: input+output, paceTpm: cap.tpm,
+    paceInput: input, paceOutput: output, paceItpm: cap.itpm, paceOtpm: cap.otpm, cachedInputCounts: cap.cachedInputCounts,
+    paceMinMs: Math.max(cap.rpm ? Math.ceil(60000/cap.rpm) : 0, pacingFloor(learned ? { ...learned, tpm: undefined } : undefined, 0)) };
+}
+/** What a rate-limit reply teaches about this route. */
+export function rateLimitLearning(profile: KeyProfile, message: string): LearnedLimit {
+  return { ...parseRateLimits(message), minIntervalMs: paceOf(quotaKey(profile)).intervalMs, at: Date.now(), from: message.slice(0,300) };
 }
 export function positive(value: unknown): number | undefined {
   const n = Number(value); return Number.isSafeInteger(n) && n > 0 ? n : undefined;

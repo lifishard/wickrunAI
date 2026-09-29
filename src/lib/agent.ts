@@ -33,17 +33,15 @@ import {
   estimateChatTokens,
   estimateTokens,
   looksLikeOverflow,
-  pacingFloor,
   parseLimits,
-  parseRateLimits,
   quotaLimits,
   type LearnedLimit,
 } from './limits';
-import { isRateLimited, paceOf, waitCancellable, abortError } from './pacer';
+import { isRateLimited, rateLimitDelay, retryAfterMs, waitCancellable, abortError } from './pacer';
 import { contextView, runtimePolicy } from './task-context';
 import { filePathsInText } from './artifacts';
 import { endExchange } from './wiretap';
-import { calibratedTokens, capabilities, dispatchBudget, nearContextSuggestion, observeInput, outputReserve, prepareBody, quotaKey, routeKey, snapshot, workingBudget, RUNTIME_VERSION } from './adaptive';
+import { calibratedTokens, capabilities, dispatchBudget, nearContextSuggestion, observeInput, outputReserve, prepareBody, paceFields, quotaKey, rateLimitLearning, routeKey, snapshot, workingBudget, RUNTIME_VERSION } from './adaptive';
 import { probeCompatibility } from './compatibility-probe';
 import { compressionCandidate, memoryInstructions, memoryView, readContext, recentOutputFiles, updatePlan, validateCompaction } from './context-memory';
 import { handoffInfo, repeatedWithoutProgress, type ConversationMemory } from './handoff';
@@ -927,9 +925,7 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
           await transport.chat({ requestId, runId: state.runId, round: state.round, attempt: attempts,
             purpose: final ? 'final' : 'agent', url: endpoint(args.profile.baseUrl, 'chat/completions'),
             headers: buildHeaders(args.apiKey, args.profile), body, stream: cfg.stream, timeoutMs: args.timeoutMs,
-            paceKey: quotaKey(args.profile), paceTokens: reserved, paceTpm: cap.tpm,
-            paceInput: bodyTokens, paceOutput: outputAllowance, paceItpm: cap.itpm, paceOtpm: cap.otpm, cachedInputCounts: cap.cachedInputCounts,
-            paceMinMs: Math.max(cap.rpm ? Math.ceil(60000/cap.rpm) : 0, pacingFloor(learned ? { ...learned, tpm: undefined } : undefined, 0)),
+            ...paceFields(args.profile, cap, learned, bodyTokens, outputAllowance),
           }, {
             onContent(d) {
               if(loopDetected)return;
@@ -1005,7 +1001,7 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
           endExchange(requestId, failure.message, failure.status);
           events.onContentReplace?.(committedContent, committedReasoning);
           const rate = isRateLimited(failure.message, failure.status);
-          if (rate) args.onLearnLimit?.({ ...parseRateLimits(failure.message), minIntervalMs: paceOf(quotaKey(args.profile)).intervalMs, at: Date.now(), from: failure.message.slice(0,300) });
+          if (rate) args.onLearnLimit?.(rateLimitLearning(args.profile, failure.message));
           const overflow = !rate && (looksLikeOverflow(failure.message) || failure.status === 413);
           const uncertain400 = !rate && failure.status === 400 && bodyTokens > 4000 && state.round > 1;
           if ((overflow || uncertain400) && overflowRetries < (overflow ? 3 : 1)) {
@@ -1030,9 +1026,7 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
             (rate || info.kind === 'network' || info.kind === 'timeout'
               ? elapsed < recoveryLimit : attempts <= args.autoRetry);
           if (!retryAllowed) { await finishPause(info.title, info); return; }
-          const header = responseHeaders['retry-after'];
-          const retryAfter = header ? (Number.isFinite(Number(header)) ? Number(header)*1000 : Date.parse(header)-Date.now()) : undefined;
-          const delay = rate ? Math.max(1000, retryAfter ?? info.retryAfterMs ?? 62000) : backoffMs(attempts, info);
+          const delay = rate ? rateLimitDelay(retryAfterMs(responseHeaders), info.retryAfterMs) : backoffMs(attempts, info);
           if (elapsed+delay > recoveryLimit) { await finishPause('自动恢复等待达到本阶段上限，进度已保留', info); return; }
           await wait(delay, rate ? '调用额度暂时不足' : '连接暂时中断，正在自动恢复');
         }
