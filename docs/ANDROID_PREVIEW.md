@@ -2,6 +2,8 @@
 
 这是公开测试 APK，可安装到 Android 手机和平板。尚未完成真机验收，不作为正式稳定版发布。
 
+2.20.23 更新：跟进桌面 2.20.23。协作空间的阶段预算卡住时，上限卡片会指出该调“本次运行总 tokens”还是成员每步上限。
+
 2.20.22 更新：跟进桌面 2.20.22。协作空间里已停止的运行可以重新打开，从停下的地方接着跑，已完成的步骤不重跑；时间上限只计实际执行时间；只读前置记录的步骤不再因为运行目标里的“修改”要求被卡住。
 
 2.20.21 更新：跟进桌面 2.20.21 的共享代码，包括协作空间在运行中调高上限并从检查点接着跑、长记录作为文档分段读取、换模型修复入口和调用额度自动退避。依赖电脑本机能力的工具（本机文件、命令行、屏幕控制）在手机上不提供。
@@ -17,4 +19,4 @@
 - `SHA256SUMS.txt` 提供 APK 校验和，`SIGNATURE.txt` 记录测试签名验证结果。
 - 此预发布版不替换桌面稳定版，不进入桌面自动更新渠道。
 
-This APK is an Android engineering preview for phones and tablets, not a stable release. Version 2.20.22 brings the shared code up to desktop 2.20.22, including reopening a stopped team run to continue where it stopped. Tools that need the computer itself (local files, command line, screen control) are not offered on the phone. Physical-device acceptance is pending. Google sign-in, browser return and account-isolated cloud sync are connected. Real Google authorization on a physical Android device is still pending acceptance. Large task-file export remains unavailable. It uses a debug signing key; later builds may require uninstalling this preview, so back up data first. Checksums and signature verification are included. Desktop stable releases and automatic updates are unaffected.
+This APK is an Android engineering preview for phones and tablets, not a stable release. Version 2.20.23 brings the shared code up to desktop 2.20.23, including reopening a stopped team run and clearer segment budget fixes. Tools that need the computer itself (local files, command line, screen control) are not offered on the phone. Physical-device acceptance is pending. Google sign-in, browser return and account-isolated cloud sync are connected. Real Google authorization on a physical Android device is still pending acceptance. Large task-file export remains unavailable. It uses a debug signing key; later builds may require uninstalling this preview, so back up data first. Checksums and signature verification are included. Desktop stable releases and automatic updates are unaffected.

@@ -20,7 +20,7 @@ export function readSourceText(texts:{id:string;text:string}[],args:Record<strin
 /** 2.20.20 的旧名字，已声明过的调用仍能执行 */
 export const readReviewText=readSourceText;
 export const SOURCE_READ_TOOLS=['read_source_text','read_review_text'];
-export const SOURCE_PAGED_INSTRUCTIONS='前置记录较长，没有放进本条消息。「前置记录目录」列出了上游产出和本轮已有发言的编号、字数和段数；用 read_source_text 按编号和段号（从 1 开始）读取需要的原文。给出结论前，读完与本步骤相关的全部内容；不要凭目录猜测内容。';
+export const SOURCE_PAGED_INSTRUCTIONS='前置记录较长，没有放进本条消息。「前置记录目录」列出了上游产出和本轮已有发言的编号、字数和段数；用 read_source_text 按编号和段号（从 1 开始）读取需要的原文；可以在同一轮里一次请求多段，比一段一段读省 token（每多一轮都要重发已读的内容）。给出结论前，读完与本步骤相关的全部内容；不要凭目录猜测内容。';
 
 /** Sources are immutable completed attempts in the existing durable run. */
 export async function textReviewInputs(run:TeamRun,node:FlowNode):Promise<TeamTextArtifact[]> {
@@ -58,5 +58,5 @@ export function verifyTextReview(text:string,attempt:NodeAttempt,current:TeamTex
  return {verdict:value.verdict as 'pass'|'fail'|'unverifiable',artifactIds:value.artifactIds as string[],textEvidence:evidence,changes:value.changes,method:'model'};
 }
 
-export const TEXT_REVIEW_PAGED_INSTRUCTIONS='待复核文本较长，没有放进本条消息。用 read_source_text 按编号和段号（从 1 开始）逐段读取「文本产物目录」列出的全部段落；每段都成功读过才能给 pass，少读一段会被判为未完成。发现足以判定不通过的缺陷时可以直接给 fail。引用必须逐字取自读到的原文。';
+export const TEXT_REVIEW_PAGED_INSTRUCTIONS='待复核文本较长，没有放进本条消息。用 read_source_text 按编号和段号（从 1 开始）读取「文本产物目录」列出的全部段落，可以在同一轮里一次请求多段，比一段一段读省 token；每段都成功读过才能给 pass，少读一段会被判为未完成。发现足以判定不通过的缺陷时可以直接给 fail。引用必须逐字取自读到的原文。';
 export const TEXT_REVIEW_INSTRUCTIONS='本步骤只复核已提供的文本快照，不调用文件或外部工具。以 JSON 返回 {"verdict":"pass 或 fail 或 unverifiable","artifactIds":["本次全部 text: 编号"],"textEvidence":[{"artifactId":"对应编号","quote":"该文本中逐字一致的一段原文"}],"changes":"逐项覆盖、缺陷或无法核实的事项"}。通过时引用全部产物，每段至少 8 字符（短文本可引用全文），不得虚构原文；版本和引用可核对不等于事实为真。文件、外部事实或执行效果缺少证据时返回 unverifiable。';

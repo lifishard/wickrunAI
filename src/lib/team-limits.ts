@@ -56,7 +56,10 @@ export function activeMinutes(run: Pick<TeamRun, 'attempts' | 'events'>, now = D
 /** 这一步从检查点接着跑（重试或续跑），仍算同一次执行，不占“最多执行几次”。 */
 export const continuesVisit = (prior?: { resolution?: string }) => !!prior?.resolution?.startsWith('retry:');
 
-export interface LimitStop { kind: LimitKind; target?: string; current: number; used: number; design?: number }
+export interface LimitStop { kind: LimitKind; target?: string; current: number; used: number; design?: number; need?: number }
+
+/** 「剩余阶段预算不足」里记下的这一轮约需多少 tokens；旧版本的记录没有这个数，返回 0。 */
+export const stageNeed = (error?: string) => Number(/这一轮约需 (\d+)/.exec(error ?? '')?.[1]) || 0;
 
 /** 停下的运行被哪些上限卡住，以及流程设计或项目设置里已经改过的更高值。 */
 export function limitStops(run: TeamRun, project?: TeamProject, now = Date.now()): LimitStop[] {
@@ -83,7 +86,16 @@ export function limitStops(run: TeamRun, project?: TeamProject, now = Date.now()
     add('traversals', edge.id, maxTraversalsOf(run, edge), run.traversals[edge.id] ?? 0, design?.edges.find((e) => e.id === edge.id)?.maxTraversals);
   if (open && /剩余阶段预算不足|本阶段轮次已到/.test(open.error ?? '')) {
     const node = graph.nodes.find((n) => n.id === open.nodeId);
-    for (const m of run.members.filter((m) => node?.type === 'discussion' ? node.participants?.includes(m.id) : m.id === node?.memberId))
+    const members = run.members.filter((m) => node?.type === 'discussion' ? node.participants?.includes(m.id) : m.id === node?.memberId);
+    const budget = /剩余阶段预算不足/.test(open.error ?? ''), need = stageNeed(open.error);
+    const left = runTokensOf(run) - run.tokens - Object.values(run.reservations ?? {}).reduce((n, v) => n + v, 0);
+    // 一段的预算取「成员每步上限」和「本次运行还剩多少」里的小者。剩下的总量比成员上限少，
+    // 或者不够发一轮，卡住的是本次运行总量，只调成员上限没用。
+    if (budget && (need > left || members.some((m) => left < memberTokensOf(run, m)))) {
+      const total = stops.find((s) => s.kind === 'runTokens');
+      if (total) total.need = need; else { add('runTokens', undefined, runTokensOf(run), run.tokens, design?.maxTokens); stops[stops.length - 1].need = need; }
+    }
+    for (const m of members) if (!budget || memberTokensOf(run, m) <= left || need > memberTokensOf(run, m))
       add('memberTokens', m.id, memberTokensOf(run, m), 0, project?.members.find((x) => x.id === m.id)?.maxTokens);
   }
   return stops;

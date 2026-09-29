@@ -908,7 +908,7 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
             await finishPause(`必要上下文约 ${bodyTokens} token，超过已知上游实际窗口或分钟额度允许的发送空间；原始证据已保留，请压缩后继续、切换更大窗口模型或核对路由配置`); return;
           }
           const reserved = bodyTokens + outputAllowance;
-          if (budgetExceeded(reserved)) { await finishPause('剩余阶段预算不足以发送下一轮；接着跑会开启下一阶段预算'); return; }
+          if (budgetExceeded(reserved)) { await finishPause(`剩余阶段预算不足以发送下一轮（这一轮约需 ${reserved} tokens，这一段还剩 ${Math.max(0,policy.maxTokens-((state.spentTokens ?? 0)-startingTokens))}）；接着跑会开启下一阶段预算`); return; }
           resultContent = ''; resultReasoning = ''; calls = []; stop = { reason: null, droppedCalls: 0 };
           const failure: { message?: string; status?: number } = {};
           let usage: Usage | undefined;

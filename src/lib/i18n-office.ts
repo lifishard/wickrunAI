@@ -713,7 +713,7 @@ export const OFFICE_EN: Record<string,string> = {
   '本次运行总步数': "Total steps for this run",
   '本次运行总分钟': "Total minutes for this run",
   '这一步的「最多执行几次」用完了。在运行页提高本次运行里这一步的次数上限后接着跑，已完成的步骤不会重跑；设计器里改过的上限也可以在那里一键采用。': "This step has used all its runs. Raise this step’s run limit for this run on the run page and continue; finished steps will not rerun. A higher limit saved in the designer can be applied there in one click.",
-  '在运行页点「从检查点接着跑」，用新的一段预算继续，不占这一步的执行次数；想每段跑得更久，可以在那里同时提高成员的每步 tokens 上限。': "On the run page, click “Continue from checkpoint” to keep going with a new budget segment. It does not use up this step’s runs. To let each segment run longer, raise the member’s tokens per step there as well.",
+  '在运行页从检查点接着跑，用新的一段预算继续，不占这一步的执行次数。每一段的预算取成员每步 tokens 上限和本次运行剩余总量里的小者，运行页的上限卡片会标出该调哪一项。': "Continue from the checkpoint on the run page with a new segment budget. It doesn't count as another run of this step. Each segment gets the smaller of the member's per-step token limit and what is left of this run's total, and the limit card on the run page shows which one to raise.",
   '在运行页提高本次运行的上限后接着跑，已完成的步骤不会重跑。': "Raise this run’s limits on the run page and continue. Finished steps will not rerun.",
   '本次运行还剩 {left} tokens（上限 {cap}，已用 {used}），不足以再开一段（至少要 {min}）。在运行页提高本次运行的用量上限后接着跑，已完成的步骤不会重跑；也可以就此接受已有结果。': "This run has {left} tokens left (limit {cap}, used {used}), not enough for another segment (needs at least {min}). Raise this run’s token limit on the run page and continue; finished steps will not rerun. You can also accept the current results.",
   '没有要调整的上限': "No limits to change.",
@@ -743,4 +743,6 @@ export const OFFICE_EN: Record<string,string> = {
   '只有已停止的运行可以重新打开': "Only a stopped run can be reopened.",
   '停止时这一步正在执行，结果需要核实': "This step was running when the run stopped. Check its result.",
   '重新打开这次运行：已完成的步骤、记录和产物都保留，从停下的地方接着跑': "Run reopened. Finished steps, records and outputs are kept, and it continues from where it stopped.",
+  '下一轮约需 {need} tokens，本次运行只剩 {left}。': "The next round needs about {need} tokens, and this run has {left} left. ",
+  '每一段的预算不会超过本次运行剩下的量，所以要调高的是这一项。': "A segment never gets more than what is left of this run's total, so raise this one.",
 };

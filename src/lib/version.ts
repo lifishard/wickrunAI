@@ -1,2 +1,2 @@
 /** Kept in sync with package.json by the release verification test. */
-export const APP_VERSION = '2.20.22';
+export const APP_VERSION = '2.20.23';

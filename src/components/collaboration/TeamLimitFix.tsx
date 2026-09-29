@@ -8,7 +8,7 @@ const keyOf = (s: { kind: string; target?: string }) => s.kind + ':' + (s.target
 const round = (n: number, step: number) => Math.ceil(n / step) * step;
 /** 设计里的值比已经用掉的还低时，照搬它会一恢复就再停，所以至少留出能再跑一段的余量。 */
 function suggest(s: LimitStop): number {
-  const room = s.kind === 'runTokens' ? round(s.used + 100_000, 10_000)
+  const room = s.kind === 'runTokens' ? round(s.used + Math.max(100_000, (s.need ?? 0) * 3), 10_000)
     : s.kind === 'runSteps' ? s.used + 20
     : s.kind === 'runMinutes' ? s.used + 60
     : s.current + 1;
@@ -49,6 +49,7 @@ export default function TeamLimitFix({ run, stops, onRaise, onContinue }: {
       return <li className="team-route-row" key={k}>
         <strong>{limitLabel(run, s.kind, s.target)}</strong>
         <small>{s.kind === 'memberTokens' ? tr('当前 {current}', { current: s.current.toLocaleString() }) : tr('已用 {used}，上限 {current}', { used: s.used.toLocaleString(), current: s.current.toLocaleString() })}</small>
+        {s.kind === 'runTokens' && s.need !== undefined && <p className="team-note">{s.need > 0 && tr('下一轮约需 {need} tokens，本次运行只剩 {left}。', { need: s.need.toLocaleString(), left: Math.max(0, s.current - s.used).toLocaleString() })}{tr('每一段的预算不会超过本次运行剩下的量，所以要调高的是这一项。')}</p>}
         {s.design !== undefined && <p className="team-note">{tr(s.kind === 'memberTokens' ? '成员设置里已改为 {value}' : '流程设计里已改为 {value}', { value: s.design.toLocaleString() })}
           {value !== s.design && <button className="btn sm" disabled={busy} onClick={() => setValues((v) => ({ ...v, [k]: s.design! }))}>{tr('采用这个值')}</button>}</p>}
         <label className="team-field"><span>{tr('本次运行改为')}</span>

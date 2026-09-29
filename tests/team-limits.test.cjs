@@ -74,3 +74,18 @@ test('a design value already used up is not offered as the fix',()=>{
  graph.maxTokens=600000;
  assert.deepEqual(ts.limitStops(run({tokens:350000}),project(graph)).map(s=>s.design),[600000]);
 });
+
+test('a spent segment is blamed on the run total when that is what capped it',()=>{
+ const old='Error: 剩余阶段预算不足以发送下一轮；接着跑会开启下一阶段预算';
+ const fresh='Error: 剩余阶段预算不足以发送下一轮（这一轮约需 45000 tokens，这一段还剩 23260）；接着跑会开启下一阶段预算';
+ assert.equal(ts.stageNeed(fresh),45000);assert.equal(ts.stageNeed(old),0);
+ const stuck=(error,extra={})=>run({status:'uncertain',tokens:276740,attempts:[{id:'x',nodeId:'review',visit:3,status:'uncertain',error}],...extra});
+ // 成员上限已经调到很高，剩下的总量只有两万出头：该调的是本次运行总量，不是成员上限
+ const raised={limitRaises:[{kind:'memberTokens',target:'b',value:9900000,at:1}]};
+ assert.deepEqual(ts.limitStops(stuck(old,raised)).map(s=>[s.kind,s.current,s.used,s.need]),[['runTokens',300000,276740,0]]);
+ assert.deepEqual(ts.limitStops(stuck(fresh,raised)).map(s=>[s.kind,s.need]),[['runTokens',45000]]);
+ // 总量还多，成员上限才是那一段的边界
+ assert.deepEqual(ts.limitStops(stuck(old,{tokens:1000})).map(s=>[s.kind,s.target]),[['memberTokens','b']]);
+ // 这一轮比成员上限还大：两项都要调
+ assert.deepEqual(ts.limitStops(stuck(fresh.replace('45000','50000'),{tokens:260000})).map(s=>[s.kind,s.target]),[['runTokens',undefined],['memberTokens','b']]);
+});

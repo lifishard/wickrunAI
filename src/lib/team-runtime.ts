@@ -27,7 +27,7 @@ import { captureTaskDependencies, validateFrozenDependencies, validateTaskDepend
 import { teamFileTools, validateTeamFileScope, validateTeamFileSnapshot } from './team-file-scope';
 import { teamPendingQuestions, teamHasUnknownOperations } from './team-run-guidance';
 import { activeRoute } from './team-route-fix';
-import { activeMinutes, continuesVisit, currentLimit, limitLabel, maxTraversalsOf, maxVisitsOf, memberTokensOf, runMinutesOf, runStepsOf, runTokensOf, LIMIT_CAPS, type LimitKind } from './team-limits';
+import { activeMinutes, stageNeed, continuesVisit, currentLimit, limitLabel, maxTraversalsOf, maxVisitsOf, memberTokensOf, runMinutesOf, runStepsOf, runTokensOf, LIMIT_CAPS, type LimitKind } from './team-limits';
 import { validateUserAnswers, type UserQuestionAnswers } from './user-questions';
 
 type Listener = () => void;
@@ -225,7 +225,7 @@ export class TeamRuntime {
   if(/达到执行次数上限/.test(text))
    return `${text}\n${tr('这一步的「最多执行几次」用完了。在运行页提高本次运行里这一步的次数上限后接着跑，已完成的步骤不会重跑；设计器里改过的上限也可以在那里一键采用。')}`;
   if(/剩余阶段预算不足|阶段轮次已到/.test(text))
-   return `${text}\n${tr('在运行页点「从检查点接着跑」，用新的一段预算继续，不占这一步的执行次数；想每段跑得更久，可以在那里同时提高成员的每步 tokens 上限。')}`;
+   return `${text}\n${tr('在运行页从检查点接着跑，用新的一段预算继续，不占这一步的执行次数。每一段的预算取成员每步 tokens 上限和本次运行剩余总量里的小者，运行页的上限卡片会标出该调哪一项。')}`;
   if(/已达到总步骤、用量或时间上限/.test(text))
    return `${text}\n${tr('在运行页提高本次运行的上限后接着跑，已完成的步骤不会重跑。')}`;
   return text;
@@ -254,7 +254,10 @@ export class TeamRuntime {
   if(!node)return false;
   const members=node.type==='discussion'?run.members.filter(m=>node.participants?.includes(m.id)):run.members.filter(m=>m.id===node.memberId);
   const floor=Math.min(stageFloor(runTokensOf(run)),...members.map(m=>memberTokensOf(run,m)));
-  if(runTokensOf(run)-run.tokens-Object.values(run.reservations).reduce((n,v)=>n+v,0)<floor)return false;
+  const left=runTokensOf(run)-run.tokens-Object.values(run.reservations).reduce((n,v)=>n+v,0);
+  if(left<floor)return false;
+  // 下一段不会比这一段大，就发不出这一轮：原样续跑只会立刻再停，交给人调上限
+  if(stageNeed(message)>Math.min(left,...members.map(m=>memberTokensOf(run,m))))return false;
   await this.runUpdate(projectId,runId,r=>{
    const a=[...r.attempts].reverse().find(x=>x.nodeId===nodeId&&['running','failed'].includes(x.status));
    if(!a)return;
