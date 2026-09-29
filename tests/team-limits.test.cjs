@@ -54,3 +54,23 @@ test('run totals, a blocked return edge and a spent segment budget each get a ra
  const stage=run({status:'uncertain',attempts:[{id:'x',nodeId:'talk',visit:1,status:'uncertain',error:'Error: 剩余阶段预算不足以发送下一轮；接着跑会开启下一阶段预算'}]});
  assert.deepEqual(ts.limitStops(stage,project(graph)).map(s=>[s.kind,s.target,s.design]),[['memberTokens','a',80000],['memberTokens','b',undefined]]);
 });
+
+test('the time limit counts only time spent running, not time the run sat stopped',()=>{
+ const m=60_000,now=Date.now(),t0=now-30*60*m;
+ const r=run({createdAt:t0,attempts:[
+  {id:'a',nodeId:'work',visit:1,status:'completed',startedAt:t0,endedAt:t0+10*m},
+  {id:'b',nodeId:'review',visit:1,status:'completed',startedAt:t0+5*m,endedAt:t0+20*m},
+  {id:'c',nodeId:'talk',visit:1,status:'uncertain',startedAt:t0+60*m}],
+  events:[{id:'s',at:t0+60*m,kind:'start',text:'四方评议讨论'},{id:'p',at:t0+90*m,kind:'pause',text:'用户停止运行'}]});
+ assert.equal(ts.activeMinutes(r,now),50,'overlapping steps count once; an interrupted step runs until the stop');
+ assert.deepEqual(ts.limitStops(r,undefined,now),[],'thirty hours stopped does not use up a 120-minute limit');
+ const long=run({attempts:[{id:'a',nodeId:'work',visit:1,status:'running',startedAt:now-150*m}]});
+ assert.deepEqual(ts.limitStops(long,undefined,now).map(s=>[s.kind,s.current,s.used]),[['runMinutes',120,150]]);
+});
+
+test('a design value already used up is not offered as the fix',()=>{
+ const graph=structuredClone(run().version.graph);graph.maxTokens=320000;
+ assert.deepEqual(ts.limitStops(run({tokens:350000}),project(graph)).map(s=>[s.kind,s.current,s.used,s.design]),[['runTokens',300000,350000,undefined]]);
+ graph.maxTokens=600000;
+ assert.deepEqual(ts.limitStops(run({tokens:350000}),project(graph)).map(s=>s.design),[600000]);
+});

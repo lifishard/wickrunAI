@@ -18,7 +18,7 @@ import type { ErrorInfo } from '../types';
 import { emptyTeamProject, loadCollaboration, teamBridge, validateGraph, type CollaborationData, type TeamProject, type TeamRun, type Member, type FlowNode, type FlowVersion } from './collaboration';
 import { tr } from './i18n';
 import { teamInputs, teamTaskContract, verifyTeamReview } from './team-contract';
-import { textReviewInputs, verifyTextReview, textReviewPaged, reviewPartCount, TEXT_REVIEW_INSTRUCTIONS, TEXT_REVIEW_PAGED_INSTRUCTIONS, SOURCE_PAGED_INSTRUCTIONS } from './team-text-review';
+import { textReviewInputs, verifyTextReview, textReviewPaged, reviewPartCount, TEXT_REVIEW_INSTRUCTIONS, TEXT_REVIEW_PAGED_INSTRUCTIONS, SOURCE_PAGED_INSTRUCTIONS, SOURCE_READ_TOOLS } from './team-text-review';
 import { TEAM_READ_ONLY_TOOLS, TEAM_SCOPED_FILE_TOOLS, teamGrants, isAbsolutePath } from './team-permissions';
 import { repeatedReviewStagnation, type ReviewStagnation } from './team-stagnation';
 import { isLegacyTeamMemory, memoryItemsToTeamEntries, migrateTeamMemories, selectTeamMemories, teamMemorySystemBlock } from './team-memory';
@@ -27,7 +27,7 @@ import { captureTaskDependencies, validateFrozenDependencies, validateTaskDepend
 import { teamFileTools, validateTeamFileScope, validateTeamFileSnapshot } from './team-file-scope';
 import { teamPendingQuestions, teamHasUnknownOperations } from './team-run-guidance';
 import { activeRoute } from './team-route-fix';
-import { continuesVisit, currentLimit, limitLabel, maxTraversalsOf, maxVisitsOf, memberTokensOf, runMinutesOf, runStepsOf, runTokensOf, LIMIT_CAPS, type LimitKind } from './team-limits';
+import { activeMinutes, continuesVisit, currentLimit, limitLabel, maxTraversalsOf, maxVisitsOf, memberTokensOf, runMinutesOf, runStepsOf, runTokensOf, LIMIT_CAPS, type LimitKind } from './team-limits';
 import { validateUserAnswers, type UserQuestionAnswers } from './user-questions';
 
 type Listener = () => void;
@@ -192,7 +192,7 @@ export class TeamRuntime {
     if(r.status!=='running')break;
     if(r.pendingApproval){await this.runUpdate(projectId,runId,run=>{run.status='waiting_user';});break;}
     const graph=r.version.graph;
-    if(r.attempts.length>=runStepsOf(r)||r.tokens>=runTokensOf(r)||Date.now()-r.createdAt>runMinutesOf(r)*60000){await this.pauseWith(projectId,runId,'已达到总步骤、用量或时间上限；换成员或重启不会清零');break;}
+    if(r.attempts.length>=runStepsOf(r)||r.tokens>=runTokensOf(r)||activeMinutes(r)>runMinutesOf(r)){await this.pauseWith(projectId,runId,'已达到总步骤、用量或时间上限；换成员或重启不会清零');break;}
     if(!r.queue.length){await this.pauseWith(projectId,runId,'没有可执行步骤；请检查等待中的汇合或尚未完成的交付');break;}
     // The ready frontier can fan out; per-project policy controls actual parallel dispatch.
     const count=Math.max(1,r.projectSettings.maxConcurrent);
@@ -279,6 +279,22 @@ export class TeamRuntime {
   await teamBridge().toolAbort(runId);
   for(const [id,resolve] of this.approvals)if(id.startsWith(runId+':')){resolve(false);this.approvals.delete(id);}
   await this.runUpdate(projectId,runId,r=>{r.status=cancel?'cancelled':control?'pausing':'paused';r.events.push({id:uid(),at:Date.now(),kind:'pause',text:cancel?'用户停止运行，已有记录和产物保留':'停止派发后续步骤，等待当前操作核实'});});
+ }
+ /**
+  * 停止的运行可以重新打开：已完成的步骤、记录、产物和用量都保留，从停下的地方接着跑，
+  * 已完成的步骤不会重跑。停止时还有没核实的操作，就回到「待核实」；有没收尾的失败步骤，
+  * 回到「失败」走原来的核实和重试；在等你验收的，回到「等待用户」；其余回到「已暂停」。
+  */
+ async reopen(projectId:string,runId:string){
+  if(this.running.has(runId))throw Error(tr('这次运行还在收尾，请稍后再重新打开'));
+  await this.runUpdate(projectId,runId,r=>{
+   if(r.status!=='cancelled')throw Error(tr('只有已停止的运行可以重新打开'));
+   for(const a of r.attempts)if(a.status==='running'){a.status='uncertain';a.error??=tr('停止时这一步正在执行，结果需要核实');}
+   const open=[...new Map(r.attempts.map(a=>[a.nodeId,a])).values()].filter(a=>!a.resolution);
+   r.status=r.pendingApproval?'waiting_user':teamHasUnknownOperations(r)||open.some(a=>a.status==='uncertain')?'uncertain':open.some(a=>a.status==='failed')?'failed':'paused';
+   r.events.push({id:uid(),at:Date.now(),kind:'reopen',text:tr('重新打开这次运行：已完成的步骤、记录和产物都保留，从停下的地方接着跑')});
+  });
+  this.observe(projectId,runId);
  }
  async approve(projectId:string,runId:string,ok:boolean){
   const pending=this.project(projectId).runs.find(r=>r.id===runId)?.pendingApproval;if(!pending)return;
@@ -464,7 +480,7 @@ export class TeamRuntime {
   const members=node.type==='discussion'?(node.participants??[]).map(id=>r.members.find(m=>m.id===id)!):[r.members.find(m=>m.id===node.memberId)!];
   const output:string[]=[];
   for(const member of members){if(control.stop)break;let text=resumeAttempt?.memberOutputs?.[member.id];if(text===undefined){text=await this.runMemberWithFailover(projectId,runId,attemptId,node,member,output.join('\n\n'),control);const saved=text;await this.runUpdate(projectId,runId,run=>{const a=run.attempts.find(x=>x.id===attemptId)!;(a.memberOutputs??={})[member.id]=saved;});}output.push(`${member.name}\n${text}`);}
-  if(control.stop){await this.runUpdate(projectId,runId,run=>{const a=run.attempts.find(x=>x.id===attemptId)!;if(a.status==='running')a.status='uncertain';if(run.status!=='cancelled')run.status='uncertain';});return;}
+  if(control.stop){await this.runUpdate(projectId,runId,run=>{const a=run.attempts.find(x=>x.id===attemptId)!;if(a.status==='running'){a.status='uncertain';a.endedAt??=Date.now();}if(run.status!=='cancelled')run.status='uncertain';});return;}
   const text=output.join('\n\n');
   // A reviewer must provide a structured verdict and evidence; unknown results route explicitly.
   let outcome='next';
@@ -711,7 +727,7 @@ export class TeamRuntime {
     return ok?{ok:true,content:`用户已批准：${label}。本次运行内有效，可以继续。`,summary:'已授权'}:{ok:false,content:'',error:'用户拒绝了这次授权申请。换一种不需要该权限的做法，或在结果里说明缺少这项权限。'};
    };
    handle=runAgent({autoProbe:profile!.probeRequests===true,resume,resolveUncertain:resume?'retry':undefined,requestId:uid('teamrequest'),profile:profile!,apiKey:key!,config,
-    taskGoal:r.fileScope?(node.type==='review'?'读取产物，检查本次交付。不要修改文件，不要运行测试，不要推送。':[r.goal,r.acceptance,...supplementalInstructions].join('\n')):undefined,
+    taskGoal:r.fileScope?(node.type==='review'?'读取产物，检查本次交付。不要修改文件，不要运行测试，不要推送。':[r.goal,r.acceptance,...supplementalInstructions].join('\n')):undefined,textOnly:!r.fileScope&&!isClient&&enabledTools.every(name=>readOnly.has(name)||SOURCE_READ_TOOLS.includes(name)),
     // 任务消息的 id 必须跨派发稳定，而且要短到模型抄得动。
     //
     // 稳定：原来每次派发都新生成 uid，续跑后检查点里的 requirementSourceIds 指向旧 id，

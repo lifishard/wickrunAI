@@ -6,12 +6,17 @@ import { useT } from '../../lib/i18n';
 type Raise = { kind: LimitKind; target?: string; value: number };
 const keyOf = (s: { kind: string; target?: string }) => s.kind + ':' + (s.target ?? '');
 const round = (n: number, step: number) => Math.ceil(n / step) * step;
+/** 设计里的值比已经用掉的还低时，照搬它会一恢复就再停，所以至少留出能再跑一段的余量。 */
 function suggest(s: LimitStop): number {
-  const v = s.design ?? (s.kind === 'visits' || s.kind === 'traversals' ? s.current + 2
-    : s.kind === 'runTokens' ? round(Math.max(s.current * 1.5, s.used + 100_000), 10_000)
-    : s.kind === 'runSteps' ? s.current + Math.max(20, Math.ceil(s.current / 2))
-    : s.kind === 'runMinutes' ? Math.max(s.current * 2, s.used + 60)
-    : s.current * 2);
+  const room = s.kind === 'runTokens' ? round(s.used + 100_000, 10_000)
+    : s.kind === 'runSteps' ? s.used + 20
+    : s.kind === 'runMinutes' ? s.used + 60
+    : s.current + 1;
+  const v = s.design !== undefined ? Math.max(s.design, room) : s.kind === 'visits' || s.kind === 'traversals' ? s.current + 2
+    : s.kind === 'runTokens' ? round(Math.max(s.current * 1.5, room), 10_000)
+    : s.kind === 'runSteps' ? Math.max(s.current + Math.max(20, Math.ceil(s.current / 2)), room)
+    : s.kind === 'runMinutes' ? Math.max(s.current * 2, room)
+    : s.current * 2;
   return Math.min(LIMIT_CAPS[s.kind], Math.max(s.current + 1, Math.round(v)));
 }
 

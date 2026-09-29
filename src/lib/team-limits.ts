@@ -35,6 +35,24 @@ export function limitLabel(run: TeamRun, kind: LimitKind, target?: string): stri
   return tr(kind === 'runTokens' ? '本次运行总 tokens' : kind === 'runSteps' ? '本次运行总步数' : '本次运行总分钟');
 }
 
+const STOP_EVENTS = new Set(['pause', 'paused', 'uncertain', 'failed', 'recovery']);
+/**
+ * 这次运行实际在跑的分钟数：各步骤执行时段合并后的总长。停下、等你处理、关机的时间都不算，
+ * 所以停了一夜再接着跑，不会一恢复就撞上时间上限。中断时没记下结束时间的步骤，
+ * 按它开始之后第一条停机事件的时间算。
+ */
+export function activeMinutes(run: Pick<TeamRun, 'attempts' | 'events'>, now = Date.now()): number {
+  const endOf = (a: TeamRun['attempts'][number]) => a.endedAt ?? (a.status === 'running' ? now
+    : run.events.find((e) => e.at >= a.startedAt && STOP_EVENTS.has(e.kind))?.at ?? a.startedAt);
+  const spans = run.attempts.filter((a) => Number.isFinite(a.startedAt)).map((a) => [a.startedAt, Math.max(a.startedAt, endOf(a))] as const).sort((x, y) => x[0] - y[0]);
+  let total = 0, from = 0, to = -Infinity;
+  for (const [start, end] of spans) {
+    if (start > to) { if (to > from) total += to - from; from = start; to = end; } else to = Math.max(to, end);
+  }
+  if (to > from) total += to - from;
+  return total / 60_000;
+}
+
 /** 这一步从检查点接着跑（重试或续跑），仍算同一次执行，不占“最多执行几次”。 */
 export const continuesVisit = (prior?: { resolution?: string }) => !!prior?.resolution?.startsWith('retry:');
 
@@ -47,11 +65,13 @@ export function limitStops(run: TeamRun, project?: TeamProject, now = Date.now()
   const flow = project?.workflows.find((f) => f.id === run.workflowId);
   const design = flow ? [...flow.versions].sort((a, b) => a.number - b.number).at(-1)?.graph : undefined;
   const higher = (value: number | undefined, current: number) => value !== undefined && value > current ? value : undefined;
-  const add = (kind: LimitKind, target: string | undefined, current: number, used: number, planned?: number) => stops.push({ kind, target, current, used, design: higher(planned, current) });
+  // 设计里的值没超过已经用掉的量，采用它也会一恢复就再停，这种就不推荐。
+  const add = (kind: LimitKind, target: string | undefined, current: number, used: number, planned?: number) => stops.push({ kind, target, current, used, design: higher(planned, Math.max(current, used)) });
   if (run.attempts.length >= runStepsOf(run)) add('runSteps', undefined, runStepsOf(run), run.attempts.length, design?.maxSteps);
   const open = [...run.attempts].reverse().find((a) => !a.resolution && ['failed', 'uncertain'].includes(a.status));
   if (run.tokens >= runTokensOf(run) || /不足以再开一段/.test(open?.error ?? '')) add('runTokens', undefined, runTokensOf(run), run.tokens, design?.maxTokens);
-  if (now - run.createdAt > runMinutesOf(run) * 60_000) add('runMinutes', undefined, runMinutesOf(run), Math.ceil((now - run.createdAt) / 60_000), design?.maxMinutes);
+  const minutes = activeMinutes(run, now);
+  if (minutes > runMinutesOf(run)) add('runMinutes', undefined, runMinutesOf(run), Math.ceil(minutes), design?.maxMinutes);
   for (const id of run.queue) {
     const node = graph.nodes.find((n) => n.id === id), prior = [...run.attempts].reverse().find((a) => a.nodeId === id);
     if (node && !continuesVisit(prior) && (run.visits[id] ?? 0) >= maxVisitsOf(run, node))
