@@ -43,6 +43,7 @@ import { filePathsInText } from './artifacts';
 import { endExchange } from './wiretap';
 import { calibratedTokens, capabilities, dispatchBudget, nearContextSuggestion, observeInput, outputReserve, prepareBody, paceFields, quotaKey, rateLimitLearning, routeKey, snapshot, workingBudget, RUNTIME_VERSION } from './adaptive';
 import { probeCompatibility } from './compatibility-probe';
+import { readReviewText } from './team-text-review';
 import { compressionCandidate, memoryInstructions, memoryView, readContext, recentOutputFiles, updatePlan, validateCompaction } from './context-memory';
 import { handoffInfo, repeatedWithoutProgress, type ConversationMemory } from './handoff';
 import { foldedSkillNames, readSkill, type Skill } from './skills';
@@ -111,6 +112,8 @@ export interface RunAgentArgs {
   extraSystem: string;
   /** 本轮唤起的技能。正文过长的只在 system 里留摘要，靠 read_skill 取回全文 */
   skills?: Skill[];
+  /** 文本复核的原文快照；read_review_text 从这里分段读取 */
+  reviewTexts?: { id: string; text: string }[];
   /** 按需回想过去的任务。不提供就没有这个工具 —— 默认零关联 */
   recallTasks?: (query: string, limit: number) => Promise<unknown[]>;
   timeoutMs: number;
@@ -728,7 +731,7 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
               result = { ok: false, content: '', error: '用户已核实并选择跳过此操作，程序没有重新执行。' };
               step.status = 'denied';
             } else if (state.replanPending && !resolving) {
-              if (!args.canRunHostTools || ['read_context','update_plan','update_requirements','verify_requirements','request_access'].includes(call.name)) {
+              if (!args.canRunHostTools || ['read_context','read_review_text','update_plan','update_requirements','verify_requirements','request_access'].includes(call.name)) {
                 result={ok:false,content:'用户补充要求，取消尚未执行的旧计划；请重新规划。',summary:'取消尚未执行的旧计划'};step.status='denied';
               } else {
                 result=await interrupted(transport.callTool('reconcile_operation',{runId:state.runId,callId:`${state.round}-${i}-${call.id}`,name:call.name,args:parsed},args.toolCtx()));
@@ -768,6 +771,7 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
                       : call.name === 'create_conversation' ? await interrupted(args.createConversation!(parseConversationRequest(parsed), state.runId!))
                       : call.name === 'complete_task' ? recordTaskReview(state,parsed)
                       : call.name === 'read_context' ? readContext(state, parsed)
+                      : call.name === 'read_review_text' ? readReviewText(args.reviewTexts ?? [], parsed)
                       : call.name === 'read_skill' ? readSkill(args.skills ?? [], parsed)
                       : call.name === 'recall_past_task' ? await interrupted((async () => {
                         const found = await args.recallTasks!(String(parsed.query ?? ''), Number(parsed.limit) || 5);

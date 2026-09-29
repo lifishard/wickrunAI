@@ -699,4 +699,11 @@ export const OFFICE_EN: Record<string,string> = {
   '换一个可用的模型，再继续': "Switch to a working model to continue",
   '下方指出了出错的成员和原因。换用模型后，可以直接重试此步骤。': "The card below shows which member failed and why. Switch the model, then retry this step.",
   '下方指出了出错的成员和原因。换用模型后，再核实这一步已有的操作。': "The card below shows which member failed and why. Switch the model, then verify the actions this step already took.",
+  '分段读取待复核文本': "Read review text in parts",
+  '读取待复核文本第 {part} 段': "Read review text, part {part}",
+  '访问目录 {path}': "Access the folder {path}",
+  '管理员命令': "Administrator commands",
+  '{name} 申请授权：{label}\n理由：{reason}\n批准后只在本次运行里对这位成员有效。': "{name} requests access: {label}\nReason: {reason}\nIf approved, it applies only to this member in this run.",
+  '{name} 获准：{label}': "{name} was granted: {label}",
+  '{name} 的授权申请被拒绝：{label}': "{name}’s access request was declined: {label}",
 };

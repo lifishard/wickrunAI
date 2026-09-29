@@ -49,7 +49,7 @@ export function workspaceStamp(p:TeamProject):string {
 export function workspaceContext(p:TeamProject,env:WorkspaceEnvironment){return {
  schema:z.toJSONSchema(workspacePlanSchema),
  project:{id:p.id,settings:p.settings,departments:p.office?.departments??[],members:p.members,workflows:p.workflows.map(f=>({id:f.id,name:f.name,archived:f.archived,draft:f.draft,versions:f.versions.map(v=>({id:v.id,number:v.number}))})),tasks:p.tasks.map(({entries,...t})=>t),schedules:p.schedules,files:p.files,runs:p.runs.map(r=>({id:r.id,taskId:r.taskId,status:r.status,goal:r.goal,tokens:r.tokens,pendingApproval:r.pendingApproval,latest:r.attempts.slice(-3).map(a=>({nodeId:a.nodeId,status:a.status,output:a.output.slice(-3000),error:a.error}))}))},
- tools:TOOLS.map(t=>({name:t.name,description:t.description.slice(0,180),group:t.group})),skills:env.skills.filter(s=>s.enabled).map(s=>({name:s.name,description:s.description})),
+ tools:TOOLS.filter(t=>!t.hidden).map(t=>({name:t.name,description:t.description.slice(0,180),group:t.group})),skills:env.skills.filter(s=>s.enabled).map(s=>({name:s.name,description:s.description})),
  departmentTemplates:departmentTemplates(env.roles),savedModules:[...(p.office?.modules??[]),...(env.settings.officeLibrary?.departments??[])].map(m=>({id:m.id,name:m.name})),
  humanActions:['approve or reject QA/delivery','answer pending questions','grant a new directory','inspect and merge files','confirm meeting minutes','import/export/restore data'],
  };}

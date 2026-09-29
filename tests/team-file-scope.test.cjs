@@ -58,11 +58,13 @@ test('renderer and main scope validators reject non-canonical picker paths consi
 
 test('durable store requires saved task provenance and rejects forged roots capabilities and tools atomically',async t=>{
  await t.test('valid snapshot',t=>{const {root,project}=scopedProject(t),store=createCollaborationStore(root.data);store.update(0,project);project.runs.push(frozenRun(project));assert.equal(store.update(1,project).projects.p.runs[0].fileScope.root,root.b);});
+ await t.test('non-file tools ride along',t=>{const {root,project}=scopedProject(t);project.members[0].tools.push('fetch_url','chrome_read_page');const store=createCollaborationStore(root.data);store.update(0,project);project.runs.push(frozenRun(project));assert.ok(store.update(1,project).projects.p.runs[0].members[0].tools.includes('fetch_url'));});
  await t.test('task root outside project roots',t=>{const {root,project}=scopedProject(t);project.tasks[0].fileScope.root=path.join(root.data,'outside');const store=createCollaborationStore(root.data);assert.throws(()=>store.update(0,project),/已授权目录/);});
  for(const [label,mutate,message] of [
   ['run root',(run,_project,root)=>run.fileScope.root=root.a,/项目授权/],
   ['run capability',run=>run.fileScope.capability='read',/项目授权/],
-  ['extra tool',(_run,project)=>{project.members[0].tools.push('fetch_url');},/超出所选权限/],
+  // 联网、浏览器等非文件工具照成员配置开放；超出所选级别的文件工具（edit 级别下的 run_command）仍被拒
+  ['extra tool',(_run,project)=>{project.members[0].tools.push('run_command');},/超出所选权限/],
   ['discussion node',(_run,project)=>{project.workflows[0].versions[0].graph.nodes[1].type='discussion';project.workflows[0].versions[0].graph.nodes[1].participants=['m'];delete project.workflows[0].versions[0].graph.nodes[1].memberId;},/只支持直接完成或独立复核/],
  ])await t.test(label,t=>{const {root,project}=scopedProject(t);if(label==='extra tool'||label==='discussion node')mutate(undefined,project,root);const store=createCollaborationStore(root.data);store.update(0,project);const run=frozenRun(project);if(label!=='extra tool'&&label!=='discussion node')mutate(run,project,root);project.runs.push(run);const before=store.read();assert.throws(()=>store.update(before.revision,project),message);assert.deepEqual(store.read(),before);});
 });

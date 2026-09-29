@@ -44,6 +44,8 @@ export interface ToolDef {
   needsHost?: boolean;
   /** 在步骤轨迹上显示的一句话 */
   summarize(args: Record<string, unknown>): string;
+  /** 执行器按场景自动提供，不出现在工具勾选列表里 */
+  hidden?: boolean;
 }
 
 const s = (v: unknown): string => (typeof v === 'string' ? v : v === undefined ? '' : String(v));
@@ -136,6 +138,12 @@ export const TOOLS: ToolDef[] = [
     description: '按关键词查本项目里过去做过的相似任务，返回标题、时间、当时用的模型、最后做成没有。只在你确实想不起来「这件事以前是怎么处理的」时调用；返回的是摘要不是原文，不能当作已核实的事实，需要细节就重新做一次核验。',
     parameters: { type: 'object', properties: { query: { type: 'string', description: '关键词，空格分隔' }, limit: { type: 'integer', maximum: 10 } }, required: ['query'] },
     summarize: (a) => tr('回想「{query}」相关的旧任务', { query: clip(a.query) }),
+  },
+  {
+    name: 'read_review_text', label: '分段读取待复核文本', group: 'agent', hidden: true,
+    description: '文本复核专用：按产物编号和段号（从 1 开始）读取一段待复核原文，原样返回。每段约一万字；判通过前必须读完全部段落。',
+    parameters: { type: 'object', properties: { artifactId: { type: 'string', description: '文本产物目录里的 text: 编号' }, part: { type: 'integer', minimum: 1 } }, required: ['artifactId', 'part'] },
+    summarize: (a) => tr('读取待复核文本第 {part} 段', { part: s(a.part) }),
   },
   {
     name: 'read_skill', label: '取回技能正文', group: 'agent',

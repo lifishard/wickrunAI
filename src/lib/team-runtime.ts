@@ -1,5 +1,5 @@
 import { preserveOutput, type OutputSnapshot } from './output-history';
-import type { AppSettings, ToolStep, RunState, GenerationConfig } from '../types';
+import type { AppSettings, ToolStep, RunState, GenerationConfig, AccessRequest, ToolResult } from '../types';
 import { runAgent, type AgentHandle } from './agent';
 import { uid, secretGet, toolContextOf } from './store';
 import { TOOL_BY_NAME } from './tools/registry';
@@ -18,7 +18,8 @@ import type { ErrorInfo } from '../types';
 import { emptyTeamProject, loadCollaboration, teamBridge, validateGraph, type CollaborationData, type TeamProject, type TeamRun, type Member, type FlowNode, type FlowVersion } from './collaboration';
 import { tr } from './i18n';
 import { teamInputs, teamTaskContract, verifyTeamReview } from './team-contract';
-import { textReviewInputs, verifyTextReview, TEXT_REVIEW_INSTRUCTIONS } from './team-text-review';
+import { textReviewInputs, verifyTextReview, textReviewPaged, reviewPartCount, TEXT_REVIEW_INSTRUCTIONS, TEXT_REVIEW_PAGED_INSTRUCTIONS } from './team-text-review';
+import { TEAM_READ_ONLY_TOOLS, TEAM_SCOPED_FILE_TOOLS, teamGrants, isAbsolutePath } from './team-permissions';
 import { repeatedReviewStagnation, type ReviewStagnation } from './team-stagnation';
 import { isLegacyTeamMemory, memoryItemsToTeamEntries, migrateTeamMemories, selectTeamMemories, teamMemorySystemBlock } from './team-memory';
 import { memoryItemsOf, type ProjectMemoryItem } from './memory-core';
@@ -59,10 +60,11 @@ function shortKey(value:string):string{
  return (h>>>0).toString(36).padStart(7,'0');
 }
 const EXPLORE_NODE_TYPES=new Set(['start','agent','discussion','end']);
-const EXPLORE_PROMPT_PREFIX='本次运行只梳理可选方向、取舍、假设、待确认问题和可编辑的下一步建议。不得执行建议中的实际任务，不得调用工具、修改文件、运行命令或代表用户作出决定。\n';
+const EXPLORE_PROMPT_PREFIX='本次运行只梳理可选方向、取舍、假设、待确认问题和可编辑的下一步建议。可以用已提供的只读工具查资料（联网搜索、读取网页或文件）；不得执行建议中的实际任务，不得修改文件、运行命令或代表用户作出决定。\n';
 function assertExploreSnapshot(version:FlowVersion,members:Member[]){
  if(version.graph.nodes.some(node=>!EXPLORE_NODE_TYPES.has(node.type)))throw Error('想法梳理运行只允许开始、方向探索、讨论、建议和结束步骤');
- if(members.some(member=>member.connectionId.startsWith('client:')||member.tools.length||member.skills?.length))throw Error('想法梳理运行只能使用不带工具、技能或本机客户端的 API 成员');
+ // 成员可以带工具；运行时只开放其中的只读工具，主进程按同一份清单再拦一次
+ if(members.some(member=>member.connectionId.startsWith('client:')||member.skills?.length))throw Error('想法梳理运行只能使用不带技能或本机客户端的 API 成员');
 }
 export class TeamRuntime {
  data: CollaborationData | null = null;
@@ -546,9 +548,11 @@ export class TeamRuntime {
   const key=profile?await secretGet(profile.id):null;if(!key&&!isClient)throw Error(`成员 ${member.name} 缺少 API Key`);
   const p=this.project(projectId),r=p.runs.find(x=>x.id===runId)!;
   const textMode=node.type==='review'&&node.reviewMode==='text';
-  const enabledTools=textMode?[]:r.fileScope
-   ? teamFileTools(r.fileScope.capability,node.type==='review').filter(name=>member.tools.includes(name))
-   : node.type==='review'?member.tools.filter(name=>['read_file','read_document','list_dir','list_directory','search_files'].includes(name)):member.tools;
+  // 与单一 Agent 同等：成员配置的工具都可用，危险操作按审批模式询问。质检步骤和想法梳理只开放只读工具；
+  // 文件任务里受目录约束的文件工具按读/改/命令级别放行，其余工具照成员配置。主进程执行前按同一份清单再拦一次。
+  const readOnly=new Set<string>(TEAM_READ_ONLY_TOOLS),scoped=new Set<string>(TEAM_SCOPED_FILE_TOOLS);
+  let enabledTools:string[]=textMode?[]:r.intent==='explore'||node.type==='review'?member.tools.filter(name=>readOnly.has(name)):[...member.tools];
+  if(r.fileScope&&!textMode)enabledTools=[...teamFileTools(r.fileScope.capability,node.type==='review').filter(name=>member.tools.includes(name)),...enabledTools.filter(name=>!scoped.has(name))];
   let fileSessionId:string|undefined;
   let roots:string[]=[];
   if((isClient||enabledTools.some(name=>['files','shell','agent'].includes(TOOL_BY_NAME[name]?.group??'')))&&r.projectSettings.roots.length){
@@ -559,6 +563,9 @@ export class TeamRuntime {
   const chosen=member.skills?.length?(await loadSkills()).filter((x:Skill)=>x.enabled&&member.skills!.includes(x.name)):[];
   const inputs=teamInputs(r,node);
   const inputTexts=textMode?await textReviewInputs(r,node):[];
+  // 超过一次能放下的长度就分段读：只给一个读原文的工具，读完才能判通过，不截断
+  const paged=textMode&&textReviewPaged(inputTexts);
+  if(paged)enabledTools=['read_review_text'];
   if(textMode)await this.runUpdate(projectId,runId,run=>{run.attempts.find(a=>a.id===attemptId)!.inputTexts=inputTexts;});
   const latestArtifacts=new Map<string,import('./collaboration').TeamArtifact>();
   for(const artifact of inputs.flatMap(a=>a.artifacts??[])){const previous=latestArtifacts.get(artifact.sessionId);if(artifact.memberId!==member.id&&(!previous||artifact.version>previous.version))latestArtifacts.set(artifact.sessionId,artifact);}
@@ -588,7 +595,7 @@ export class TeamRuntime {
   const evidenceNote=citable.length
    ? `\n可引用的证据编号（verify_requirements 的 review 类型要用）：${citable.join('、')}。也可以用 text: 加上你已输出答复里的原文片段。`
    : `\nreview 类验收的证据：填你本轮发起那次工具调用的 id，或 text: 加上你已输出答复里的原文片段；空着或写理由都不算证据。`;
-  const prompt=`${r.intent==='explore'?EXPLORE_PROMPT_PREFIX:''}${textMode?TEXT_REVIEW_INSTRUCTIONS+'\n':node.type==='review'?'本步骤只读复核。不要修改文件，不要运行测试；读取产物并给出复核结论。\n':''}任务契约：${JSON.stringify(teamTaskContract(r,node,member.id,inputs,roots))}\n已接收产物版本：${JSON.stringify(inputArtifacts)}\n${textMode?`文本产物快照：${JSON.stringify(inputTexts)}\n`:``}目标：${r.goal}\n验收：${r.acceptance}\n步骤：${node.instructions}\n输出要求：${node.outputRequirement}\n允许工作目录：${roots.join('、')||'无'}${isolationNote}\n声明验收要求（update_requirements）时：sourceId 必须写 ${taskMessageId}，sourceQuote 必须是上面「目标」或「验收」里的原文片段；文件类检查（file_exists / file_contains / json）的 path 必须是绝对路径，以上面的允许工作目录开头。verify_requirements 的 ids 是你自己起的要求 id，不是文件名。${evidenceNote}\n前置记录：\n${sources}\n本轮讨论：\n${discussion}\n补充指令：\n${supplementalInstructions.join('\n')}`;
+  const prompt=`${r.intent==='explore'?EXPLORE_PROMPT_PREFIX:''}${textMode?TEXT_REVIEW_INSTRUCTIONS+'\n'+(paged?TEXT_REVIEW_PAGED_INSTRUCTIONS+'\n':''):node.type==='review'?'本步骤只读复核。不要修改文件，不要运行测试；读取产物并给出复核结论。\n':''}任务契约：${JSON.stringify(teamTaskContract(r,node,member.id,inputs,roots))}\n已接收产物版本：${JSON.stringify(inputArtifacts)}\n${textMode?(paged?`文本产物目录：${JSON.stringify(inputTexts.map(a=>({id:a.id,nodeId:a.nodeId,version:a.version,characters:a.text.length,parts:reviewPartCount(a.text)})))}\n`:`文本产物快照：${JSON.stringify(inputTexts)}\n`):``}目标：${r.goal}\n验收：${r.acceptance}\n步骤：${node.instructions}\n输出要求：${node.outputRequirement}\n允许工作目录：${roots.join('、')||'无'}${isolationNote}\n声明验收要求（update_requirements）时：sourceId 必须写 ${taskMessageId}，sourceQuote 必须是上面「目标」或「验收」里的原文片段；文件类检查（file_exists / file_contains / json）的 path 必须是绝对路径，以上面的允许工作目录开头。verify_requirements 的 ids 是你自己起的要求 id，不是文件名。${evidenceNote}\n前置记录：\n${sources}\n本轮讨论：\n${discussion}\n补充指令：\n${supplementalInstructions.join('\n')}`;
 
   let reasoning=resume?.reasoning??'';
   let outputHistory:OutputSnapshot[]=structuredClone(r.attempts.find(a=>a.id===attemptId)?.memberOutputHistory?.[member.id]??resume?.outputHistory??[]);
@@ -645,11 +652,31 @@ export class TeamRuntime {
    }).catch(reject);};
    const confirm=async(step:ToolStep)=>{
     if(control.stop)return false;
+    // 授权申请由 grantAccess 自己请你确认一次，这里不再重复问
+    if(step.name==='request_access')return true;
     const codeReview=Boolean(step.codeChanges?.some(c=>c.status==='pending'));
     if(!codeReview && config.approvalMode==='all')return true;
     if(!codeReview && config.approvalMode==='auto'&&!['shell','agent'].includes(TOOL_BY_NAME[step.name]?.group??''))return true;
     await this.runUpdate(projectId,runId,run=>{const item={nodeId:attemptId,codeChanges:step.codeChanges,text:`${member.name} 请求 ${step.name}\n${JSON.stringify(step.args,null,2)}`};run.approvalQueue=[...(run.approvalQueue??[]),item];run.pendingApproval=run.approvalQueue[0];});
     return new Promise<boolean>((res)=>{this.approvals.set(runId+':'+attemptId,ok=>{this.approvals.delete(runId+':'+attemptId);void this.runUpdate(projectId,runId,run=>{run.approvalQueue=(run.approvalQueue??[]).filter(x=>x.nodeId!==attemptId);run.pendingApproval=run.approvalQueue[0];run.events.push({id:uid(),at:Date.now(),kind:'permission',text:`${member.name} 的 ${step.name}：${ok?'批准':'拒绝'}`,nodeId:node.id});}).then(()=>res(ok)).catch(()=>res(false));});});
+   };
+   /*
+    * 与单一 Agent 同等的中途申请授权：目录外路径、屏幕控制、管理员命令。每次都要你在运行页批准，
+    * 批准只对本次运行里的这位成员有效，追加进运行记录；主进程执行工具时按同一份记录放行。
+    * 返回给模型的文字是提示词的一部分，不跟界面语言走。
+    */
+   const grantAccess=async(req:AccessRequest):Promise<ToolResult>=>{
+    const scope=req.scope,target=req.target?.trim(),reason=(req.reason??'').trim();
+    if(!['path','admin','screen'].includes(scope))return {ok:false,content:'',error:`不认识的 scope：${String(scope)}。只能是 path、admin、screen 三者之一。`};
+    if(scope==='path'&&(!target||!isAbsolutePath(target)))return {ok:false,content:'',error:'scope="path" 必须同时给 target，填要访问的目录的绝对路径。'};
+    if(reason.length<4)return {ok:false,content:'',error:'必须给出具体理由：你要用这个权限做什么。理由会原样展示给用户看。'};
+    const held=teamGrants(this.project(projectId).runs.find(x=>x.id===runId)??{},member.id);
+    if(scope==='admin'&&held.admin||scope==='screen'&&held.screen||scope==='path'&&held.extraRoots.includes(target!))return {ok:true,content:'本次运行里你已经有这项授权，直接使用即可。',summary:'已有授权'};
+    if(control.stop)return {ok:false,content:'',error:'运行正在停止，没有提交授权申请。'};
+    const label=scope==='path'?tr('访问目录 {path}',{path:target!}):scope==='screen'?tr('屏幕控制'):tr('管理员命令');
+    await this.runUpdate(projectId,runId,run=>{const item={nodeId:attemptId,text:tr('{name} 申请授权：{label}\n理由：{reason}\n批准后只在本次运行里对这位成员有效。',{name:member.name,label,reason})};run.approvalQueue=[...(run.approvalQueue??[]),item];run.pendingApproval=run.approvalQueue[0];});
+    const ok=await new Promise<boolean>(res=>{this.approvals.set(runId+':'+attemptId,ok=>{this.approvals.delete(runId+':'+attemptId);void this.runUpdate(projectId,runId,run=>{run.approvalQueue=(run.approvalQueue??[]).filter(x=>x.nodeId!==attemptId);run.pendingApproval=run.approvalQueue[0];if(ok)(run.accessGrants??=[]).push({memberId:member.id,scope,...(scope==='path'?{target}:{}),reason:reason.slice(0,1000),at:Date.now()});run.events.push({id:uid(),at:Date.now(),kind:'permission',text:tr(ok?'{name} 获准：{label}':'{name} 的授权申请被拒绝：{label}',{name:member.name,label}),nodeId:node.id});}).then(()=>res(ok)).catch(()=>res(false));});});
+    return ok?{ok:true,content:`用户已批准：${label}。本次运行内有效，可以继续。`,summary:'已授权'}:{ok:false,content:'',error:'用户拒绝了这次授权申请。换一种不需要该权限的做法，或在结果里说明缺少这项权限。'};
    };
    handle=runAgent({autoProbe:profile!.probeRequests===true,resume,resolveUncertain:resume?'retry':undefined,requestId:uid('teamrequest'),profile:profile!,apiKey:key!,config,
     taskGoal:r.fileScope?(node.type==='review'?'读取产物，检查本次交付。不要修改文件，不要运行测试，不要推送。':[r.goal,r.acceptance,...supplementalInstructions].join('\n')):undefined,
@@ -661,14 +688,15 @@ export class TeamRuntime {
     // （见过 "project-memory"），照样过不了校验。现在派生成 teamtask-xxxxxxxx。
     history:[{id:taskMessageId,role:'user',content:prompt,createdAt:Date.now()}],
     skills:chosen,
+    reviewTexts:paged?inputTexts:undefined,
     modelInfo:[...(settings.cachedModels?.[member.connectionId]??[]),...(settings.customModels?.[member.connectionId]??[])].find(m=>m.id===member.model),
     limitOf:()=>this.settings()?.modelLimits?.[routeKeyOf(profile!.id,member.model,profile!.baseUrl)],
     onLearnLimit:value=>learn(profile!.id,member.model,profile!.baseUrl,value),
     limits:{get:(profileId,model,baseUrl)=>this.settings()?.modelLimits?.[routeKeyOf(profileId,model,baseUrl)],learn},
     // 默认零关联：成员想不起来时才显式查，而且只查同一个项目
-    recallTasks:async(query,limit)=>recallFrom(await loadRuns(),await observationSnapshot(),{query,limit,projectId}),toolCtx:()=>({...toolContextOf(settings,projectId),teamExecution:{projectId,runId,attemptId,memberId:member.id,fileSessionId},workspaceRoots:roots,grants:{extraRoots:[],screen:false,admin:false}}),effortMappings:settings.effortMappings,extraSystem:[projectSystemBlock(this.projects().find(x=>x.id===projectId)??null,'',{memory:false}),
+    recallTasks:async(query,limit)=>recallFrom(await loadRuns(),await observationSnapshot(),{query,limit,projectId}),toolCtx:()=>({...toolContextOf(settings,projectId),teamExecution:{projectId,runId,attemptId,memberId:member.id,fileSessionId},workspaceRoots:roots,grants:teamGrants(this.project(projectId).runs.find(x=>x.id===runId)??{},member.id)}),effortMappings:settings.effortMappings,extraSystem:[projectSystemBlock(this.projects().find(x=>x.id===projectId)??null,'',{memory:false}),
     `你是项目成员 ${member.name}。\n${member.instructions}\n${memories}\n${node.type==='review'?reviewInstructions:''}`,
-    skillSystemBlock(chosen)].filter(Boolean).join('\n\n'),timeoutMs:settings.requestTimeoutMs,canRunHostTools:true,autoRetry:settings.autoRetry,confirm,grantAccess:async()=>({ok:false,content:'',error:'协作运行权限固定；请暂停后在项目设置调整并创建新运行。'}),events:{
+    skillSystemBlock(chosen)].filter(Boolean).join('\n\n'),timeoutMs:settings.requestTimeoutMs,canRunHostTools:true,autoRetry:settings.autoRetry,confirm,grantAccess,events:{
     onContentDelta(text){output+=text;},onContentReplace(text,thought){outputHistory=preserveOutput(outputHistory,{content:output,reasoning},{content:text,reasoning:thought});output=text;reasoning=thought;},onReasoningDelta(text){reasoning+=text;},onSources(){},onRound(){},
     /*
      * 限流、重试、等待都走这条。原来这里是个空函数，于是运行详情页从头到尾只有一个

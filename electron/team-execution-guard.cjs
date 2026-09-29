@@ -1,6 +1,8 @@
 'use strict';
 const path = require('node:path');
 const { teamFileTools, validateTeamFileScope, validateTeamFileSnapshot } = require('./team-file-scope.cjs');
+const { TEAM_READ_ONLY_TOOLS, TEAM_SCOPED_FILE_TOOLS, teamGrants } = require('./team-permissions.cjs');
+const READ_ONLY = new Set(TEAM_READ_ONLY_TOOLS), SCOPED = new Set(TEAM_SCOPED_FILE_TOOLS);
 const WORK = new Set(['agent','discussion','review','handoff']);
 /*
  * 交付闸门自己要用的两件只读工具，不受成员工具白名单限制。
@@ -43,13 +45,16 @@ function createTeamExecutionGuard({ collaboration, teamFiles }) {
     if (!scope || typeof scope.attemptId !== 'string' || !scope.attemptId) throw Error('工具缺少协作执行身份');
     const current = identity(scope.projectId, scope.runId, scope.memberId, scope.attemptId), { run, member } = current;
     const node=run.version.graph.nodes.find(n=>n.id===current.attempt.nodeId);
-    if(node.type==='review'&&!REVIEW_TOOLS.has(name))throw Error('质检步骤只允许读取和检查产物；修改请交回执行成员');
-    if(run.fileScope&&!HARNESS_TOOLS.has(name)&&!new Set(teamFileTools(run.fileScope.capability,node.type==='review')).has(name))throw Error('工具超出本次任务选择的文件权限');
+    if(node.type==='review'&&!REVIEW_TOOLS.has(name)&&!READ_ONLY.has(name))throw Error('质检步骤只允许读取和检查产物；修改请交回执行成员');
+    if(run.intent==='explore'&&!READ_ONLY.has(name))throw Error('想法梳理运行只允许只读工具');
+    // 文件任务：受目录约束的文件工具按读/改/命令级别放行；联网、浏览器等其他工具按成员配置
+    if(run.fileScope&&!HARNESS_TOOLS.has(name)&&SCOPED.has(name)&&!new Set(teamFileTools(run.fileScope.capability,node.type==='review')).has(name))throw Error('工具超出本次任务选择的文件权限');
     if (!Array.isArray(member.tools) || (!member.tools.includes(name) && !(HARNESS_TOOLS.has(name) && member.tools.length))) throw Error('工具不在当前成员授权范围');
     const amount = run.reservations?.[scope.attemptId + ':' + scope.memberId], reserved = Object.values(run.reservations || {}).reduce((sum,n) => sum + n,0);
     if (!Number.isFinite(amount) || amount <= 0 || amount > member.maxTokens || !Number.isFinite(reserved) || !Number.isFinite(run.version.graph.maxTokens) || (run.tokens || 0) + reserved > run.version.graph.maxTokens) throw Error('工具派发缺少有效的本次用量预留');
     const roots = scope.fileSessionId ? [authorizedFile(scope.fileSessionId,current).isolatedRoot] : [];
-    return { ...ctx, projectId: scope.projectId, workspaceRoots: roots, grants: { extraRoots: [], screen: false, admin: false } };
+    // 授权只来自本次运行里你批准过、记在这位成员名下的记录
+    return { ...ctx, projectId: scope.projectId, workspaceRoots: roots, grants: teamGrants(run, member.id) };
   }
   function createFileSession(args = {}) {
     const current = identity(args.projectId,args.taskId,args.memberId), roots = current.run.fileScope?[current.run.fileScope.root]:current.run.projectSettings.roots;

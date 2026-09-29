@@ -34,6 +34,8 @@ export interface RouteAttempt { memberId:string; profileId:string; model:string;
  */
 export interface RouteOverride { memberId:string; profileId:string; model:string; effort:string; at:number; previous:{profileId:string;model:string} }
 export interface TeamRun { routeOverrides?:RouteOverride[] }
+/** accessGrants：运行中成员申请、你批准的授权。只追加，只对记录里的成员有效。 */
+export interface TeamRun { accessGrants?:import('./team-permissions').TeamAccessGrant[] }
 export interface TeamArtifact { id:string;sessionId:string;projectId:string;taskId:string;memberId:string;nodeId:string;attemptId:string;version:number;createdAt:number;digest:string;files:{path:string;beforeHash:string|null;afterHash:string|null}[] }
 export interface TeamTextArtifact { id:string;attemptId:string;nodeId:string;version:number;digest:string;text:string }
 export interface FlowNode { reviewMode?:'files'|'text' }

@@ -378,3 +378,25 @@ test('an out-of-plan model stops the step with a fix, and switching the member r
   assert.equal(teamRouteFix(run), null);
   await assert.rejects(f.runtime.switchMemberRoute('p', f.runId, 'member-a', { profileId: 'primary', model: 'primary-model', effort: 'off' }), /只能在运行停下后更换成员的模型/);
 });
+
+test('a member asks for more access mid-run; approving records the grant for this member only and the step continues', async (t) => {
+  const extra = path.resolve(os.tmpdir(), 'wickrun-grant-target');
+  const server = await localOpenAi(t, ({ ordinal }) => ordinal === 1
+    ? { body: completion('', 30, [toolCall('call-access', 'request_access', { scope: 'path', target: extra, reason: 'read the shared reference docs' })]) }
+    : { body: completion('used the granted directory', 20) });
+  const f = await fixture(t, server, { tools: ['request_access'], failover: false });
+  const running = f.runtime.start('p', f.runId);
+  for (let i = 0; i < 400 && !f.runtime.project('p').runs[0].pendingApproval; i++) await new Promise((resolve) => setTimeout(resolve, 25));
+  const pending = f.runtime.project('p').runs[0].pendingApproval;
+  assert.ok(pending, 'the request waits on the run page');
+  assert.match(pending.text, /申请授权/);
+  assert.ok(pending.text.includes(extra));
+  await f.runtime.approve('p', f.runId, true);
+  await running;
+  const run = f.runtime.project('p').runs[0];
+  assert.deepEqual(run.accessGrants.map((g) => [g.memberId, g.scope, g.target]), [['member-a', 'path', extra]]);
+  assert.ok(run.events.some((e) => e.kind === 'permission' && /获准/.test(e.text)));
+  assert.match(JSON.stringify(server.routeLog[1].messages), /用户已批准/);
+  assert.equal(run.status, 'waiting_user');
+  await assert.rejects(f.runtime.runUpdate('p', f.runId, (r) => { r.accessGrants[0].target = path.parse(extra).root; }), /成员授权历史不可改写/);
+});
