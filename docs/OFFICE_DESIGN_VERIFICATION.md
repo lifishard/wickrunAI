@@ -84,3 +84,10 @@ The screenshots cover the recorded light-theme desktop and narrow states. They d
 - Runtime tests execute the compiled workflow with controlled model responses, checking per-role model routing, prior-speaker and prior-round visibility, full discussion text available for review, the question-tool scope, and final user acceptance. Unverified review results remain unverified.
 - Read-only review identified cancellation intent persistence and targeting older failed replies. Both were corrected and covered by regression checks. Repairing an older proposal retains its original material boundary rather than later unrelated requests.
 - A single mechanical detector scan of the changed UI returned no findings. This is not evidence of real model reasoning quality, external client participation, supplier compatibility, all themes or all window sizes.
+
+## 2.20.16 unified workspace assistant verification
+
+- Production build, static checks and all 1031 regression tests passed. Configuration tests cover all ten node kinds, dependency cycles, invalid models/tools/skills/roots, independent reviewer identity, stale configuration and immutable historical runs. Operation tests exercise actual service boundaries and reject foreign project targets.
+- Isolated Electron with a controlled model service verified automatic repair of advice-only output, adopting the entire arrangement, opening the real preflight without launching a run, creating a native meeting and preparing automatic turns, then reloading persisted results. No live user profile was changed. No external client was joined; the meeting test validates scheduling state, not a completed live conversation.
+- Desktop 1440px and narrow 720px screenshots, preflight and operation receipts are under `.impeccable/review/workspace/`. One inspection/fix/confirmation cycle collapsed long flow details and added human-readable action targets and round counts. The existing spacing, typography, color and sidebar remain inherited.
+- One detector scan returned no findings. The screenshots and tests establish the captured light-theme paths, not every theme/window or real model reasoning quality.

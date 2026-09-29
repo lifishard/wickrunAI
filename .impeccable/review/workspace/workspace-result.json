@@ -1,0 +1,13 @@
+{
+  "passed": true,
+  "automaticRepair": true,
+  "allNodeKinds": 10,
+  "tasks": 2,
+  "independentReview": true,
+  "scheduleInitiallyDisabled": true,
+  "preflightWithoutStarting": true,
+  "meetingCreated": true,
+  "automaticMeetingPrepared": true,
+  "persistence": true,
+  "errors": []
+}

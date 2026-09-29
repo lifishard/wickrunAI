@@ -30,3 +30,5 @@
 @container(max-width:400px){.office-layout.with-inspector{grid-template-columns:minmax(120px,.8fr) minmax(0,1.2fr);gap:8px}.office-role-details h3{font-size:14px}.office-role-detail-body{font-size:13px}.office-role-details{max-height:75dvh}}
 
 .office-layout.with-inspector>.office-shelf{position:static}
+
+.workspace-plan h3{margin:0 0 12px}.workspace-plan-operations{display:grid;gap:16px;margin-top:24px}.workspace-plan-operations h4{margin:0}.workspace-plan-operations .btn{white-space:normal;text-align:left}.workspace-plan details{margin:12px 0}.workspace-plan li p{margin:6px 0}.workspace-plan li small{line-height:1.65}

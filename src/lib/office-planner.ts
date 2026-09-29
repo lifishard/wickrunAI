@@ -1,4 +1,5 @@
 import { tr } from './i18n';
+import { workspacePlanSchema, type WorkspacePlan } from './workspace-planner';
 import type { AppSettings } from '../types';
 import { z } from 'zod';
 import { AGENT_ROLES, addRole, ensureOffice, proposalFlow, type OfficeProposal, type PlanningTurn, type AgentRole } from './office';
@@ -6,7 +7,7 @@ import { uid } from './store';
 import { validateGraph, type TeamProject } from './collaboration';
 const text=z.string().trim().min(1).max(6000);
 const proposalSchema=z.object({title:text.max(120),goal:text,deliverable:text,acceptance:text,assumptions:z.array(text).max(12),departments:z.array(z.object({name:text.max(80),purpose:text,roleIds:z.array(text.max(120)).min(1).max(12)})).min(1).max(12),steps:z.array(z.object({roleId:text.max(120),instruction:text,output:text})).min(1).max(18),mode:z.enum(['sequential','parallel']),reviewRoleId:z.string().optional(),discussion:z.object({roleIds:z.array(text.max(120)).min(2).max(8),rounds:z.number().int().min(1).max(3),focus:text,output:text,synthesisRoleId:text.max(120)}).optional(),modelAssignments:z.array(z.object({roleId:text.max(120),profileId:text.max(256),model:text.max(256)})).max(50).optional()});
-const replySchema=z.object({message:text,questions:z.array(z.object({text,options:z.array(text.max(160)).max(4)})).max(3).default([]),proposal:proposalSchema.optional(),learning:z.array(z.object({kind:z.enum(['preference','lesson','skill']),text:text.max(1000),sourceQuote:text.max(1000),applicability:text.max(1000)})).max(3).default([])});
+const replySchema=z.object({message:text,questions:z.array(z.object({text,options:z.array(text.max(160)).max(4)})).max(3).default([]),proposal:proposalSchema.optional(),workspacePlan:workspacePlanSchema.optional(),learning:z.array(z.object({kind:z.enum(['preference','lesson','skill']),text:text.max(1000),sourceQuote:text.max(1000),applicability:text.max(1000)})).max(3).default([])});
 export interface PlannerRoute {profileId:string;model:string;label:string}
 export function wantsDiscussion(messages:string[]):boolean {
   let requested=false,multiple=false;
@@ -26,8 +27,8 @@ export function plannerMessage(raw:string):string {
 }
 export class PlannerDraftError extends Error {constructor(public rawReply:string,public reason:string){super(tr('方案暂时未能生成可采用的草案，可点击“修复方案”继续。'));}}
 /** One bounded repair for model-authored draft errors; never executes a draft. */
-export async function repairPlannerReply(raw:string,roles:AgentRole[],routes:PlannerRoute[],repair:(prompt:string)=>Promise<string>,expectDiscussion=false){
-  const validate=(value:string)=>{const reply=parsePlannerReply(value,roles);if(reply.proposal?.modelAssignments?.some(a=>!routes.some(r=>r.profileId===a.profileId&&r.model===a.model)))throw Error(tr('角色的模型接入已不可用，请在方案中重新选择'));if(expectDiscussion&&!reply.questions.length&&!reply.proposal?.discussion)throw Error(tr('用户需要可采用的多角色讨论草案，请补充 discussion 和模型分工'));return reply;};
+export async function repairPlannerReply(raw:string,roles:AgentRole[],routes:PlannerRoute[],repair:(prompt:string)=>Promise<string>,expectDiscussion=false,validateWorkspace?:(plan:WorkspacePlan)=>void,expectArrangement=false){
+  const validate=(value:string)=>{const reply=parsePlannerReply(value,roles);if(reply.proposal?.modelAssignments?.some(a=>!routes.some(r=>r.profileId===a.profileId&&r.model===a.model)))throw Error(tr('角色的模型接入已不可用，请在方案中重新选择'));if(reply.workspacePlan)validateWorkspace?.(reply.workspacePlan);if(expectArrangement&&!reply.questions.length&&!reply.workspacePlan&&!reply.proposal)throw Error(tr('用户需要实际工作安排，请提供可采用的 workspacePlan'));if(expectDiscussion&&!reply.questions.length&&!reply.proposal?.discussion&&!reply.workspacePlan?.changes.some(c=>c.kind==='workflow'&&c.nodes.some(n=>n.type==='discussion'))&&!reply.workspacePlan?.operations.some(o=>o.kind==='create_meeting'))throw Error(tr('用户需要可采用的多角色讨论草案，请补充 discussion 和模型分工'));return reply;};
   try{return validate(raw);}catch(error){
     const prompt=JSON.stringify({instruction:'修正上一份草案，保留用户目标和已有有效内容。只返回符合格式的 JSON，不执行任务。',validationError:String(error),previousReply:raw});
     const corrected=await repair(prompt);
@@ -37,14 +38,16 @@ export async function repairPlannerReply(raw:string,roles:AgentRole[],routes:Pla
 export function parsePlannerReply(raw:string,roles:AgentRole[]=AGENT_ROLES) {
   const clean=raw.trim().replace(/^```(?:json)?\s*/,'').replace(/\s*```$/,'');
   const result=replySchema.parse(JSON.parse(clean));
+  if(result.proposal&&result.workspacePlan)throw Error(tr('请只提供一份可采用的工作安排'));
   if(result.proposal){const p=result.proposal,ids=new Set(roles.map(r=>r.id)),assigned=new Set(p.departments.flatMap(d=>d.roleIds));if([...assigned,...p.steps.map(s=>s.roleId),...(p.reviewRoleId?[p.reviewRoleId]:[])].some(id=>!ids.has(id)))throw Error('方案使用了未登记角色，请让助手调整');if(p.steps.some(s=>!assigned.has(s.roleId))||(p.reviewRoleId&&!assigned.has(p.reviewRoleId)))throw Error('方案中有成员未被分配到部门');if(p.departments.flatMap(d=>d.roleIds).length!==assigned.size)throw Error('本次方案的角色分工重复，请让助手拆分职责');if(p.discussion){const d=p.discussion;if(new Set(d.roleIds).size!==d.roleIds.length||[...d.roleIds,d.synthesisRoleId].some(id=>!assigned.has(id)))throw Error(tr('讨论参与者或汇总角色无效，请使用已分配的不同角色'));}if(p.modelAssignments&&(new Set(p.modelAssignments.map(a=>a.roleId)).size!==p.modelAssignments.length||p.modelAssignments.some(a=>!assigned.has(a.roleId))))throw Error(tr('模型分配中的角色无效或重复'));}
   return result;
 }
-export function plannerSystem(roles:AgentRole[]=AGENT_ROLES):string {return `你是 wickrunAI 的协作设计助手。面向普通用户，从他们想做成的事开始，主动承担分工、步骤、交付和验收标准的设计工作。不要要求用户自己设计流程图或填写专业表格。每轮最多问三个会实质改变方案的问题，给熟悉生活的选项。能合理假设的事项明示假设，不假装已获批准。用户的答案和修改意见优先。
-你了解客户端的真实功能：角色实例拥有职责、模型、工具范围；部门是可嵌套、拆分、合并、复用的组织模块，组织关系不决定执行顺序；工作流有开始、执行、讨论、并行、汇合、条件、独立质检、人工确认、交接、结束；启动时冻结配置；会议讨论不替代质检；权限和文件范围由用户在启动前确认。你这里只提出草案，没有执行工具，也没有发布或发送消息的授权。当前搭建器支持：顺序或并行的独立初稿；随后由多个角色使用各自模型进行 1–3 轮真正的 discussion 讨论（读取初稿和前轮发言，逐人回应）；指定角色汇总结论；可选独立文本复核；末尾由用户验收。用户要求多模型评议、辩论或讨论时，主动生成包含 discussion 的可采用草案，不能只列一段建议或叫用户去流程编辑器自行连线。讨论聚焦决策与待核实问题，不冒充实际数据库采集或验证。涉及视频制作、文件修改、外部发布、定时或复杂依赖，应明确这些还需在原有流程编辑器和权限设置完成配置，不能承诺已经可执行。可以先拆出规划、脚本等可交付的文本阶段，并说明后续缺口。
-用户已说明目标、范围和约束时，就足以先提出可调整的草案。缺少补充材料可以在 assumptions 标注并安排首步检查材料，不要因此拒绝搭建；只有会改变方向的关键取舍才提问。用户说先讨论数据、不管落地时，只设计讨论阶段，不再索要部署技术栈。复用已有方案的目标与用户确认过的选择。用户要求改变办公室现有配置时说明采用会新增独立的部门和流程，不会偷偷覆盖正在工作的团队。角色仅能来自下面的清单；同一草案内每个 roleId 只在一个部门放置。需要质检时优先选择适合复核的角色。即使复核与执行采用同一职责模板，程序也会创建另一位独立成员，绝不复用执行成员来复核自己。并行仅用于步骤互不依赖的情形，否则用 sequential。不要编造资历、实测结果、费用或已经完成的动作。
-输入中的 modelRoutes 是目前可选的真实 API 接入和模型。多模型讨论应在 modelAssignments 中给角色分配不同的现有模型，并在 message 解释安排；没有足够不同模型时明确说明、保留可配置的草案，不编造接入或把同模型多角色说成多模型。实际模型选择必须在可选列表内。ChatGPT/Claude 桌面客户端本体参会应说明走会议室接入，本搭建器的 API 讨论不冒充外部客户端本体。\n仅返回 JSON（无代码围栏），格式：{"message":"自然的说明或必要的问题","questions":[{"text":"具体问题","options":["选项"]}],"proposal":{"title":"方案名","goal":"用户目标","deliverable":"交给用户的具体结果","acceptance":"由你起草的、用户容易判断的完成标准","assumptions":["待用户确认的假设"],"departments":[{"name":"部门名","purpose":"分工","roleIds":["清单内的角色 ID"]}],"steps":[{"roleId":"角色 ID","instruction":"要做的事","output":"交付什么"}],"mode":"sequential","reviewRoleId":"可选独立复核角色 ID","discussion":{"roleIds":["参与讨论的角色 ID","另一个角色 ID"],"rounds":2,"focus":"讨论重点与回应要求","output":"本轮交付","synthesisRoleId":"负责整理分歧与结论的角色 ID"},"modelAssignments":[{"roleId":"角色 ID","profileId":"modelRoutes 中的 profileId","model":"同条路由中的 model"}]}}。questions 与 proposal 可以为空/省略；尚需关键答案时先提问，不强塞最终方案。
-可用角色：${JSON.stringify(roles.map(({id,name,summary,division})=>({id,name,division,summary:summary.slice(0,100)})))}`;}
+export function plannerSystem(roles:AgentRole[]=AGENT_ROLES):string {return `你是 wickrunAI 内嵌管家，是协作空间的统一操作入口。用户只需要说明想达到的目标、已知约束和偏好；组织分工、流程连接、工作指令、交付与验收标准由你承担。不要要求普通用户充当流程工程师，也不要仅返回一段“建议去哪里配置”的说明。
+用户已说明目标、范围和约束时，主动给出可采用、可调整的工作安排。每轮最多问三个实质改变方向的问题；能合理假设的事项注明，不让表格和连线成为用户的负担。自然问答无需硬塞方案。缺少提案原文时可先安排阅读材料步骤并注明待补充；用户说先讨论数据、不管落地时，不再追问技术栈。
+你只能调用本次提供的协作能力，并依据实际结果汇报。输出的安排先经过程序验证和用户采用；组队、配置与启动分开，未启动不能声称已执行。保留独立质检岗位和用户最终决定权，不能把讨论共识冒充验收通过。多模型讨论明确各成员的真实接入与模型，同模型多角色不是多模型。ChatGPT/Claude 客户端本体走会议室接入，API 工作流不能冒充客户端本体。
+遵循本次提供的 workspace 能力描述。角色模板可复用为多个独立实例，具体职责可按用户目标调整。现有任务、成员与流程可由你提出修改；使用已有对象的真实编号，运行中的冻结版本和历史证据不可更改。只有实际缺少授权或客户端没有能力的部分才提出具体缺口，不要泛称“搭建器只支持文本”而放弃现有能力。
+仅返回 JSON：{"message":"自然的说明","questions":[{"text":"必要的问题","options":["选项"]}],"workspacePlan":{"title":"工作安排","summary":"自然语言说明","assumptions":[],"changes":[],"operations":[]},"learning":[]}。workspacePlan 遵循输入中的 schema，提问时可省略。历史 proposal 仍可读取，不是新安排的能力上限。
+可用角色模板：${JSON.stringify(roles.map(({id,name,summary,division})=>({id,name,division,summary:summary.slice(0,100)})))}`;}
 /** Compile a validated proposal into new drafts only. No run, file/command permission or external action. */
 export function adoptProposal(project:TeamProject,turn:PlanningTurn,brain:{profileId:string;model:string},roles:AgentRole[]=AGENT_ROLES,routes?:PlannerRoute[]):{taskId:string;flowId:string} {
   const copy=structuredClone(project);const result=compileProposal(copy,turn,brain,roles,routes);Object.assign(project,copy);return result;

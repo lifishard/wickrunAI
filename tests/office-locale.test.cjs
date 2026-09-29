@@ -12,7 +12,7 @@ test('role names switch languages without mutating prompts or custom names',()=>
  const {filterRoles}=load(path.resolve(__dirname,'../src/lib/office-library.ts'));assert.equal(filterRoles(en,'人类学家')[0].id,catalog[0].id);assert.equal(filterRoles(zh,'Anthropologist')[0].id,catalog[0].id);
 });
 test('new workspace and review UI has complete English keys and no raw Chinese JSX',()=>{
- const files=['AgentRolePicker','CodeChanges','CompatibilityStatus','collaboration/AgentOffice','collaboration/OfficeLibrary','collaboration/OfficePlanner','collaboration/ButlerPreferences','collaboration/MeetingRoom'];const errors=[];
+ const files=['AgentRolePicker','CodeChanges','CompatibilityStatus','collaboration/AgentOffice','collaboration/OfficeLibrary','collaboration/OfficePlanner','collaboration/WorkspacePlanCard','collaboration/ButlerPreferences','collaboration/MeetingRoom'];const errors=[];
  for(const file of files){const source=fs.readFileSync(path.resolve(__dirname,'../src/components',file+'.tsx'),'utf8');const tree=ts.createSourceFile(file,source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
   function walk(n){if(ts.isJsxText(n)&&cn(n.text))errors.push(file+': raw JSX '+n.text.trim());if(ts.isCallExpression(n)&&['tx','tr','t'].includes(n.expression.getText(tree))&&n.arguments[0]&&ts.isStringLiteral(n.arguments[0])){const key=n.arguments[0].text;if(cn(key)&&cn(i18n.translate('en',key)))errors.push(file+': missing '+key);}ts.forEachChild(n,walk);}walk(tree);
  }

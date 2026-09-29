@@ -38,3 +38,7 @@ UI labels, categories and built-in role names follow Simplified Chinese, Traditi
 ## 2.20.15 actionable assistant discussions
 
 Preserve the assistant's existing Operate surface. A discussion proposal presents preparation steps, discussion rounds and expected output, synthesis, independent review and user acceptance in execution order. Per-role model selectors expose actual configured API routes before adoption. The user can repair a failed draft in place; raw replies remain collapsed and readable prose remains visible. Adoption creates drafts without starting work, and opens the existing task page with a real workflow preview. Original user materials accompany the task. Discussion and quality review retain separate member identities. No shared tokens or new visual system are introduced.
+
+## Unified workspace assistant, 2.20.16
+
+Operate mode, preserving the incumbent shell. Natural language produces a readable arrangement with concrete members, models and tasks; full workflow details collapse by default. Adoption saves configuration, followed by individually named work/meeting actions. Persisted receipts distinguish saved, pending and applied states. Human decisions open the existing controls. No new visual tokens, global navigation or branding.
