@@ -32,3 +32,15 @@
 .office-layout.with-inspector>.office-shelf{position:static}
 
 .workspace-plan h3{margin:0 0 12px}.workspace-plan-operations{display:grid;gap:16px;margin-top:24px}.workspace-plan-operations h4{margin:0}.workspace-plan-operations .btn{white-space:normal;text-align:left}.workspace-plan details{margin:12px 0}.workspace-plan li p{margin:6px 0}.workspace-plan li small{line-height:1.65}
+
+.workspace-roster{container-type:inline-size;margin:18px 0 12px;border-block:1px solid var(--border);padding-block:18px}
+.workspace-roster header h4{margin:0;font-size:16px}.workspace-roster header p{font-size:13px;margin:6px 0 18px;color:var(--fg-dim)}
+.workspace-roster-layout{display:grid;grid-template-columns:minmax(170px,.8fr) minmax(0,2fr);gap:24px;align-items:start}
+.workspace-roster-list,.workspace-roster-editor{min-width:0}.workspace-roster-people{display:grid;gap:4px;max-height:420px;overflow:auto;scrollbar-gutter:stable}
+.workspace-roster-person{display:grid;gap:4px;width:100%;padding:10px 12px;border:1px solid transparent;border-radius:6px;text-align:left;background:none;color:var(--fg);font:inherit;cursor:pointer;min-width:0}
+.workspace-roster-person strong,.workspace-roster-person small{overflow-wrap:anywhere}.workspace-roster-person strong{font-size:14px}.workspace-roster-person small{font-size:12px;color:var(--fg-dim)}
+.workspace-roster-person:hover{background:var(--bg-hover)}.workspace-roster-person[aria-pressed=true]{background:var(--bg-elev);border-color:var(--accent)}
+.workspace-roster label{display:flex;flex-direction:column;gap:6px;margin-bottom:14px;font-size:13px;min-width:0}.workspace-roster input:not([type=checkbox]),.workspace-roster select{width:100%;min-width:0;padding:9px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--fg);font:inherit}
+.workspace-roster-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.workspace-roster fieldset{border:0;padding:0;margin:0;min-width:0}.workspace-roster legend{font-weight:600;margin-bottom:16px;font-size:15px}.workspace-roster .hint{font-size:12px;margin:0 0 16px}.workspace-roster details>summary{cursor:pointer}.workspace-roster details[open]>summary{margin-bottom:14px}.workspace-roster .workspace-step-check{flex-direction:row;align-items:center;margin-top:12px}.workspace-roster-remove{border-top:1px solid var(--border);margin-top:16px;padding-top:14px}.workspace-roster-remove p{font-size:13px}.workspace-roster-add{border-top:1px solid var(--border);padding-top:14px}.workspace-roster :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@container(max-width:650px){.workspace-roster-layout{grid-template-columns:minmax(130px,.75fr) minmax(0,1.4fr);gap:14px}.workspace-roster-fields{grid-template-columns:minmax(0,1fr);gap:0}.workspace-roster-person{padding:9px 7px}}
+@container(max-width:420px){.workspace-roster-layout{grid-template-columns:minmax(0,1fr)}.workspace-roster-people{grid-template-columns:repeat(2,minmax(0,1fr));max-height:200px}}

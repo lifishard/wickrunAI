@@ -51,3 +51,43 @@ test('runtime and meeting operations call actual boundaries and refuse cross-pro
  await ops.operateWorkspace({kind:'schedule_control',schedule:'daily',enabled:true},prepared.result,operator);assert.equal(q.schedules[0].enabled,true);assert.ok(q.schedules[0].nextAt>Date.now());
  q.runs[0].status='uncertain';await assert.rejects(ops.operateWorkspace({kind:'run_control',run:'run',action:'resume'},prepared.result,operator),/处理提问/);
 });
+
+const edit=load(file('src/lib/workspace-plan-edit.ts'));
+test('roster edits compile into actual members and safely reassign owned steps when a role is removed',()=>{
+ const {p,env}=fixture(),source=w.workspacePlanSchema.parse(program()),original=JSON.stringify(source);
+ let next=edit.editPlanMember(source,'writer',{name:'Lead analyst',instructions:'Check primary evidence',model:'model-b',effort:'max'});
+ const added=edit.addPlanMember(next,{profileId:'key',model:'model-a'});next=edit.editPlanMember(added.plan,added.ref,{name:'Data reviewer',instructions:'Review data'});
+ next=edit.assignPlanStep(next,'flow','discussion',added.ref,true);
+ assert.throws(()=>edit.removePlanMember(next,'critic'),/接替岗位/);
+ next=edit.removePlanMember(next,'critic','writer');
+ assert.equal(JSON.stringify(source),original);assert.equal(edit.planMembers(next).length,2);
+ const flow=next.changes.find(c=>c.kind==='workflow');assert.equal(flow.nodes.find(n=>n.id==='b').member,'writer');assert.deepEqual(flow.nodes.find(n=>n.type==='discussion').participants,['writer',added.ref]);
+ const q=w.prepareWorkspacePlan(p,next,env).project,member=q.members.find(m=>m.name==='Lead analyst');assert.equal(member.effort,'max');assert.equal(member.model,'model-b');assert.equal(member.instructions,'Check primary evidence');assert.equal(q.runs.length,0);
+});
+test('removing a required discussion participant cannot leave an invalid one-person discussion',()=>{
+ const source=w.workspacePlanSchema.parse(program()),before=JSON.stringify(source);assert.throws(()=>edit.removePlanMember(source,'critic','writer'),/至少保留两个/);assert.equal(JSON.stringify(source),before);
+});
+test('follow-up editing uses current members and graphs, keeps history, creates new tasks without replaying meetings',()=>{
+ const {p,env}=fixture(),plan=w.workspacePlanSchema.parse(program()),prepared=w.prepareWorkspacePlan(p,plan,env),q=prepared.project;
+ q.members[0].name='Changed in office';q.workflows[0].draft.nodes.find(n=>n.type==='agent').instructions='Latest office instructions';
+ q.runs=[{id:'past',taskId:q.tasks[0].id,status:'running',members:structuredClone(q.members),version:structuredClone(q.workflows[0].versions[0])}];const past=JSON.stringify(q.runs),tasks=JSON.stringify(q.tasks),memberCount=q.members.length;
+ const turn={id:'old',role:'assistant',text:'saved',workspacePlan:plan,workspaceResult:prepared.result};turn.workspacePlan.operations.push({kind:'create_meeting',ref:'room',title:'Meeting',purpose:'Review',material:'text',participants:['chatgpt']});
+ const follow=edit.reviseWorkspacePlan(turn,q);assert.ok(follow.workspacePlan.changes.some(c=>c.kind==='member'&&c.name==='Changed in office'));assert.ok(follow.workspacePlan.changes.find(c=>c.kind==='workflow').nodes.some(n=>n.instructions==='Latest office instructions'));
+ assert.ok(follow.workspacePlan.operations.every(o=>o.kind==='start_task'));const applied=w.prepareWorkspacePlan(q,follow.workspacePlan,env).project;
+ assert.equal(applied.members.length,memberCount);assert.equal(applied.workflows.length,1);assert.equal(applied.workflows[0].versions.length,2);assert.equal(applied.tasks.length,4);assert.equal(JSON.stringify(applied.tasks.slice(0,2)),tasks);assert.equal(JSON.stringify(applied.runs),past);
+});
+test('reasoning controls respect verified levels, toggle/default routes and manual precedence',()=>{
+ const report={status:'ready',mode:'levels',requests:{off:{},low:{reasoning_effort:'low'},high:{reasoning_effort:'high'}}};
+ assert.deepEqual(edit.planEffortOptions({compatibility:report}).map(x=>x.value),['off','low','high']);
+ assert.deepEqual(edit.planEffortOptions({compatibility:{...report,mode:'toggle'}}).map(x=>x.value),['off','high']);
+ assert.deepEqual(edit.planEffortOptions({compatibility:{...report,mode:'default'}}).map(x=>x.value),['off']);
+ assert.equal(edit.normalizedPlanEffort('medium',{compatibility:{...report,mode:'default'}}),'off');
+ assert.equal(edit.normalizedPlanEffort('medium',{compatibility:{...report,mode:'toggle'}}),'high');
+ assert.equal(edit.normalizedPlanEffort('xhigh',{compatibility:report}),'off');
+ assert.deepEqual(edit.planEffortOptions({compatibility:report,effortStyle:'openai',effortValues:{max:'high'}}).map(x=>x.value),['off','max']);
+});
+test('an existing member can be explicitly unassigned from a department without deleting their history',()=>{
+ const {p,env}=fixture(),prepared=w.prepareWorkspacePlan(p,program(),env),q=prepared.project;
+ const update={title:'Unassign',summary:'Keep member available',changes:[{kind:'member',ref:'writer',existingId:prepared.result.ids.writer,name:'Researcher',instructions:'Read sources',profileId:'key',model:'model-a',department:null}]};
+ const applied=w.prepareWorkspacePlan(q,update,env).project;assert.equal(applied.members.length,q.members.length);assert.ok(!applied.office.departments[0].memberIds.includes(prepared.result.ids.writer));assert.ok(q.office.departments[0].memberIds.includes(prepared.result.ids.writer));
+});

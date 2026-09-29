@@ -1,0 +1,11 @@
+{
+  "passed": true,
+  "editingPersisted": true,
+  "addedRoleAssigned": true,
+  "removedRoleReassigned": true,
+  "probeLevelsAndToggle": true,
+  "followUpReusesTeam": true,
+  "priorTasksPreserved": true,
+  "noAutomaticExecution": true,
+  "errors": []
+}

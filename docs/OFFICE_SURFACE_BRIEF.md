@@ -42,3 +42,7 @@ Preserve the assistant's existing Operate surface. A discussion proposal present
 ## Unified workspace assistant, 2.20.16
 
 Operate mode, preserving the incumbent shell. Natural language produces a readable arrangement with concrete members, models and tasks; full workflow details collapse by default. Adoption saves configuration, followed by individually named work/meeting actions. Persisted receipts distinguish saved, pending and applied states. Human decisions open the existing controls. No new visual tokens, global navigation or branding.
+
+## Editable role panel, 2.20.17
+
+Keep Operate mode and the incumbent assistant shell. Replace the static member list with a left-hand roster and a right-hand editor. Expose name, department, model and reasoning settings together; disclose duties, assignments and permissions in place. New roles must be assignable to real steps. Removal requires explicit reassignment where needed. Draft autosave precedes adoption, and adoption precedes execution. Preserve a saved arrangement as a receipt; a follow-up reuses configuration while creating separate tasks.

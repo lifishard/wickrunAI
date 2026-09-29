@@ -91,3 +91,10 @@ The screenshots cover the recorded light-theme desktop and narrow states. They d
 - Isolated Electron with a controlled model service verified automatic repair of advice-only output, adopting the entire arrangement, opening the real preflight without launching a run, creating a native meeting and preparing automatic turns, then reloading persisted results. No live user profile was changed. No external client was joined; the meeting test validates scheduling state, not a completed live conversation.
 - Desktop 1440px and narrow 720px screenshots, preflight and operation receipts are under `.impeccable/review/workspace/`. One inspection/fix/confirmation cycle collapsed long flow details and added human-readable action targets and round counts. The existing spacing, typography, color and sidebar remain inherited.
 - One detector scan returned no findings. The screenshots and tests establish the captured light-theme paths, not every theme/window or real model reasoning quality.
+
+## 2.20.17 role panel verification
+
+- Production build, static checks and regression tests cover mutable drafts, safe replacement references, discussion minimum size, current-state follow-up versions, preserved task/run history, department unassignment and reasoning option modes.
+- Isolated Electron interaction checks cover rename/duties edits, adding a custom role, actual model/effort configuration, discussion assignment, removal with an explicit replacement, persisted reload, adoption and follow-up adoption without running work or repeating meetings. Provider and compatibility responses are controlled fixtures.
+- Desktop 1440px and narrow 720px captures preserve a left roster/right editor. Original prose and workflow details are collapsed. Stable select labels corrected an accessibility issue found during interaction testing. The final confirmation includes tools/skills disclosure. Captures and runtime evidence live under `.impeccable/review/roster/`.
+- Existing typography, colors and navigation remain unchanged. A single mechanical detector scan supplements the visual check; neither it nor the screenshots establish all themes, sizes or real-model plan quality.
