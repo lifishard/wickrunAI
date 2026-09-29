@@ -149,6 +149,15 @@ export function classifyError(
     ]);
   }
 
+  // 套餐不含该模型：换模型才有用，原样重试和调参数都不会好。放在状态码判断前，
+  // 否则同一句话按 400/403 会被当成参数错误或凭据错误。
+  if (has(lower, /\bnot\s+(?:available|supported|included|allowed|enabled)\s+(?:in|for|on|under|with)\s+(?:the\s+|your\s+|this\s+)?(?:current\s+)?(?:[\w-]+\s+){0,2}plan\b|\bplan\s+(?:does\s+not|doesn't)\s+(?:include|support|cover)|套餐.{0,10}(?:不支持|不包含|不含|不可用|未开通)|不在.{0,8}套餐/)) {
+    return mk('route_unavailable', '{model} 不在这条接入的套餐里', [
+      '换一个这条接入套餐内的模型；模型列表可能也列出了套餐外的模型',
+      '或到接入设置换用包含该模型的凭据或套餐',
+      '原样重试会得到同样的结果，先换模型再继续',
+    ], { vars: { model } });
+  }
   // SSE 中的错误可能没有 HTTP 错误状态，仍应正确识别限流。
   if (/STREAM_EARLY_EOF|stream ended before producing/i.test(msg)) {
     return mk('model_broken','网关连接已建立，但上游没有返回有效内容',[

@@ -60,3 +60,12 @@
 .team-run-details>summary,.team-nav-advanced>summary { cursor:pointer; padding:10px 4px; }
 .team-nav-advanced { width:100%; }
 .team-nav-advanced>summary { font-size:13px; padding-left:18px; }
+.team-route-fixes { margin:10px 0 0; padding-left:20px; color:var(--fg-dim); }
+.team-route-rows { list-style:none; padding:0; margin:16px 0; display:grid; gap:12px; }
+.team-route-row { padding:14px; border:1px solid var(--border); border-radius:9px; background:var(--bg-elev); min-width:0; }
+.team-route-row small { display:block; color:var(--fg-dim); margin-top:4px; overflow-wrap:anywhere; }
+.team-route-row p { margin:8px 0 0; overflow-wrap:anywhere; }
+.team-route-pick { display:grid; grid-template-columns:1fr 1fr; gap:0 14px; margin-top:12px; }
+.team-route-others { margin:4px 0 12px; }
+.team-route-others ul { margin:8px 0 0; padding-left:20px; }
+@media (max-width: 720px) { .team-route-pick { grid-template-columns:1fr; } }

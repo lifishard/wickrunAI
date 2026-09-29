@@ -34,6 +34,7 @@ const TRANSLATED=[
   'components/collaboration/TeamRoleSettings.tsx',
   'components/collaboration/TeamFileSetup.tsx',
   'components/collaboration/TeamRunGuidance.tsx',
+  'components/collaboration/TeamRouteFix.tsx',
   'lib/team-file-scope.ts',
   'lib/team-quick-start.ts',
   'components/collaboration/TeamFlowPreview.tsx',

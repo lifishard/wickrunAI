@@ -27,7 +27,13 @@ export type TeamRunStatus = 'ready'|'running'|'pausing'|'paused'|'waiting_user'|
  * 中途换过人之后，成员记录上只剩最后那条路由。没有这份流水，观测会把整段成绩
  * 记到接手的那条路由头上，失败的那条反而干干净净 —— 记分表从此是错的。
  */
-export interface RouteAttempt { memberId:string; profileId:string; model:string; at:number; status:'failed'|'done' }
+export interface RouteAttempt { memberId:string; profileId:string; model:string; at:number; status:'failed'|'done'; kind?:string; httpStatus?:number; error?:string }
+/**
+ * routeOverrides：运行停下后，用户给成员换的路由。成员快照是审计基线不能改，
+ * 这里只追加；派发时取这位成员的最后一条。previous 记下换之前实际用的路由。
+ */
+export interface RouteOverride { memberId:string; profileId:string; model:string; effort:string; at:number; previous:{profileId:string;model:string} }
+export interface TeamRun { routeOverrides?:RouteOverride[] }
 export interface TeamArtifact { id:string;sessionId:string;projectId:string;taskId:string;memberId:string;nodeId:string;attemptId:string;version:number;createdAt:number;digest:string;files:{path:string;beforeHash:string|null;afterHash:string|null}[] }
 export interface TeamTextArtifact { id:string;attemptId:string;nodeId:string;version:number;digest:string;text:string }
 export interface FlowNode { reviewMode?:'files'|'text' }

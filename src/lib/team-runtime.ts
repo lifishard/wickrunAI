@@ -25,6 +25,7 @@ import { memoryItemsOf, type ProjectMemoryItem } from './memory-core';
 import { captureTaskDependencies, validateFrozenDependencies, validateTaskDependencies } from './team-dependencies';
 import { teamFileTools, validateTeamFileScope, validateTeamFileSnapshot } from './team-file-scope';
 import { teamPendingQuestions, teamHasUnknownOperations } from './team-run-guidance';
+import { activeRoute } from './team-route-fix';
 import { validateUserAnswers, type UserQuestionAnswers } from './user-questions';
 
 type Listener = () => void;
@@ -307,6 +308,25 @@ export class TeamRuntime {
   });
   this.observe(projectId,runId);
  }
+ /**
+  * 运行停下后给某位成员换一条路由。成员快照是审计基线不能改，只追加一条换路由记录，
+  * 之后派发这位成员时从新路由开始。updateMember 同时改项目里的成员，以后的运行也用它。
+  */
+ async switchMemberRoute(projectId:string,runId:string,memberId:string,route:{profileId:string;model:string;effort:string},updateMember=false){
+  const model=route.model.trim(),profile=this.settings()?.keyProfiles.find(p=>p.id===route.profileId);
+  if(!profile)throw Error(tr('所选接入不存在'));
+  if(!profile.hasSecret)throw Error(tr('所选接入尚未保存 API Key'));
+  if(!model)throw Error(tr('请选择模型'));
+  await this.runUpdate(projectId,runId,run=>{
+   if(!['failed','uncertain','paused'].includes(run.status))throw Error(tr('只能在运行停下后更换成员的模型'));
+   const member=run.members.find(m=>m.id===memberId);if(!member)throw Error(tr('这位成员不在本次运行中'));
+   const previous=activeRoute(run,member);
+   if(previous.profileId===route.profileId&&previous.model===model&&previous.effort===route.effort)throw Error(tr('新选择与当前路由相同'));
+   (run.routeOverrides??=[]).push({memberId,profileId:route.profileId,model,effort:route.effort,at:Date.now(),previous:{profileId:previous.profileId,model:previous.model}});
+   run.events.push({id:uid(),at:Date.now(),kind:'route_change',text:tr('{name} 改用 {model}（{connection}），原模型 {old}',{name:member.name,model,connection:profile.name,old:previous.model})});
+  });
+  if(updateMember)await this.update(projectId,p=>{const m=p.members.find(m=>m.id===memberId);if(m)Object.assign(m,{connectionId:route.profileId,model,effort:route.effort});});
+ }
  async answerQuestion(projectId:string,runId:string,questionId:string,answers:UserQuestionAnswers,draft=false){
   const run=this.project(projectId).runs.find(r=>r.id===runId);
   const pending=run&&teamPendingQuestions(run).find(q=>q.question.request.id===questionId);
@@ -483,7 +503,9 @@ export class TeamRuntime {
   */
  private async runMemberWithFailover(projectId:string,runId:string,attemptId:string,node:FlowNode,member:Member,discussion:string,control:{stop:boolean;handles:Set<AgentHandle>}):Promise<string>{
   const tried:RouteRef[]=[];
-  let active=member;
+  // 运行停下后用户换过路由，就从换后的那条开始；成员快照本身不变。
+  const chosen=activeRoute(this.project(projectId).runs.find(x=>x.id===runId)??{},member);
+  let active:Member={...member,connectionId:chosen.profileId,model:chosen.model,effort:chosen.effort};
   for(;;){
    const current:RouteRef={profileId:active.connectionId,model:active.model};
    try{
@@ -491,8 +513,9 @@ export class TeamRuntime {
     await this.logRoute(projectId,runId,attemptId,member.id,current,'done');
     return text;
    }catch(error){
-    await this.logRoute(projectId,runId,attemptId,member.id,current,'failed');
     const info=(error as {info?:ErrorInfo}).info;
+    // 带上归类和原文：停下后要能指出是哪位成员、哪条路由、为什么，才给得出修法。
+    await this.logRoute(projectId,runId,attemptId,member.id,current,'failed',{kind:info?.kind,httpStatus:info?.status,error:String(error instanceof Error?error.message:error).slice(0,500)});
     const settings=this.settings();
     const list=expandFailover(resolveFailover(active.failover,undefined,settings?.failover).config,settings?.routeGroups);
     const isClient=['client:codex','client:claude'].includes(active.connectionId);
@@ -510,10 +533,10 @@ export class TeamRuntime {
    }
   }
  }
- private async logRoute(projectId:string,runId:string,attemptId:string,memberId:string,route:RouteRef,status:'failed'|'done'){
+ private async logRoute(projectId:string,runId:string,attemptId:string,memberId:string,route:RouteRef,status:'failed'|'done',detail:{kind?:string;httpStatus?:number;error?:string}={}){
   await this.runUpdate(projectId,runId,run=>{
    const a=run.attempts.find(x=>x.id===attemptId);if(!a)return;
-   (a.routeLog??=[]).push({memberId,profileId:route.profileId,model:route.model,at:Date.now(),status});
+   (a.routeLog??=[]).push({memberId,profileId:route.profileId,model:route.model,at:Date.now(),status,...Object.fromEntries(Object.entries(detail).filter(([,v])=>v!==undefined))});
   }).catch(()=>{});
  }
  private async runMember(projectId:string,runId:string,attemptId:string,node:FlowNode,member:Member,discussion:string,control:{stop:boolean;handles:Set<AgentHandle>}):Promise<string>{

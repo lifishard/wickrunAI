@@ -63,7 +63,7 @@ export function probeCompatibility(profile:KeyProfile,model:string,key:string,op
     const abort=()=>{void transport.abort(requestId);};signal?.addEventListener('abort',abort,{once:true});
     try { await transport.chat({requestId,url:endpoint(profile.baseUrl,'chat/completions'),headers:buildHeaders(key,profile),body,stream:false,timeoutMs:15000,purpose:'probe',paceKey:quotaKey(profile),paceTokens:160},{
       onContent:d=>{received ||= !!d;},onReasoning:d=>{received ||= !!d;},onToolCalls(){},onUsage(){},onStop:info=>{stopped=!!info.reason&&info.droppedCalls===0;},
-      onResponse:status=>{result.status=status;},onDone(){},onError:(_message,status)=>{failed=true;result.status=status??result.status;result.note=`上游请求失败${result.status?`（HTTP ${result.status}）`:''}`;},
+      onResponse:status=>{result.status=status;},onDone(){},onError:(_message,status)=>{failed=true;result.status=status??result.status;result.note=`上游请求失败${result.status?`（HTTP ${result.status}）`:''}${_message?`：${_message.slice(0,160)}`:''}`;},
     });result.accepted=!failed&&(received||stopped);if(result.accepted)result.note='请求被接受';return result;
     } finally {signal?.removeEventListener('abort',abort);}
   };
