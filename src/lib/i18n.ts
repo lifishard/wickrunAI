@@ -1,3 +1,4 @@
+import { OFFICE_EN } from './i18n-office';
 import * as React from 'react';
 // cn2t 子路径同时给出 ESM 和 UMD，Vite 和 node 测试都能解析，且只打包简转繁这一个方向。
 import * as OpenCC from 'opencc-js/cn2t';
@@ -35,6 +36,10 @@ const EN: Record<string, string> = {
   '打开网页版': 'Open web app',
   '请上传 PNG、JPEG、WebP 或 GIF 图片。': 'Choose a PNG, JPEG, WebP, or GIF image.',
   '请上传文本或代码文件；PDF 和 Word 可先导出为文本。': 'Choose a text or code file. Export PDF and Word documents as text first.',
+  ...OFFICE_EN,
+  '＋ 说说想做什么': '+ Tell me what you want to do',
+  '管家': 'Assistant',
+  '办公室': 'Office',
   '协调并行任务': "Coordinate parallel tasks",
   '新建对话': "Create conversation",
   '并行任务': "Parallel tasks",

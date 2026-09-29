@@ -1,4 +1,5 @@
 import type { FlowNode, NodeAttempt, TeamRun } from './collaboration';
+import { maxVisitsOf, memberTokensOf, runTokensOf } from './team-limits';
 
 /** Derived from the durable run; this contract never becomes a second mutable task store. */
 export function teamInputs(run:TeamRun,node:FlowNode):NodeAttempt[] {
@@ -22,7 +23,7 @@ export function teamTaskContract(run:TeamRun,node:FlowNode,memberId:string,input
   dependencyInputs:run.dependencyInputs??[],
   inputs:inputs.map(a=>({attemptId:a.id,nodeId:a.nodeId,visit:a.visit,outcome:a.outcome,artifacts:a.artifacts??[]})),
   permission:{roots,readOnly:node.type==='review'||run.fileScope?.capability==='read',capability:run.fileScope?.capability},
-  limits:{memberTokens:run.members.find(m=>m.id===memberId)?.maxTokens,totalTokens:run.version.graph.maxTokens,maxVisits:node.maxVisits},
+  limits:(()=>{const m=run.members.find(m=>m.id===memberId);return {memberTokens:m?memberTokensOf(run,m):undefined,totalTokens:runTokensOf(run),maxVisits:maxVisitsOf(run,node)};})(),
   stopConditions:['用户暂停或撤销','未知外部结果','预算或执行次数用尽'],
   completion:'返回产物、实际检查证据与未解决事项；执行结束不代表用户验收'};
 }

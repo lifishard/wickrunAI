@@ -26,9 +26,13 @@ export default function EffortPicker(props: {
 
   const cur = EFFORT_LEVELS.find((l) => l.value === props.level) ?? EFFORT_LEVELS[0];
   const mapping = matchMapping(props.model, props.mappings);
+  const [,refresh]=React.useReducer(x=>x+1,0);
+  React.useEffect(()=>{const update=()=>refresh();window.addEventListener('wickrun-compatibility',update);return()=>window.removeEventListener('wickrun-compatibility',update);},[]);
+  const report=props.route?.compatibility;
   const routed = props.route?.effortStyle && props.route.effortStyle !== 'mapping';
   const supported = routed ? props.route?.effortStyle !== 'none' : Boolean(mapping && mapping.style !== 'none');
   const describe = (level: EffortLevel) => {
+    if(report&&!routed)return report.mode==='toggle'?'已验证思考开关（各强度使用相同开关）':report.mode==='default'?report.note:report.requests[level]?'请求格式已验证':'上游未接受此档位';
     if (!routed) return describeEffort(props.model,level,props.mappings,t);
     if (level === 'off' || props.route?.effortStyle === 'none') return t('当前路由不下发思考字段');
     const value = props.route?.effortValues?.[level];
@@ -44,7 +48,7 @@ export default function EffortPicker(props: {
         title={props.manual ? t('配置面板里手动接管了思考字段，这里不生效') : describe(props.level)}
         onClick={() => setOpen((v) => !v)}
       >
-        🧠 {props.manual ? t('手动') : t(cur.label)}
+        🧠 {props.manual ? t('手动') : report&&!routed&&report.mode==='default'?'上游默认':report&&!routed&&report.mode==='toggle'?(props.level==='off'?'默认 / 关闭':'思考开启'):t(cur.label)}
       </button>
 
       {open ? (
@@ -57,11 +61,11 @@ export default function EffortPicker(props: {
             </div>
           ) : null}
 
-          {EFFORT_LEVELS.map((l) => (
+          {EFFORT_LEVELS.filter(l=>!report||routed||report.mode==='levels'||(report.mode==='toggle'?['off','high'].includes(l.value):l.value==='off')).map((l) => (
             <button
               key={l.value}
               className={`popup-item${l.value === props.level ? ' on' : ''}`}
-              disabled={props.manual}
+              disabled={props.manual||Boolean(report&&!routed&&report.mode==='levels'&&!report.requests[l.value])}
               onClick={() => {
                 props.onLevel(l.value);
                 setOpen(false);
@@ -69,7 +73,7 @@ export default function EffortPicker(props: {
             >
               <span className="popup-icon">{l.short}</span>
               <span>
-                <strong>{t(l.label)}</strong>
+                <strong>{report&&!routed&&report.mode==='default'?'使用上游默认':report&&!routed&&report.mode==='toggle'?(l.value==='off'?'默认 / 关闭':'开启思考'):t(l.label)}</strong>
                 <small>{describe(l.value)}</small>
               </span>
             </button>

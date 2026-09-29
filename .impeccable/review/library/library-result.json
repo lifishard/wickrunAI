@@ -1,0 +1,12 @@
+{
+  "passed": true,
+  "builtinRoles": 279,
+  "customRoles": 2,
+  "personalDepartments": 1,
+  "reusedMembers": 2,
+  "assembledDepartments": 5,
+  "selectedWorkers": 2,
+  "runsStarted": 0,
+  "errors": [],
+  "environment": "isolated Electron test profile"
+}

@@ -21,7 +21,8 @@ import ModelPicker from './ModelPicker';
 import ClientConnections from './ClientConnections';
 import {CLIENT_LABELS} from '../lib/connections';
 import ContextMeter, { type ContextPreview } from './ContextMeter';
-import { routeKey } from '../lib/adaptive';
+import { compatibilityRoute } from '../lib/compatibility-cache';
+import CompatibilityStatus from './CompatibilityStatus';
 import {validateAttachmentSize,validateAttachmentBatch} from '../lib/attachment-limits';
 import { useT } from '../lib/i18n';
 import { isCompositionKey } from '../lib/composer-keyboard';
@@ -137,6 +138,8 @@ export default function Composer(props: {
 }) {
   const t = useT();
   const phone = usePhoneLayout();
+  const [,refreshCompatibility]=React.useReducer(x=>x+1,0);
+  React.useEffect(()=>{const update=()=>refreshCompatibility();window.addEventListener('wickrun-compatibility',update);return()=>window.removeEventListener('wickrun-compatibility',update);},[]);
   const [text, setText] = React.useState(props.initialDraft ?? '');
   React.useEffect(() => {
     const fill = (event: Event) => { setText(String((event as CustomEvent).detail)); };
@@ -352,7 +355,7 @@ export default function Composer(props: {
               onLevel={props.onEffortLevel}
               model={props.model}
               mappings={props.effortMappings}
-              route={props.contextPreview?.profile.routeProfiles?.[routeKey(props.contextPreview.profile,props.model)]}
+              route={props.contextPreview ? compatibilityRoute(props.contextPreview.profile,props.model) : undefined}
               manual={props.effortManual}
               onOpenMappings={props.onOpenMappings}
             />}
@@ -471,6 +474,7 @@ export default function Composer(props: {
           ) : null}
 
           {props.controls}
+          {props.contextPreview&&!props.client&&<CompatibilityStatus profile={props.contextPreview.profile} model={props.model}/>}
           {attachmentError?<p role="alert" className="hint">{attachmentError}</p>:null}
           <MarkdownInput ref={ref} value={text} disabled={props.disabled}
             placeholder={props.disabled ? (props.disabledReason ?? t('请先完成配置')) : props.busy ? t('还在生成，现在输入会排到队尾…') : t(phone ? '发消息…' : '问点什么…（图片可以直接粘贴）')}

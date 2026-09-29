@@ -34,6 +34,8 @@ const TRANSLATED=[
   'components/collaboration/TeamRoleSettings.tsx',
   'components/collaboration/TeamFileSetup.tsx',
   'components/collaboration/TeamRunGuidance.tsx',
+  'components/collaboration/TeamRouteFix.tsx',
+  'components/collaboration/TeamLimitFix.tsx',
   'lib/team-file-scope.ts',
   'lib/team-quick-start.ts',
   'components/collaboration/TeamFlowPreview.tsx',
@@ -77,9 +79,9 @@ const TRANSLATED=[
 ];
 
 /** 纯逻辑模块：整份文件里的中文字符串都是给界面翻的 key。 */
-const KEY_SOURCES=['lib/errors.ts','lib/team-project-progress.ts','lib/team-run-guidance.ts'];
+const KEY_SOURCES=['lib/errors.ts','lib/team-project-progress.ts','lib/team-run-guidance.ts','lib/team-limits.ts'];
 
-const dict=fs.readFileSync(path.join(root,'lib','i18n.ts'),'utf8');
+const dict=['i18n.ts','i18n-office.ts'].map(file=>fs.readFileSync(path.join(root,'lib',file),'utf8')).join('\n');
 const entries=[...dict.matchAll(/^\s+'((?:[^'\\]|\\.)+)':/gm)].map(m=>m[1]);
 
 test('词典没有重复 key', () => {

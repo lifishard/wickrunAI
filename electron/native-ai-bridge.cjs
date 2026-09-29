@@ -33,7 +33,7 @@ function claudeDesktopConfigFiles(appData,env=process.env,platform=process.platf
   if(!files.length||fsApi.existsSync(path.dirname(standard)))files.push(standard);
   return files;
 }
-function createNativeAiBridge({userData,appData,getSettings,secretGet,openExternal,memory=null,deps={}}) {
+function createNativeAiBridge({userData,appData,getSettings,secretGet,openExternal,memory=null,meetings=null,deps={}}) {
   // 测试进程（node --test 会设置 NODE_TEST_CONTEXT）必须注入临时位置，绝不能读写用户真实的 Claude Desktop 配置
   const configFiles=()=>{
     if(deps.claudeConfigFiles)return deps.claudeConfigFiles(appData);
@@ -83,6 +83,10 @@ function createNativeAiBridge({userData,appData,getSettings,secretGet,openExtern
   }
   async function rpc(p,method,args={}) {
     provider(p);
+    if(typeof method==='string'&&method.startsWith('meeting_')){
+      if(!meetings)throw Error('会议室未启用');
+      return meetings.rpc(p,method,args);
+    }
     if(method==='hello'){seen.set(p,{at:Date.now(),client:String(args.client||'MCP client').slice(0,100)});return {ok:true};}
     if(method==='list_tasks')return {tasks:db.read().tasks.filter(t=>t.provider===p).map(t=>({id:t.id,goal:t.goal.slice(0,200),status:t.status}))};
     if(method==='claim_task'){

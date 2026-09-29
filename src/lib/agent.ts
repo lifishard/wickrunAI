@@ -33,17 +33,17 @@ import {
   estimateChatTokens,
   estimateTokens,
   looksLikeOverflow,
-  pacingFloor,
   parseLimits,
-  parseRateLimits,
   quotaLimits,
   type LearnedLimit,
 } from './limits';
-import { isRateLimited, paceOf, waitCancellable, abortError } from './pacer';
+import { isRateLimited, rateLimitDelay, retryAfterMs, waitCancellable, abortError } from './pacer';
 import { contextView, runtimePolicy } from './task-context';
 import { filePathsInText } from './artifacts';
 import { endExchange } from './wiretap';
-import { calibratedTokens, capabilities, dispatchBudget, nearContextSuggestion, observeInput, outputReserve, prepareBody, quotaKey, routeKey, snapshot, workingBudget, RUNTIME_VERSION } from './adaptive';
+import { calibratedTokens, capabilities, dispatchBudget, nearContextSuggestion, observeInput, outputReserve, prepareBody, paceFields, quotaKey, rateLimitLearning, routeKey, snapshot, workingBudget, RUNTIME_VERSION } from './adaptive';
+import { probeCompatibility } from './compatibility-probe';
+import { readSourceText } from './team-text-review';
 import { compressionCandidate, memoryInstructions, memoryView, readContext, recentOutputFiles, updatePlan, validateCompaction } from './context-memory';
 import { handoffInfo, repeatedWithoutProgress, type ConversationMemory } from './handoff';
 import { foldedSkillNames, readSkill, type Skill } from './skills';
@@ -88,6 +88,8 @@ export interface AgentEvents {
 }
 
 export interface RunAgentArgs {
+  roleCatalog?: import('./office').AgentRole[];
+  autoProbe?: boolean;
   /** Trusted task goal supplied by an orchestrator, without protocol and permission help text. */
   taskGoal?: string;
   requestId: string;
@@ -110,6 +112,8 @@ export interface RunAgentArgs {
   extraSystem: string;
   /** 本轮唤起的技能。正文过长的只在 system 里留摘要，靠 read_skill 取回全文 */
   skills?: Skill[];
+  /** 前置记录与待复核原文；read_source_text 从这里分段读取 */
+  sourceTexts?: { id: string; text: string }[];
   /** 按需回想过去的任务。不提供就没有这个工具 —— 默认零关联 */
   recallTasks?: (query: string, limit: number) => Promise<unknown[]>;
   timeoutMs: number;
@@ -476,6 +480,13 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
 
   void (async () => {
     try {
+      if(args.autoProbe&&cfg.thinkingStyle==='auto'&&args.profile.protocol!=='anthropic'){
+        events.onNotice('正在核对当前模型的请求格式…');
+        const report=await probeCompatibility(args.profile,cfg.model,args.apiKey,{signal:control.signal});
+        if(control.signal.aborted)throw abortError();
+        if(report.status!=='ready')throw Error(`兼容性检测暂未完成：${report.note}。可在输入框下方重新检测。`);
+        events.onNotice('');
+      }
       const usable = new Set(availableTools(args.canRunHostTools).map((t) => t.name));
       // request_user_input is renderer-owned and remains available in Chat;
       // host tools continue to obey the Work/toolsEnabled switch.
@@ -720,7 +731,7 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
               result = { ok: false, content: '', error: '用户已核实并选择跳过此操作，程序没有重新执行。' };
               step.status = 'denied';
             } else if (state.replanPending && !resolving) {
-              if (!args.canRunHostTools || ['read_context','update_plan','update_requirements','verify_requirements','request_access'].includes(call.name)) {
+              if (!args.canRunHostTools || ['read_context','read_source_text','read_review_text','update_plan','update_requirements','verify_requirements','request_access'].includes(call.name)) {
                 result={ok:false,content:'用户补充要求，取消尚未执行的旧计划；请重新规划。',summary:'取消尚未执行的旧计划'};step.status='denied';
               } else {
                 result=await interrupted(transport.callTool('reconcile_operation',{runId:state.runId,callId:`${state.round}-${i}-${call.id}`,name:call.name,args:parsed},args.toolCtx()));
@@ -760,6 +771,7 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
                       : call.name === 'create_conversation' ? await interrupted(args.createConversation!(parseConversationRequest(parsed), state.runId!))
                       : call.name === 'complete_task' ? recordTaskReview(state,parsed)
                       : call.name === 'read_context' ? readContext(state, parsed)
+                      : call.name === 'read_source_text' || call.name === 'read_review_text' ? readSourceText(args.sourceTexts ?? [], parsed)
                       : call.name === 'read_skill' ? readSkill(args.skills ?? [], parsed)
                       : call.name === 'recall_past_task' ? await interrupted((async () => {
                         const found = await args.recallTasks!(String(parsed.query ?? ''), Number(parsed.limit) || 5);
@@ -917,9 +929,7 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
           await transport.chat({ requestId, runId: state.runId, round: state.round, attempt: attempts,
             purpose: final ? 'final' : 'agent', url: endpoint(args.profile.baseUrl, 'chat/completions'),
             headers: buildHeaders(args.apiKey, args.profile), body, stream: cfg.stream, timeoutMs: args.timeoutMs,
-            paceKey: quotaKey(args.profile), paceTokens: reserved, paceTpm: cap.tpm,
-            paceInput: bodyTokens, paceOutput: outputAllowance, paceItpm: cap.itpm, paceOtpm: cap.otpm, cachedInputCounts: cap.cachedInputCounts,
-            paceMinMs: Math.max(cap.rpm ? Math.ceil(60000/cap.rpm) : 0, pacingFloor(learned ? { ...learned, tpm: undefined } : undefined, 0)),
+            ...paceFields(args.profile, cap, learned, bodyTokens, outputAllowance),
           }, {
             onContent(d) {
               if(loopDetected)return;
@@ -995,7 +1005,7 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
           endExchange(requestId, failure.message, failure.status);
           events.onContentReplace?.(committedContent, committedReasoning);
           const rate = isRateLimited(failure.message, failure.status);
-          if (rate) args.onLearnLimit?.({ ...parseRateLimits(failure.message), minIntervalMs: paceOf(quotaKey(args.profile)).intervalMs, at: Date.now(), from: failure.message.slice(0,300) });
+          if (rate) args.onLearnLimit?.(rateLimitLearning(args.profile, failure.message));
           const overflow = !rate && (looksLikeOverflow(failure.message) || failure.status === 413);
           const uncertain400 = !rate && failure.status === 400 && bodyTokens > 4000 && state.round > 1;
           if ((overflow || uncertain400) && overflowRetries < (overflow ? 3 : 1)) {
@@ -1020,9 +1030,7 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
             (rate || info.kind === 'network' || info.kind === 'timeout'
               ? elapsed < recoveryLimit : attempts <= args.autoRetry);
           if (!retryAllowed) { await finishPause(info.title, info); return; }
-          const header = responseHeaders['retry-after'];
-          const retryAfter = header ? (Number.isFinite(Number(header)) ? Number(header)*1000 : Date.parse(header)-Date.now()) : undefined;
-          const delay = rate ? Math.max(1000, retryAfter ?? info.retryAfterMs ?? 62000) : backoffMs(attempts, info);
+          const delay = rate ? rateLimitDelay(retryAfterMs(responseHeaders), info.retryAfterMs) : backoffMs(attempts, info);
           if (elapsed+delay > recoveryLimit) { await finishPause('自动恢复等待达到本阶段上限，进度已保留', info); return; }
           await wait(delay, rate ? '调用额度暂时不足' : '连接暂时中断，正在自动恢复');
         }

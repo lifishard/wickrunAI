@@ -23,7 +23,7 @@ test('real stdio MCP handshake, bounded delegation and final result round trip',
   const client=new Client({name:'fixture-desktop',version:'1.0.0'});
   const transport=new StdioClientTransport({...config,stderr:'pipe'});
   t.after(()=>client.close());await client.connect(transport);
-  const list=await client.listTools();assert.equal(list.tools.length,13);
+  const list=await client.listTools();assert.equal(list.tools.length,18);
   const task=f.create();
   const call=async(name,args)=>{const result=await client.callTool({name:'wickrun_'+name,arguments:args});assert.notEqual(result.isError,true,result.content[0].text);return JSON.parse(result.content[0].text);};
   const detail=await call('get_task',{taskId:task.id});

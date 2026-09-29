@@ -44,6 +44,8 @@ export interface ToolDef {
   needsHost?: boolean;
   /** 在步骤轨迹上显示的一句话 */
   summarize(args: Record<string, unknown>): string;
+  /** 执行器按场景自动提供，不出现在工具勾选列表里 */
+  hidden?: boolean;
 }
 
 const s = (v: unknown): string => (typeof v === 'string' ? v : v === undefined ? '' : String(v));
@@ -57,8 +59,8 @@ export const TOOLS: ToolDef[] = [
   {name:'create_conversation',label:'新建对话',group:'agent',description:'仅当用户明确要求新开独立 Chat/Work 对话时使用。mode 指定 chat/work；prompt 是简洁、完整的新任务说明，不复制整段历史、压缩记录或隐私密钥。有 prompt 默认直接开始；用户要求先写草稿时设 start:false；只开空白对话时不传 prompt。request_key 对同一次创建保持稳定，重试返回已有会话。只在返回成功后报告已创建；新任务应在新会话执行，不要在原会话重复执行。',parameters:{type:'object',properties:{workspace_root:{type:'string',description:'可选，选择应用已授权的一个目录作为独立副本来源；省略时沿用来源会话的原目录或第一个授权目录。不能填写未授权路径。'},mode:{type:'string',enum:['chat','work']},title:{type:'string',maxLength:80},prompt:{type:'string',maxLength:16000},start:{type:'boolean'},request_key:{type:'string',maxLength:80}},required:['mode','request_key']},summarize:a=>tr('新建 {mode} 对话',{mode:a.mode==='work'?'Work':'Chat'})},
   {name:'delete_file',label:'删除文件',group:'files',dangerous:true,needsHost:true,description:'删除一个授权目录内的 UTF-8 文本文件。审核模式下先展示完整删除差异，经用户批准后才删除。',parameters:{type:'object',properties:{path:{type:'string'}},required:['path']},summarize:a=>'删除 '+s(a.path)},
   {name:'complete_task',label:'完成自查',group:'agent',description:'交付前记录已完成事项、自查与测试结果；evidence 必须是实际成功工具的 callId。不能使用计划当证据，未通过的验收条件要先处理。next_action 是供用户选择的下一步建议，不会执行。',parameters:{type:'object',properties:{summary:{type:'string'},checks:{type:'string'},evidence:{type:'array',items:{type:'string'}},next_action:{type:'string'}},required:['summary','checks','evidence']},summarize:()=> tr('核对完成情况与证据')},
-  {name:'spawn_subagent',label:'派发临时子代理',group:'agent',description:'把独立且范围明确的子任务交给用户授权的工作模型。先用 list_subagents 查看可选 worker_id。仅传必要目标、材料与验收条件，不复制整段历史。request_key 必须稳定，重试同一请求返回已有任务。最多两个并行；子代理结果需要主模型复核。',parameters:{type:'object',properties:{worker_id:{type:'string'},request_key:{type:'string'},task:{type:'string'}},required:['worker_id','request_key','task']},summarize:a=>tr('子代理：{task}',{task:clip(a.task)})},
-  {name:'list_subagents',label:'查看临时子代理',group:'agent',description:'查看本轮允许的工作模型与已派发子代理状态。不会启动任务或调用模型。',parameters:{type:'object',properties:{}},summarize:()=> tr('查看临时协作状态')},
+  {name:'spawn_subagent',label:'派发临时子代理',group:'agent',description:'把独立且范围明确的子任务交给用户授权的工作模型。先用 list_subagents 查看可选 worker_id，并按 query 搜索用户指定的职责。role_id 可选，填写后子代理采用该角色的独立职责；不要把多角色要求只写成主模型自问自答。仅传必要目标、材料与验收条件，不复制整段历史。request_key 必须稳定，重试同一请求返回已有任务。最多两个并行；子代理结果需要主模型复核。',parameters:{type:'object',properties:{worker_id:{type:'string'},role_id:{type:'string',description:'从 list_subagents 查到的角色 ID；省略时使用该 worker 已配置的角色。'},request_key:{type:'string'},task:{type:'string'}},required:['worker_id','request_key','task']},summarize:a=>tr('子代理：{task}',{task:clip(a.task)})},
+  {name:'list_subagents',label:'查看临时子代理',group:'agent',description:'查看本轮允许的工作模型、角色目录与已派发子代理状态。query 搜索角色名称或职责，category 按分类筛选；每次最多返回 30 个角色。不会启动任务或调用模型。',parameters:{type:'object',properties:{query:{type:'string'},category:{type:'string'}}},summarize:()=> tr('查看临时协作状态')},
   {name:'wait_subagents',label:'收取子代理结果',group:'agent',description:'收取本轮子代理的状态和结果。ids 可省略表示全部；最多等待 8 秒。未完成时先做其他独立工作，再查询；不得把运行中当成完成。',parameters:{type:'object',properties:{ids:{type:'array',items:{type:'string'}},wait_ms:{type:'integer',minimum:0,maximum:8000}}},summarize:()=> tr('收取子代理结果')},
   {
     name: 'request_user_input',
@@ -136,6 +138,12 @@ export const TOOLS: ToolDef[] = [
     description: '按关键词查本项目里过去做过的相似任务，返回标题、时间、当时用的模型、最后做成没有。只在你确实想不起来「这件事以前是怎么处理的」时调用；返回的是摘要不是原文，不能当作已核实的事实，需要细节就重新做一次核验。',
     parameters: { type: 'object', properties: { query: { type: 'string', description: '关键词，空格分隔' }, limit: { type: 'integer', maximum: 10 } }, required: ['query'] },
     summarize: (a) => tr('回想「{query}」相关的旧任务', { query: clip(a.query) }),
+  },
+  {
+    name: 'read_source_text', label: '分段读取前置记录', group: 'agent', hidden: true,
+    description: '按编号和段号（从 1 开始）读取一段前置记录或待复核原文，原样返回，每段约一万字。编号见本步骤消息里的「前置记录目录」或「文本产物目录」；文本复核判通过前必须读完全部段落。',
+    parameters: { type: 'object', properties: { id: { type: 'string', description: '目录里的编号，例如 text:… 或 speech:…' }, part: { type: 'integer', minimum: 1 } }, required: ['id', 'part'] },
+    summarize: (a) => tr('读取前置记录 {id} 第 {part} 段', { id: clip(a.id ?? a.artifactId, 24), part: s(a.part) }),
   },
   {
     name: 'read_skill', label: '取回技能正文', group: 'agent',

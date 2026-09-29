@@ -1,4 +1,5 @@
-import type { AppSettings, ToolStep, RunState, GenerationConfig } from '../types';
+import { preserveOutput, type OutputSnapshot } from './output-history';
+import type { AppSettings, ToolStep, RunState, GenerationConfig, AccessRequest, ToolResult } from '../types';
 import { runAgent, type AgentHandle } from './agent';
 import { uid, secretGet, toolContextOf } from './store';
 import { TOOL_BY_NAME } from './tools/registry';
@@ -17,13 +18,16 @@ import type { ErrorInfo } from '../types';
 import { emptyTeamProject, loadCollaboration, teamBridge, validateGraph, type CollaborationData, type TeamProject, type TeamRun, type Member, type FlowNode, type FlowVersion } from './collaboration';
 import { tr } from './i18n';
 import { teamInputs, teamTaskContract, verifyTeamReview } from './team-contract';
-import { textReviewInputs, verifyTextReview, TEXT_REVIEW_INSTRUCTIONS } from './team-text-review';
+import { textReviewInputs, verifyTextReview, textReviewPaged, reviewPartCount, TEXT_REVIEW_INSTRUCTIONS, TEXT_REVIEW_PAGED_INSTRUCTIONS, SOURCE_PAGED_INSTRUCTIONS } from './team-text-review';
+import { TEAM_READ_ONLY_TOOLS, TEAM_SCOPED_FILE_TOOLS, teamGrants, isAbsolutePath } from './team-permissions';
 import { repeatedReviewStagnation, type ReviewStagnation } from './team-stagnation';
 import { isLegacyTeamMemory, memoryItemsToTeamEntries, migrateTeamMemories, selectTeamMemories, teamMemorySystemBlock } from './team-memory';
 import { memoryItemsOf, type ProjectMemoryItem } from './memory-core';
 import { captureTaskDependencies, validateFrozenDependencies, validateTaskDependencies } from './team-dependencies';
 import { teamFileTools, validateTeamFileScope, validateTeamFileSnapshot } from './team-file-scope';
 import { teamPendingQuestions, teamHasUnknownOperations } from './team-run-guidance';
+import { activeRoute } from './team-route-fix';
+import { continuesVisit, currentLimit, limitLabel, maxTraversalsOf, maxVisitsOf, memberTokensOf, runMinutesOf, runStepsOf, runTokensOf, LIMIT_CAPS, type LimitKind } from './team-limits';
 import { validateUserAnswers, type UserQuestionAnswers } from './user-questions';
 
 type Listener = () => void;
@@ -57,10 +61,11 @@ function shortKey(value:string):string{
  return (h>>>0).toString(36).padStart(7,'0');
 }
 const EXPLORE_NODE_TYPES=new Set(['start','agent','discussion','end']);
-const EXPLORE_PROMPT_PREFIX='本次运行只梳理可选方向、取舍、假设、待确认问题和可编辑的下一步建议。不得执行建议中的实际任务，不得调用工具、修改文件、运行命令或代表用户作出决定。\n';
+const EXPLORE_PROMPT_PREFIX='本次运行只梳理可选方向、取舍、假设、待确认问题和可编辑的下一步建议。可以用已提供的只读工具查资料（联网搜索、读取网页或文件）；不得执行建议中的实际任务，不得修改文件、运行命令或代表用户作出决定。\n';
 function assertExploreSnapshot(version:FlowVersion,members:Member[]){
  if(version.graph.nodes.some(node=>!EXPLORE_NODE_TYPES.has(node.type)))throw Error('想法梳理运行只允许开始、方向探索、讨论、建议和结束步骤');
- if(members.some(member=>member.connectionId.startsWith('client:')||member.tools.length||member.skills?.length))throw Error('想法梳理运行只能使用不带工具、技能或本机客户端的 API 成员');
+ // 成员可以带工具；运行时只开放其中的只读工具，主进程按同一份清单再拦一次
+ if(members.some(member=>member.connectionId.startsWith('client:')||member.skills?.length))throw Error('想法梳理运行只能使用不带技能或本机客户端的 API 成员');
 }
 export class TeamRuntime {
  data: CollaborationData | null = null;
@@ -187,7 +192,7 @@ export class TeamRuntime {
     if(r.status!=='running')break;
     if(r.pendingApproval){await this.runUpdate(projectId,runId,run=>{run.status='waiting_user';});break;}
     const graph=r.version.graph;
-    if(r.attempts.length>=graph.maxSteps||r.tokens>=graph.maxTokens||Date.now()-r.createdAt>graph.maxMinutes*60000){await this.pauseWith(projectId,runId,'已达到总步骤、用量或时间上限；换成员或重启不会清零');break;}
+    if(r.attempts.length>=runStepsOf(r)||r.tokens>=runTokensOf(r)||Date.now()-r.createdAt>runMinutesOf(r)*60000){await this.pauseWith(projectId,runId,'已达到总步骤、用量或时间上限；换成员或重启不会清零');break;}
     if(!r.queue.length){await this.pauseWith(projectId,runId,'没有可执行步骤；请检查等待中的汇合或尚未完成的交付');break;}
     // The ready frontier can fan out; per-project policy controls actual parallel dispatch.
     const count=Math.max(1,r.projectSettings.maxConcurrent);
@@ -218,9 +223,11 @@ export class TeamRuntime {
   */
  private teamHint(text:string){
   if(/达到执行次数上限/.test(text))
-   return `${text}\n${tr('这一步的「最多执行几次」用完了。在设计器里把该节点的次数调高，保存新版本后新建运行；已完成的产物保留在「文件与产物」里。')}`;
+   return `${text}\n${tr('这一步的「最多执行几次」用完了。在运行页提高本次运行里这一步的次数上限后接着跑，已完成的步骤不会重跑；设计器里改过的上限也可以在那里一键采用。')}`;
   if(/剩余阶段预算不足|阶段轮次已到/.test(text))
-   return `${text}\n${tr('在这里：填一句核实依据后点「核实并接着跑」，用新的一段预算从检查点继续；想一次跑完就先提高流程的总用量上限（以及项目设置里的每次运行上限），再新建运行。')}`;
+   return `${text}\n${tr('在运行页点「从检查点接着跑」，用新的一段预算继续，不占这一步的执行次数；想每段跑得更久，可以在那里同时提高成员的每步 tokens 上限。')}`;
+  if(/已达到总步骤、用量或时间上限/.test(text))
+   return `${text}\n${tr('在运行页提高本次运行的上限后接着跑，已完成的步骤不会重跑。')}`;
   return text;
  }
  /**
@@ -242,13 +249,12 @@ export class TeamRuntime {
   if(uncertainCall)return false;
   const used=run.events.filter(e=>e.kind==='auto_continue'&&e.nodeId===nodeId).length;
   if(used>=MAX_AUTO_CONTINUE)return false;
-  // 续跑要再占一次 visit。名额不够就别自动续：让它照常停下来，用户看到的是
-  //「执行次数上限」而不是一次莫名其妙的失败。
+  // 续跑是同一次执行的延续，不占“最多执行几次”
   const node=run.version.graph.nodes.find(n=>n.id===nodeId);
-  if(!node||(run.visits[nodeId]??0)>=node.maxVisits)return false;
+  if(!node)return false;
   const members=node.type==='discussion'?run.members.filter(m=>node.participants?.includes(m.id)):run.members.filter(m=>m.id===node.memberId);
-  const floor=Math.min(stageFloor(run.version.graph.maxTokens),...members.map(m=>m.maxTokens));
-  if(run.version.graph.maxTokens-run.tokens-Object.values(run.reservations).reduce((n,v)=>n+v,0)<floor)return false;
+  const floor=Math.min(stageFloor(runTokensOf(run)),...members.map(m=>memberTokensOf(run,m)));
+  if(runTokensOf(run)-run.tokens-Object.values(run.reservations).reduce((n,v)=>n+v,0)<floor)return false;
   await this.runUpdate(projectId,runId,r=>{
    const a=[...r.attempts].reverse().find(x=>x.nodeId===nodeId&&['running','failed'].includes(x.status));
    if(!a)return;
@@ -256,7 +262,7 @@ export class TeamRuntime {
    a.resolution='retry: '+tr('自动续跑：轮次或阶段预算用完，没有待核实的操作');
    if(!r.queue.includes(nodeId))r.queue.unshift(nodeId);
    r.events.push({id:uid(),at:Date.now(),kind:'auto_continue',nodeId,
-    text:tr('第 {n} 次自动续跑：{reason}。已用 {used}/{cap} tokens。',{n:String(used+1),reason:message.slice(0,120),used:String(r.tokens),cap:String(r.version.graph.maxTokens)})});
+    text:tr('第 {n} 次自动续跑：{reason}。已用 {used}/{cap} tokens。',{n:String(used+1),reason:message.slice(0,120),used:String(r.tokens),cap:String(runTokensOf(r))})});
   });
   // onPaused 已经把 control.stop 置上了（执行器自己收尾也走那条）。不清掉的话
   // 外层 while 立刻退出，节点排回队列却没人来跑 —— 运行停在 running 上不动。
@@ -305,6 +311,43 @@ export class TeamRuntime {
    r.status=uncertain.length>1?r.status:'paused';r.events.push({id:uid(),at:Date.now(),kind:'verified',text:evidence,nodeId:n.id});
   });
   this.observe(projectId,runId);
+ }
+ /**
+  * 运行停下后给某位成员换一条路由。成员快照是审计基线不能改，只追加一条换路由记录，
+  * 之后派发这位成员时从新路由开始。updateMember 同时改项目里的成员，以后的运行也用它。
+  */
+ async switchMemberRoute(projectId:string,runId:string,memberId:string,route:{profileId:string;model:string;effort:string},updateMember=false){
+  const model=route.model.trim(),profile=this.settings()?.keyProfiles.find(p=>p.id===route.profileId);
+  if(!profile)throw Error(tr('所选接入不存在'));
+  if(!profile.hasSecret)throw Error(tr('所选接入尚未保存 API Key'));
+  if(!model)throw Error(tr('请选择模型'));
+  await this.runUpdate(projectId,runId,run=>{
+   if(!['failed','uncertain','paused'].includes(run.status))throw Error(tr('只能在运行停下后更换成员的模型'));
+   const member=run.members.find(m=>m.id===memberId);if(!member)throw Error(tr('这位成员不在本次运行中'));
+   const previous=activeRoute(run,member);
+   if(previous.profileId===route.profileId&&previous.model===model&&previous.effort===route.effort)throw Error(tr('新选择与当前路由相同'));
+   (run.routeOverrides??=[]).push({memberId,profileId:route.profileId,model,effort:route.effort,at:Date.now(),previous:{profileId:previous.profileId,model:previous.model}});
+   run.events.push({id:uid(),at:Date.now(),kind:'route_change',text:tr('{name} 改用 {model}（{connection}），原模型 {old}',{name:member.name,model,connection:profile.name,old:previous.model})});
+  });
+  if(updateMember)await this.update(projectId,p=>{const m=p.members.find(m=>m.id===memberId);if(m)Object.assign(m,{connectionId:route.profileId,model,effort:route.effort});});
+ }
+ /**
+  * 运行停下后调高上限：执行次数、连线往返次数、成员每步 tokens、运行总 tokens / 步数 / 分钟。
+  * 只追加记录、只能调高，写入运行事件；之后执行按调高后的值。连线上限调高后补走那条被拦下的连线。
+  */
+ async raiseLimits(projectId:string,runId:string,raises:{kind:LimitKind;target?:string;value:number}[]){
+  if(!raises.length)throw Error(tr('没有要调整的上限'));
+  await this.runUpdate(projectId,runId,run=>{
+   if(!['paused','failed','uncertain'].includes(run.status))throw Error(tr('只能在运行停下后调整上限'));
+   for(const raise of raises){
+    const from=currentLimit(run,raise.kind,raise.target);
+    if(!Number.isInteger(raise.value)||raise.value<=from||raise.value>LIMIT_CAPS[raise.kind])throw Error(tr('上限只能调高，且不能超过允许的最大值'));
+    (run.limitRaises??=[]).push({kind:raise.kind,...(raise.target!==undefined?{target:raise.target}:{}),value:raise.value,at:Date.now()});
+    run.events.push({id:uid(),at:Date.now(),kind:'limit_raise',text:tr('本次运行的上限已调高：{what} {from} → {to}',{what:limitLabel(run,raise.kind,raise.target),from:String(from),to:String(raise.value)}),...(raise.kind==='visits'?{nodeId:raise.target}:{}),...(raise.kind==='traversals'?{edgeId:raise.target}:{})});
+    const edge=raise.kind==='traversals'?run.version.graph.edges.find(e=>e.id===raise.target):undefined;
+    if(edge&&!run.queue.includes(edge.to)&&(run.traversals[edge.id]??0)<raise.value)this.traverse(run,edge);
+   }
+  });
  }
  async answerQuestion(projectId:string,runId:string,questionId:string,answers:UserQuestionAnswers,draft=false){
   const run=this.project(projectId).runs.find(r=>r.id===runId);
@@ -382,9 +425,16 @@ export class TeamRuntime {
   let edges=graph.edges.filter(e=>e.from===n.id);
   if(['condition','review','approval'].includes(n.type)){const matching=edges.filter(e=>e.port===outcome);edges=matching.length?matching:edges.filter(e=>e.port==='default');}
   for(const e of edges){
-   const count=(r.traversals[e.id]??0)+1;
-   if(e.maxTraversals>0&&count>e.maxTraversals){r.status='paused';r.events.push({id:uid(),at:Date.now(),kind:'limit',text:`连线「${e.label}」达到次数上限`,nodeId:n.id});continue;}
-   r.traversals[e.id]=count;const next=graph.nodes.find(x=>x.id===e.to);if(!next)throw Error('后继节点不存在');
+   const count=(r.traversals[e.id]??0)+1,cap=maxTraversalsOf(r,e);
+   if(cap>0&&count>cap){r.status='paused';r.events.push({id:uid(),at:Date.now(),kind:'limit',text:`连线「${e.label}」达到次数上限`,nodeId:n.id,edgeId:e.id});continue;}
+   this.traverse(r,e);
+  }
+ }
+ /** 走过一条连线：计数、记录到达，汇合条件满足就把下一步排进队列。 */
+ private traverse(r:TeamRun,e:import('./collaboration').FlowEdge){
+  const graph=r.version.graph;
+  {
+   r.traversals[e.id]=(r.traversals[e.id]??0)+1;const next=graph.nodes.find(x=>x.id===e.to);if(!next)throw Error('后继节点不存在');
    const arrivals=r.arrivals[next.id]??[];if(!arrivals.includes(e.id))arrivals.push(e.id);r.arrivals[next.id]=arrivals;
    const incoming=graph.edges.filter(x=>x.to===next.id&&!x.loop);
    const ready=next.type!=='join'||next.join==='any'||incoming.every(x=>arrivals.includes(x.id));
@@ -393,10 +443,11 @@ export class TeamRuntime {
  }
  private async executeNode(projectId:string,runId:string,nodeId:string,control:{stop:boolean;handles:Set<AgentHandle>}){
   const r=this.project(projectId).runs.find(x=>x.id===runId)!,node=r.version.graph.nodes.find(n=>n.id===nodeId)!;
-  const visit=(r.visits[nodeId]??0)+1;
-  if(visit>node.maxVisits){await this.pauseWith(projectId,runId,`「${node.title}」达到执行次数上限`);control.stop=true;return;}
-  const attemptId=uid('attempt');
   const prior=[...r.attempts].reverse().find(a=>a.nodeId===nodeId);
+  // 从检查点接着跑（重试、预算续跑）仍是同一次执行，不占“最多执行几次”；返工循环才算新的一次
+  const continuing=continuesVisit(prior),visit=continuing?prior!.visit:(r.visits[nodeId]??0)+1;
+  if(!continuing&&visit>maxVisitsOf(r,node)){await this.pauseWith(projectId,runId,`「${node.title}」达到执行次数上限`);control.stop=true;return;}
+  const attemptId=uid('attempt');
   // Stagnation is a completed review, not an interrupted agent call. A user-approved retry
   // must generate a fresh verdict; carrying its terminal content would concatenate two JSONs.
   // Keep the original checkpoint and usage on the prior attempt for audit.
@@ -482,7 +533,9 @@ export class TeamRuntime {
   */
  private async runMemberWithFailover(projectId:string,runId:string,attemptId:string,node:FlowNode,member:Member,discussion:string,control:{stop:boolean;handles:Set<AgentHandle>}):Promise<string>{
   const tried:RouteRef[]=[];
-  let active=member;
+  // 运行停下后用户换过路由，就从换后的那条开始；成员快照本身不变。
+  const chosen=activeRoute(this.project(projectId).runs.find(x=>x.id===runId)??{},member);
+  let active:Member={...member,connectionId:chosen.profileId,model:chosen.model,effort:chosen.effort};
   for(;;){
    const current:RouteRef={profileId:active.connectionId,model:active.model};
    try{
@@ -490,8 +543,9 @@ export class TeamRuntime {
     await this.logRoute(projectId,runId,attemptId,member.id,current,'done');
     return text;
    }catch(error){
-    await this.logRoute(projectId,runId,attemptId,member.id,current,'failed');
     const info=(error as {info?:ErrorInfo}).info;
+    // 带上归类和原文：停下后要能指出是哪位成员、哪条路由、为什么，才给得出修法。
+    await this.logRoute(projectId,runId,attemptId,member.id,current,'failed',{kind:info?.kind,httpStatus:info?.status,error:String(error instanceof Error?error.message:error).slice(0,500)});
     const settings=this.settings();
     const list=expandFailover(resolveFailover(active.failover,undefined,settings?.failover).config,settings?.routeGroups);
     const isClient=['client:codex','client:claude'].includes(active.connectionId);
@@ -509,10 +563,10 @@ export class TeamRuntime {
    }
   }
  }
- private async logRoute(projectId:string,runId:string,attemptId:string,memberId:string,route:RouteRef,status:'failed'|'done'){
+ private async logRoute(projectId:string,runId:string,attemptId:string,memberId:string,route:RouteRef,status:'failed'|'done',detail:{kind?:string;httpStatus?:number;error?:string}={}){
   await this.runUpdate(projectId,runId,run=>{
    const a=run.attempts.find(x=>x.id===attemptId);if(!a)return;
-   (a.routeLog??=[]).push({memberId,profileId:route.profileId,model:route.model,at:Date.now(),status});
+   (a.routeLog??=[]).push({memberId,profileId:route.profileId,model:route.model,at:Date.now(),status,...Object.fromEntries(Object.entries(detail).filter(([,v])=>v!==undefined))});
   }).catch(()=>{});
  }
  private async runMember(projectId:string,runId:string,attemptId:string,node:FlowNode,member:Member,discussion:string,control:{stop:boolean;handles:Set<AgentHandle>}):Promise<string>{
@@ -522,9 +576,11 @@ export class TeamRuntime {
   const key=profile?await secretGet(profile.id):null;if(!key&&!isClient)throw Error(`成员 ${member.name} 缺少 API Key`);
   const p=this.project(projectId),r=p.runs.find(x=>x.id===runId)!;
   const textMode=node.type==='review'&&node.reviewMode==='text';
-  const enabledTools=textMode?[]:r.fileScope
-   ? teamFileTools(r.fileScope.capability,node.type==='review').filter(name=>member.tools.includes(name))
-   : node.type==='review'?member.tools.filter(name=>['read_file','read_document','list_dir','list_directory','search_files'].includes(name)):member.tools;
+  // 与单一 Agent 同等：成员配置的工具都可用，危险操作按审批模式询问。质检步骤和想法梳理只开放只读工具；
+  // 文件任务里受目录约束的文件工具按读/改/命令级别放行，其余工具照成员配置。主进程执行前按同一份清单再拦一次。
+  const readOnly=new Set<string>(TEAM_READ_ONLY_TOOLS),scoped=new Set<string>(TEAM_SCOPED_FILE_TOOLS);
+  let enabledTools:string[]=textMode?[]:r.intent==='explore'||node.type==='review'?member.tools.filter(name=>readOnly.has(name)):[...member.tools];
+  if(r.fileScope&&!textMode)enabledTools=[...teamFileTools(r.fileScope.capability,node.type==='review').filter(name=>member.tools.includes(name)),...enabledTools.filter(name=>!scoped.has(name))];
   let fileSessionId:string|undefined;
   let roots:string[]=[];
   if((isClient||enabledTools.some(name=>['files','shell','agent'].includes(TOOL_BY_NAME[name]?.group??'')))&&r.projectSettings.roots.length){
@@ -535,6 +591,9 @@ export class TeamRuntime {
   const chosen=member.skills?.length?(await loadSkills()).filter((x:Skill)=>x.enabled&&member.skills!.includes(x.name)):[];
   const inputs=teamInputs(r,node);
   const inputTexts=textMode?await textReviewInputs(r,node):[];
+  // 超过一次能放下的长度就分段读：只给一个读原文的工具，读完才能判通过，不截断
+  const paged=textMode&&textReviewPaged(inputTexts);
+  if(paged)enabledTools=['read_source_text'];
   if(textMode)await this.runUpdate(projectId,runId,run=>{run.attempts.find(a=>a.id===attemptId)!.inputTexts=inputTexts;});
   const latestArtifacts=new Map<string,import('./collaboration').TeamArtifact>();
   for(const artifact of inputs.flatMap(a=>a.artifacts??[])){const previous=latestArtifacts.get(artifact.sessionId);if(artifact.memberId!==member.id&&(!previous||artifact.version>previous.version))latestArtifacts.set(artifact.sessionId,artifact);}
@@ -545,6 +604,10 @@ export class TeamRuntime {
    await this.runUpdate(projectId,runId,(run,p)=>{const i=p.files.findIndex(f=>f.id===session.id);p.files[i]=session;run.attempts.find(a=>a.id===attemptId)!.inputArtifacts=inputArtifacts;});
   }
   const sources=textMode?'':inputs.map(a=>`${a.nodeId} 第${a.visit}次\n${a.output}`).join('\n\n');
+  // 前置记录（上游产出和本轮已有发言）太长就不塞进消息：列出目录，成员按段读原文，不截断
+  const sourceDocs=textMode?[]:[...inputs.map(a=>({id:'text:'+a.id,label:`${a.nodeId} 第${a.visit}次`,text:a.output})),...(discussion.trim()?[{id:'speech:'+attemptId,label:'本轮已有发言',text:discussion}]:[])];
+  const pagedSources=!textMode&&textReviewPaged(sourceDocs);
+  if(pagedSources&&!enabledTools.includes('read_source_text'))enabledTools=[...enabledTools,'read_source_text'];
   const reviewInstructions=textMode?TEXT_REVIEW_INSTRUCTIONS:'仅可读取/检查，不得修改文件或运行命令。以 JSON 返回 {"verdict":"pass 或 fail 或 unverifiable","evidence":["本次成功读取或检查的 callId"],"changes":"检查覆盖与需要修改项","artifactIds":["已接收的全部产物版本 id"]}。编号必须来自真实执行；无法核实用 unverifiable，不能猜测。不得声称执行了没有执行的测试。';
   const memories=teamMemorySystemBlock(selectTeamMemories(r.memorySnapshot,r,{now:r.createdAt}));
   const task=p.tasks.find(t=>t.id===r.taskId);
@@ -564,14 +627,16 @@ export class TeamRuntime {
   const evidenceNote=citable.length
    ? `\n可引用的证据编号（verify_requirements 的 review 类型要用）：${citable.join('、')}。也可以用 text: 加上你已输出答复里的原文片段。`
    : `\nreview 类验收的证据：填你本轮发起那次工具调用的 id，或 text: 加上你已输出答复里的原文片段；空着或写理由都不算证据。`;
-  const prompt=`${r.intent==='explore'?EXPLORE_PROMPT_PREFIX:''}${textMode?TEXT_REVIEW_INSTRUCTIONS+'\n':node.type==='review'?'本步骤只读复核。不要修改文件，不要运行测试；读取产物并给出复核结论。\n':''}任务契约：${JSON.stringify(teamTaskContract(r,node,member.id,inputs,roots))}\n已接收产物版本：${JSON.stringify(inputArtifacts)}\n${textMode?`文本产物快照：${JSON.stringify(inputTexts)}\n`:``}目标：${r.goal}\n验收：${r.acceptance}\n步骤：${node.instructions}\n输出要求：${node.outputRequirement}\n允许工作目录：${roots.join('、')||'无'}${isolationNote}\n声明验收要求（update_requirements）时：sourceId 必须写 ${taskMessageId}，sourceQuote 必须是上面「目标」或「验收」里的原文片段；文件类检查（file_exists / file_contains / json）的 path 必须是绝对路径，以上面的允许工作目录开头。verify_requirements 的 ids 是你自己起的要求 id，不是文件名。${evidenceNote}\n前置记录：\n${sources}\n本轮讨论：\n${discussion}\n补充指令：\n${supplementalInstructions.join('\n')}`;
+  const prompt=`${r.intent==='explore'?EXPLORE_PROMPT_PREFIX:''}${textMode?TEXT_REVIEW_INSTRUCTIONS+'\n'+(paged?TEXT_REVIEW_PAGED_INSTRUCTIONS+'\n':''):node.type==='review'?'本步骤只读复核。不要修改文件，不要运行测试；读取产物并给出复核结论。\n':''}任务契约：${JSON.stringify(teamTaskContract(r,node,member.id,inputs,roots))}\n已接收产物版本：${JSON.stringify(inputArtifacts)}\n${textMode?(paged?`文本产物目录：${JSON.stringify(inputTexts.map(a=>({id:a.id,nodeId:a.nodeId,version:a.version,characters:a.text.length,parts:reviewPartCount(a.text)})))}\n`:`文本产物快照：${JSON.stringify(inputTexts)}\n`):``}目标：${r.goal}\n验收：${r.acceptance}\n步骤：${node.instructions}\n输出要求：${node.outputRequirement}\n允许工作目录：${roots.join('、')||'无'}${isolationNote}\n声明验收要求（update_requirements）时：sourceId 必须写 ${taskMessageId}，sourceQuote 必须是上面「目标」或「验收」里的原文片段；文件类检查（file_exists / file_contains / json）的 path 必须是绝对路径，以上面的允许工作目录开头。verify_requirements 的 ids 是你自己起的要求 id，不是文件名。${evidenceNote}\n${pagedSources?`前置记录目录：${JSON.stringify(sourceDocs.map(d=>({id:d.id,label:d.label,characters:d.text.length,parts:reviewPartCount(d.text)})))}\n${SOURCE_PAGED_INSTRUCTIONS}`:`前置记录：\n${sources}\n本轮讨论：\n${discussion}`}\n补充指令：\n${supplementalInstructions.join('\n')}`;
 
+  let reasoning=resume?.reasoning??'';
+  let outputHistory:OutputSnapshot[]=structuredClone(r.attempts.find(a=>a.id===attemptId)?.memberOutputHistory?.[member.id]??resume?.outputHistory??[]);
   let output=resume?.content??'',state:RunState|undefined=resume,usage=resume?.spentTokens??0,handle:AgentHandle|undefined;
-  const persist=()=>this.runUpdate(projectId,runId,run=>{const a=run.attempts.find(x=>x.id===attemptId)!;a.output=output;a.state=state;if(state)(a.memberStates??={})[member.id]=state;});
+  const persist=()=>this.runUpdate(projectId,runId,run=>{const a=run.attempts.find(x=>x.id===attemptId)!;a.output=output;a.state=state;(a.memberOutputHistory??={})[member.id]=outputHistory;(a.memberReasoning??={})[member.id]=reasoning;if(state)(a.memberStates??={})[member.id]=state;});
   const reservationKey=attemptId+':'+member.id;let remaining=0;
   await this.runUpdate(projectId,runId,run=>{
    const reserved=Object.values(run.reservations).reduce((sum,n)=>sum+n,0);
-   const available=run.version.graph.maxTokens-run.tokens-reserved;
+   const available=runTokensOf(run)-run.tokens-reserved;
    /*
     * 别派一段注定跑不动的预算。
     *
@@ -580,18 +645,18 @@ export class TeamRuntime {
     * 每段比上一段更短，最后一段只前进了一步。所以下限卡在这里，并且把具体数字和
     * 该调哪个设置一起说清楚，而不是让人对着「预算不足」猜。
     */
-   const floor=Math.min(stageFloor(run.version.graph.maxTokens),member.maxTokens);
+   const floor=Math.min(stageFloor(runTokensOf(run)),memberTokensOf(run,member));
    if(available<floor)throw Error(tr(
-    '本次运行还剩 {left} tokens（上限 {cap}，已用 {used}），不足以再开一段（至少要 {min}）。提高这个流程的总用量上限、或项目设置里的每次运行上限，然后新建运行；也可以就此接受已有结果。',
-    {left:String(Math.max(0,available)),cap:String(run.version.graph.maxTokens),used:String(run.tokens),min:String(floor)}));
+    '本次运行还剩 {left} tokens（上限 {cap}，已用 {used}），不足以再开一段（至少要 {min}）。在运行页提高本次运行的用量上限后接着跑，已完成的步骤不会重跑；也可以就此接受已有结果。',
+    {left:String(Math.max(0,available)),cap:String(runTokensOf(run)),used:String(run.tokens),min:String(floor)}));
    const slots=Math.max(1,run.projectSettings.maxConcurrent-Object.keys(run.reservations).length);
-   remaining=stageReservation(run.version.graph.maxTokens,member.maxTokens,available,slots);
+   remaining=stageReservation(runTokensOf(run),memberTokensOf(run,member),available,slots);
    run.reservations[reservationKey]=remaining;
   });
   const routeKeyOf=(profileId:string,model:string,baseUrl:string)=>limitKey(profileId,model,baseUrl);
   const learn=(profileId:string,model:string,baseUrl:string,value:LearnedLimit)=>this.saveSettings?.(prev=>({...prev,
     modelLimits:{...(prev.modelLimits??{}),[routeKeyOf(profileId,model,baseUrl)]:mergeLearnedLimit(prev.modelLimits?.[routeKeyOf(profileId,model,baseUrl)],value)}}));
-  const config:GenerationConfig={...r.config,model:member.model,effortLevel:member.effort as GenerationConfig['effortLevel'],reasoningEffort:member.effort as GenerationConfig['reasoningEffort'],toolsEnabled:enabledTools.length>0,enabledTools,approvalMode:r.fileScope?'ask':r.projectSettings.approvalMode,runtime:{...runtimePolicy(r.config),maxTokens:remaining,maxMinutes:Math.min(member.maxMinutes||30,r.version.graph.maxMinutes)}};
+  const config:GenerationConfig={...r.config,model:member.model,effortLevel:member.effort as GenerationConfig['effortLevel'],reasoningEffort:member.effort as GenerationConfig['reasoningEffort'],toolsEnabled:enabledTools.length>0,enabledTools,approvalMode:r.fileScope?'ask':r.projectSettings.approvalMode,runtime:{...runtimePolicy(r.config),maxTokens:remaining,maxMinutes:Math.min(member.maxMinutes||30,runMinutesOf(r))}};
   if(isClient){
    const timer=setInterval(()=>void this.load(),600);
    try{
@@ -619,13 +684,33 @@ export class TeamRuntime {
    }).catch(reject);};
    const confirm=async(step:ToolStep)=>{
     if(control.stop)return false;
+    // 授权申请由 grantAccess 自己请你确认一次，这里不再重复问
+    if(step.name==='request_access')return true;
     const codeReview=Boolean(step.codeChanges?.some(c=>c.status==='pending'));
     if(!codeReview && config.approvalMode==='all')return true;
     if(!codeReview && config.approvalMode==='auto'&&!['shell','agent'].includes(TOOL_BY_NAME[step.name]?.group??''))return true;
     await this.runUpdate(projectId,runId,run=>{const item={nodeId:attemptId,codeChanges:step.codeChanges,text:`${member.name} 请求 ${step.name}\n${JSON.stringify(step.args,null,2)}`};run.approvalQueue=[...(run.approvalQueue??[]),item];run.pendingApproval=run.approvalQueue[0];});
     return new Promise<boolean>((res)=>{this.approvals.set(runId+':'+attemptId,ok=>{this.approvals.delete(runId+':'+attemptId);void this.runUpdate(projectId,runId,run=>{run.approvalQueue=(run.approvalQueue??[]).filter(x=>x.nodeId!==attemptId);run.pendingApproval=run.approvalQueue[0];run.events.push({id:uid(),at:Date.now(),kind:'permission',text:`${member.name} 的 ${step.name}：${ok?'批准':'拒绝'}`,nodeId:node.id});}).then(()=>res(ok)).catch(()=>res(false));});});
    };
-   handle=runAgent({resume,resolveUncertain:resume?'retry':undefined,requestId:uid('teamrequest'),profile:profile!,apiKey:key!,config,
+   /*
+    * 与单一 Agent 同等的中途申请授权：目录外路径、屏幕控制、管理员命令。每次都要你在运行页批准，
+    * 批准只对本次运行里的这位成员有效，追加进运行记录；主进程执行工具时按同一份记录放行。
+    * 返回给模型的文字是提示词的一部分，不跟界面语言走。
+    */
+   const grantAccess=async(req:AccessRequest):Promise<ToolResult>=>{
+    const scope=req.scope,target=req.target?.trim(),reason=(req.reason??'').trim();
+    if(!['path','admin','screen'].includes(scope))return {ok:false,content:'',error:`不认识的 scope：${String(scope)}。只能是 path、admin、screen 三者之一。`};
+    if(scope==='path'&&(!target||!isAbsolutePath(target)))return {ok:false,content:'',error:'scope="path" 必须同时给 target，填要访问的目录的绝对路径。'};
+    if(reason.length<4)return {ok:false,content:'',error:'必须给出具体理由：你要用这个权限做什么。理由会原样展示给用户看。'};
+    const held=teamGrants(this.project(projectId).runs.find(x=>x.id===runId)??{},member.id);
+    if(scope==='admin'&&held.admin||scope==='screen'&&held.screen||scope==='path'&&held.extraRoots.includes(target!))return {ok:true,content:'本次运行里你已经有这项授权，直接使用即可。',summary:'已有授权'};
+    if(control.stop)return {ok:false,content:'',error:'运行正在停止，没有提交授权申请。'};
+    const label=scope==='path'?tr('访问目录 {path}',{path:target!}):scope==='screen'?tr('屏幕控制'):tr('管理员命令');
+    await this.runUpdate(projectId,runId,run=>{const item={nodeId:attemptId,text:tr('{name} 申请授权：{label}\n理由：{reason}\n批准后只在本次运行里对这位成员有效。',{name:member.name,label,reason})};run.approvalQueue=[...(run.approvalQueue??[]),item];run.pendingApproval=run.approvalQueue[0];});
+    const ok=await new Promise<boolean>(res=>{this.approvals.set(runId+':'+attemptId,ok=>{this.approvals.delete(runId+':'+attemptId);void this.runUpdate(projectId,runId,run=>{run.approvalQueue=(run.approvalQueue??[]).filter(x=>x.nodeId!==attemptId);run.pendingApproval=run.approvalQueue[0];if(ok)(run.accessGrants??=[]).push({memberId:member.id,scope,...(scope==='path'?{target}:{}),reason:reason.slice(0,1000),at:Date.now()});run.events.push({id:uid(),at:Date.now(),kind:'permission',text:tr(ok?'{name} 获准：{label}':'{name} 的授权申请被拒绝：{label}',{name:member.name,label}),nodeId:node.id});}).then(()=>res(ok)).catch(()=>res(false));});});
+    return ok?{ok:true,content:`用户已批准：${label}。本次运行内有效，可以继续。`,summary:'已授权'}:{ok:false,content:'',error:'用户拒绝了这次授权申请。换一种不需要该权限的做法，或在结果里说明缺少这项权限。'};
+   };
+   handle=runAgent({autoProbe:profile!.probeRequests===true,resume,resolveUncertain:resume?'retry':undefined,requestId:uid('teamrequest'),profile:profile!,apiKey:key!,config,
     taskGoal:r.fileScope?(node.type==='review'?'读取产物，检查本次交付。不要修改文件，不要运行测试，不要推送。':[r.goal,r.acceptance,...supplementalInstructions].join('\n')):undefined,
     // 任务消息的 id 必须跨派发稳定，而且要短到模型抄得动。
     //
@@ -635,15 +720,16 @@ export class TeamRuntime {
     // （见过 "project-memory"），照样过不了校验。现在派生成 teamtask-xxxxxxxx。
     history:[{id:taskMessageId,role:'user',content:prompt,createdAt:Date.now()}],
     skills:chosen,
+    sourceTexts:paged?inputTexts:pagedSources?sourceDocs:undefined,
     modelInfo:[...(settings.cachedModels?.[member.connectionId]??[]),...(settings.customModels?.[member.connectionId]??[])].find(m=>m.id===member.model),
     limitOf:()=>this.settings()?.modelLimits?.[routeKeyOf(profile!.id,member.model,profile!.baseUrl)],
     onLearnLimit:value=>learn(profile!.id,member.model,profile!.baseUrl,value),
     limits:{get:(profileId,model,baseUrl)=>this.settings()?.modelLimits?.[routeKeyOf(profileId,model,baseUrl)],learn},
     // 默认零关联：成员想不起来时才显式查，而且只查同一个项目
-    recallTasks:async(query,limit)=>recallFrom(await loadRuns(),await observationSnapshot(),{query,limit,projectId}),toolCtx:()=>({...toolContextOf(settings,projectId),teamExecution:{projectId,runId,attemptId,memberId:member.id,fileSessionId},workspaceRoots:roots,grants:{extraRoots:[],screen:false,admin:false}}),effortMappings:settings.effortMappings,extraSystem:[projectSystemBlock(this.projects().find(x=>x.id===projectId)??null,'',{memory:false}),
+    recallTasks:async(query,limit)=>recallFrom(await loadRuns(),await observationSnapshot(),{query,limit,projectId}),toolCtx:()=>({...toolContextOf(settings,projectId),teamExecution:{projectId,runId,attemptId,memberId:member.id,fileSessionId},workspaceRoots:roots,grants:teamGrants(this.project(projectId).runs.find(x=>x.id===runId)??{},member.id)}),effortMappings:settings.effortMappings,extraSystem:[projectSystemBlock(this.projects().find(x=>x.id===projectId)??null,'',{memory:false}),
     `你是项目成员 ${member.name}。\n${member.instructions}\n${memories}\n${node.type==='review'?reviewInstructions:''}`,
-    skillSystemBlock(chosen)].filter(Boolean).join('\n\n'),timeoutMs:settings.requestTimeoutMs,canRunHostTools:true,autoRetry:settings.autoRetry,confirm,grantAccess:async()=>({ok:false,content:'',error:'协作运行权限固定；请暂停后在项目设置调整并创建新运行。'}),events:{
-    onContentDelta(text){output+=text;},onContentReplace(text){output=text;},onReasoningDelta(){},onSources(){},onRound(){},
+    skillSystemBlock(chosen)].filter(Boolean).join('\n\n'),timeoutMs:settings.requestTimeoutMs,canRunHostTools:true,autoRetry:settings.autoRetry,confirm,grantAccess,events:{
+    onContentDelta(text){output+=text;},onContentReplace(text,thought){outputHistory=preserveOutput(outputHistory,{content:output,reasoning},{content:text,reasoning:thought});output=text;reasoning=thought;},onReasoningDelta(text){reasoning+=text;},onSources(){},onRound(){},
     /*
      * 限流、重试、等待都走这条。原来这里是个空函数，于是运行详情页从头到尾只有一个
      * 「运行中」：模型在等 429 退避、等了几次、下一次什么时候，你一个字都看不到。

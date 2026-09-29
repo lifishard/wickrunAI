@@ -26,3 +26,23 @@ test('交付闸门自己要用的只读工具不被成员白名单拦，其它�
   assert.throws(()=>bare.guard.tool('inspect_deliverable',bare.ctx),/授权范围/);
 });
 
+
+test('grants come only from approvals recorded for this member in this run',()=>{
+ const f=fixture(),extra=path.resolve('outside');
+ f.run.accessGrants=[{memberId:'a',scope:'path',target:extra,reason:'read the shared docs',at:1},{memberId:'a',scope:'admin',reason:'install a tool',at:2},{memberId:'b',scope:'screen',reason:'look at the screen',at:3}];
+ assert.deepEqual(f.guard.tool('read_file',f.ctx).grants,{extraRoots:[extra],screen:false,admin:true});
+});
+
+test('explore runs only reach read-only tools even when the member carries more',()=>{
+ const f=fixture();f.run.intent='explore';f.run.members[0].tools=['read_file','web_search','write_file','run_command'];
+ assert.ok(f.guard.tool('read_file',f.ctx));assert.ok(f.guard.tool('web_search',f.ctx));
+ for(const name of ['write_file','run_command'])assert.throws(()=>f.guard.tool(name,f.ctx),/只允许只读工具/);
+});
+
+test('file tasks keep file tools inside the chosen level and open the member\'s other tools',()=>{
+ const f=fixture();f.run.version.graph.nodes=[{id:'node-a',type:'agent',memberId:'a'}];f.run.fileScope={root:f.root,capability:'read'};
+ f.run.members=[f.run.members[0]];f.run.members[0].tools=['read_file','web_search','chrome_read_page','github_api'];
+ assert.ok(f.guard.tool('read_file',f.ctx));
+ assert.throws(()=>f.guard.tool('write_file',f.ctx),/文件权限|授权范围/);
+ for(const name of ['web_search','chrome_read_page','github_api'])assert.ok(f.guard.tool(name,f.ctx),name);
+});

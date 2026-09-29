@@ -1,5 +1,6 @@
 'use strict';
 const path=require('node:path');
+const {TEAM_SCOPED_FILE_TOOLS}=require('./team-permissions.cjs');
 
 const TEAM_FILE_READ_TOOLS=Object.freeze(['list_dir','read_file','read_document','search_files']);
 const TEAM_FILE_EDIT_TOOLS=Object.freeze([...TEAM_FILE_READ_TOOLS,'write_file','edit_file','write_document']);
@@ -37,7 +38,8 @@ function validateTeamFileSnapshot(scope,intent,graph,members){
  for(const member of members){
   if(typeof member.connectionId!=='string'||member.connectionId.startsWith('client:')||(member.skills?.length||0)||member.failover?.enabled||(member.failover?.routes?.length||0))throw Error('文件任务不能带入技能、本机客户端或接力授权');
   const allowed=new Set(teamFileTools(scope.capability,reviewerIds.has(member.id)));
-  if(!Array.isArray(member.tools)||member.tools.some(tool=>!allowed.has(tool)))throw Error('文件任务成员包含超出所选权限的工具');
+  // 只约束受目录限制的文件工具；联网、浏览器等其他工具照成员配置开放
+  if(!Array.isArray(member.tools)||member.tools.some(tool=>TEAM_SCOPED_FILE_TOOLS.includes(tool)&&!allowed.has(tool)))throw Error('文件任务成员包含超出所选权限的工具');
  }
 }
 

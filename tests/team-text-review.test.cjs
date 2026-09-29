@@ -77,11 +77,28 @@ test('unverifiable may omit quotes but must retain all current artifact ids',asy
   assert.throws(()=>textReview.verifyTextReview(verdict('unverifiable',[],[]),attempt,inputs),/全部产物编号/);
 });
 
-test('missing, empty, oversized, and file-changing inputs are refused without truncation',async()=>{
+test('long text is reviewed in full through paged reads: every part must be read before a pass',async()=>{
+  const source=node('write','agent'),review=node('review','review',{reviewMode:'text',inputRefs:['write']});
+  const body='第一段结论。'+'讨论'.repeat(textReview.TEXT_REVIEW_PART)+'最后的共识：保持原判。';
+  const texts=await textReview.textReviewInputs(pureRun([completed('long','write',1,body)],[source,review]),review);
+  assert.equal(texts[0].text,body,'no truncation');assert.equal(textReview.textReviewPaged(texts),true);
+  const parts=textReview.reviewPartCount(body);assert.ok(parts>=3);
+  const first=textReview.readReviewText(texts,{artifactId:texts[0].id,part:1}),last=textReview.readReviewText(texts,{artifactId:texts[0].id,part:parts});
+  assert.ok(first.ok&&first.content.includes('第一段结论。'));assert.ok(last.content.endsWith('最后的共识：保持原判。'));
+  assert.equal(textReview.readReviewText(texts,{artifactId:texts[0].id,part:parts+1}).ok,false);assert.equal(textReview.readReviewText(texts,{artifactId:'text:other',part:1}).ok,false);
+  const verdict=JSON.stringify({verdict:'pass',artifactIds:[texts[0].id],textEvidence:[{artifactId:texts[0].id,quote:'最后的共识：保持原判。'}],changes:'逐段读完全部原文'});
+  const read=n=>Array.from({length:n},(_,i)=>({id:'s'+i,name:'read_review_text',status:'ok',args:{artifactId:texts[0].id,part:i+1}}));
+  const attempt=steps=>({inputTexts:texts,memberStates:{reviewer:{steps}}});
+  assert.throws(()=>textReview.verifyTextReview(verdict,attempt(read(parts-1)),texts),/还有 1 段未读/);
+  assert.equal(textReview.verifyTextReview(verdict,attempt(read(parts)),texts).verdict,'pass');
+  const fail=JSON.stringify({verdict:'fail',artifactIds:[texts[0].id],textEvidence:[{artifactId:texts[0].id,quote:'第一段结论。讨论讨论'}],changes:'开头结论缺少依据'});
+  assert.equal(textReview.verifyTextReview(fail,attempt(read(1)),texts).verdict,'fail','a found defect does not require reading everything');
+});
+
+test('missing, empty, and file-changing inputs are refused without truncation',async()=>{
   const source=node('write','agent'),review=node('review','review',{reviewMode:'text',inputRefs:['write']});
   await assert.rejects(textReview.textReviewInputs(pureRun([],[source,review]),review),/缺少已完成/);
   await assert.rejects(textReview.textReviewInputs(pureRun([completed('empty','write',1,'   ')],[source,review]),review),/缺少已完成/);
-  await assert.rejects(textReview.textReviewInputs(pureRun([completed('large','write',1,'x'.repeat(textReview.TEXT_REVIEW_LIMIT+1))],[source,review]),review),/超过 20000/);
   const changed=completed('files','write',1,'Text accompanied by a changed file.',{artifacts:[{id:'artifact',files:[{path:'result.txt',beforeHash:null,afterHash:'a'.repeat(64)}]}]});
   await assert.rejects(textReview.textReviewInputs(pureRun([changed],[source,review]),review),/不能替代文件变更检查/);
 });

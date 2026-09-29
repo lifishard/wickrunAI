@@ -1,7 +1,10 @@
 import type { GenerationConfig, RunState, ToolStep } from '../types';
 import { desktop } from './transport';
 import { uid } from './store';
+import { runTokensOf } from './team-limits';
 import type { FailoverConfig } from './failover';
+export interface Member {roleTemplateId?:string}
+export interface TeamProject {office?:import('./office').Office}
 
 export type NodeKind = 'start' | 'agent' | 'discussion' | 'condition' | 'parallel' | 'join' | 'review' | 'approval' | 'handoff' | 'end';
 /** skills：这位成员要带的技能名单。刻意由用户勾选，不按指令自动匹配 —— 自动塞技能等于替用户改了他没写的要求。 */
@@ -25,22 +28,32 @@ export type TeamRunStatus = 'ready'|'running'|'pausing'|'paused'|'waiting_user'|
  * 中途换过人之后，成员记录上只剩最后那条路由。没有这份流水，观测会把整段成绩
  * 记到接手的那条路由头上，失败的那条反而干干净净 —— 记分表从此是错的。
  */
-export interface RouteAttempt { memberId:string; profileId:string; model:string; at:number; status:'failed'|'done' }
+export interface RouteAttempt { memberId:string; profileId:string; model:string; at:number; status:'failed'|'done'; kind?:string; httpStatus?:number; error?:string }
+/**
+ * routeOverrides：运行停下后，用户给成员换的路由。成员快照是审计基线不能改，
+ * 这里只追加；派发时取这位成员的最后一条。previous 记下换之前实际用的路由。
+ */
+export interface RouteOverride { memberId:string; profileId:string; model:string; effort:string; at:number; previous:{profileId:string;model:string} }
+export interface TeamRun { routeOverrides?:RouteOverride[] }
+/** limitRaises：运行停下后你调高的上限。只追加、只能调高；执行时取最后一次的值。 */
+export interface TeamRun { limitRaises?:import('./team-limits').LimitRaise[] }
+/** accessGrants：运行中成员申请、你批准的授权。只追加，只对记录里的成员有效。 */
+export interface TeamRun { accessGrants?:import('./team-permissions').TeamAccessGrant[] }
 export interface TeamArtifact { id:string;sessionId:string;projectId:string;taskId:string;memberId:string;nodeId:string;attemptId:string;version:number;createdAt:number;digest:string;files:{path:string;beforeHash:string|null;afterHash:string|null}[] }
 export interface TeamTextArtifact { id:string;attemptId:string;nodeId:string;version:number;digest:string;text:string }
 export interface FlowNode { reviewMode?:'files'|'text' }
 export interface MemoryEntry { kind?:'fact'|'preference'|'experience';scope?:'project'|'task';keywords?:string[];expiresAt?:number }
-export interface NodeAttempt { inputTexts?:TeamTextArtifact[];textReview?:{verdict:'pass'|'fail'|'unverifiable';artifactIds:string[];textEvidence:{artifactId:string;quote:string}[];changes:string;method:'model'} }
+export interface NodeAttempt { memberOutputHistory?:Record<string,import('./output-history').OutputSnapshot[]>; memberReasoning?:Record<string,string>; inputTexts?:TeamTextArtifact[];textReview?:{verdict:'pass'|'fail'|'unverifiable';artifactIds:string[];textEvidence:{artifactId:string;quote:string}[];changes:string;method:'model'} }
 export interface NodeAttempt { reviewInstructionSnapshot?:string[];reviewStagnation?:{fingerprint:string;repeats:2} }
 export interface NodeAttempt { artifacts?:TeamArtifact[];inputArtifacts?:TeamArtifact[];review?:{verdict:'pass'|'fail'|'unverifiable';evidence:string[];changes:string;method:'model';artifactIds:string[]} }
 export interface NodeAttempt { notice?:string; routeLog?:RouteAttempt[]; memberStates?:Record<string,RunState>; memberOutputs?:Record<string,string>; resolution?:string; id: string; nodeId: string; visit: number; status: 'running'|'completed'|'failed'|'uncertain'|'waiting_user'; startedAt: number; endedAt?: number; output: string; steps: ToolStep[]; state?: RunState; error?: string; outcome?: string }
-export interface RunEvent { approved?:boolean; id: string; at: number; kind: string; text: string; nodeId?: string }
+export interface RunEvent { approved?:boolean; id: string; at: number; kind: string; text: string; nodeId?: string; edgeId?: string }
 export interface TeamRun { approvalQueue?:{nodeId:string;text:string;codeChanges?:import('../types').CodeChange[]}[]; projectSettings:TeamProject["settings"]; memorySnapshot:MemoryEntry[]; reservations:Record<string,number>; id: string; taskId: string; workflowId: string; version: FlowVersion; members: Member[]; config: GenerationConfig; status: TeamRunStatus; goal: string; acceptance: string; queue: string[]; arrivals: Record<string,string[]>; visits: Record<string,number>; traversals: Record<string,number>; attempts: NodeAttempt[]; events: RunEvent[]; tokens: number; createdAt: number; updatedAt: number; owner?: string; pendingApproval?: { nodeId:string; text:string; codeChanges?:import('../types').CodeChange[] }; scheduleKey?: string; memoryIds: string[] }
 export interface MemoryEntry { id: string; title: string; text: string; applicability: string; evidence: string; status: 'candidate'|'validated'|'adopted'|'invalid'; revision: number; history: {at:number;text:string;status:string}[]; sourceRunId?: string }
 export interface TeamSchedule { id:string; name:string; workflowId:string; versionId:string; goal:string; acceptance:string; timezone:string; hour:number; minute:number; catchUp:boolean; overlap:'skip'|'queue'; enabled:boolean; nextAt:number; triggers:{key:string;at:number;runId?:string;reason?:string}[] }
 export interface FileChange { path:string; beforeHash:string|null; afterHash:string|null; status:string }
 export interface FileSession { recoveryRequired?:boolean; recoveryReason?:string; id:string; taskId:string; memberId:string; root:string; isolatedRoot:string; status:'isolated'|'pending'|'conflict'|'merged'; files:FileChange[]; createdAt:number }
-export interface TeamProject { drafts?:{member?:Member;task?:TeamTask;memory?:MemoryEntry;schedule?:TeamSchedule;message?:string;plan?:import('./team-discovery-plan').DiscoveryPlanDraft}; quickPresets?:import('./team-quick-start').QuickTeamPreset[]; id:string; members:Member[]; workflows:Workflow[]; tasks:TeamTask[]; runs:TeamRun[]; memories:MemoryEntry[]; schedules:TeamSchedule[]; files:FileSession[]; preferences:{mode:'single'|'team';page:string;workflowId?:string;taskId?:string;runId?:string;draft:string}; settings:{roots:string[];allowedConnections:string[];maxConcurrent:number;maxTokens:number;maxMinutes:number;approvalMode:'ask'|'auto'|'all'} }
+export interface TeamProject { drafts?:{member?:Member;task?:TeamTask;memory?:MemoryEntry;schedule?:TeamSchedule;message?:string;plan?:import('./team-discovery-plan').DiscoveryPlanDraft}; quickPresets?:import('./team-quick-start').QuickTeamPreset[]; id:string; members:Member[]; workflows:Workflow[]; tasks:TeamTask[]; runs:TeamRun[]; memories:MemoryEntry[]; schedules:TeamSchedule[]; files:FileSession[]; preferences:{mode:'single'|'team';page:string;meetingId?:string;workflowId?:string;taskId?:string;runId?:string;draft:string}; settings:{roots:string[];allowedConnections:string[];maxConcurrent:number;maxTokens:number;maxMinutes:number;approvalMode:'ask'|'auto'|'all'} }
 export interface CollaborationData { schemaVersion:1; revision:number; updatedAt:number; projects:Record<string,TeamProject> }
 export function emptyTeamProject(id:string):TeamProject { return {id,members:[],workflows:[],tasks:[],runs:[],memories:[],schedules:[],files:[],preferences:{mode:'single',page:'overview',draft:''},settings:{roots:[],allowedConnections:[],maxConcurrent:1,maxTokens:100000,maxMinutes:60,approvalMode:'ask'}}; }
 export function newNode(type:NodeKind,x=100,y=100):FlowNode { return {id:uid('node'),type,title:nodeLabels[type],x,y,instructions:'',inputRefs:[],outputRequirement:'',maxVisits:3,
@@ -220,7 +233,7 @@ export function runOverview(run:TeamRun):RunOverview{
   ??nodes.find(n=>n.id===run.queue[0]);
  const named=(ids:(string|undefined)[])=>ids.filter(Boolean).map(id=>run.members.find(m=>m.id===id)?.name).filter(Boolean).join('、');
  const memberName=node?named(node.type==='discussion'?(node.participants??[]):[node.memberId])||'—':'—';
- const cap=run.version.graph.maxTokens||0;
+ const cap=runTokensOf(run)||0;
  const base={nodeTitle:node?.title??'—',memberName,tokens:run.tokens,cap,ratio:cap?Math.min(1,run.tokens/cap):0};
  // 结束节点的待批不是工具调用，是交付验收。都写成「等你确认工具调用」会把人引到错的地方去看。
  if(run.pendingApproval)return {...base,waitingKind:pendingNode?.type==='end'?'accept':'approval',

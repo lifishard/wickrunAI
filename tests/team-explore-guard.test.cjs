@@ -90,7 +90,8 @@ test('runtime freezes explore intent and prefixes every model prompt with the no
 
   assert.equal(f.calls.length, 1);
   assert.match(f.calls[0].history[0].content, /^本次运行只梳理可选方向/);
-  assert.match(f.calls[0].history[0].content, /不得调用工具、修改文件、运行命令/);
+  assert.match(f.calls[0].history[0].content, /只读工具/);
+  assert.match(f.calls[0].history[0].content, /不得修改文件、运行命令/);
   assert.equal(f.calls[0].config.toolsEnabled, false);
 });
 test('continuing an exploration closes its acceptance gate and frees the single project slot',async(t)=>{
@@ -110,9 +111,17 @@ test('continuing an exploration closes its acceptance gate and frees the single 
  assert.equal(f.runtime.project('p').runs.find(r=>r.id===first).events.length,before);
 });
 
-test('runtime rejects explore members with tools, skills, or native clients before a run is created', async (t) => {
+test('explore members may carry tools, but only read-only ones reach the model', async (t) => {
+  const f = runtimeFixture(t, async (args) => { args.events.onContentDelta('proposal'); args.events.onDone(); });
+  const { flow } = await installRuntimeProject(f, 'explore', (project) => { project.members[0].tools.push('write_file', 'web_search', 'run_command', 'fetch_url'); });
+  const runId = await f.runtime.createRun('p', 'task', flow.id, 'v1', f.config);
+  await f.runtime.start('p', runId);
+  assert.deepEqual(f.calls[0].config.enabledTools, ['web_search', 'fetch_url']);
+  assert.equal(f.calls[0].config.toolsEnabled, true);
+});
+
+test('runtime rejects explore members with skills or native clients before a run is created', async (t) => {
   for (const [label, alter] of [
-    ['tools', (project) => project.members[0].tools.push('write_file')],
     ['skills', (project) => project.members[0].skills.push('filesystem-skill')],
     ['native client', (project) => { project.members[0].connectionId = 'client:codex'; }],
   ]) {
@@ -165,7 +174,6 @@ test('durable store requires intent provenance and independently rejects expande
     assert.throws(fixture.write, /项目授权/);
   });
   for (const [label, mutate] of [
-    ['tools', (project) => project.members[0].tools.push('write_file')],
     ['skills', (project) => { project.members[0].skills = ['filesystem-skill']; }],
     ['native client', (project) => {
       project.members[0].connectionId = 'client:codex';

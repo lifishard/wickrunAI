@@ -86,7 +86,7 @@ export function recoverConversations(original: Conversation[], saved: RunRecord[
     const message: ChatMessage = {
       ...existing, id: r.answerId, role: 'assistant', createdAt: existing?.createdAt ?? r.question.createdAt,
       model: r.config.model, pending: false, content: state.content ?? existing?.content ?? '',
-      reasoning: state.reasoning ?? existing?.reasoning, steps: state.steps ?? existing?.steps,
+      reasoning: state.reasoning ?? existing?.reasoning, outputHistory:state.outputHistory??existing?.outputHistory, previousReplies:state.previousReplies??existing?.previousReplies, steps: state.steps ?? existing?.steps,
       sources: state.sources, usage: state.usage, runState: completed ? undefined : recovered,
       milestones: state.milestones, contextSnapshot: state.contextSnapshot, delivery: state.delivery ?? deliveryReport(state), taskId:r.id, supplementalInputs:state.supplementalInputs, handoff:state.handoff,
       userQuestionHistory: state.userQuestionHistory,harness:state.harness,subagents:state.subagents,

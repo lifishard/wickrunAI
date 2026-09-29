@@ -8,7 +8,7 @@
 
 Open or closed, paid or free. Bring your own keys; they never leave your machine.
 
-[![Version](https://img.shields.io/badge/version-2.20.14-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
+[![Version](https://img.shields.io/badge/version-2.20.21-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-lightgrey)](#install)
 [![CI](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml/badge.svg)](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml)
@@ -270,3 +270,7 @@ Claude 专属任务指令一键复制、真实文件回传、支持的平台默�
 
 
 Large artifact return: up to 100 MB/file, 50 files and 500 MB/task, with resumable 512 KB chunks and SHA-256 verification. See [2.20.9 release notes](docs/releases/v2.20.9.md).
+
+## Meeting rooms
+
+The team workspace now includes human-chaired meetings: shared material, referenced replies, constructive disagreement, explicit questions to the user, and confirmed minutes. Meetings never replace independent quality review. Native ChatGPT participation requires separate MCP connection setup and account/client validation; ordinary chats are not automatically awakened. See [meeting room setup and limits](docs/MEETING_ROOM.md).

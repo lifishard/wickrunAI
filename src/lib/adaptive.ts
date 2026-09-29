@@ -1,6 +1,8 @@
 import type { ContextSnapshot, GenerationConfig, KeyProfile, ModelInfo, RouteOverrides } from '../types';
-import { estimateRequestTokens, type LearnedLimit } from './limits';
+import { estimateRequestTokens, pacingFloor, parseRateLimits, type LearnedLimit } from './limits';
+import { paceOf } from './pacer';
 import { runtimePolicy } from './task-context';
+import { compatibilityRoute } from './compatibility-cache';
 
 export const RUNTIME_VERSION = 'handoff-1';
 export const CONTEXT_ADVISORY_RATIO = 0.9;
@@ -37,6 +39,16 @@ export function routeKey(profile: KeyProfile, model: string): string {
 export function quotaKey(profile: KeyProfile): string {
   return profile.quotaGroup?.trim() ? `pool:${profile.quotaGroup.trim()}` : `${profile.id}::${profile.baseUrl.trim().replace(/\/+$/, '')}`;
 }
+/** Pacing inputs for one request; every request on a credential shares this ledger. */
+export function paceFields(profile: KeyProfile, cap: ReturnType<typeof capabilities>, learned: LearnedLimit | undefined, input: number, output: number) {
+  return { paceKey: quotaKey(profile), paceTokens: input+output, paceTpm: cap.tpm,
+    paceInput: input, paceOutput: output, paceItpm: cap.itpm, paceOtpm: cap.otpm, cachedInputCounts: cap.cachedInputCounts,
+    paceMinMs: Math.max(cap.rpm ? Math.ceil(60000/cap.rpm) : 0, pacingFloor(learned ? { ...learned, tpm: undefined } : undefined, 0)) };
+}
+/** What a rate-limit reply teaches about this route. */
+export function rateLimitLearning(profile: KeyProfile, message: string): LearnedLimit {
+  return { ...parseRateLimits(message), minIntervalMs: paceOf(quotaKey(profile)).intervalMs, at: Date.now(), from: message.slice(0,300) };
+}
 export function positive(value: unknown): number | undefined {
   const n = Number(value); return Number.isSafeInteger(n) && n > 0 ? n : undefined;
 }
@@ -45,7 +57,7 @@ const min = (...values: unknown[]) => {
   return valid.length ? Math.min(...valid) : undefined;
 };
 export function capabilities(profile: KeyProfile, cfg: GenerationConfig, learned?: LearnedLimit, metadata?: ModelInfo) {
-  const override: RouteOverrides = profile.routeProfiles?.[routeKey(profile, cfg.model)] ?? {};
+  const override: RouteOverrides = compatibilityRoute(profile, cfg.model);
   // Error/header observations expire; explicit settings and model metadata do not silently disappear.
   const fresh = (key: 'maxContext' | 'maxOutput' | 'rpm' | 'tpm' | 'itpm' | 'otpm') => learned && Date.now()-(learned.observedAt?.[key] ?? learned.at) < 7*86400000 ? learned[key] : undefined;
   const window = min(override.contextWindow, metadata?.contextWindow, fresh('maxContext'));
@@ -75,6 +87,12 @@ export function prepareBody(body: Record<string, unknown>, cfg: GenerationConfig
         else { out.enable_thinking = true; out.thinking_budget = budget; }
       }
     }
+  }
+  if(cfg.thinkingStyle==='auto'&&(!cap.effortStyle||cap.effortStyle==='mapping')&&cap.compatibility?.status==='ready'){
+    delete out.reasoning_effort;delete out.thinking;delete out.thinking_budget;delete out.enable_thinking;delete out.reasoning;
+    const report=cap.compatibility,fields=report.requests[cfg.effortLevel];
+    if(!fields&&report.mode==='levels')throw Error(`当前路由未验证 ${cfg.effortLevel}，请在思考选择器选择可用档位，或重新检测`);
+    Object.assign(out,fields??{});
   }
   for (const field of ['max_tokens','max_completion_tokens']) if (out[field] !== undefined && !positive(out[field])) throw new Error(`${field} 必须是正整数`);
   const explicit = min(out.max_tokens, out.max_completion_tokens);

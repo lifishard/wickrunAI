@@ -1,0 +1,100 @@
+# Office and Butler design verification
+
+Recorded 2026-09-28. This documentation handoff covers ordinary extensions of the existing collaboration workspace. For the original Office and Butler pass below, the fresh reviewer disposition was **ship**: all five required screenshots were valid, the inherited world was maintained and no material fixes were requested. The later 2.20.13 library review and its narrower disposition are recorded separately at the end.
+
+## Ground truth and scope
+
+The source check covered `AgentOffice.tsx`, `AgentOffice.css`, `OfficePlanner.tsx`, `ButlerPreferences.tsx`, `TeamWorkspace.tsx`, `TeamWorkspace.css`, the base tokens in `src/styles.css`, `PRODUCT.md`, and the surface brief. Product code, shared tokens and incumbent design files were preserved. No new root DESIGN.md or design sidecar was introduced.
+
+The shipped surface inherits the neutral backgrounds, blue accent, text colors, borders, body typography and existing button controls. Departments use bordered elevated surfaces with sunken member tiles; hierarchy is expressed through nesting. The office uses a role shelf and department area, stacking at the existing 760 px narrow-window breakpoint. Explicit Add controls and member destination selectors accompany dragging. Focus uses the inherited accent; drop highlighting is local and the department transition is disabled for reduced motion.
+
+The source type hierarchy remains compact: the collaboration body is 14 px and workspace headings are 26 px. The office heading declares 22 px (20 px on narrow windows), while the shared content h2 rule declares 18 px; this pass records the source declarations without asserting a computed cascade result. Role and member names use 13 px; supporting labels use 11–12 px. These observations document this extension and do not create a new global type scale.
+
+## Accepted first-viewport adaptation
+
+The original brief placed an expanded planning area above the office. The build presents planning as its own Butler navigation destination, with the conversation visible there, and retains a collapsed entry above the Office. Both render `OfficePlanner`. This preserves conversation-first access while the Office foregrounds organization. The fresh reviewer accepted this adaptation; it is now recorded in the surface brief rather than promoted into a system-wide layout rule.
+
+## Visual evidence
+
+| Evidence | Recorded result |
+| --- | --- |
+| [Desktop office](../.impeccable/review/desktop.png) | Populated office, role shelf, independent member tiles and nested departments; planning entry collapsed. |
+| [Narrow office](../.impeccable/review/mobile.png) | Stacked organization layout, two-column role shelf and reachable explicit Add controls. |
+| [Desktop Butler](../.impeccable/review/butler-desktop.png) | Conversation, reviewed learning suggestion and proposal remain in the inherited collaboration shell. |
+| [Narrow Butler](../.impeccable/review/butler-mobile.png) | Conversation and proposal wrap within the narrow layout; composer remains present. |
+| [Butler rules](../.impeccable/review/butler-rules.png) | Expanded global/project instructions, learning preference and skill/source disclosures. |
+| [Detection output](../.impeccable/review/detect.json) | Empty findings array (`[]`); corroborates the review but is not a substitute for visual or interaction checks. |
+
+## Runtime evidence and limits
+
+The runtime report at `../../meeting-room-qa/office-result.json` records `passed: true`, six requests, four departments, six members, zero runs started and an empty errors array. Its model-format result is “thinking toggle validated; effort rejected.” The persistence report at `../../meeting-room-qa/office-persistence-result.json` records `passed: true` and zero runs started for the same saved test profile. These reports support the tested organization/planning and persistence path without claiming that adopting or organizing a team executes work.
+
+The runtime evidence uses a mock provider. It validates the exercised application/protocol behavior and does not measure real model reasoning quality, production endpoint compatibility, or the quality of real plans. Screenshot evidence covers the captured light-theme desktop/narrow states; it does not independently prove every interaction, every viewport, dark-theme rendering, or all items in the surface brief's FINISH list. This documentation pass did not rerun application tests or the build.
+
+No new visual defect was reported by the fresh reviewer. The incumbent system-font stack and pre-existing workspace eyebrow styling were observed and left unchanged; neither was promoted into a new design rule. There was no approved visual-system change to document or repair.
+
+## Library and role delegation extension, 2.20.13
+
+This pass adds the full bundled directory of 279 roles across 18 categories, role search and batch import, previewed source changes, built-in department compositions, cross-project personal department reuse and multiple chat roles. `PRODUCT.md` and the last section of the surface brief remain authoritative. The documenter checked `AgentRolePicker.tsx`, `AgentOffice.css`, the base palette and typography declarations in `src/styles.css`, the library runtime report and its test procedure. This is an ordinary extension of the existing office shelf and department floor, with no approved change to the global visual system.
+
+The extension reuses neutral surfaces, the inherited blue accent, existing button and field controls, character tiles and compact body typography. Search, category and batch actions precede bounded lists. Department entries disclose membership before assembly. Narrow office windows retain the existing stacked layout. These are local composition observations, not new palette, type or spacing tokens.
+
+### Review finding and resolution
+
+The initial fresh reviewer disposition was **fix** for one scored finding: the chat role menu's controls and enabled-worker text hid selectable role rows below its first viewport. The implementation shortened the instruction, paired search and category controls, collapsed the enabled roster into an expandable summary, limited role summaries to two lines and positioned the popup within the viewport. The same reviewer then marked the listed finding **Resolved**, found no visible regressions from that fix and returned **ship at the scored-fix scope**. This result does not constitute a blanket whole-surface approval or a claim that every workflow was visually reviewed.
+
+Post-fix geometry checks reported a complete selectable role row and its checkbox visible without scrolling at the tested desktop and narrow sizes, including eight enabled workers. The recorded states use a 1280 × 920 desktop viewport and a 720 × 960 narrow viewport. The popup behavior and compact control arrangement remain local to this picker; they do not establish a global menu system.
+
+### Captures and reports
+
+| Evidence | Scope |
+| --- | --- |
+| [Role library, desktop](../.impeccable/review/library/library-roles-desktop.png) | Category-filtered role shelf and populated department area. |
+| [Role library, narrow](../.impeccable/review/library/library-roles-narrow.png) | Stacked office with an imported role found by search. |
+| [Department library, desktop](../.impeccable/review/library/library-departments-desktop.png) | Built-in composition details and assembled office. |
+| [Department library, narrow](../.impeccable/review/library/library-departments-narrow.png) | Department library and office in the narrow layout. |
+| [Chat role menu, desktop](../.impeccable/review/library/library-chat-roles-desktop.png) | Search and selectable role row with two enabled workers. |
+| [Eight-worker chat menu, desktop](../.impeccable/review/library/library-chat-eight-desktop.png) | Collapsed enabled roster and a complete selectable role row after the fix. |
+| [Eight-worker chat menu, narrow](../.impeccable/review/library/library-chat-eight-narrow.png) | The same eight-worker condition with the menu inside the narrow viewport. |
+| [Library runtime report](../.impeccable/review/library/library-result.json) | `passed: true`; 279 built-in roles, two imported custom roles, one personal department, two reused members, five assembled departments, two selected workers, zero runs started and no errors. |
+| [Library detection output](../.impeccable/review/library/detect.json) | One recorded run returned `[]`; this is supporting evidence, not exhaustive visual or interaction approval. |
+
+The runtime procedure exercises batch placement, two Markdown imports, source-update preview and selective adoption, personal department reuse in another project, built-in department assembly and two-role chat configuration. It checks distinct member identities, disabled/unconfigured reused members, retained role instructions in worker configuration and no organization runs started. The two selected workers in the JSON report describe that runtime scenario; the separate eight-worker captures and geometry checks cover the denser picker state.
+
+### Evidence limits
+
+Source-update checks used mocked upstream commit, tree and Markdown responses. They establish behavior for the supplied unchanged/changed fixtures, not availability or correctness of the live upstream service. The isolated model profile and role-configuration checks do not establish real model reasoning quality, production endpoint compatibility or a completed live multi-agent conversation. In particular, `runsStarted: 0` supports organization without execution; it is not evidence that worker execution succeeded. Actual worker prompt propagation remains a separate runtime verification concern from this visual handoff.
+
+The screenshots cover the recorded light-theme desktop and narrow states. They do not independently prove every import failure, source conflict, viewport, dark theme or all items in the surface brief's FINISH list. This documentation pass did not rerun the build, detection or application tests. No source, shared tokens, root DESIGN.md or design sidecar was changed by this pass. The inherited system-font stack and pre-existing eyebrow styling were left unchanged and were not canonized as new rules; no broader redesign was authorized.
+# 2.20.14 locale and inspector verification
+
+- Production build and 1017 regression tests passed. Added behavioral coverage for all 279 role names, bilingual search, prompt/custom-name preservation, translated UI keys and category coverage.
+- Isolated Electron profile, no live user data or model requests. Tested English, Simplified Chinese and Traditional Chinese. English office, department library, assistant, chat role picker and empty code-review panel contain no untranslated Chinese UI text.
+- Captured widths 1440, 1000 and 720. Inspector stays right of the library, aligned at its top, with its bottom inside the viewport and no document horizontal overflow. Hide/reopen preserves selection and keyboard focus. Populated-office checks verify that the department is unobscured and accessible with details open and closed.
+- First inspection found bottom clipping; populated confirmation also exposed sticky overlap with the department floor. The final implementation bounds height and removes sticky behavior while details are open. Narrow capture waits for the existing sidebar animation to finish.
+- Source descriptions and original prompts remain in their source language. User-written records and configured member names remain unchanged. The UI language tests do not assert model output language or translation of third-party prompt bodies.
+- The mechanical detector returned no findings. Evidence is under `.impeccable/review/locale/`.
+
+## 2.20.15 assistant discussion and recovery verification
+
+- Production build, static checks and all 1026 regression tests passed.
+
+- Isolated Electron profile verified local recovery of a previously rejected same-template reviewer proposal, editing and saving two model assignments, adopting a two-round discussion workflow, an independent reviewer, original material transfer, opening the prepared task and persistence after reload. No production user data was modified and no live model requests were made.
+- Desktop and 720px captures preserve the incumbent assistant surface. The narrow capture waits for the sidebar animation to finish. Proposal models remain available before adoption. The workflow preview shows the generated pipeline. Captures and the runtime result are in `.impeccable/review/discussion/`.
+- Runtime tests execute the compiled workflow with controlled model responses, checking per-role model routing, prior-speaker and prior-round visibility, full discussion text available for review, the question-tool scope, and final user acceptance. Unverified review results remain unverified.
+- Read-only review identified cancellation intent persistence and targeting older failed replies. Both were corrected and covered by regression checks. Repairing an older proposal retains its original material boundary rather than later unrelated requests.
+- A single mechanical detector scan of the changed UI returned no findings. This is not evidence of real model reasoning quality, external client participation, supplier compatibility, all themes or all window sizes.
+
+## 2.20.16 unified workspace assistant verification
+
+- Production build, static checks and all 1031 regression tests passed. Configuration tests cover all ten node kinds, dependency cycles, invalid models/tools/skills/roots, independent reviewer identity, stale configuration and immutable historical runs. Operation tests exercise actual service boundaries and reject foreign project targets.
+- Isolated Electron with a controlled model service verified automatic repair of advice-only output, adopting the entire arrangement, opening the real preflight without launching a run, creating a native meeting and preparing automatic turns, then reloading persisted results. No live user profile was changed. No external client was joined; the meeting test validates scheduling state, not a completed live conversation.
+- Desktop 1440px and narrow 720px screenshots, preflight and operation receipts are under `.impeccable/review/workspace/`. One inspection/fix/confirmation cycle collapsed long flow details and added human-readable action targets and round counts. The existing spacing, typography, color and sidebar remain inherited.
+- One detector scan returned no findings. The screenshots and tests establish the captured light-theme paths, not every theme/window or real model reasoning quality.
+
+## 2.20.17 role panel verification
+
+- Production build, static checks and regression tests cover mutable drafts, safe replacement references, discussion minimum size, current-state follow-up versions, preserved task/run history, department unassignment and reasoning option modes.
+- Isolated Electron interaction checks cover rename/duties edits, adding a custom role, actual model/effort configuration, discussion assignment, removal with an explicit replacement, persisted reload, adoption and follow-up adoption without running work or repeating meetings. Provider and compatibility responses are controlled fixtures.
+- Desktop 1440px and narrow 720px captures preserve a left roster/right editor. Original prose and workflow details are collapsed. Stable select labels corrected an accessibility issue found during interaction testing. The final confirmation includes tools/skills disclosure. Captures and runtime evidence live under `.impeccable/review/roster/`.
+- Existing typography, colors and navigation remain unchanged. A single mechanical detector scan supplements the visual check; neither it nor the screenshots establish all themes, sizes or real-model plan quality.

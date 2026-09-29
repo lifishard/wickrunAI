@@ -2,6 +2,7 @@ import React from 'react';
 import { useT } from '../lib/i18n';
 import type { SubagentJob } from '../lib/subagents';
 import './SubagentProgress.css';
+import Markdown from './Markdown';
 
 const STATUS_LABEL: Record<SubagentJob['status'], string> = {
   queued: '等待开始',
@@ -36,10 +37,11 @@ export default function SubagentProgress({ jobs }: { jobs: SubagentJob[] }) {
           <article key={job.id}>
             <header>
               <span className={`subagent-status ${job.status}`}><span aria-hidden="true" />{t(STATUS_LABEL[job.status])}</span>
-              <strong title={job.model}>{job.model}</strong>
+              <strong title={job.model}>{job.role?.name??job.model}</strong>
               <span>{t('{n} 步', { n: job.steps })}</span>
             </header>
             <p>{t(summaryOf(job))}</p>
+            <details><summary>{t('查看子任务与完整结果')}</summary><p>{job.task}</p><small>{job.model}</small><Markdown text={job.content||job.error||t('尚未返回结果')}/></details>
           </article>
         ))}
       </div>

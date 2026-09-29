@@ -17,9 +17,9 @@ function fixture(options={}){
   const state={spentTokens:options.spentTokens||0,usage:{},requestStats:[],subagents:structuredClone(options.jobs||[])};
   const config={model:'parent',toolsEnabled:true,enabledTools:['read_file','write_file','spawn_subagent','wait_subagents'],maxToolRounds:30,
     params:{max_tokens:{enabled:true,value:4096},max_completion_tokens:{enabled:false,value:4096}},runtime:{maxTokens:options.maxTokens||0},
-    subagents:{enabled:true,workers:structuredClone(workers),maxCalls:options.maxCalls||4,allowEdits:options.allowEdits||false},
+    subagents:{enabled:true,workers:structuredClone(workers).map(w=>options.assignedRole?{...w,role:options.assignedRole}:w),maxCalls:options.maxCalls||4,allowEdits:options.allowEdits||false},
     customBody:'parent-private-body',systemPrompt:'parent-private-system',historyLimit:99,client:{kind:'codex'}};
-  const args={requestId:'parent-run',config,profile:{id:'parent-profile'},apiKey:'parent-secret',history:[],
+  const args={requestId:'parent-run',config,roleCatalog:options.roleCatalog,profile:{id:'parent-profile'},apiKey:'parent-secret',history:[],
     resolveWorker:options.resolveWorker|| (async id=>({profile:{id},apiKey:'child-secret',models:[{id:workers.find(w=>w.profileId===id)?.model}]})),
     events:{onUsage(){usageEvents++;}},toolCtx:()=>({}),effortMappings:[],extraSystem:'parent-extra',timeoutMs:1000,canRunHostTools:true,autoRetry:0,limits:options.limits};
   const run=childArgs=>{
@@ -38,6 +38,10 @@ async function spawn(f,key,task=key,worker_id='sol'){
   const result=await f.runtime.tool('spawn_subagent',{worker_id,request_key:key,task});await turn();return result;
 }
 function childState(tokens=123){return {status:'completed',spentTokens:tokens,usage:{prompt_tokens:80,completion_tokens:20,total_tokens:100},requestStats:[{route:'child',purpose:'agent',estimatedInput:80,reservedOutput:20,at:1,outcome:'accepted'}],steps:[],working:[],content:'child evidence'};}
+
+test('an explicitly selected office member retains its independent prompt even outside the template catalog',async()=>{const f=fixture({assignedRole:{id:'member-local',name:'My editor',instructions:'Independent project-specific role'}});const list=JSON.parse((await f.runtime.tool('list_subagents',{})).content);assert.equal(list.workers[0].role.id,'member-local');const result=await f.runtime.tool('spawn_subagent',{worker_id:'sol',role_id:'member-local',request_key:'office-member',task:'Review one document'});await turn();assert.equal(result.ok,true);assert.match(f.launches[0].args.extraSystem,/Independent project-specific role/);f.runtime.stop();});
+
+test('named roles execute as independent worker prompts and retry keys cannot silently change roles',async()=>{const roles=[{id:'writer',name:'Writer',division:'Content',summary:'Write drafts',strengths:[],instructions:'Write a sourced draft',color:'#123456'},{id:'reviewer',name:'Reviewer',division:'QA',summary:'Review evidence',strengths:[],instructions:'Check independent evidence',color:'#123456'}];const f=fixture({roleCatalog:roles});const found=await f.runtime.tool('list_subagents',{query:'REVIEW'});assert.equal(JSON.parse(found.content).roles[0].id,'reviewer');const input={worker_id:'sol',request_key:'role-task',task:'Bounded assignment',role_id:'writer'};assert.equal((await f.runtime.tool('spawn_subagent',input)).ok,true);await turn();assert.match(f.launches[0].args.extraSystem,/Write a sourced draft/);assert.equal(f.launches[0].args.roleCatalog,undefined);assert.equal(f.state.subagents[0].role.id,'writer');assert.equal((await f.runtime.tool('spawn_subagent',input)).ok,true);assert.equal(f.launches.length,1);assert.equal((await f.runtime.tool('spawn_subagent',{...input,role_id:'reviewer'})).ok,false);assert.equal((await f.runtime.tool('spawn_subagent',{...input,request_key:'missing',role_id:'invented'})).ok,false);f.runtime.stop();});
 
 test('limits live children to two and deduplicates a stable request key',async()=>{
   const f=fixture();
@@ -108,10 +112,10 @@ test('real parent runAgent holds its final delivery until the child run finishes
   const transport={
     chat:async(init,events)=>{
       if(init.requestId.includes('-sub-')){
-        calls.child++;await childGate;reply(events,'子任务已核对，结论与局限如下。');return;
+        calls.child++;assert.match(JSON.stringify(init.body),/Independent role evidence rules/);await childGate;reply(events,'子任务已核对，结论与局限如下。');return;
       }
       calls.parent++;parentBodies.push(init.body);
-      if(calls.parent===1){reply(events,'',[{id:'spawn-1',name:'spawn_subagent',arguments:'{"worker_id":"sol","request_key":"fact-check","task":"请解释这个独立事实并说明局限。"}'}]);return;}
+      if(calls.parent===1){reply(events,'',[{id:'spawn-1',name:'spawn_subagent',arguments:'{"worker_id":"sol","role_id":"evidence","request_key":"fact-check","task":"请解释这个独立事实并说明局限。"}'}]);return;}
       if(calls.parent===2){reply(events,'主任务答案抢先交付。');return;}
       if(calls.parent===3){reply(events,'',[{id:'wait-1',name:'wait_subagents',arguments:'{}'}]);return;}
       reply(events,'已等待子任务结束并复核其结果，现交付最终答案。');
@@ -121,7 +125,7 @@ test('real parent runAgent holds its final delivery until the child run finishes
   let serial=0;const local=loader({[file('src/lib/transport.ts')]:{getTransport:()=>transport},[file('src/lib/store.ts')]:{uid:()=>`s-${++serial}`}});
   const config=schema.defaultGenerationConfig();Object.assign(config,{model:'parent',toolsEnabled:true,enabledTools:['spawn_subagent','list_subagents','wait_subagents'],maxToolRounds:20,
     subagents:{enabled:true,workers:[workers[0]],maxCalls:2,allowEdits:false}});config.runtime={...config.runtime,contextTokens:100000,maxTokens:100000,maxMinutes:1,harness:'guided'};
-  local(file('src/lib/agent.ts')).runAgent({requestId:'parent-integrated',profile:{id:'parent',baseUrl:'https://test/v1'},apiKey:'fixture',config,
+  local(file('src/lib/agent.ts')).runAgent({requestId:'parent-integrated',roleCatalog:[{id:'evidence',name:'Evidence reviewer',division:'QA',summary:'Review evidence',strengths:[],instructions:'Independent role evidence rules',color:'#123456'}],profile:{id:'parent',baseUrl:'https://test/v1'},apiKey:'fixture',config,
     history:[{id:'goal',role:'user',content:'请调用子代理核对事实，然后整合结果交付。',createdAt:1}],toolCtx:()=>({workspaceRoots:[]}),effortMappings:[],extraSystem:'',timeoutMs:1000,canRunHostTools:true,autoRetry:0,
     resolveWorker:async()=>({profile:{id:'child',baseUrl:'https://test/v1'},apiKey:'fixture',models:[{id:'gpt-5.6-sol'}]}),confirm:async()=>true,grantAccess:async()=>({ok:true,content:''}),
     events:{onContentDelta(){},onReasoningDelta(){},onSources(){},onUsage(){},onRound(){},onNotice(){},onStopReason(){},onStep(){},onRunState:s=>{if(s)states.push(structuredClone(s));},onDone(){parentDone++;settle();},onPaused(reason){settle(Error(reason));},onError(error){settle(Error(error));}}});

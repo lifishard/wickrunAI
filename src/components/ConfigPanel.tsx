@@ -186,7 +186,7 @@ export default function ConfigPanel(props: {
             ) : null}
 
             {(Object.keys(GROUP_LABEL) as ToolGroup[]).map((group) => {
-              const defs = TOOLS.filter((item) => item.group === group);
+              const defs = TOOLS.filter((item) => item.group === group && !item.hidden);
               if (!defs.length) return null;
               const usable = new Set(availableTools(props.canRunHostTools).map((item) => item.name));
               const allOn = defs.every((d) => cfg.enabledTools.includes(d.name));

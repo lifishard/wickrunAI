@@ -97,6 +97,7 @@ export async function loadSettings(): Promise<AppSettings> {
     merged.keyProfiles = (parsed.keyProfiles ?? []).map((p) => ({
       ...p,
       extraHeaders: p.extraHeaders ?? {},
+      probeRequests: p.probeRequests ?? true,
     }));
     merged.customModels = parsed.customModels ?? {};
     merged.cachedModels = parsed.cachedModels ?? {};

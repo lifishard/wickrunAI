@@ -1,0 +1,24 @@
+{
+  "passed": true,
+  "results": [
+    {
+      "width": 1440,
+      "rightSide": true
+    },
+    {
+      "width": 1000,
+      "rightSide": true
+    },
+    {
+      "width": 720,
+      "rightSide": true
+    }
+  ],
+  "languages": [
+    "en",
+    "zh-Hans",
+    "zh-Hant"
+  ],
+  "keyboardReopen": true,
+  "errors": []
+}
