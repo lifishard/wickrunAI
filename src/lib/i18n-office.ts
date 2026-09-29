@@ -736,4 +736,11 @@ export const OFFICE_EN: Record<string,string> = {
   '上限已调整，从检查点接着跑；没有待核实的操作': "Limits adjusted; continuing from the checkpoint. No actions needed verification.",
   '分段读取前置记录': "Read earlier records in parts",
   '读取前置记录 {id} 第 {part} 段': "Read {id}, part {part}",
+  '这次运行已停止': "This run was stopped",
+  '已完成的步骤、记录和产物都还在。重新打开后从停下的地方接着跑，已完成的步骤不会重跑，花过的 token 不会再花一次。': "Finished steps, records and outputs are all kept. Reopen it to continue from where it stopped. Finished steps don't run again, so tokens already spent aren't spent twice.",
+  '重新打开并接着跑': "Reopen and continue",
+  '这次运行还在收尾，请稍后再重新打开': "This run is still wrapping up. Reopen it in a moment.",
+  '只有已停止的运行可以重新打开': "Only a stopped run can be reopened.",
+  '停止时这一步正在执行，结果需要核实': "This step was running when the run stopped. Check its result.",
+  '重新打开这次运行：已完成的步骤、记录和产物都保留，从停下的地方接着跑': "Run reopened. Finished steps, records and outputs are kept, and it continues from where it stopped.",
 };

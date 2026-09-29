@@ -127,8 +127,14 @@ function validateRunUpdate(previous,next) {
   }
  }
  if(previous.status!==next.status) {
-  const transitions={ready:['paused','cancelled'],running:['paused','pausing','waiting_user','uncertain','failed','cancelled'],pausing:['paused','uncertain','failed','cancelled'],paused:['pausing','uncertain','failed','cancelled','waiting_user'],waiting_user:['paused','uncertain','failed','cancelled','completed'],uncertain:['paused','cancelled'],failed:['paused','cancelled'],completed:[],cancelled:[]};
+  const transitions={ready:['paused','cancelled'],running:['paused','pausing','waiting_user','uncertain','failed','cancelled'],pausing:['paused','uncertain','failed','cancelled'],paused:['pausing','uncertain','failed','cancelled','waiting_user'],waiting_user:['paused','uncertain','failed','cancelled','completed'],uncertain:['paused','cancelled'],failed:['paused','cancelled'],completed:[],cancelled:['paused','failed','uncertain','waiting_user']};
   if(!transitions[previous.status]?.includes(next.status))throw Error('运行状态不能回退或绕过领取');
+  // 已停止的运行只能经「重新打开」恢复，且不能借此跳过核实：还有没收尾的失败或待核实步骤，就不能直接回到已暂停。
+  if(previous.status==='cancelled'){
+   if(!next.events.slice(previous.events.length).some(e=>e.kind==='reopen'))throw Error('已停止的运行只能通过重新打开恢复');
+   if(next.status==='waiting_user'&&!next.pendingApproval)throw Error('没有待确认的事项，不能回到等待用户');
+   if(next.status==='paused'&&next.attempts.some(a=>!a.resolution&&['failed','uncertain','running'].includes(a.status)&&next.attempts.filter(x=>x.nodeId===a.nodeId).at(-1)===a))throw Error('还有待核实或失败的步骤，重新打开后需先核实');
+  }
   if(['uncertain','failed'].includes(previous.status)&&next.status==='paused'&&!next.events.slice(previous.events.length).some(e=>e.kind==='verified'&&typeof e.text==='string'&&e.text.trim()))throw Error('中断运行必须追加核实证据后才能恢复');
  }
  if(next.status==='completed')validateCompletion(previous,next);

@@ -136,7 +136,7 @@ function immediatePacer() {
   };
 }
 
-async function fixture(t, server, { tools = [], callTool = async () => ({ ok: true, content: '' }), autoRetry = 0, pacer, failover = true, maxVisits, secondAgent = false } = {}) {
+async function fixture(t, server, { tools = [], callTool = async () => ({ ok: true, content: '' }), autoRetry = 0, pacer, failover = true, maxVisits, secondAgent = false, maxSteps, goal = 'Explain the fixture result' } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'wickrun-team-http-recovery-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const store = createCollaborationStore(root);
@@ -207,9 +207,10 @@ async function fixture(t, server, { tools = [], callTool = async () => ({ ok: tr
     id: `edge-${index}`, from: from.id, to: to.id, port: 'next', label: 'next', maxTraversals: 5,
   }));
   flow.draft.maxTokens = 400000;
+  if (maxSteps) flow.draft.maxSteps = maxSteps;
   flow.versions = [{ id: 'v1', number: 1, createdAt: 1, graph: structuredClone(flow.draft) }];
   project.workflows = [flow];
-  project.tasks = [{ id: 'task', title: 'Fixture', goal: 'Explain the fixture result', acceptance: 'Return a concrete result', entries: [], status: 'ready', createdAt: 1 }];
+  project.tasks = [{ id: 'task', title: 'Fixture', goal, acceptance: 'Return a concrete result', entries: [], status: 'ready', createdAt: 1 }];
   await runtime.update('p', (target) => Object.assign(target, project));
   const runId = await runtime.createRun('p', 'task', flow.id, 'v1', config);
   return { runtime, runId, store, load };
@@ -433,6 +434,69 @@ test('a retry continues the same visit, and limits can be raised on the stopped 
   assert.equal(run.visits[agentId], 1);
 });
 
+test('a stopped run reopens and continues where it stopped, without running finished steps again', async (t) => {
+  let calls = 0;
+  const server = await localOpenAi(t, () => { calls += 1; return { body: completion(`result ${calls}`, 20) }; });
+  const f = await fixture(t, server, { failover: false, secondAgent: true, maxSteps: 2 });
+  const { limitStops } = f.load(projectFile('src/lib/team-limits.ts'));
+  await f.runtime.start('p', f.runId);
+  let run = f.runtime.project('p').runs[0];
+  assert.equal(run.status, 'paused', 'the step limit stops the run after the first step');
+  assert.equal(calls, 1);
+
+  await f.runtime.pause('p', f.runId, true);
+  assert.equal(f.runtime.project('p').runs[0].status, 'cancelled');
+  await assert.rejects(f.runtime.start('p', f.runId), /尚未就绪或需要核实/);
+  await assert.rejects(f.runtime.runUpdate('p', f.runId, (r) => { r.status = 'paused'; }), /只能通过重新打开恢复/);
+
+  await f.runtime.reopen('p', f.runId);
+  run = f.runtime.project('p').runs[0];
+  assert.equal(run.status, 'paused');
+  assert.equal(run.events.at(-1).kind, 'reopen');
+  await assert.rejects(f.runtime.reopen('p', f.runId), /只有已停止的运行/);
+  assert.deepEqual(limitStops(run).map((s) => [s.kind, s.current, s.used]), [['runSteps', 2, 2]]);
+
+  await f.runtime.raiseLimits('p', f.runId, [{ kind: 'runSteps', value: 10 }]);
+  await f.runtime.start('p', f.runId);
+  run = f.runtime.project('p').runs[0];
+  assert.equal(run.status, 'waiting_user');
+  assert.equal(calls, 2, 'the finished first step is not sent to the model again');
+  const agents = run.attempts.filter((a) => run.version.graph.nodes.find((n) => n.id === a.nodeId).type === 'agent');
+  assert.deepEqual(agents.map((a) => a.status), ['completed', 'completed']);
+});
+
+test('a run stopped mid-step reopens as needing a check, and cannot skip that check', async (t) => {
+  let calls = 0, release;
+  const server = await localOpenAi(t, () => {
+    calls += 1;
+    return calls === 1 ? new Promise((resolve) => { release = resolve; }) : { body: completion('finished after reopening', 20) };
+  });
+  t.after(() => release?.({ body: completion('late', 20) }));
+  const f = await fixture(t, server, { failover: false });
+  const started = f.runtime.start('p', f.runId);
+  for (let i = 0; i < 200 && calls === 0; i++) await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(calls, 1, 'the step reached the model before the stop');
+  await f.runtime.pause('p', f.runId, true);
+  await started;
+  let run = f.runtime.project('p').runs[0];
+  assert.equal(run.status, 'cancelled');
+  assert.equal(run.attempts.find((a) => run.version.graph.nodes.find((n) => n.id === a.nodeId).type === 'agent').status, 'uncertain');
+
+  await assert.rejects(f.runtime.runUpdate('p', f.runId, (r) => {
+    r.status = 'paused'; r.events.push({ id: 'forced', at: Date.now(), kind: 'reopen', text: 'skip the check' });
+  }), /需先核实/);
+  await f.runtime.reopen('p', f.runId);
+  run = f.runtime.project('p').runs[0];
+  assert.equal(run.status, 'uncertain', 'the interrupted step must be checked first');
+  await assert.rejects(f.runtime.start('p', f.runId), /尚未就绪或需要核实/);
+
+  await f.runtime.resolveUncertain('p', f.runId, 'retry', 'the interrupted call made no changes');
+  await f.runtime.start('p', f.runId);
+  run = f.runtime.project('p').runs[0];
+  assert.equal(run.status, 'waiting_user');
+  assert.equal(calls, 2);
+});
+
 test('long upstream output reaches the next step as a document it reads in parts, not pasted into the message', async (t) => {
   const long = '开头结论。' + '详细过程'.repeat(6000) + '结尾建议。';
   const server = await localOpenAi(t, ({ ordinal, body }) => {
@@ -450,4 +514,19 @@ test('long upstream output reaches the next step as a document it reads in parts
   assert.ok(second.tools.includes('read_source_text'));
   assert.match(JSON.stringify(server.routeLog[2].messages), /开头结论。/, 'the part it asked for came back verbatim');
   assert.equal(f.runtime.project('p').runs[0].status, 'waiting_user');
+});
+
+test('a step that only reads earlier records is not held back for making no changes the run goal mentions', async (t) => {
+  const long = '开头结论。' + '详细过程'.repeat(6000) + '结尾建议。';
+  const server = await localOpenAi(t, ({ ordinal, body }) => {
+    if (ordinal === 1) return { body: completion(long, 30) };
+    const catalog = JSON.parse(String(body.messages.find((m) => m.role === 'user').content).match(/前置记录目录：(\[.*?\])\n/)[1]);
+    const id = catalog.find((d) => d.characters > 20000).id;
+    return ordinal === 2 ? { body: completion('', 30, [toolCall('call-read', 'read_source_text', { id, part: 1 })]) } : { body: completion('综合评议报告：结论与分工如下。', 30) };
+  });
+  const f = await fixture(t, server, { failover: false, secondAgent: true, goal: '修复研究库方案，生成评议报告，给出分工后直接执行' });
+  await f.runtime.start('p', f.runId);
+  const run = f.runtime.project('p').runs[0];
+  assert.equal(run.status, 'waiting_user', run.events.at(-1).text);
+  assert.equal(server.routeLog.length, 3, 'no extra rounds asking the step to change files it cannot change');
 });

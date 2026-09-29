@@ -92,6 +92,8 @@ export interface RunAgentArgs {
   autoProbe?: boolean;
   /** Trusted task goal supplied by an orchestrator, without protocol and permission help text. */
   taskGoal?: string;
+  /** 协作空间里只交付文字的一步：可用工具都是只读的，完成护栏不按「目标要求修改」卡它。 */
+  textOnly?: boolean;
   requestId: string;
   coordinateTasks?: (input:Record<string,unknown>,operationKey:string)=>Promise<ToolResult>;
   coordinationInbox?: ()=>Promise<CoordinationMessage[]>;
@@ -377,6 +379,7 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
   }
   const startingTokens = state.spentTokens ?? 0;
   state.harness=taskSeed([...scopedWorking,...(state.pendingInputMessages??[])],cfg,quoteBoundary>0?undefined:resume?.harness,args.taskGoal);
+  if(args.textOnly)state.harness.action=false;
   const maxRound = state.round + Math.max(1, Math.min(1000, cfg.maxToolRounds || 30)) - 1;
   let requestSerial = 0;
   let overflowRetries = 0;
