@@ -1199,7 +1199,7 @@ export default function App() {
       const startKey = targetId ?? '__new__';
       if (startingRef.current.has(startKey) || (targetId && runningRef.current.has(targetId))) {
         setQueue((q) => [...q, queuedInput ?? { toolsEnabled:config?.toolsEnabled, text, attachments: [...attachments], quotes: [...quotes], quoteOnly, conversationId: targetId }]);
-        setAttachments([]); setQuotes([]);
+        if(!queuedInput?.preserveComposer){setAttachments([]); setQuotes([]);}
         return;
       }
       if (!profile) {
@@ -1312,7 +1312,7 @@ export default function App() {
         finishPreparing();
         blockedOnRoots.current.set(convId, wantedRoots);
         setQueue((q) => [...q, queuedInput ?? { toolsEnabled: cfg.toolsEnabled, text, attachments: [...attachments], quotes: [...quotes], quoteOnly, conversationId: convId }]);
-        setAttachments([]); setQuotes([]);
+        if(!queuedInput?.preserveComposer){setAttachments([]); setQuotes([]);}
         pauseQueue(convId);
         const holderTitle = conversations.find((c) => c.id === holders[0])?.title || t('另一个会话');
         toast.show(t('「{title}」正在这个工作目录里执行。这条排着，等它结束再发。', { title: holderTitle }), 6000);
@@ -1323,7 +1323,7 @@ export default function App() {
       const history = [...kept, userMsg];
       const nextConv: Conversation = {
         ...conv,
-        draft: resumeFrom ? conv.draft : '',
+        draft: resumeFrom || queuedInput?.preserveComposer ? conv.draft : '',
         title: kept.length === 0 && !conv.creationFingerprint ? titleFrom(text) : conv.title || titleFrom(text),
         messages: resumeAnswer ? conv.messages.map((m) => m.id === answerMsg.id ? answerMsg : m) : [...history, answerMsg],
         updatedAt: Date.now(),
@@ -1332,7 +1332,7 @@ export default function App() {
       setConversations(all => all.some(c=>c.id===convId) ? all.map(c=>c.id===convId?{...nextConv,coordinationMessages:c.coordinationMessages}:c) : [nextConv,...all]);
       // 后台会话的排队/恢复不抢焦点：只有从当前可见会话发出的才切过去
       if (!queuedInput?.conversationId || queuedInput.conversationId === active?.id) setActiveId(convId);
-      if (!resumeFrom && (!queuedInput?.conversationId || queuedInput.conversationId===activeIdRef.current)) { setAttachments([]); setQuotes([]); }
+      if (!resumeFrom && !queuedInput?.preserveComposer && (!queuedInput?.conversationId || queuedInput.conversationId===activeIdRef.current)) { setAttachments([]); setQuotes([]); }
       resumeQueue(convId);
 
       /* --- 流式缓冲：按 60ms 节流刷进 state，不然一个 token 一次 setState --- */
@@ -2311,6 +2311,7 @@ export default function App() {
                       if(question)void send(question);
                     }}
                     onResume={busy || !turn.a?.runState ? undefined : () => resumeRun(turn.a!)}
+                    onFollowup={busy || !active ? undefined : question=>void send(question,undefined,undefined,{text:question,conversationId:active.id,toolsEnabled:config.toolsEnabled,attachments:[],quotes:[],quoteOnly:false,preserveComposer:true})}
                     onCompact={busy || config.client || !turn.a?.runState ? undefined : () => resumeRun(turn.a!, undefined, undefined, true)}
                     onHandoff={!turn.a ? undefined : () => openContextHandoff(turn.a!)}
                     onPauseForContext={turn.a?.pending ? stop : undefined}

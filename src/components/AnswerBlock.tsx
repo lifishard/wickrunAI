@@ -12,6 +12,7 @@ import { TOOL_BY_NAME } from '../lib/tools/registry';
 import { classifyError, isCleanStop } from '../lib/errors';
 import { useT, type Translate } from '../lib/i18n';
 import Markdown from './Markdown';
+import OutputToolCards, { answerBodyAndFollowups } from './OutputToolCards';
 import MessageNotes from './MessageNotes';
 import DeliveryPanel from './DeliveryPanel';
 import RecoveryCard from './RecoveryCard';
@@ -268,6 +269,7 @@ export default function AnswerBlock(props: {
   onSaveAnnotation: (note: MessageAnnotation) => Promise<void>;
   onDeleteAnnotation: (messageId: string, noteId: string) => Promise<void>;
   onEditQuestion?: (text: string) => void;
+  onFollowup?: (question: string) => void;
   onFork?: () => void;
   onDelete?: () => void;
 }) {
@@ -283,6 +285,7 @@ export default function AnswerBlock(props: {
   const sources = answer?.sources ?? [];
   const steps = answer?.steps ?? [];
   const live = Boolean(answer?.pending);
+  const visibleAnswer=answer ? (live ? answer.content : answerBodyAndFollowups(answer.content,steps).body) : '';
   const inputFiles: Artifact[] = (question?.attachments ?? []).filter((a) => a.path).map((a) => ({
     id: `input-${a.id}`, kind: 'file', name: a.name, path: a.path, type: typeOfPath(a.path!),
     size: a.size, direction: 'input', verifiedAt: question!.createdAt, createdAt: question!.createdAt,
@@ -453,12 +456,13 @@ export default function AnswerBlock(props: {
 
       {answer ? (
         <div className="answer" id={`msg-${answer.id}`} data-message-id={answer.id}>
-          {answer.content ? (
-            <Markdown text={answer.content} sources={sources} copyText />
+          {visibleAnswer ? (
+            <Markdown text={visibleAnswer} sources={sources} copyText />
           ) : live && !steps.length ? (
             <BrandLoading label={t('灯芯正在思考')} />
           ) : null}
           {live && answer.content ? <span className="answer-loading" role="status" aria-label={t('灯芯正在思考')}><BrandLogo loading size={24} /></span> : null}
+          <OutputToolCards content={live ? '' : answer.content} steps={steps} onFollowup={live?undefined:props.onFollowup}/>
         </div>
       ) : null}
 
