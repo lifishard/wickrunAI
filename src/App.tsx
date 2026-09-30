@@ -12,8 +12,8 @@ import { flushSync } from 'react-dom';
 import { replayUserQuestion } from './lib/replay-question';
 import React from 'react';
 import { preserveOutput } from './lib/output-history';
-import { probeCompatibility } from './lib/compatibility-probe';
-import { validateMediaRoute } from './lib/media-input';
+import { probeCompatibility, probeVision } from './lib/compatibility-probe';
+import { validateMediaRoute, visionUntested } from './lib/media-input';
 const MediaInputDialog = React.lazy(() => import('./components/MediaInputDialog'));
 import { requestAssistant } from './lib/assistant-request';
 import MessageViewport, { type ReadingPosition } from './components/MessageViewport';
@@ -1271,7 +1271,12 @@ export default function App() {
         quoteOnly: (queuedInput?.quotes ?? quotes).length > 0 ? (queuedInput?.quoteOnly ?? quoteOnly) : false,
         skillNames: turnSkills.length ? turnSkills.map((x) => x.name) : undefined,
       };
-      try { validateMediaRoute([...kept, userMsg], profile, cfg.model, models.find(m => m.id === cfg.model), !!nativeClient); }
+      const modelInfo = models.find(m => m.id === cfg.model);
+      if (!nativeClient && apiKey && [...kept, userMsg].some(m => m.attachments?.some(a => a.kind === 'image')) && visionUntested(profile, cfg.model, modelInfo)) {
+        toast.show(t('正在确认当前模型能否看图…'), 4000);
+        try { await probeVision(profile, cfg.model, apiKey); } catch { /* 测不出来就按接入声明处理 */ }
+      }
+      try { validateMediaRoute([...kept, userMsg], profile, cfg.model, modelInfo, !!nativeClient); }
       catch (e) { startingRef.current.delete(startKey); toast.show(String(e), 6000); return; }
       const answerMsg: ChatMessage = {
         ...resumeAnswer,

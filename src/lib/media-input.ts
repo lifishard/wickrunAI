@@ -1,9 +1,26 @@
 import type { Attachment, KeyProfile, ModelInfo, ChatMessage } from '../types';
 import type { ContentPart } from './paramSchema';
 import { routeKey } from './adaptive';
+import { readVision } from './compatibility-cache';
 export type MediaModality = 'text' | 'image' | 'audio' | 'video';
 export function mediaCapabilities(profile: KeyProfile, model: string, info?: ModelInfo): MediaModality[] | undefined {
-  return profile.routeProfiles?.[routeKey(profile, model)]?.inputModalities ?? info?.inputModalities;
+  const manual = profile.routeProfiles?.[routeKey(profile, model)]?.inputModalities;
+  if (manual) return manual;
+  // 实测优先：网关 /models 的 input_modalities 常把能看图的模型标成只收文字
+  const tested = readVision(profile, model)?.result, declared = info?.inputModalities;
+  if (tested === 'yes') return declared ? [...new Set<MediaModality>([...declared, 'image'])] : undefined;
+  if (tested === 'no') return (declared ?? ['text']).filter(m => m !== 'image');
+  return declared;
+}
+/** 声明里没有图片、又还没实测过：该先测一次再决定是否拦下。 */
+export function visionUntested(profile: KeyProfile, model: string, info?: ModelInfo): boolean {
+  const caps = mediaCapabilities(profile, model, info);
+  return !!caps && !caps.includes('image') && !profile.routeProfiles?.[routeKey(profile, model)]?.inputModalities && !readVision(profile, model);
+}
+/** 这条路由实测只认字符串写法时，把请求里的 image_url:{url} 改成 image_url:"data:..."。 */
+export function applyImageFormat<T extends Record<string, unknown>>(body: T, format?: 'object' | 'string'): T {
+  if (format !== 'string' || !Array.isArray(body.messages)) return body;
+  return { ...body, messages: (body.messages as { content?: unknown }[]).map(m => Array.isArray(m.content) ? { ...m, content: m.content.map((p: { type?: string; image_url?: { url?: string } }) => p?.type === 'image_url' && p.image_url && typeof p.image_url.url === 'string' ? { ...p, image_url: p.image_url.url } : p) } : m) };
 }
 export function mediaParts(attachments: Attachment[]): ContentPart[] {
   return attachments.filter(a => a.kind !== 'text' && !a.contextOmitted).flatMap(a => {
@@ -20,6 +37,8 @@ export function validateMediaRoute(messages: ChatMessage[], profile: KeyProfile,
   for (const m of messages) for (const a of m.attachments ?? []) {
     if (a.kind === 'text') continue;
     if (nativeClient && (a.kind === 'audio' || a.kind === 'video')) throw Error('当前本地 AI 连接不能直接接收音视频。请先转为文字，或把视频抽帧后添加。');
+    // 网关 /models 常把能看图的模型登记成只收文字。图片只在实测过“不能看”或你手动配置过时才拦，其余交给上游判断
+    if (a.kind === 'image' && capabilities && !capabilities.includes('image') && !profile.routeProfiles?.[route]?.inputModalities && readVision(profile, model)?.result !== 'no') continue;
     if (capabilities && !capabilities.includes(a.kind)) throw Error(`当前模型不支持${{ image: '图片', audio: '音频', video: '视频' }[a.kind]}。请在「添加媒体」中先转为文字，或切换模型。`);
     if (!capabilities && a.kind !== 'image' && a.mediaRoute !== route) throw Error(`尚未确认当前模型支持《${a.name}》。请在添加媒体窗口确认能力，或在对话设置中配置此模型的输入类型。`);
   }
