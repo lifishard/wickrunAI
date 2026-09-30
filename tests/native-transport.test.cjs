@@ -62,7 +62,7 @@ function fixture(options = {}) {
   return { transport, result, handlers, input, emit, requests, aborts, removed: () => removed };
 }
 
-test('stopping while native listener registration is pending never sends the request', async () => {
+test('stopping while native listener registration is pending never sends or completes the request', async () => {
   const entered = deferred(), ready = deferred();
   const f = fixture({ listen: async () => { entered.resolve(); await ready.promise; } });
   const chat = f.transport.chat(f.input({ stream: true }), f.handlers);
@@ -72,8 +72,9 @@ test('stopping while native listener registration is pending never sends the req
   await chat;
   assert.equal(f.requests.length, 0);
   assert.equal(f.aborts.length, 0, 'no native request exists yet');
-  assert.equal(f.result.done, 1);
+  assert.equal(f.result.done, 0, 'a cancelled request must not report successful completion');
   assert.deepEqual(f.result.errors, []);
+  await new Promise(resolve => setTimeout(resolve, 0));
   assert.equal(f.removed(), 1);
 });
 
@@ -96,7 +97,7 @@ test('native chat reports HTTP redirects and errors without claiming successful 
   }
 });
 
-test('abort after dispatch preserves received text and completes once when native emits done plus status 499', async () => {
+test('abort after dispatch preserves received text without reporting success for native status 499', async () => {
   const entered = deferred(), response = deferred();
   const f = fixture({
     request: async (input, emit) => {
@@ -114,9 +115,10 @@ test('abort after dispatch preserves received text and completes once when nativ
   await f.transport.abort('chat-request');
   await chat;
   assert.equal(f.result.contents.join(''), 'partial');
-  assert.equal(f.result.done, 1);
+  assert.equal(f.result.done, 0, 'late native done must not report success after abort');
   assert.deepEqual(f.result.errors, []);
   assert.deepEqual(f.aborts, [{ requestId: 'chat-request' }]);
+  await new Promise(resolve => setTimeout(resolve, 0));
   assert.equal(f.removed(), 1);
 });
 

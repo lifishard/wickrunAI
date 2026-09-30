@@ -113,6 +113,9 @@ export function pauseOrphanedPending(conversations: Conversation[]): Conversatio
     return {...conversation, messages: conversation.messages.map(message => {
       if (!message.pending) return message;
       const reason = '连接已中断，当前输出已保留';
+      // A completed checkpoint can be saved before the UI clears its spinner.
+      // Do not turn that terminal result into a resumable run on restart.
+      if (message.runState?.status === 'completed') return {...message, pending: false, notice: undefined, progress: undefined, runState: undefined};
       return {...message, pending: false, notice: undefined,
         progress: message.progress || reason,
         runState: message.runState ? {...message.runState, status: 'paused' as const, reason} : undefined};

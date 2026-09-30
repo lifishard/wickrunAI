@@ -257,6 +257,8 @@ export default function App() {
   const [pausedQueues, setPausedQueues] = React.useState<string[]>([]);
   const startingRef = React.useRef(new Set<string>());
   const preparingRef = React.useRef(new Map<string, AbortController>());
+  const preparingDraftRef = React.useRef(new Map<string, string>());
+  const newConversationPreparingRef = React.useRef<string | null>(null);
   const [preparingIds, setPreparingIds] = React.useState<string[]>([]);
   const interruptingRef = React.useRef(new Map<string, {requestId:string;input:ChatMessage}>());
   const [resumeInput,setResumeInput]=React.useState<{convId:string;state:RunState}|null>(null);
@@ -1209,9 +1211,13 @@ export default function App() {
       const profile:KeyProfile|null=nativeClient ? {id:`client:${nativeClient.kind}`,name:nativeClient.kind,baseUrl:'',hasSecret:false,extraHeaders:{},createdAt:0} : settings.keyProfiles.find(p=>p.id===targetConversation?.keyProfileId) ?? settings.keyProfiles.find(p=>p.id===settings.activeKeyProfileId) ?? settings.keyProfiles[0] ?? null;
       // 目标会话由排队条目指定，否则就是当前可见的会话；只有同一个会话在跑才排队。
       const targetId = queuedInput?.conversationId ?? active?.id ?? null;
-      const startKey = targetId ?? '__new__';
-      if (startingRef.current.has(startKey) || (targetId && runningRef.current.has(targetId))) {
-        setQueue((q) => [...q, queuedInput ?? { toolsEnabled:config?.toolsEnabled, text, attachments: [...attachments], quotes: [...quotes], quoteOnly, conversationId: targetId }]);
+      // Give a new request a visible conversation before any secret or vision probe can wait.
+      // Its stable id lets Pause and navigation find the same preparation throughout.
+      const newConversationForSend = !targetConversation && profile ? newConversation(settings.defaultConfig, profile.id) : null;
+      const startKey = targetId ?? newConversationForSend?.id ?? '__new__';
+      const preparingNewId = !targetId ? newConversationPreparingRef.current : null;
+      if (preparingNewId || startingRef.current.has(startKey) || (targetId && runningRef.current.has(targetId))) {
+        setQueue((q) => [...q, { ...(queuedInput ?? { toolsEnabled:config?.toolsEnabled, text, attachments: [...attachments], quotes: [...quotes], quoteOnly }), conversationId: preparingNewId ?? targetId }]);
         if(!queuedInput?.preserveComposer){setAttachments([]); setQuotes([]);}
         return;
       }
@@ -1220,33 +1226,41 @@ export default function App() {
       }
       startingRef.current.add(startKey);
       const preparation = new AbortController();
-      let preparingKey = startKey;
+      const preparingKey = startKey;
       preparingRef.current.set(startKey, preparation);
       setPreparingIds(ids => ids.includes(startKey) ? ids : [...ids, startKey]);
-      const finishPreparing = () => {
+      if (queuedInput?.text && !resumeFrom) preparingDraftRef.current.set(startKey, queuedInput.text);
+      if (newConversationForSend) {
+        newConversationForSend.title = titleFrom(text);
+        newConversationPreparingRef.current = startKey;
+        setConversations(all => [newConversationForSend, ...all]);
+        setActiveId(newConversationForSend.id);
+      }
+      const finishPreparing = (restoreDraft = false) => {
         if (preparingRef.current.get(preparingKey) !== preparation) return;
         preparingRef.current.delete(preparingKey);
         startingRef.current.delete(preparingKey);
+        if (newConversationPreparingRef.current === preparingKey) newConversationPreparingRef.current = null;
         setPreparingIds(ids => ids.filter(id => id !== preparingKey));
+        const draft = preparingDraftRef.current.get(preparingKey);
+        preparingDraftRef.current.delete(preparingKey);
+        if (restoreDraft && draft) updateConv(preparingKey, conversation => ({...conversation, draft: conversation.draft || draft}));
       };
       let apiKey: string | null;
       try { apiKey = nativeClient ? 'official-client' : await secretGet(profile.id); }
-      catch (e) { finishPreparing(); if (!preparation.signal.aborted) toast.show(String(e)); return; }
+      catch (e) { finishPreparing(true); if (!preparation.signal.aborted) toast.show(String(e)); return; }
       if (preparation.signal.aborted) return;
-      if (!apiKey) { finishPreparing(); toast.show(t('这份凭据还没填 API Key')); setSettingsOpen(true); return; }
+      if (!apiKey) { finishPreparing(true); toast.show(t('这份凭据还没填 API Key')); setSettingsOpen(true); return; }
       // 没有会话就现开一个；排队条目带着会话 id，指向哪个会话就在哪个会话里跑
-      let conv = targetConversation;
-      if (!conv) {
-        conv = newConversation(settings.defaultConfig, profile.id);
-      }
-      if(conv.workspaceError&&(queuedInput?.toolsEnabled??conv.config.toolsEnabled)){finishPreparing();toast.show('独立工作区未准备好，任务未执行。请修正目录后重新创建 Work 会话。',6000);return;}
+      const conv = targetConversation ?? newConversationForSend!;
+      if(conv.workspaceError&&(queuedInput?.toolsEnabled??conv.config.toolsEnabled)){finishPreparing(true);toast.show('独立工作区未准备好，任务未执行。请修正目录后重新创建 Work 会话。',6000);return;}
       const roleCatalog=localizeRoles(libraryRoles(settings.officeLibrary,conv.projectId?teamRuntime.project(conv.projectId).office?.customRoles:undefined),locale);
       const cfg = withRequestedDelegation(queuedInput?.toolsEnabled===undefined?conv.config:{...conv.config,toolsEnabled:queuedInput.toolsEnabled},text,roleCatalog,profile.id);
       // 新任务重新开始数：已试过的名单只在一次任务内有效，不该拖累下一个问题
       if(!resumeFrom)failoverTriedRef.current.delete(conv.id);
 
       if (!cfg.model) {
-        finishPreparing();
+        finishPreparing(true);
         toast.show(t('先选一个模型'));
         setConfigOpen(true);
         return;
@@ -1261,7 +1275,7 @@ export default function App() {
         : replaceFromIndex === undefined ? conv.messages : conv.messages.slice(0, replaceFromIndex);
       if (!resumeFrom && replaceFromIndex !== undefined) {
         try { await forgetRuns(conv.id, new Set(conv.messages.slice(replaceFromIndex).map((m) => m.id))); }
-        catch (e) { finishPreparing(); if (!preparation.signal.aborted) toast.show(t('无法更新执行记录：{error}', { error: String(e) })); return; }
+        catch (e) { finishPreparing(true); if (!preparation.signal.aborted) toast.show(t('无法更新执行记录：{error}', { error: String(e) })); return; }
         if (preparation.signal.aborted) return;
       }
 
@@ -1293,7 +1307,7 @@ export default function App() {
         if (preparation.signal.aborted) return;
       }
       try { validateMediaRoute([...kept, userMsg], profile, cfg.model, modelInfo, !!nativeClient); }
-      catch (e) { finishPreparing(); toast.show(String(e), 6000); return; }
+      catch (e) { finishPreparing(true); toast.show(String(e), 6000); return; }
       const answerMsg: ChatMessage = {
         ...resumeAnswer,
         id: resumeAnswer?.id ?? uid('m'),
@@ -1309,13 +1323,6 @@ export default function App() {
       };
 
       const convId = conv.id;
-      if (convId !== startKey) {
-        startingRef.current.delete(startKey); startingRef.current.add(convId);
-        preparingRef.current.delete(startKey); preparingRef.current.set(convId, preparation);
-        preparingKey = convId;
-        setPreparingIds(ids => ids.map(id => id === startKey ? convId : id));
-      }
-
       // 会话之间并行没问题，同时往一个目录里写有问题：先登记，占着就等对方放手
       const wantedRoots = cfg.toolsEnabled
         ? (conv.workspace ? [conv.workspace.isolatedRoot] : toolContextOf(settings, conv.projectId ?? null, grantsRef.current).workspaceRoots)
@@ -1324,7 +1331,7 @@ export default function App() {
       if (holders.length) {
         finishPreparing();
         blockedOnRoots.current.set(convId, wantedRoots);
-        setQueue((q) => [...q, queuedInput ?? { toolsEnabled: cfg.toolsEnabled, text, attachments: [...attachments], quotes: [...quotes], quoteOnly, conversationId: convId }]);
+        setQueue((q) => [...q, { ...(queuedInput ?? { toolsEnabled: cfg.toolsEnabled, text, attachments: [...attachments], quotes: [...quotes], quoteOnly }), conversationId: convId }]);
         if(!queuedInput?.preserveComposer){setAttachments([]); setQuotes([]);}
         pauseQueue(convId);
         const holderTitle = conversations.find((c) => c.id === holders[0])?.title || t('另一个会话');
@@ -1342,10 +1349,9 @@ export default function App() {
         updatedAt: Date.now(),
       };
 
-      setConversations(all => all.some(c=>c.id===convId) ? all.map(c=>c.id===convId?{...nextConv,coordinationMessages:c.coordinationMessages}:c) : [nextConv,...all]);
-      // 后台会话的排队/恢复不抢焦点：只有从当前可见会话发出的才切过去
-      if (!queuedInput?.conversationId || queuedInput.conversationId === active?.id) setActiveId(convId);
-      if (!resumeFrom && !queuedInput?.preserveComposer && (!queuedInput?.conversationId || queuedInput.conversationId===activeIdRef.current)) { setAttachments([]); setQuotes([]); }
+      setConversations(all => all.some(c=>c.id===convId) ? all.map(c=>c.id===convId?{...nextConv,draft:newConversationForSend ? c.draft : nextConv.draft,coordinationMessages:c.coordinationMessages}:c) : [nextConv,...all]);
+      // A delayed preflight must not pull focus back or clear another chat's draft.
+      if (!resumeFrom && !queuedInput?.preserveComposer && activeIdRef.current===convId) { setAttachments([]); setQuotes([]); }
       resumeQueue(convId);
 
       /* --- 流式缓冲：按 60ms 节流刷进 state，不然一个 token 一次 setState --- */
@@ -1742,7 +1748,11 @@ export default function App() {
       preparation.abort();
       preparingRef.current.delete(id);
       startingRef.current.delete(id);
+      if (newConversationPreparingRef.current === id) newConversationPreparingRef.current = null;
       setPreparingIds(ids => ids.filter(key => key !== id));
+      const draft = preparingDraftRef.current.get(id);
+      preparingDraftRef.current.delete(id);
+      if (draft) updateConv(id, conversation => ({...conversation, draft: conversation.draft || draft}));
     }
     runningRef.current.get(id)?.handle.abort();
     if (!preparation && !runningRef.current.has(id)) {
