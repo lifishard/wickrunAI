@@ -5,6 +5,8 @@ import DOMPurify from 'dompurify';
 import hljs from 'highlight.js/lib/common';
 import type { SourceRef } from '../types';
 import { hasReadingSelection } from '../lib/reading-selection';
+import { codeClipboardTexts } from '../lib/markdown-code';
+import { writeCodeClipboard } from '../lib/code-clipboard';
 
 /**
  * Markdown 渲染。
@@ -35,14 +37,19 @@ function injectCitations(md: string, sources: SourceRef[]): string {
     .join('');
 }
 
-function render(md: string, sources: SourceRef[]): string {
+function render(md: string, sources: SourceRef[]): { html: string; codeCopies: string[] } {
+  const codeTokens: { raw: string; text: string }[] = [];
+  marked.walkTokens(marked.lexer(md), (token) => {
+    if (token.type === 'code' && 'text' in token && typeof token.text === 'string') codeTokens.push({ raw: token.raw, text: token.text });
+  });
+  const codeCopies = codeClipboardTexts(md, codeTokens);
   const html = marked.parse(injectCitations(md, sources), { async: false }) as string;
-  return DOMPurify.sanitize(html, {
+  return { html: DOMPurify.sanitize(html, {
     ADD_ATTR: ['target', 'rel', 'data-n'],
     ADD_TAGS: ['sup'],
     FORBID_TAGS: ['style', 'form', 'input', 'button'],
     FORBID_ATTR: ['style', 'onerror', 'onload'],
-  });
+  }), codeCopies };
 }
 
 const EMPTY_SOURCES: SourceRef[] = [];
@@ -50,17 +57,21 @@ export default function Markdown(props: {
   text: string;
   sources?: SourceRef[];
   onCiteClick?: (n: number) => void;
+  copyText?: boolean;
 }) {
   const t = useT();
   const ref = React.useRef<HTMLDivElement>(null);
   const sources = props.sources ?? EMPTY_SOURCES;
-  const html = React.useMemo(() => render(props.text, sources), [props.text, sources]);
+  const { html, codeCopies } = React.useMemo(() => render(props.text, sources), [props.text, sources]);
   const originalMarkup = React.useRef(new WeakMap<Node, string>());
   const appliedHtml = React.useRef<string | null>(null);
+  const appliedText = React.useRef<string | null>(null);
+  const [copied, setCopied] = React.useState<'idle' | 'ok' | 'error'>('idle');
+  const resetCopy = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const syncContent = React.useCallback(() => {
     const root = ref.current;
-    if (!root || appliedHtml.current === html || hasReadingSelection(root)) return;
+    if (!root || (appliedHtml.current === html && appliedText.current === props.text) || hasReadingSelection(root)) return;
 
     // Preserve unchanged blocks (including code highlighting and copy buttons).
     // The template receives only the sanitized result from render().
@@ -77,6 +88,7 @@ export default function Markdown(props: {
     });
     while (root.childNodes.length > incoming.length) root.lastChild!.remove();
     appliedHtml.current = html;
+    appliedText.current = props.text;
 
     root.querySelectorAll('pre code').forEach((block) => {
       const el = block as HTMLElement;
@@ -94,14 +106,27 @@ export default function Markdown(props: {
       a.setAttribute('rel', 'noreferrer noopener');
     });
 
-    root.querySelectorAll('pre').forEach((pre) => {
-      if (pre.querySelector('.copy-code')) return;
-      const btn = document.createElement('button');
-      btn.className = 'copy-code';
-      btn.textContent = t('复制');
-      btn.addEventListener('click', () => {
-        const code = pre.querySelector('code')?.textContent ?? '';
-        void navigator.clipboard.writeText(code).then(
+    root.querySelectorAll('pre').forEach((pre, index) => {
+      let shell = pre.parentElement?.classList.contains('code-block') ? pre.parentElement : null;
+      if (!shell) {
+        shell = document.createElement('div');
+        shell.className = 'code-block';
+        const markup = originalMarkup.current.get(pre);
+        if (markup) originalMarkup.current.set(shell, markup);
+        pre.replaceWith(shell);
+        shell.appendChild(pre);
+      }
+      let btn = shell.querySelector<HTMLButtonElement>('.copy-code');
+      if (!btn) {
+        btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'copy-code';
+        btn.textContent = t('复制');
+        shell.appendChild(btn);
+      }
+      btn.onclick = () => {
+        const code = codeCopies[index] ?? pre.querySelector('code')?.textContent ?? '';
+        void writeCodeClipboard(code).then(
           () => {
             btn.textContent = t('已复制');
             setTimeout(() => (btn.textContent = t('复制')), 1400);
@@ -111,10 +136,9 @@ export default function Markdown(props: {
             setTimeout(() => (btn.textContent = t('复制')), 1400);
           },
         );
-      });
-      pre.appendChild(btn);
+      };
     });
-  }, [html, t]);
+  }, [html, codeCopies, props.text, t]);
 
   React.useLayoutEffect(syncContent, [syncContent]);
   React.useEffect(() => {
@@ -142,5 +166,18 @@ export default function Markdown(props: {
     return () => root.removeEventListener('click', onClick);
   }, [html, sources, props]);
 
-  return <div className="md" ref={ref} />;
+  React.useEffect(() => () => { if (resetCopy.current) clearTimeout(resetCopy.current); }, []);
+  const copyAll = () => {
+    void navigator.clipboard.writeText(props.text).then(
+      () => setCopied('ok'),
+      () => setCopied('error'),
+    ).finally(() => {
+      if (resetCopy.current) clearTimeout(resetCopy.current);
+      resetCopy.current = setTimeout(() => setCopied('idle'), 1400);
+    });
+  };
+  return <div className={props.copyText ? 'md-copy-wrap' : undefined}>
+    {props.copyText ? <button type="button" className="copy-text" onClick={copyAll}>{t(copied === 'ok' ? '已复制' : copied === 'error' ? '复制失败' : '复制')}</button> : null}
+    <div className="md" ref={ref} />
+  </div>;
 }

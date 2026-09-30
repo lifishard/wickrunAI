@@ -3,6 +3,7 @@ import { Editor, Extension, markInputRule } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import { Markdown } from '@tiptap/markdown';
 import { isCompositionKey } from '../lib/composer-keyboard';
+import { isAppCodeClipboard } from '../lib/code-clipboard';
 
 export interface MarkdownInputHandle { focus(): void; setSelectionRange(start: number, end: number): void }
 interface Props {
@@ -42,9 +43,17 @@ export default React.forwardRef<MarkdownInputHandle,Props>(function MarkdownInpu
           blur(){composing.current=false;return false;},
           keydown(_view,event){if(isCompositionKey(event,composing.current))return true;current.current.onKeyDown(event);if(event.defaultPrevented)return true;if(event.key==='Enter'&&event.shiftKey&&!event.ctrlKey&&!event.metaKey){event.preventDefault();editor.commands.keyboardShortcut('Enter');return true;}return false;},
           paste(_view,event){current.current.onPaste(event);if(event.defaultPrevented)return true;
-            if(event.clipboardData?.getData('text/html'))return false;
+            const html=event.clipboardData?.getData('text/html')??'';
             const text=event.clipboardData?.getData('text/plain');
-            if(text){event.preventDefault();editor.commands.insertContent(text,{contentType:'markdown'});return true;}return false;
+            if(text&&isAppCodeClipboard(html)){
+              event.preventDefault();
+              editor.commands.insertContent({type:'codeBlock',content:[{type:'text',text:text.replace(/\r\n?/g,'\n')}]});
+              return true;
+            }
+            if(html)return false;
+            if(text){event.preventDefault();
+              editor.commands.insertContent(text,{contentType:'markdown'});
+              return true;}return false;
           },
         },
       },

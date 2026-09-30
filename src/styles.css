@@ -809,10 +809,15 @@ input[type='range'] {
   background: var(--code-bg);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  padding: 11px 13px;
+  padding: 34px 13px 11px;
   overflow-x: auto;
-  margin: 0.75em 0;
+  margin: 0;
+}
+.md .code-block {
   position: relative;
+  min-width: 0;
+  max-width: 100%;
+  margin: 0.75em 0;
 }
 .md pre code {
   background: none;
@@ -849,18 +854,41 @@ input[type='range'] {
   position: absolute;
   top: 6px;
   right: 6px;
+  z-index: 1;
   font-size: 11px;
   padding: 2px 8px;
   border-radius: 5px;
   border: 1px solid var(--border-strong);
   background: var(--bg-elev);
   color: var(--fg-dim);
-  opacity: 0;
-  transition: opacity 0.12s;
+  cursor: pointer;
 }
-
-.md pre:hover .copy-code {
-  opacity: 1;
+.copyable-pre {
+  position: relative;
+  min-width: 0;
+  max-width: 100%;
+}
+.copyable-pre > pre {
+  padding-top: 34px;
+}
+.md-copy-wrap {
+  position: relative;
+  min-width: 0;
+  max-width: 100%;
+  padding-top: 32px;
+}
+.copy-text {
+  position: absolute;
+  top: 3px;
+  right: 2px;
+  z-index: 1;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 5px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elev);
+  color: var(--fg-dim);
+  cursor: pointer;
 }
 
 /* ================================================================== *

@@ -24,6 +24,7 @@ import SubagentProgress from './SubagentProgress';
 import type { KeyProfile } from '../types';
 import type { GatewayRecoveryResult } from '../lib/gateway-recovery';
 import { clientText } from '../lib/client-text';
+import CopyablePre from './CopyablePre';
 
 /** finish_reason 的人话注解，鼠标悬停时显示 */
 const STOP_HINT: Record<string, string> = {
@@ -165,7 +166,7 @@ function ErrorCard(props: {
         ) : null}
         <details className="err-raw">
           <summary>{t('上游原文')}</summary>
-          <pre>{info.detail || props.raw}</pre>
+          <CopyablePre text={info.detail || props.raw} />
         </details>
       </div>
     </div>
@@ -218,9 +219,9 @@ export function StepTrace({ steps, live }: { steps: ToolStep[]; live: boolean })
                 {isOpen ? (
                   <div className="trace-detail">
                     <div className="trace-detail-label">{t('参数')}</div>
-                    <pre>{JSON.stringify(s.args, null, 2)}</pre>
+                    <CopyablePre text={JSON.stringify(s.args, null, 2)} />
                     <div className="trace-detail-label">{s.error ? t('错误') : t('返回')}</div>
-                    <pre>{s.error ?? (s.output || t('（无输出）')).slice(0, 4000)}</pre>
+                    <CopyablePre text={s.error ?? (s.output || t('（无输出）'))} displayText={s.error ?? (s.output || t('（无输出）')).slice(0, 4000)} />
                   </div>
                 ) : null}
               </div>
@@ -453,7 +454,7 @@ export default function AnswerBlock(props: {
       {answer ? (
         <div className="answer" id={`msg-${answer.id}`} data-message-id={answer.id}>
           {answer.content ? (
-            <Markdown text={answer.content} sources={sources} />
+            <Markdown text={answer.content} sources={sources} copyText />
           ) : live && !steps.length ? (
             <BrandLoading label={t('灯芯正在思考')} />
           ) : null}

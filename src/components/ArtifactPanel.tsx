@@ -7,6 +7,7 @@ import { desktop } from '../lib/transport';
 import Markdown from './Markdown';
 import './ArtifactStrip.css';
 import ArtifactTextEditor from './ArtifactTextEditor';
+import CopyablePre from './CopyablePre';
 import type { ProposeArtifactEdit } from './ArtifactAiEdit';
 const ArtifactDocument = React.lazy(() => import('./ArtifactDocument'));
 
@@ -192,7 +193,7 @@ export default function ArtifactPanel(props: { artifact: Artifact; onClose: () =
             <Markdown text={text ?? ''} />
           </div>
         ) : text !== null ? (
-          <pre className="artifact-source">{text}</pre>
+          <CopyablePre className="artifact-source" text={text} />
         ) : (
           <div className="empty">{t('读取中…')}</div>
         )}
