@@ -105,6 +105,41 @@ test('pausing during the final checkpoint cannot turn into a completed run', asy
   assert.equal(states.at(-1).status, 'paused');
 });
 
+test('pausing during output-card completion keeps the run paused', async () => {
+  let reachedCompletion, releaseCompletion;
+  const completionReached = new Promise(resolve => { reachedCompletion = resolve; });
+  const completionSave = new Promise(resolve => { releaseCompletion = resolve; });
+  let finish, done = 0;
+  const finished = new Promise(resolve => { finish = resolve; });
+  const fakeTransport = { chat: async (_request, handlers) => {
+    handlers.onToolCalls([{ id: 'output-1', name: 'present_output', arguments: JSON.stringify({ text: 'Finished draft' }) }]);
+    handlers.onStop({ reason: 'tool_calls', droppedCalls: 0 }); handlers.onDone();
+  }, abort: async () => {}, callTool: async () => { throw Error('unexpected host tool'); } };
+  const local = loader({ [path.join(root, 'src/lib/transport.ts')]: { getTransport: () => fakeTransport } });
+  const config = local(path.join(root, 'src/lib/paramSchema.ts')).defaultGenerationConfig();
+  Object.assign(config, { model: 'mock', toolsEnabled: false, runtime: { contextTokens: 50000, maxMinutes: 1, maxTokens: 100000 } });
+  const states = [];
+  const handle = local(path.join(root, 'src/lib/agent.ts')).runAgent({
+    requestId: 'output-race', profile: { id: 'test', baseUrl: 'http://localhost/v1' }, apiKey: 'test', config,
+    history: [{ id: 'question', role: 'user', content: 'Write a greeting', createdAt: 1 }],
+    toolCtx: () => ({ workspaceRoots: [] }), effortMappings: [], extraSystem: '', timeoutMs: 1000,
+    canRunHostTools: false, autoRetry: 0, confirm: async () => true, grantAccess: async () => ({ ok: true, content: '' }),
+    events: { onContentDelta() {}, onReasoningDelta() {}, onSources() {}, onUsage() {}, onRound() {}, onNotice() {}, onStopReason() {}, onStep() {},
+      async onRunState(state) {
+        if (state?.status === 'completed') { reachedCompletion(); await completionSave; }
+        if (state) states.push(structuredClone(state));
+      },
+      onDone() { done++; finish(); }, onPaused() { finish(); }, onError() { finish(); },
+    },
+  });
+  await Promise.race([completionReached, new Promise((_, reject) => setTimeout(() => reject(Error('output completion not reached')), 2000))]);
+  handle.abort(); releaseCompletion();
+  await Promise.race([finished, new Promise((_, reject) => setTimeout(() => reject(Error('output pause did not settle')), 2000))]);
+  assert.equal(done, 0);
+  assert.equal(states.at(-1).status, 'paused');
+  assert.equal(states.at(-1).content, 'Finished draft');
+});
+
 test('native client paused while saving completion keeps a resumable checkpoint', async () => {
   let reachedCompletion, releaseCompletion;
   const completionReached = new Promise(resolve => { reachedCompletion = resolve; });
