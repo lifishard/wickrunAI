@@ -81,7 +81,7 @@ test('long team task survives compaction, route switch, process loss, and guarde
   const baseUrl = `http://127.0.0.1:${server.address().port}`;
 
   const first = runWorker('first', root, baseUrl);
-  await waitForFile(path.join(root, 'unknown-started'));
+  await waitForFile(path.join(root, 'unknown-started'), 120000); // 子进程冷启动要现编译 TS，全量并行时在 Windows 上超过 30 秒
   first.child.kill();
   const firstExit = await first.exited;
   assert.notEqual(firstExit.code, 0, `the first process must be interrupted\n${firstExit.stderr}`);

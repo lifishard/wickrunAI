@@ -136,7 +136,7 @@ function immediatePacer() {
   };
 }
 
-async function fixture(t, server, { tools = [], callTool = async () => ({ ok: true, content: '' }), autoRetry = 0, pacer, failover = true, maxVisits, secondAgent = false, maxSteps, goal = 'Explain the fixture result' } = {}) {
+async function fixture(t, server, { tools = [], callTool = async () => ({ ok: true, content: '' }), autoRetry = 0, pacer, failover = true, maxVisits, secondAgent = false, maxSteps, goal = 'Explain the fixture result', probe = false } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'wickrun-team-http-recovery-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const store = createCollaborationStore(root);
@@ -163,7 +163,7 @@ async function fixture(t, server, { tools = [], callTool = async () => ({ ok: tr
   runtime.settings = () => ({
     defaultConfig: config,
     keyProfiles: [
-      { id: 'primary', name: 'Primary local fixture', baseUrl: `${server.baseUrl}/primary/v1`, hasSecret: true },
+      { id: 'primary', name: 'Primary local fixture', baseUrl: `${server.baseUrl}/primary/v1`, hasSecret: true, probeRequests: probe },
       { id: 'fallback', name: 'Fallback local fixture', baseUrl: `${server.baseUrl}/fallback/v1`, hasSecret: true },
     ],
     effortMappings: [],
@@ -529,4 +529,15 @@ test('a step that only reads earlier records is not held back for making no chan
   const run = f.runtime.project('p').runs[0];
   assert.equal(run.status, 'waiting_user', run.events.at(-1).text);
   assert.equal(server.routeLog.length, 3, 'no extra rounds asking the step to change files it cannot change');
+});
+
+test('a TPM/RPM limit hit while checking the request format waits and retries instead of stopping', async (t) => {
+  const server = await localOpenAi(t, ({ ordinal }) => ordinal === 1
+    ? { status: 429, body: { error: { message: 'inference exceeds tpm/rpm limit (code ModelAccountTpmRateLimitExceeded), retry after 1 seconds' } } }
+    : { body: completion('OK', 20) });
+  const f = await fixture(t, server, { failover: false, probe: true });
+  await f.runtime.start('p', f.runId);
+  const run = f.runtime.project('p').runs[0];
+  assert.equal(run.status, 'waiting_user', run.events.at(-1).text);
+  assert.ok(server.routeLog.length >= 3, 'the format check was retried after the wait, then the step ran');
 });
