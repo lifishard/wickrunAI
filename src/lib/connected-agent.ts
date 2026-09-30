@@ -14,6 +14,7 @@ import {taskSeed,harnessInstructions,planOnly,completionBlocker,nativeCompletion
 import {runDesktopConversation} from './desktop-conversation';
 import {reviewGuard} from './review-guard';
 import {clientContent} from './client-content';
+import {awaitAbortable} from './abortable';
 
 /** Native adapters receive a portable transcript; vendor session IDs are evidence, not the sole memory. */
 export function runConnectedAgent(args:RunAgentArgs):AgentHandle {
@@ -32,6 +33,7 @@ export function runConnectedAgent(args:RunAgentArgs):AgentHandle {
   }
   const bridge=desktop(), events=args.events;
   let cancelled=false;
+  const cancelControl=new AbortController();
   let off=()=>{};
   let nativeRequestId=args.requestId;
   let ended=false;
@@ -51,12 +53,12 @@ export function runConnectedAgent(args:RunAgentArgs):AgentHandle {
   void (async()=>{
     try{
       if(!bridge)throw Error('本机连接需要使用桌面版。');
-      const reviewBlocked=await reviewGuard(args,args.config.client!.kind);
+      const reviewBlocked=await awaitAbortable(reviewGuard(args,args.config.client!.kind),cancelControl.signal);
       if(reviewBlocked)throw Error(reviewBlocked);
       let recovered:ClientTurnResult|null=null;
       if(state.uncertainCallId){
         if(state.uncertainCallId.startsWith('native-')){
-          const previous=await bridge.conversationClientRecover(state.runId!,state.uncertainCallId);
+          const previous=await awaitAbortable(bridge.conversationClientRecover(state.runId!,state.uncertainCallId),cancelControl.signal);
           if(previous?.status==='completed')recovered=previous;
           else if(!previous)state.uncertainCallId=undefined;
           else if(args.resolveUncertain==='skip')recovered={status:'completed',text:'你已核实并跳过先前未确认的操作；本次没有重新执行。'};
@@ -161,7 +163,7 @@ ${JSON.stringify(transcript)}`;
       events.onNotice('正在等待官方客户端返回结果…');
       // Save dispatch uncertainty before invoking: a renderer restart cannot imply that nothing ran.
       if(!recovered){state.uncertainCallId='native-'+nativeRequestId;await save();}
-      const result=recovered ?? await bridge.conversationClientRun({runId:state.runId!,requestId:nativeRequestId,prompt,images,cwd:args.config.toolsEnabled?args.toolCtx().workspaceRoots[0]:undefined});
+      const result=recovered ?? await awaitAbortable(bridge.conversationClientRun({runId:state.runId!,requestId:nativeRequestId,prompt,images,cwd:args.config.toolsEnabled?args.toolCtx().workspaceRoots[0]:undefined}),cancelControl.signal);
       if(result.codeChanges?.length || result.codeAuditWarnings?.length){
         const id=nativeRequestId+'-code-audit';
         const step:ToolStep={id,callId:id,name:'native_code_changes',args:{},status:result.status==='completed'?'ok':'error',summary:'本机客户端代码改动',startedAt:Date.now(),codeChanges:result.codeChanges,codeAuditWarnings:result.codeAuditWarnings};
@@ -236,9 +238,9 @@ ${JSON.stringify(transcript)}`;
     }finally{ended=true;off();}
   })();
   return {
-    interrupt(message){if(ended||cancelled)throw Error('当前任务已停止');Object.assign(state,addRunInput(state,message));state.working=state.working.filter(m=>m.id!==message.id);state.pendingInputMessages=[...(state.pendingInputMessages??[]).filter(m=>m.id!==message.id),message];state.replanPending=true;cancelled=true;void bridge?.toolAbort(state.runId!);},
+    interrupt(message){if(ended||cancelled)throw Error('当前任务已停止');Object.assign(state,addRunInput(state,message));state.working=state.working.filter(m=>m.id!==message.id);state.pendingInputMessages=[...(state.pendingInputMessages??[]).filter(m=>m.id!==message.id),message];state.replanPending=true;cancelled=true;cancelControl.abort();void bridge?.toolAbort(state.runId!).catch(()=>{});},
     async questionDraft(id,draft){if(!ended&&state.userQuestion?.request.id===id){state.userQuestion.draft=structuredClone(draft);await save();}},
     async answerQuestion(id,answers){if(ended||cancelled)throw Error('当前任务已停止');acceptLiveAnswer(state,id,answers);await save();},
-    abort(){cancelled=true;void bridge?.toolAbort(state.runId!);}
+    abort(){cancelled=true;cancelControl.abort();void bridge?.toolAbort(state.runId!).catch(()=>{});}
   };
 }

@@ -17,6 +17,7 @@ import {
   type ToolCallDelta,
 } from './sse';
 import { tr } from './i18n';
+import { awaitAbortable } from './abortable';
 import type { CloudBridge } from './cloud-api';
 import { beginExchange, recordRaw, recordResponse, endExchange, type Exchange } from './wiretap';
 import {
@@ -425,6 +426,7 @@ function wireHandlers(h: ChatStreamHandlers, init?: ChatRequestInit) {
 class ElectronTransport implements Transport {
   kind = 'electron' as const;
   private bridge: ElectronBridge;
+  private pending = new Map<string, () => void>();
 
   constructor(bridge: ElectronBridge) {
     this.bridge = bridge;
@@ -434,9 +436,17 @@ class ElectronTransport implements Transport {
     return new Promise<void>((resolve) => {
       const { consumer, finish } = wireHandlers(h, init);
       let settled = false;
+      const complete = () => {
+        if (settled) return false;
+        settled = true;
+        off();
+        this.pending.delete(init.requestId);
+        resolve();
+        return true;
+      };
 
       const off = this.bridge.onEvent((e) => {
-        if (e.requestId !== init.requestId) return;
+        if (e.requestId !== init.requestId || settled) return;
         switch (e.type) {
           case 'response':
             recordResponse(init.requestId, e.status ?? 0, e.data as Record<string, string>);
@@ -453,32 +463,28 @@ class ElectronTransport implements Transport {
             break;
           case 'done':
             if (settled) return;
-            settled = true;
-            off();
             finish();
-            resolve();
+            complete();
             break;
           case 'error':
             if (settled) return;
-            settled = true;
-            off();
             h.onError(String(e.data ?? '未知错误'), typeof e.status === 'number' ? e.status : undefined);
-            resolve();
+            complete();
             break;
         }
       });
+      this.pending.set(init.requestId, () => { h.onError('请求已停止'); complete(); });
 
       this.bridge.chat(cloneable(init)).catch((err: unknown) => {
         if (settled) return;
-        settled = true;
-        off();
         h.onError(err instanceof Error ? err.message : String(err));
-        resolve();
+        complete();
       });
     });
   }
 
   abort(requestId: string) {
+    this.pending.get(requestId)?.();
     return this.bridge.abort(requestId);
   }
   getJson(url: string, headers: Record<string, string>, timeoutMs: number) {
@@ -788,13 +794,13 @@ let cached: Transport | null = null;
  * 限流的账也在这里记 —— onError 被包了一层，不管哪个平台、哪条代码路径
  * 报的错，都会经过同一个判断。
  */
-function withPacing(t: Transport): Transport {
+export function withPacing(t: Transport): Transport {
   const originalChat = t.chat.bind(t);
   const originalAbort = t.abort.bind(t);
   const controls = new Map<string, AbortController>();
   t.abort = async (id) => {
     controls.get(id)?.abort();
-    await originalAbort(id);
+    try { await originalAbort(id); } catch { /* The local request is already cancelled. */ }
   };
   t.chat = async (init: ChatRequestInit, h: ChatStreamHandlers) => {
     const key = paceKeyOf(init);
@@ -804,7 +810,14 @@ function withPacing(t: Transport): Transport {
     let retryAfter: number | undefined;
     const wrapped: ChatStreamHandlers = {
       ...h,
+      onContent(delta) { if (!controller.signal.aborted) h.onContent(delta); },
+      onReasoning(delta) { if (!controller.signal.aborted) h.onReasoning(delta); },
+      onToolCalls(calls) { if (!controller.signal.aborted) h.onToolCalls(calls); },
+      onStop(stop) { if (!controller.signal.aborted) h.onStop?.(stop); },
+      onPaceWait(ms) { if (!controller.signal.aborted) h.onPaceWait?.(ms); },
+      onDispatch() { if (!controller.signal.aborted) h.onDispatch?.(); },
       onResponse(status, headers) {
+        if (controller.signal.aborted) return;
         noteQuotaHeaders(key,headers);
         const value = headers['retry-after'];
         if (value) {
@@ -815,6 +828,7 @@ function withPacing(t: Transport): Transport {
         h.onResponse?.(status, headers);
       },
       onUsage(usage) {
+        if (controller.signal.aborted) return;
         const tokens = usage.total_tokens ?? ((usage.prompt_tokens ?? 0)+(usage.completion_tokens ?? 0));
         reconcileTokens(key, init.requestId, tokens);
         if (usage.prompt_tokens !== undefined) reconcileTokens(`${key}:input`,init.requestId,Math.max(0,usage.prompt_tokens-(init.cachedInputCounts === false ? usage.cached_tokens ?? 0 : 0)));
@@ -824,6 +838,7 @@ function withPacing(t: Transport): Transport {
       onError(message, status) {
         failed = true;
         endExchange(init.requestId, message, status);
+        if (controller.signal.aborted) return;
         if (!controller.signal.aborted && isRateLimited(message, status)) {
           noteRateLimit(key, retryAfter ?? parseRetryAfterMs(message));
         }
@@ -831,6 +846,7 @@ function withPacing(t: Transport): Transport {
       },
       onDone() {
         endExchange(init.requestId);
+        if (controller.signal.aborted) return;
         if (!failed && !controller.signal.aborted) noteSuccess(key);
         h.onDone();
       },
@@ -844,16 +860,17 @@ function withPacing(t: Transport): Transport {
             waitForTokens(`${key}:output`,init.paceOutput ?? 0,init.paceOtpm),
             waitForQuota(key,{ tokens:need,input:init.paceInput ?? 0,output:init.paceOutput ?? 0 }));
           if (!wait) break;
-          await waitCancellable(wait, controller.signal, h.onPaceWait);
+          await waitCancellable(wait, controller.signal, wrapped.onPaceWait);
         }
         if (controller.signal.aborted) throw abortError();
         if (need > 0) reserveTokens(key, init.requestId, need);
         reserveTokens(`${key}:input`,init.requestId,init.paceInput ?? 0);
         reserveTokens(`${key}:output`,init.requestId,init.paceOutput ?? 0);
         consumeQuota(key,{ tokens:need,input:init.paceInput ?? 0,output:init.paceOutput ?? 0 });
-        h.onDispatch?.();
-        await originalChat(init, wrapped);
-      }, { onWait: h.onPaceWait, minIntervalMs: init.paceMinMs, signal: controller.signal });
+        if (controller.signal.aborted) throw abortError();
+        wrapped.onDispatch?.();
+        await awaitAbortable(originalChat(init, wrapped), controller.signal);
+      }, { onWait: wrapped.onPaceWait, minIntervalMs: init.paceMinMs, signal: controller.signal });
     } catch (err) {
       if (!failed) wrapped.onError(err instanceof Error ? err.message : String(err));
     } finally {

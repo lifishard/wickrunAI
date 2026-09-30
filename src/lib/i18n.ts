@@ -85,7 +85,7 @@ const EN: Record<string, string> = {
   "保存并重启安装": "Save and restart to install",
   "打开发布页": "Open releases",
 
-  '当前任务继续执行；模式切换仅对下一条消息生效。需要停止请点停止按钮。': 'The current task continues. The new mode applies to your next message. Use Stop to stop the task.',
+  '当前任务继续执行；模式切换仅对下一条消息生效。需要暂停请点暂停按钮。': 'The current task continues. The new mode applies to your next message. Use Pause to pause the task.',
   '回到最新内容': 'Jump to latest',
   '代码改动': 'Code changes',
   '显示代码改动面板与对话摘要': 'Show code changes panel and conversation summaries',

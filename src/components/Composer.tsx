@@ -64,6 +64,7 @@ export default function Composer(props: {
   queuePaused: boolean;
   onResumeQueue: () => void;
   busy: boolean;
+  preparing?: boolean;
   disabled: boolean;
   disabledReason?: string;
   sendKey: 'enter' | 'mod-enter';
@@ -142,6 +143,7 @@ export default function Composer(props: {
   const composing = React.useRef(false);
   draftSink.current = props.onDraftChange;
   const latestDraft = React.useRef(text); latestDraft.current = text;
+  const preparingDraft = React.useRef('');
   React.useEffect(() => {
     const flush = () => draftSink.current?.(latestDraft.current);
     window.addEventListener('wickrun:flush-draft', flush);
@@ -213,6 +215,7 @@ export default function Composer(props: {
     const t = text.trim();
     // 生成中不拦：App 会把它排进队列，等这一轮结束自动发
     if ((!t && props.attachments.length === 0) || props.disabled) return;
+    if (!props.busy) preparingDraft.current = text;
     props.onSend(t, mode);
     setText('');
   }
@@ -609,8 +612,12 @@ export default function Composer(props: {
             {props.busy ? (
               /* 运行期间三项操作保持同一组，窄屏以图标显示。 */
               <div className="composer-send-group">
-                <button className="btn sm danger" data-short-label="■" title={t('停止')} onClick={() => props.onStop()}>
-                  {t('停止')}
+                <button className="btn sm danger" data-short-label="■" title={t('暂停')} aria-label={t('暂停')} onClick={() => {
+                  if (props.preparing && preparingDraft.current) setText(text ? `${preparingDraft.current}\n\n${text}` : preparingDraft.current);
+                  preparingDraft.current = '';
+                  props.onStop();
+                }}>
+                  {t('暂停')}
                 </button>
                 <button
                   className="btn sm"
