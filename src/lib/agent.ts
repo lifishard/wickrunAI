@@ -1169,7 +1169,9 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
         state.status = 'completed'; state.reason = undefined; state.errorInfo = undefined; state.recovery = undefined;
         state.harness!.stage='deliver';state.harness!.completion={status:'checked',reason:'响应完整，待执行操作与已登记验收条件已检查；语义质量仍可由用户反馈。',evidence:(state.steps??[]).filter(s=>s.status==='ok').map(s=>s.callId),at:Date.now()};
         await save(); // Persist completion before removing the resume affordance.
+        if (control.signal.aborted) throw abortError();
         await events.onRunState(null);
+        if (control.signal.aborted) throw abortError();
         ended = true; events.onNotice(''); events.onDone(); return;
       }
     } catch (err) {

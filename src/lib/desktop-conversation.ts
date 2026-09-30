@@ -83,7 +83,9 @@ export function runDesktopConversation(args:RunAgentArgs):AgentHandle {
           events.onContentReplace?.(state.content??'','');
           state.status='completed';state.reason=undefined;state.harness!.stage='deliver';
           state.working.push({id:args.requestId+'-answer',role:'assistant',content:outputTranscript(state.content??'',outputs),createdAt:Date.now()});
-          await save();await events.onRunState(null);events.onNotice('');events.onDone();return;
+          await save();if(cancelled)throw Error('已暂停，当前输出已保留');
+          await events.onRunState(null);if(cancelled)throw Error('已暂停，当前输出已保留');
+          events.onNotice('');events.onDone();return;
         }
         if(task.status==='cancelled')throw Error('Claude Desktop 任务已取消，已有记录保留。');
         if(task.status==='blocked')throw Error(`Claude 报告任务受阻：${task.blockedReason||'未说明原因'}`);

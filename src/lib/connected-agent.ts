@@ -227,7 +227,9 @@ ${JSON.stringify(transcript)}`;
       events.onContentReplace?.(state.content??'',state.reasoning??'');
       state.working.push({id:args.requestId+'-answer',role:'assistant',content:outputTranscript(state.content??'',nativeOutputSteps(result.text||'',nativeRequestId)),createdAt:Date.now()});
       state.status='completed';state.reason=undefined;state.pendingCalls=undefined;state.toolCursor=undefined;
-      await save();await events.onRunState(null);events.onNotice('');events.onDone();return;
+      await save();if(cancelled)throw Error('已暂停，当前输出已保留');
+      await events.onRunState(null);if(cancelled)throw Error('已暂停，当前输出已保留');
+      events.onNotice('');events.onDone();return;
       }
       throw Error('本阶段接力次数已到，进度和待回答的问题已保存');
     }catch(error){
