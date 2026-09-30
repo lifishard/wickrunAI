@@ -1,7 +1,9 @@
 import React from 'react';
 import type { Attachment, GenerationConfig, KeyProfile, ModelInfo } from '../types';
 import { Modal } from './ui';
-import { audioAsWav, mediaCapabilities, mediaParts, readDataUrl, videoFrames, validateMediaRoute } from '../lib/media-input';
+import { audioAsWav, mediaCapabilities, mediaParts, readDataUrl, videoFrames, validateMediaRoute, visionUntested } from '../lib/media-input';
+import { probeVision } from '../lib/compatibility-probe';
+import { secretGet } from '../lib/store';
 import { requestAssistant } from '../lib/assistant-request';
 import { routeKey } from '../lib/adaptive';
 
@@ -40,8 +42,14 @@ export default function MediaInputDialog({ profiles, models, profileId, config, 
         if (!controller.signal.aborted) { onAdd(frames); onClose(); } return;
       }
       if (!destination || !model) throw Error('请先选择用于读取媒体的 API 模型。');
-      if (capability && !capability.includes(kind)) throw Error('此模型的已知能力不支持当前媒体，请更换处理模型。');
-      if (!capability && kind !== 'image' && !confirmed) throw Error('请确认服务端支持此媒体，或在对话设置中登记模型能力。');
+      let known = capability;
+      // 接入声明说不收图、又没实测过：先发一张小图实测，再决定
+      if (kind === 'image' && destination.id !== 'native-client' && visionUntested(destination, model, info)) {
+        const key = await secretGet(destination.id);
+        if (key) { try { await probeVision(destination, model, key, { signal: controller.signal }); } catch { /* 测不出来就按声明 */ } known = mediaCapabilities(destination, model, info); }
+      }
+      if (known && !known.includes(kind)) throw Error('此模型实测或已知能力不支持当前媒体，请更换处理模型。');
+      if (!known && kind !== 'image' && !confirmed) throw Error('请确认服务端支持此媒体，或在对话设置中登记模型能力。');
       const a: Attachment = { id: crypto.randomUUID(), name: file.name, kind, mime: file.type, size: file.size, mediaRoute: routeKey(destination, model) };
       if (kind === 'audio') {
         if (/audio\/(mpeg|mp3)/.test(file.type)) a.dataUrl = await readDataUrl(file);

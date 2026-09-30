@@ -1,7 +1,8 @@
 import { receiveCoordination, type CoordinationMessage } from './conversation-coordination';
 import { parseConversationRequest, type ConversationRequest } from './create-conversation';
 import { acceptLiveAnswer } from './live-input';
-import { mediaParts, validateMediaRoute } from './media-input';
+import { applyImageFormat, mediaParts, validateMediaRoute, visionUntested } from './media-input';
+import { readVision } from './compatibility-cache';
 import { reconcileProgress, qualityLoop, qualityCheckpoint } from './task-progress';
 import type {
   AccessRequest,
@@ -42,7 +43,7 @@ import { contextView, runtimePolicy } from './task-context';
 import { filePathsInText } from './artifacts';
 import { endExchange } from './wiretap';
 import { calibratedTokens, capabilities, dispatchBudget, nearContextSuggestion, observeInput, outputReserve, prepareBody, paceFields, quotaKey, rateLimitLearning, routeKey, snapshot, workingBudget, RUNTIME_VERSION } from './adaptive';
-import { probeCompatibility } from './compatibility-probe';
+import { probeCompatibility, probeVision } from './compatibility-probe';
 import { readSourceText } from './team-text-review';
 import { compressionCandidate, memoryInstructions, memoryView, readContext, recentOutputFiles, updatePlan, validateCompaction } from './context-memory';
 import { handoffInfo, repeatedWithoutProgress, type ConversationMemory } from './handoff';
@@ -893,7 +894,10 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
           const codeReviewInstructions=args.toolCtx().reviewCodeChanges ? '\n代码审核模式已开启：修改本地代码只能使用 write_file、edit_file、delete_file。客户端会先展示差异，用户批准后才写入。命令、本机代理和无法预览的写入被阻止；不要尝试通过其他工具绕过，也不要声称已运行被阻止的测试。' : '';
           const extra = (state.extraSystem ?? args.extraSystem)+harnessInstructions(cfg,state)+memoryInstructions(state,harnessMode(cfg)==='guided'&&!final&&toolNames.includes('update_plan'),!final&&readable)+codeReviewInstructions;
           if (final) view = [...view, { id: 'wrap-up', role: 'user', content: '本阶段轮次已到。请如实汇总已完成与尚未完成的事项，不要声称未实际交付的文件已经生成。', createdAt: Date.now() }];
-          const build = (v: ChatMessage[]) => prepareBody(buildRequestBody(cfg,toWire(v,cfg,!final && toolNames.length > 0,extra),final ? [] : toolNames,args.effortMappings),cfg,cap);
+          const build = (v: ChatMessage[]) => applyImageFormat(prepareBody(buildRequestBody(cfg,toWire(v,cfg,!final && toolNames.length > 0,extra),final ? [] : toolNames,args.effortMappings),cfg,cap),readVision(args.profile,cfg.model)?.format);
+          if (view.some(m => m.attachments?.some(a => a.kind === 'image')) && visionUntested(args.profile, cfg.model, args.modelInfo)) {
+            try { await probeVision(args.profile, cfg.model, args.apiKey, { signal: control.signal }); } catch (e) { if (control.signal.aborted) throw e; }
+          }
           validateMediaRoute(view, args.profile, cfg.model, args.modelInfo);
           let body = build(view);
           let bodyTokens = calibratedTokens(body,args.profile,cfg);
