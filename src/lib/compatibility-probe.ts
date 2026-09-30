@@ -1,3 +1,4 @@
+import { isRateLimited } from './pacer';
 import type { KeyProfile } from '../types';
 import type { EffortLevel } from './effort';
 import { buildHeaders, endpoint } from './api';
@@ -55,7 +56,7 @@ export function probeCompatibility(profile:KeyProfile,model:string,key:string,op
   if(options.signal?.aborted)return Promise.reject(new DOMException('已取消','AbortError'));
   const id=compatibilityKey(profile,model),existing=pending.get(id);
   if(existing&&!existing.control.signal.aborted)return subscribe(existing,options.signal);
-  const cached=readCompatibility(profile,model);if(cached&&!options.force)return Promise.resolve(cached);
+  const cached=readCompatibility(profile,model);if(cached&&!options.force&&(cached.status==='ready'||!isRateLimited(cached.note)))return Promise.resolve(cached);
   const transport=getTransport();
   const send:ProbeSend=async(body,signal)=>{
     const requestId=`compat-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -68,6 +69,6 @@ export function probeCompatibility(profile:KeyProfile,model:string,key:string,op
     } finally {signal?.removeEventListener('abort',abort);}
   };
   const job:ProbeJob={promise:Promise.resolve(null as unknown as CompatibilityReport),control:new AbortController(),clients:0,done:false};
-  job.promise=discoverCompatibility(model,send,job.control.signal).then(report=>{writeCompatibility(profile,model,report);return report;}).finally(()=>{job.done=true;if(pending.get(id)===job)pending.delete(id);});
+  job.promise=discoverCompatibility(model,send,job.control.signal).then(report=>{if(report.status==='ready'||!isRateLimited(report.note))writeCompatibility(profile,model,report);return report;}).finally(()=>{job.done=true;if(pending.get(id)===job)pending.delete(id);});
   pending.set(id,job);return subscribe(job,options.signal);
 }

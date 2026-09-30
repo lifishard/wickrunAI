@@ -485,7 +485,16 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
     try {
       if(args.autoProbe&&cfg.thinkingStyle==='auto'&&args.profile.protocol!=='anthropic'){
         events.onNotice('正在核对当前模型的请求格式…');
-        const report=await probeCompatibility(args.profile,cfg.model,args.apiKey,{signal:control.signal});
+        // 格式检测撞上 TPM/RPM 也按调用额度退避后重测，不因为检测本身被限流就停下整次任务
+        const probeStarted=Date.now();
+        let report=await probeCompatibility(args.profile,cfg.model,args.apiKey,{signal:control.signal});
+        while(report.status!=='ready'&&isRateLimited(report.note,/\b429\b/.test(report.note)?429:undefined)){
+          if(control.signal.aborted)throw abortError();
+          const ms=rateLimitDelay(undefined,classifyError(report.note,429,{model:cfg.model}).retryAfterMs);
+          if(Date.now()-probeStarted+ms>policy.recoveryMinutes*60000)break;
+          await wait(ms,'等待调用额度后重新核对请求格式');
+          report=await probeCompatibility(args.profile,cfg.model,args.apiKey,{force:true,signal:control.signal});
+        }
         if(control.signal.aborted)throw abortError();
         if(report.status!=='ready')throw Error(`兼容性检测暂未完成：${report.note}。可在输入框下方重新检测。`);
         events.onNotice('');
