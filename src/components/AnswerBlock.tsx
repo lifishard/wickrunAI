@@ -12,6 +12,8 @@ import { TOOL_BY_NAME } from '../lib/tools/registry';
 import { classifyError, isCleanStop } from '../lib/errors';
 import { useT, type Translate } from '../lib/i18n';
 import Markdown from './Markdown';
+import OutputToolCards, { answerBodyAndFollowups } from './OutputToolCards';
+import { OUTPUT_TOOL_NAMES } from '../lib/output-tools';
 import MessageNotes from './MessageNotes';
 import DeliveryPanel from './DeliveryPanel';
 import RecoveryCard from './RecoveryCard';
@@ -24,6 +26,7 @@ import SubagentProgress from './SubagentProgress';
 import type { KeyProfile } from '../types';
 import type { GatewayRecoveryResult } from '../lib/gateway-recovery';
 import { clientText } from '../lib/client-text';
+import CopyablePre from './CopyablePre';
 
 /** finish_reason 的人话注解，鼠标悬停时显示 */
 const STOP_HINT: Record<string, string> = {
@@ -165,7 +168,7 @@ function ErrorCard(props: {
         ) : null}
         <details className="err-raw">
           <summary>{t('上游原文')}</summary>
-          <pre>{info.detail || props.raw}</pre>
+          <CopyablePre text={info.detail || props.raw} />
         </details>
       </div>
     </div>
@@ -218,9 +221,9 @@ export function StepTrace({ steps, live }: { steps: ToolStep[]; live: boolean })
                 {isOpen ? (
                   <div className="trace-detail">
                     <div className="trace-detail-label">{t('参数')}</div>
-                    <pre>{JSON.stringify(s.args, null, 2)}</pre>
+                    <CopyablePre text={JSON.stringify(s.args, null, 2)} />
                     <div className="trace-detail-label">{s.error ? t('错误') : t('返回')}</div>
-                    <pre>{s.error ?? (s.output || t('（无输出）')).slice(0, 4000)}</pre>
+                    <CopyablePre text={s.error ?? (s.output || t('（无输出）'))} displayText={s.error ?? (s.output || t('（无输出）')).slice(0, 4000)} />
                   </div>
                 ) : null}
               </div>
@@ -267,6 +270,7 @@ export default function AnswerBlock(props: {
   onSaveAnnotation: (note: MessageAnnotation) => Promise<void>;
   onDeleteAnnotation: (messageId: string, noteId: string) => Promise<void>;
   onEditQuestion?: (text: string) => void;
+  onFollowup?: (question: string) => void;
   onFork?: () => void;
   onDelete?: () => void;
 }) {
@@ -282,6 +286,7 @@ export default function AnswerBlock(props: {
   const sources = answer?.sources ?? [];
   const steps = answer?.steps ?? [];
   const live = Boolean(answer?.pending);
+  const visibleAnswer=answer ? (live ? answer.content : answerBodyAndFollowups(answer.content,steps).body) : '';
   const inputFiles: Artifact[] = (question?.attachments ?? []).filter((a) => a.path).map((a) => ({
     id: `input-${a.id}`, kind: 'file', name: a.name, path: a.path, type: typeOfPath(a.path!),
     size: a.size, direction: 'input', verifiedAt: question!.createdAt, createdAt: question!.createdAt,
@@ -436,7 +441,7 @@ export default function AnswerBlock(props: {
           <p>{t('此处记录上下文交付状态；模型是否理解准确仍需看后续行动和验收结果。')}</p>
         </div>
       </details> : null}
-      <DeliveryPanel report={answer?.delivery ?? answer?.runState?.delivery} visible={Boolean(answer && !answer.pending && (answer.milestones?.length || answer.delivery?.requirements.length || answer.steps?.length))}/>
+      <DeliveryPanel report={answer?.delivery ?? answer?.runState?.delivery} visible={Boolean(answer && !answer.pending && (answer.milestones?.length || answer.delivery?.requirements.length || steps.some(step=>!OUTPUT_TOOL_NAMES.some(name=>name===step.name))))}/>
 
       {answer?.error ? (
         <ErrorCard
@@ -452,12 +457,13 @@ export default function AnswerBlock(props: {
 
       {answer ? (
         <div className="answer" id={`msg-${answer.id}`} data-message-id={answer.id}>
-          {answer.content ? (
-            <Markdown text={answer.content} sources={sources} />
+          {visibleAnswer ? (
+            <Markdown text={visibleAnswer} sources={sources} copyText />
           ) : live && !steps.length ? (
             <BrandLoading label={t('灯芯正在思考')} />
           ) : null}
           {live && answer.content ? <span className="answer-loading" role="status" aria-label={t('灯芯正在思考')}><BrandLogo loading size={24} /></span> : null}
+          <OutputToolCards content={live ? '' : answer.content} steps={steps} onFollowup={live?undefined:props.onFollowup}/>
         </div>
       ) : null}
 

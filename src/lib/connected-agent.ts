@@ -4,6 +4,7 @@ import { addRunInput } from './delivery';
 import { reconcileProgress } from './task-progress';
 import { deliveryReport } from './delivery';
 import { nativeProgressInstructions, applyNativeProgress, nativeVisibleText } from './native-progress';
+import { NATIVE_OUTPUT_INSTRUCTIONS, nativeOutputSteps, outputTranscript } from './output-tools';
 import {runAgent,buildWire,type RunAgentArgs,type AgentHandle} from './agent';
 import {desktop} from './transport';
 import type {RunState,ToolStep} from '../types';
@@ -13,6 +14,7 @@ import {taskSeed,harnessInstructions,planOnly,completionBlocker,nativeCompletion
 import {runDesktopConversation} from './desktop-conversation';
 import {reviewGuard} from './review-guard';
 import {clientContent} from './client-content';
+import {awaitAbortable} from './abortable';
 
 /** Native adapters receive a portable transcript; vendor session IDs are evidence, not the sole memory. */
 export function runConnectedAgent(args:RunAgentArgs):AgentHandle {
@@ -31,6 +33,7 @@ export function runConnectedAgent(args:RunAgentArgs):AgentHandle {
   }
   const bridge=desktop(), events=args.events;
   let cancelled=false;
+  const cancelControl=new AbortController();
   let off=()=>{};
   let nativeRequestId=args.requestId;
   let ended=false;
@@ -50,12 +53,12 @@ export function runConnectedAgent(args:RunAgentArgs):AgentHandle {
   void (async()=>{
     try{
       if(!bridge)throw Error('本机连接需要使用桌面版。');
-      const reviewBlocked=await reviewGuard(args,args.config.client!.kind);
+      const reviewBlocked=await awaitAbortable(reviewGuard(args,args.config.client!.kind),cancelControl.signal);
       if(reviewBlocked)throw Error(reviewBlocked);
       let recovered:ClientTurnResult|null=null;
       if(state.uncertainCallId){
         if(state.uncertainCallId.startsWith('native-')){
-          const previous=await bridge.conversationClientRecover(state.runId!,state.uncertainCallId);
+          const previous=await awaitAbortable(bridge.conversationClientRecover(state.runId!,state.uncertainCallId),cancelControl.signal);
           if(previous?.status==='completed')recovered=previous;
           else if(!previous)state.uncertainCallId=undefined;
           else if(args.resolveUncertain==='skip')recovered={status:'completed',text:'你已核实并跳过先前未确认的操作；本次没有重新执行。'};
@@ -154,11 +157,13 @@ export function runConnectedAgent(args:RunAgentArgs):AgentHandle {
 
 When you need user input, emit exactly one <wickrun_question> marker containing JSON in this schema: {"blocking":false,"questions":[{"id":"stable-id","header":"short optional heading","question":"question text","options":[{"label":"choice","description":"optional explanation"}],"multiple":false}]}. Include 1 to 3 questions, at most 6 options per question, and use an empty options array for a free-text question. Do not put markdown around the marker. You may put a short user-visible explanation before or after it. Use blocking:false when independent work remains; the app displays the question and invokes a continuation. Use blocking:true only when you cannot continue. Do not repeat an unanswered question or assume its answer. Never use this marker unless the turn has completed successfully.
 
+${NATIVE_OUTPUT_INSTRUCTIONS}
+
 ${JSON.stringify(transcript)}`;
       events.onNotice('正在等待官方客户端返回结果…');
       // Save dispatch uncertainty before invoking: a renderer restart cannot imply that nothing ran.
       if(!recovered){state.uncertainCallId='native-'+nativeRequestId;await save();}
-      const result=recovered ?? await bridge.conversationClientRun({runId:state.runId!,requestId:nativeRequestId,prompt,images,cwd:args.config.toolsEnabled?args.toolCtx().workspaceRoots[0]:undefined});
+      const result=recovered ?? await awaitAbortable(bridge.conversationClientRun({runId:state.runId!,requestId:nativeRequestId,prompt,images,cwd:args.config.toolsEnabled?args.toolCtx().workspaceRoots[0]:undefined}),cancelControl.signal);
       if(result.codeChanges?.length || result.codeAuditWarnings?.length){
         const id=nativeRequestId+'-code-audit';
         const step:ToolStep={id,callId:id,name:'native_code_changes',args:{},status:result.status==='completed'?'ok':'error',summary:'本机客户端代码改动',startedAt:Date.now(),codeChanges:result.codeChanges,codeAuditWarnings:result.codeAuditWarnings};
@@ -171,6 +176,13 @@ ${JSON.stringify(transcript)}`;
         state.uncertainCallId=undefined;
         state.working.push({id:nativeRequestId+'-answer',role:'assistant',content:result.text,createdAt:Date.now()});
         await save();continue;
+      }
+      if(result.status==='completed'){
+        for(const step of nativeOutputSteps(result.text||'',nativeRequestId)){
+          state.steps=state.steps!.filter(existing=>existing.id!==step.id).concat(step);
+          events.onStep(step);
+        }
+        await save();
       }
       // A question marker is actionable only on a verified terminal result.
       // Unknown/failed native outcomes must stay uncertain so recovery cannot
@@ -213,7 +225,7 @@ ${JSON.stringify(transcript)}`;
         throw Error(unproven);
       }
       events.onContentReplace?.(state.content??'',state.reasoning??'');
-      state.working.push({id:args.requestId+'-answer',role:'assistant',content:state.content??'',createdAt:Date.now()});
+      state.working.push({id:args.requestId+'-answer',role:'assistant',content:outputTranscript(state.content??'',nativeOutputSteps(result.text||'',nativeRequestId)),createdAt:Date.now()});
       state.status='completed';state.reason=undefined;state.pendingCalls=undefined;state.toolCursor=undefined;
       await save();await events.onRunState(null);events.onNotice('');events.onDone();return;
       }
@@ -226,9 +238,9 @@ ${JSON.stringify(transcript)}`;
     }finally{ended=true;off();}
   })();
   return {
-    interrupt(message){if(ended||cancelled)throw Error('当前任务已停止');Object.assign(state,addRunInput(state,message));state.working=state.working.filter(m=>m.id!==message.id);state.pendingInputMessages=[...(state.pendingInputMessages??[]).filter(m=>m.id!==message.id),message];state.replanPending=true;cancelled=true;void bridge?.toolAbort(state.runId!);},
+    interrupt(message){if(ended||cancelled)throw Error('当前任务已停止');Object.assign(state,addRunInput(state,message));state.working=state.working.filter(m=>m.id!==message.id);state.pendingInputMessages=[...(state.pendingInputMessages??[]).filter(m=>m.id!==message.id),message];state.replanPending=true;cancelled=true;cancelControl.abort();void bridge?.toolAbort(state.runId!).catch(()=>{});},
     async questionDraft(id,draft){if(!ended&&state.userQuestion?.request.id===id){state.userQuestion.draft=structuredClone(draft);await save();}},
     async answerQuestion(id,answers){if(ended||cancelled)throw Error('当前任务已停止');acceptLiveAnswer(state,id,answers);await save();},
-    abort(){cancelled=true;void bridge?.toolAbort(state.runId!);}
+    abort(){cancelled=true;cancelControl.abort();void bridge?.toolAbort(state.runId!).catch(()=>{});}
   };
 }

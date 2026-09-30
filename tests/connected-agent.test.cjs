@@ -13,6 +13,19 @@ function fixture(result,previous=null){
 }
 const marker='<wickrun_question>'+JSON.stringify({questions:[{id:'choice',question:'Which day?',options:[{label:'Friday'},{label:'Monday'}]}]})+'</wickrun_question>';
 
+test('native output and optional followups become saved display steps without exposing markers',async()=>{
+  const steps=[];
+  const reply='Done.\n<wickrun_output>{"title":"Email","text":"Hello there"}</wickrun_output>\n<wickrun_followups>{"questions":["What should I change?"]}</wickrun_followups>';
+  const f=fixture({status:'completed',text:reply});
+  f.run({events:{...f.args.events,onStep:step=>steps.push(step)}});
+  assert.equal(await f.finished,'completed');
+  assert.deepEqual(steps.map(step=>step.name),['present_output','suggest_followups']);
+  assert.ok(steps.every(step=>step.status==='ok'));
+  assert.equal(f.states.at(-1).content,'Done.');
+  assert.ok(f.visible.every(text=>!text.includes('wickrun_output')&&!text.includes('wickrun_followups')));
+  assert.match(f.calls[0].prompt,/wickrun_output/);
+});
+
 test('native reasoning, tool activity and silent waiting reach the UI and survive a failed turn',async()=>{
   const steps=[],notices=[],reasoning=[];
   const f=fixture(async(_args,emit)=>{

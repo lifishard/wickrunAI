@@ -63,6 +63,18 @@ export const TOOLS: ToolDef[] = [
   {name:'list_subagents',label:'查看临时子代理',group:'agent',description:'查看本轮允许的工作模型、角色目录与已派发子代理状态。query 搜索角色名称或职责，category 按分类筛选；每次最多返回 30 个角色。不会启动任务或调用模型。',parameters:{type:'object',properties:{query:{type:'string'},category:{type:'string'}}},summarize:()=> tr('查看临时协作状态')},
   {name:'wait_subagents',label:'收取子代理结果',group:'agent',description:'收取本轮子代理的状态和结果。ids 可省略表示全部；最多等待 8 秒。未完成时先做其他独立工作，再查询；不得把运行中当成完成。',parameters:{type:'object',properties:{ids:{type:'array',items:{type:'string'}},wait_ms:{type:'integer',minimum:0,maximum:8000}}},summarize:()=> tr('收取子代理结果')},
   {
+    name:'present_output',label:'展示成品文本',group:'agent',
+    description:'在当前对话中展示一份可复制的成品文本，例如邮件、消息、文案、改写段落或合同草稿。只在用户要可直接使用的正文时调用；text 必须是完整成品，title 是短标签。此工具只展示文字，不保存文件、不发消息、不执行命令，不需要用户批准。调用后简短说明即可，不要再复制一遍正文。',
+    parameters:{type:'object',properties:{title:{type:'string',maxLength:80},text:{type:'string',maxLength:30000}},required:['text']},
+    summarize:a=>s(a.title)?tr('展示成品文本：{title}',{title:clip(a.title,36)}):tr('展示成品文本'),
+  },
+  {
+    name:'suggest_followups',label:'展示可选追问',group:'agent',
+    description:'把你建议用户进一步问你的问题展示为当前对话中的可点选行。只放用户可能想追问你的完整问句，不放你必须等待用户回答的澄清、偏好、授权或决策；后者用 request_user_input。建议 1 到 3 个、每条简短。此工具只展示选项，不发送问题、不调用模型、不需要批准；只有用户点击时才在同一对话发送。',
+    parameters:{type:'object',properties:{questions:{type:'array',minItems:1,maxItems:3,items:{type:'string',maxLength:240}}},required:['questions']},
+    summarize:()=>tr('展示可选追问'),
+  },
+  {
     name: 'request_user_input',
     label: '询问用户',
     group: 'agent',

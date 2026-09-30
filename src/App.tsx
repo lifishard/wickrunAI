@@ -43,7 +43,7 @@ import { validateUserAnswers, type UserQuestionAnswers } from './lib/user-questi
 import { SEED_MODELS, buildHeaders, endpoint, fetchModels, previewBody } from './lib/api';
 import { PROBE_SPACING_MS, probe400, probeHistory, type ProbeStep } from './lib/probe400';
 import { formatExchange, failedExchange, exchangeOf, importExchanges } from './lib/wiretap';
-import { loadRuns, saveRun, recoverConversations, forgetRuns, runRecord,conversationsForStorage } from './lib/runs';
+import { loadRuns, saveRun, recoverConversations, pauseOrphanedPending, forgetRuns, runRecord,conversationsForStorage } from './lib/runs';
 import { localProgress } from './lib/task-context';
 import { conversationMemory, createContextHandoff, withHandoffArchive } from './lib/handoff';
 import { capabilities, outputReserve, quotaKey, routeKey, workingBudget } from './lib/adaptive';
@@ -256,6 +256,8 @@ export default function App() {
   const [quoteOnly, setQuoteOnly] = React.useState(true);
   const [pausedQueues, setPausedQueues] = React.useState<string[]>([]);
   const startingRef = React.useRef(new Set<string>());
+  const preparingRef = React.useRef(new Map<string, AbortController>());
+  const [preparingIds, setPreparingIds] = React.useState<string[]>([]);
   const interruptingRef = React.useRef(new Map<string, {requestId:string;input:ChatMessage}>());
   const [resumeInput,setResumeInput]=React.useState<{convId:string;state:RunState}|null>(null);
   // 失灵交接：换好路由后带着现场重新起跑
@@ -351,6 +353,7 @@ export default function App() {
       let recovered = c;
       try { recovered = recoverConversations(c, await loadRuns()); }
       catch (err) { toast.show(t('执行记录读取失败：{error}', { error: String(err) }), 6000); }
+      recovered = pauseOrphanedPending(recovered);
       if (cancelled) return;
       try {
         const savedQueue=JSON.parse(await getTransport().kvGet('wickrun:input-queue:v1')||'[]');
@@ -485,7 +488,7 @@ export default function App() {
     [locale],
   );
   /** 界面只关心当前会话：别的会话在后台跑不该锁住这里的输入和按钮。 */
-  const busy = activeId ? runs[activeId] ?? null : null;
+  const busy = (activeId ? runs[activeId] || preparingIds.includes(activeId) || Boolean(active?.messages.some(message => message.pending)) : preparingIds.includes('__new__')) || null;
   const queuePaused = activeId ? pausedQueues.includes(activeId) : false;
   const pauseQueue = (id: string) => setPausedQueues((list) => (list.includes(id) ? list : [...list, id]));
   const resumeQueue = (id: string) => setPausedQueues((list) => list.filter((x) => x !== id));
@@ -1209,30 +1212,41 @@ export default function App() {
       const startKey = targetId ?? '__new__';
       if (startingRef.current.has(startKey) || (targetId && runningRef.current.has(targetId))) {
         setQueue((q) => [...q, queuedInput ?? { toolsEnabled:config?.toolsEnabled, text, attachments: [...attachments], quotes: [...quotes], quoteOnly, conversationId: targetId }]);
-        setAttachments([]); setQuotes([]);
+        if(!queuedInput?.preserveComposer){setAttachments([]); setQuotes([]);}
         return;
       }
       if (!profile) {
         toast.show(t('先去设置里登记一份 API 凭据')); setSettingsOpen(true); return;
       }
       startingRef.current.add(startKey);
+      const preparation = new AbortController();
+      let preparingKey = startKey;
+      preparingRef.current.set(startKey, preparation);
+      setPreparingIds(ids => ids.includes(startKey) ? ids : [...ids, startKey]);
+      const finishPreparing = () => {
+        if (preparingRef.current.get(preparingKey) !== preparation) return;
+        preparingRef.current.delete(preparingKey);
+        startingRef.current.delete(preparingKey);
+        setPreparingIds(ids => ids.filter(id => id !== preparingKey));
+      };
       let apiKey: string | null;
       try { apiKey = nativeClient ? 'official-client' : await secretGet(profile.id); }
-      catch (e) { startingRef.current.delete(startKey); toast.show(String(e)); return; }
-      if (!apiKey) { startingRef.current.delete(startKey); toast.show(t('这份凭据还没填 API Key')); setSettingsOpen(true); return; }
+      catch (e) { finishPreparing(); if (!preparation.signal.aborted) toast.show(String(e)); return; }
+      if (preparation.signal.aborted) return;
+      if (!apiKey) { finishPreparing(); toast.show(t('这份凭据还没填 API Key')); setSettingsOpen(true); return; }
       // 没有会话就现开一个；排队条目带着会话 id，指向哪个会话就在哪个会话里跑
       let conv = targetConversation;
       if (!conv) {
         conv = newConversation(settings.defaultConfig, profile.id);
       }
-      if(conv.workspaceError&&(queuedInput?.toolsEnabled??conv.config.toolsEnabled)){startingRef.current.delete(startKey);toast.show('独立工作区未准备好，任务未执行。请修正目录后重新创建 Work 会话。',6000);return;}
+      if(conv.workspaceError&&(queuedInput?.toolsEnabled??conv.config.toolsEnabled)){finishPreparing();toast.show('独立工作区未准备好，任务未执行。请修正目录后重新创建 Work 会话。',6000);return;}
       const roleCatalog=localizeRoles(libraryRoles(settings.officeLibrary,conv.projectId?teamRuntime.project(conv.projectId).office?.customRoles:undefined),locale);
       const cfg = withRequestedDelegation(queuedInput?.toolsEnabled===undefined?conv.config:{...conv.config,toolsEnabled:queuedInput.toolsEnabled},text,roleCatalog,profile.id);
       // 新任务重新开始数：已试过的名单只在一次任务内有效，不该拖累下一个问题
       if(!resumeFrom)failoverTriedRef.current.delete(conv.id);
 
       if (!cfg.model) {
-        startingRef.current.delete(startKey);
+        finishPreparing();
         toast.show(t('先选一个模型'));
         setConfigOpen(true);
         return;
@@ -1247,7 +1261,8 @@ export default function App() {
         : replaceFromIndex === undefined ? conv.messages : conv.messages.slice(0, replaceFromIndex);
       if (!resumeFrom && replaceFromIndex !== undefined) {
         try { await forgetRuns(conv.id, new Set(conv.messages.slice(replaceFromIndex).map((m) => m.id))); }
-        catch (e) { startingRef.current.delete(startKey); toast.show(t('无法更新执行记录：{error}', { error: String(e) })); return; }
+        catch (e) { finishPreparing(); if (!preparation.signal.aborted) toast.show(t('无法更新执行记录：{error}', { error: String(e) })); return; }
+        if (preparation.signal.aborted) return;
       }
 
       // 本轮唤起的技能：固定一份快照，并记一次使用次数。
@@ -1274,10 +1289,11 @@ export default function App() {
       const modelInfo = models.find(m => m.id === cfg.model);
       if (!nativeClient && apiKey && [...kept, userMsg].some(m => m.attachments?.some(a => a.kind === 'image')) && visionUntested(profile, cfg.model, modelInfo)) {
         toast.show(t('正在确认当前模型能否看图…'), 4000);
-        try { await probeVision(profile, cfg.model, apiKey); } catch { /* 测不出来就按接入声明处理 */ }
+        try { await probeVision(profile, cfg.model, apiKey, {signal:preparation.signal}); } catch { /* 测不出来就按接入声明处理 */ }
+        if (preparation.signal.aborted) return;
       }
       try { validateMediaRoute([...kept, userMsg], profile, cfg.model, modelInfo, !!nativeClient); }
-      catch (e) { startingRef.current.delete(startKey); toast.show(String(e), 6000); return; }
+      catch (e) { finishPreparing(); toast.show(String(e), 6000); return; }
       const answerMsg: ChatMessage = {
         ...resumeAnswer,
         id: resumeAnswer?.id ?? uid('m'),
@@ -1293,7 +1309,12 @@ export default function App() {
       };
 
       const convId = conv.id;
-      if (convId !== startKey) { startingRef.current.delete(startKey); startingRef.current.add(convId); }
+      if (convId !== startKey) {
+        startingRef.current.delete(startKey); startingRef.current.add(convId);
+        preparingRef.current.delete(startKey); preparingRef.current.set(convId, preparation);
+        preparingKey = convId;
+        setPreparingIds(ids => ids.map(id => id === startKey ? convId : id));
+      }
 
       // 会话之间并行没问题，同时往一个目录里写有问题：先登记，占着就等对方放手
       const wantedRoots = cfg.toolsEnabled
@@ -1301,10 +1322,10 @@ export default function App() {
         : [];
       const holders = holdersOf(convId, wantedRoots);
       if (holders.length) {
-        startingRef.current.delete(convId);
+        finishPreparing();
         blockedOnRoots.current.set(convId, wantedRoots);
         setQueue((q) => [...q, queuedInput ?? { toolsEnabled: cfg.toolsEnabled, text, attachments: [...attachments], quotes: [...quotes], quoteOnly, conversationId: convId }]);
-        setAttachments([]); setQuotes([]);
+        if(!queuedInput?.preserveComposer){setAttachments([]); setQuotes([]);}
         pauseQueue(convId);
         const holderTitle = conversations.find((c) => c.id === holders[0])?.title || t('另一个会话');
         toast.show(t('「{title}」正在这个工作目录里执行。这条排着，等它结束再发。', { title: holderTitle }), 6000);
@@ -1315,7 +1336,7 @@ export default function App() {
       const history = [...kept, userMsg];
       const nextConv: Conversation = {
         ...conv,
-        draft: resumeFrom ? conv.draft : '',
+        draft: resumeFrom || queuedInput?.preserveComposer ? conv.draft : '',
         title: kept.length === 0 && !conv.creationFingerprint ? titleFrom(text) : conv.title || titleFrom(text),
         messages: resumeAnswer ? conv.messages.map((m) => m.id === answerMsg.id ? answerMsg : m) : [...history, answerMsg],
         updatedAt: Date.now(),
@@ -1324,7 +1345,7 @@ export default function App() {
       setConversations(all => all.some(c=>c.id===convId) ? all.map(c=>c.id===convId?{...nextConv,coordinationMessages:c.coordinationMessages}:c) : [nextConv,...all]);
       // 后台会话的排队/恢复不抢焦点：只有从当前可见会话发出的才切过去
       if (!queuedInput?.conversationId || queuedInput.conversationId === active?.id) setActiveId(convId);
-      if (!resumeFrom && (!queuedInput?.conversationId || queuedInput.conversationId===activeIdRef.current)) { setAttachments([]); setQuotes([]); }
+      if (!resumeFrom && !queuedInput?.preserveComposer && (!queuedInput?.conversationId || queuedInput.conversationId===activeIdRef.current)) { setAttachments([]); setQuotes([]); }
       resumeQueue(convId);
 
       /* --- 流式缓冲：按 60ms 节流刷进 state，不然一个 token 一次 setState --- */
@@ -1645,7 +1666,7 @@ export default function App() {
         },
       });
 
-      startingRef.current.delete(convId);
+      finishPreparing();
       runningRef.current.set(convId, { requestId, handle });
       setRuns((prev) => ({ ...prev, [convId]: { requestId, handle } }));
     },
@@ -1716,12 +1737,22 @@ export default function App() {
   function abortRun(id:string){
     interruptingRef.current.delete(id);
     pauseQueue(id);
+    const preparation = preparingRef.current.get(id);
+    if (preparation) {
+      preparation.abort();
+      preparingRef.current.delete(id);
+      startingRef.current.delete(id);
+      setPreparingIds(ids => ids.filter(key => key !== id));
+    }
     runningRef.current.get(id)?.handle.abort();
+    if (!preparation && !runningRef.current.has(id)) {
+      setConversations(all => all.map(conversation => conversation.id === id ? pauseOrphanedPending([conversation])[0] : conversation));
+    }
   }
 
   /** 停当前会话（或指定会话）；别的会话的任务继续跑。 */
   function stop(target?:string) {
-    const id=target??activeId;
+    const id=target??activeId??'__new__';
     if(id)abortRun(id);
     if(!target)setResumeInput(null);
     setConfirmReq((request) => { request?.resolve(false); return null; });
@@ -1729,7 +1760,7 @@ export default function App() {
   }
 
   function stopAll() {
-    for(const id of [...runningRef.current.keys()])abortRun(id);
+    for(const id of new Set([...runningRef.current.keys(), ...preparingRef.current.keys()]))abortRun(id);
     setResumeInput(null);
     setConfirmReq((request) => { request?.resolve(false); return null; });
     setGrantReq((request) => { request?.resolve(false); return null; });
@@ -2014,20 +2045,21 @@ export default function App() {
         toolNames,mappings:settings.effortMappings,learned:settings.modelLimits?.[limitKey(profile.id,config.model,profile.baseUrl)],
         modelInfo:models.find(m => m.id === config.model), current:busy ? [...(active?.messages ?? [])].reverse().find(m => m.pending)?.contextSnapshot : undefined } : undefined}
       busy={Boolean(busy)}
+      preparing={preparingIds.includes(active?.id ?? '__new__')}
       disabled={false}
       sendKey={settings.sendKey}
       sendMode={config.toolsEnabled ? "work" : "chat"}
       onSendMode={(mode) => {
         setConfig({ toolsEnabled: mode === 'work' });
         if (busy) {
-          toast.show(t('当前任务继续执行；模式切换仅对下一条消息生效。需要停止请点停止按钮。'));
+          toast.show(t('当前任务继续执行；模式切换仅对下一条消息生效。需要暂停请点暂停按钮。'));
         } else if (mode === 'work' && active?.messages.length) {
           toast.show(t(busy ? '当前回复会继续完成；下一条消息将带上已有对话，由 Work 接着处理' : '已切换为 Work，已有对话和附件会继续作为上下文'));
         }
       }}
       onSend={sendFromComposer}
-      onSendNow={t=>{const accepted=sendNow({text:t,attachments:[...attachments],quotes:[...quotes],quoteOnly,conversationId:active?.id??null});if(accepted){setAttachments([]);setQuotes([]);}return accepted;}}
-      onSendQueuedNow={i=>{const entry=activeQueue[i];if(entry&&sendNow(entry.item))setQueue(all=>all.filter((_,j)=>j!==entry.index));}}
+      onSendNow={active && runningRef.current.has(active.id) ? t=>{const accepted=sendNow({text:t,attachments:[...attachments],quotes:[...quotes],quoteOnly,conversationId:active.id});if(accepted){setAttachments([]);setQuotes([]);}return accepted;} : undefined}
+      onSendQueuedNow={active && runningRef.current.has(active.id) ? i=>{const entry=activeQueue[i];if(entry&&sendNow(entry.item))setQueue(all=>all.filter((_,j)=>j!==entry.index));} : undefined}
       onStop={() => stop()}
       stream={config.stream}
       toolCount={toolNames.length}
@@ -2318,6 +2350,7 @@ export default function App() {
                       if(question)void send(question);
                     }}
                     onResume={busy || !turn.a?.runState ? undefined : () => resumeRun(turn.a!)}
+                    onFollowup={busy || !active ? undefined : question=>void send(question,undefined,undefined,{text:question,conversationId:active.id,toolsEnabled:config.toolsEnabled,attachments:[],quotes:[],quoteOnly:false,preserveComposer:true})}
                     onCompact={busy || config.client || !turn.a?.runState ? undefined : () => resumeRun(turn.a!, undefined, undefined, true)}
                     onHandoff={!turn.a ? undefined : () => openContextHandoff(turn.a!)}
                     onPauseForContext={turn.a?.pending ? stop : undefined}

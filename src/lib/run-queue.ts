@@ -2,6 +2,8 @@ import type { Attachment, MessageQuote } from '../types';
 
 /** 生成期间又发的消息。conversationId 决定它属于哪个会话的队列。 */
 export interface QueuedInput {
+  /** Suggested follow-ups send their own text without consuming the user's draft. */
+  preserveComposer?: boolean;
   toolsEnabled?: boolean;
   text: string;
   attachments: Attachment[];

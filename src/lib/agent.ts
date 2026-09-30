@@ -41,6 +41,7 @@ import {
 import { isRateLimited, rateLimitDelay, retryAfterMs, waitCancellable, abortError } from './pacer';
 import { contextView, runtimePolicy } from './task-context';
 import { filePathsInText } from './artifacts';
+import { OUTPUT_TOOL_NAMES, presentedOutputs, runOutputTool } from './output-tools';
 import { endExchange } from './wiretap';
 import { calibratedTokens, capabilities, dispatchBudget, nearContextSuggestion, observeInput, outputReserve, prepareBody, paceFields, quotaKey, rateLimitLearning, routeKey, snapshot, workingBudget, RUNTIME_VERSION } from './adaptive';
 import { probeCompatibility, probeVision } from './compatibility-probe';
@@ -501,7 +502,7 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
         events.onNotice('');
       }
       const usable = new Set(availableTools(args.canRunHostTools).map((t) => t.name));
-      // request_user_input is renderer-owned and remains available in Chat;
+      // Renderer-owned interactions and output tools remain available in Chat;
       // host tools continue to obey the Work/toolsEnabled switch.
       const uiQuestionTool = usable.has('request_user_input') ? ['request_user_input'] : [];
       const toolNames = [...new Set([
@@ -519,6 +520,7 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
             : ['update_plan', 'update_requirements', 'verify_requirements']),
         ] : []),
         ...uiQuestionTool,
+        ...OUTPUT_TOOL_NAMES,
         ...(args.createConversation ? ['create_conversation'] : []),
         ...(args.coordinateTasks ? ['coordinate_tasks'] : []),
         ...(!cfg.toolsEnabled&&state.working.some(m=>m.attachments?.some(a=>(a.text?.length || 0)>100000))?['read_context']:[]),
@@ -797,6 +799,7 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
                       : call.name === 'verify_requirements' ? await interrupted(verifyRequirements(state,parsed,check => args.canRunHostTools
                         ? transport.callTool('inspect_deliverable',check,{...args.toolCtx()})
                         : Promise.resolve({ok:false,content:'',error:'当前环境没有本地文件核验能力'})))
+                      : OUTPUT_TOOL_NAMES.some(name=>name===call.name) ? runOutputTool(call.name,parsed)
                       : call.name === 'request_access'
                       ? await awaitUser(()=>args.grantAccess({ scope: String(parsed.scope ?? '') as AccessRequest['scope'], target: parsed.target ? String(parsed.target) : undefined, reason: String(parsed.reason ?? '') }))
                       : await interrupted(transport.callTool(call.name, parsed, { ...args.toolCtx(), codeReviewToken, execution: {
@@ -849,12 +852,26 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
           }
           const images = state.working.filter((m) => m.id === `screens-${state.round}`);
           state.working = [...state.working.filter((m) => m.id !== `screens-${state.round}`), ...images];
+          const receivedInput=Boolean(state.pendingInputMessages?.length);
           if(state.pendingInputMessages?.length){
             state.working.push(...state.pendingInputMessages);
             state.requirementSourceIds=[...new Set([...(state.requirementSourceIds??[]),...state.pendingInputMessages.map(m=>m.id)])];
             state.pendingInputMessages=[];
           }
           state.replanPending=false;
+          // A final batch that only displays in-app output is already the answer.
+          // Do not spend another model request asking it to acknowledge its own card.
+          if (calls.length && calls.every(call=>OUTPUT_TOOL_NAMES.some(name=>name===call.name)) &&
+              state.steps!.slice(-calls.length).every(step=>step.status==='ok') &&
+              !receivedInput && !state.userQuestion &&
+              !state.harness?.action && !state.milestones?.some(m=>m.status!=='completed') &&
+              !(state.requirements?.length) && !subagents.running()) {
+            const outputs=presentedOutputs(state.steps!);
+            if (!state.content?.trim() && outputs.length) state.content=outputs.map(item=>item.text).join('\n\n');
+            state.status='completed';state.reason=undefined;state.errorInfo=undefined;state.recovery=undefined;
+            await save();await events.onRunState(null);
+            ended=true;events.onNotice('');events.onDone();return;
+          }
           const stalled=previousChecks!==qualityCheckpoint(state)?qualityLoop(state):undefined;
           if(stalled){state.phase='request';state.round++;state.pendingCalls=[];state.toolCursor=0;await finishPause(stalled);return;}
           const recent = state.steps!.slice(-5);
@@ -892,7 +909,8 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
           let view = contextView(readable?memoryView(state):state.working, evidence, viewBudget,readable);
           view=readable?layeredMemoryView(view,state,cfg):view;
           const codeReviewInstructions=args.toolCtx().reviewCodeChanges ? '\n代码审核模式已开启：修改本地代码只能使用 write_file、edit_file、delete_file。客户端会先展示差异，用户批准后才写入。命令、本机代理和无法预览的写入被阻止；不要尝试通过其他工具绕过，也不要声称已运行被阻止的测试。' : '';
-          const extra = (state.extraSystem ?? args.extraSystem)+harnessInstructions(cfg,state)+memoryInstructions(state,harnessMode(cfg)==='guided'&&!final&&toolNames.includes('update_plan'),!final&&readable)+codeReviewInstructions;
+          const outputInstructions=toolNames.includes('present_output') ? '\nApp output tools are available in both Chat and Work. When the user asks for reusable finished prose (a draft, rewrite, email, message, or document text), call present_output with the full final text so the app can display a copyable output card; do not use file-writing tools for an in-app text answer. If you want to offer optional questions the user can ask you next, call suggest_followups with 1–3 complete questions; these are not clarifications or decisions you need answered. For information you need from the user, use request_user_input. Do not repeat a presented output verbatim in your final reply. File edits and commands retain their usual approval rules.\n' : '';
+          const extra = (state.extraSystem ?? args.extraSystem)+harnessInstructions(cfg,state)+memoryInstructions(state,harnessMode(cfg)==='guided'&&!final&&toolNames.includes('update_plan'),!final&&readable)+codeReviewInstructions+outputInstructions;
           if (final) view = [...view, { id: 'wrap-up', role: 'user', content: '本阶段轮次已到。请如实汇总已完成与尚未完成的事项，不要声称未实际交付的文件已经生成。', createdAt: Date.now() }];
           const build = (v: ChatMessage[]) => applyImageFormat(prepareBody(buildRequestBody(cfg,toWire(v,cfg,!final && toolNames.length > 0,extra),final ? [] : toolNames,args.effortMappings),cfg,cap),readVision(args.profile,cfg.model)?.format);
           if (view.some(m => m.attachments?.some(a => a.kind === 'image')) && visionUntested(args.profile, cfg.model, args.modelInfo)) {
@@ -1035,7 +1053,7 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
           const info = incomplete ? { ...pauseInfo(failure.message), kind: 'network' as const, retryable: true }
             : classifyError(failure.message, failure.status, { model: cfg.model, profileName: args.profileName, sentTools: toolNames.length > 0 });
           stat.failureKind=info.kind;
-          if(info.kind==='tools_unsupported' && !cfg.toolsEnabled && toolNames.length>0 && toolNames.every(n=>['request_user_input','create_conversation','coordinate_tasks'].includes(n))){
+          if(info.kind==='tools_unsupported' && !cfg.toolsEnabled && toolNames.length>0 && toolNames.every(n=>['request_user_input','create_conversation','coordinate_tasks',...OUTPUT_TOOL_NAMES].includes(n))){
             toolNames.splice(0);
             events.onNotice('此模型不支持交互工具，正在继续普通聊天；可用 /chat 或 /work 新建对话');
             await save();continue;

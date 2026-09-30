@@ -105,3 +105,17 @@ export function recoverConversations(original: Conversation[], saved: RunRecord[
   }
   return list;
 }
+
+/** A saved pending bubble without an in-memory owner must never spin forever. */
+export function pauseOrphanedPending(conversations: Conversation[]): Conversation[] {
+  return conversations.map(conversation => {
+    if (!conversation.messages.some(message => message.pending)) return conversation;
+    return {...conversation, messages: conversation.messages.map(message => {
+      if (!message.pending) return message;
+      const reason = '连接已中断，当前输出已保留';
+      return {...message, pending: false, notice: undefined,
+        progress: message.progress || reason,
+        runState: message.runState ? {...message.runState, status: 'paused' as const, reason} : undefined};
+    })};
+  });
+}

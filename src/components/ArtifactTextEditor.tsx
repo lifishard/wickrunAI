@@ -4,6 +4,7 @@ import { replaceArtifactSelection, artifactSourceOffset, applyArtifactTextareaCh
 import Markdown from './Markdown';
 import ArtifactAiEdit, { type ProposeArtifactEdit } from './ArtifactAiEdit';
 import { findArtifactSelection } from '../lib/artifact-proposal';
+import CopyablePre from './CopyablePre';
 
 // Keep unsaved edits when the user closes or switches the preview within this session.
 const drafts = new Map<string, { text: string; hash: string }>();
@@ -61,7 +62,7 @@ export default function ArtifactTextEditor({ path, markdown, busy, onRequestEdit
     {error ? <p className="picker-error" role="alert">{error}</p> : null}
     {status ? <p role="status">{status}</p> : null}
     {conflict ? <p role="alert">磁盘内容已变化。草稿保留如下，请对照最新内容，合并后再保存。</p> : null}
-    {mode === 'preview' ? <div className="artifact-md" onMouseUp={e => captureSelection(e.currentTarget)} onKeyUp={e => captureSelection(e.currentTarget)}>{blocks.map((block, i) => <div key={i} data-artifact-block={i}>{markdown ? <Markdown text={block.raw} /> : <pre className="artifact-source">{block.raw}</pre>}</div>)}</div> : null}
+    {mode === 'preview' ? <div className="artifact-md" onMouseUp={e => captureSelection(e.currentTarget)} onKeyUp={e => captureSelection(e.currentTarget)}>{blocks.map((block, i) => <div key={i} data-artifact-block={i}>{markdown ? <Markdown text={block.raw} copyText /> : <CopyablePre className="artifact-source" text={block.raw} />}</div>)}</div> : null}
     {mode === 'edit' ? <>
       <label className="hint" htmlFor="artifact-text-editor">可直接编辑全文，或选中文字后在下方替换。</label>
       <textarea id="artifact-text-editor" ref={editor} className="artifact-textarea" value={draft} disabled={!snapshot || working} onChange={e => { setContent(applyArtifactTextareaChange(draft, e.target.value)); setSelected({ start: 0, end: 0 }); }} onSelect={e => setSelected({ start: artifactSourceOffset(draft, e.currentTarget.selectionStart), end: artifactSourceOffset(draft, e.currentTarget.selectionEnd) })} spellCheck={false} />
@@ -77,7 +78,7 @@ export default function ArtifactTextEditor({ path, markdown, busy, onRequestEdit
     {mode === 'history' ? <div className="artifact-history">
       <p className="hint">保留最近 20 个不同内容版本（含当前文件），手动和 AI 建议在这里保存后都会留下记录。</p>
       <select aria-label="历史版本" value={version} onChange={e => setVersion(e.target.value)}><option value="">当前文件</option>{snapshot?.versions.map(v => <option value={v.hash} key={v.hash}>{new Date(v.at).toLocaleString()} · {v.hash.slice(0, 6)}</option>)}</select>
-      <pre className="artifact-source">{chosen?.text ?? snapshot?.text ?? ''}</pre>
+      <CopyablePre className="artifact-source" text={chosen?.text ?? snapshot?.text ?? ''} />
       <button className="btn sm" disabled={!chosen || working || busy || dirty || conflict} onClick={() => void action(async () => { accept(await desktop()!.artifactEdit('restore', { path: snapshot!.path, expectedHash: snapshot!.hash, version })); setStatus('已恢复。恢复前的内容仍可在历史版本中找回。'); })}>恢复此版本</button>
       {dirty ? <p className="hint">请先保存或放弃草稿，再恢复版本。</p> : null}
     </div> : null}
