@@ -869,7 +869,8 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
             const outputs=presentedOutputs(state.steps!);
             if (!state.content?.trim() && outputs.length) state.content=outputs.map(item=>item.text).join('\n\n');
             state.status='completed';state.reason=undefined;state.errorInfo=undefined;state.recovery=undefined;
-            await save();await events.onRunState(null);
+            await save();if(control.signal.aborted)throw abortError();
+            await events.onRunState(null);if(control.signal.aborted)throw abortError();
             ended=true;events.onNotice('');events.onDone();return;
           }
           const stalled=previousChecks!==qualityCheckpoint(state)?qualityLoop(state):undefined;
