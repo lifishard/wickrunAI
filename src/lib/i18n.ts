@@ -17,6 +17,9 @@ export const LOCALES: { value: Locale; label: string; label2: string; lang: stri
  * 英文查词典，查不到就退回简体原文 —— 半翻译的界面也比缺字的界面好用。
  */
 const EN: Record<string, string> = {
+  '展示成品文本：{title}': 'Present finished text: {title}',
+  '展示成品文本': 'Present finished text',
+  '展示可选追问': 'Present suggested follow-up questions',
   '成品文本': 'Finished text',
   '复制文本': 'Copy text',
   '可选追问': 'Suggested follow-up questions',
