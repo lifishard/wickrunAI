@@ -13,6 +13,7 @@ import { classifyError, isCleanStop } from '../lib/errors';
 import { useT, type Translate } from '../lib/i18n';
 import Markdown from './Markdown';
 import OutputToolCards, { answerBodyAndFollowups } from './OutputToolCards';
+import { OUTPUT_TOOL_NAMES } from '../lib/output-tools';
 import MessageNotes from './MessageNotes';
 import DeliveryPanel from './DeliveryPanel';
 import RecoveryCard from './RecoveryCard';
@@ -440,7 +441,7 @@ export default function AnswerBlock(props: {
           <p>{t('此处记录上下文交付状态；模型是否理解准确仍需看后续行动和验收结果。')}</p>
         </div>
       </details> : null}
-      <DeliveryPanel report={answer?.delivery ?? answer?.runState?.delivery} visible={Boolean(answer && !answer.pending && (answer.milestones?.length || answer.delivery?.requirements.length || answer.steps?.length))}/>
+      <DeliveryPanel report={answer?.delivery ?? answer?.runState?.delivery} visible={Boolean(answer && !answer.pending && (answer.milestones?.length || answer.delivery?.requirements.length || steps.some(step=>!OUTPUT_TOOL_NAMES.some(name=>name===step.name))))}/>
 
       {answer?.error ? (
         <ErrorCard
