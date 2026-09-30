@@ -1349,7 +1349,7 @@ export default function App() {
         updatedAt: Date.now(),
       };
 
-      setConversations(all => all.some(c=>c.id===convId) ? all.map(c=>c.id===convId?{...nextConv,draft:newConversationForSend ? c.draft : nextConv.draft,coordinationMessages:c.coordinationMessages}:c) : [nextConv,...all]);
+      setConversations(all => all.some(c=>c.id===convId) ? all.map(c=>c.id===convId?{...nextConv,draft:(newConversationForSend || queuedInput?.preserveComposer) ? c.draft : nextConv.draft,coordinationMessages:c.coordinationMessages}:c) : [nextConv,...all]);
       // A delayed preflight must not pull focus back or clear another chat's draft.
       if (!resumeFrom && !queuedInput?.preserveComposer && activeIdRef.current===convId) { setAttachments([]); setQuotes([]); }
       resumeQueue(convId);
