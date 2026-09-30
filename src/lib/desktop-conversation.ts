@@ -3,7 +3,8 @@ import { bridgeImages } from './bridge-images';
 import { addRunInput } from './delivery';
 import { reconcileProgress } from './task-progress';
 import { deliveryReport } from './delivery';
-import { nativeProgressInstructions, applyNativeProgress } from './native-progress';
+import { nativeProgressInstructions, applyNativeProgress, nativeVisibleText } from './native-progress';
+import { NATIVE_OUTPUT_INSTRUCTIONS, nativeOutputSteps, outputTranscript } from './output-tools';
 import type {RunAgentArgs,AgentHandle} from './agent';
 import {buildWire} from './agent';
 import type {RunState} from '../types';
@@ -36,7 +37,7 @@ export function runDesktopConversation(args:RunAgentArgs):AgentHandle {
       if(!state.nativeDesktop?.taskId){
         await receiveCoordination(state,args.coordinationInbox);
         const {images,history}=bridgeImages(state.working);
-        const goal=JSON.stringify(buildWire(history,{...args.config,toolsEnabled:false,historyLimit:0},args.extraSystem+harnessInstructions(args.config,state)+nativeProgressInstructions(state)));
+        const goal=JSON.stringify(buildWire(history,{...args.config,toolsEnabled:false,historyLimit:0},args.extraSystem+harnessInstructions(args.config,state)+nativeProgressInstructions(state)+'\n'+NATIVE_OUTPUT_INSTRUCTIONS));
         if(goal.length>24000)throw Error('Claude Desktop 的交接材料超过 24000 字符。请使用新对话明确本次目标，或改用 Claude Code / API 模型处理长上下文；原文未裁剪。');
         await save();
         const creation=bridge.nativeAiCreate({provider:'claude-desktop',goal,images,requestKey:state.runId,projectId:args.toolCtx?.()?.projectId??undefined,
@@ -70,16 +71,18 @@ export function runDesktopConversation(args:RunAgentArgs):AgentHandle {
           }
           const progress=task.progress.at(-1)?.text;
           if(progress)events.onNotice(progress);
-          if(task.result){state.content=task.result;events.onContentReplace?.(task.result,'');}
+          if(task.result){state.content=nativeVisibleText(task.result);events.onContentReplace?.(state.content,'');}
           await save();
         }
         if(task.status==='completed'){
+          const outputs=nativeOutputSteps(task.result||'',args.requestId);
+          for(const step of outputs){state.steps=state.steps!.filter(existing=>existing.id!==step.id).concat(step);events.onStep(step);}
           const blocker=completionBlocker(state,task.result||'',args.config);if(blocker)throw Error(blocker);
           if(!task.result?.trim()||state.harness?.action&&planOnly(task.result))throw Error('Claude Desktop 已回传，但内容仍只有计划，任务尚未确认完成。');
           await awaitAbortable(applyNativeProgress(state,task.result,check=>args.config.toolsEnabled&&bridge.tool?bridge.tool('inspect_deliverable',check,args.toolCtx()):Promise.resolve({ok:false,content:'',error:'当前连接无法核验文件'})),cancelControl.signal);
           events.onContentReplace?.(state.content??'','');
           state.status='completed';state.reason=undefined;state.harness!.stage='deliver';
-          state.working.push({id:args.requestId+'-answer',role:'assistant',content:state.content??'',createdAt:Date.now()});
+          state.working.push({id:args.requestId+'-answer',role:'assistant',content:outputTranscript(state.content??'',outputs),createdAt:Date.now()});
           await save();await events.onRunState(null);events.onNotice('');events.onDone();return;
         }
         if(task.status==='cancelled')throw Error('Claude Desktop 任务已取消，已有记录保留。');

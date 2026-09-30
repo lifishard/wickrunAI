@@ -2,6 +2,8 @@ import type { ToolResult, ToolStep } from '../types';
 
 export const OUTPUT_TOOL_NAMES = ['present_output', 'suggest_followups'] as const;
 
+export const NATIVE_OUTPUT_INSTRUCTIONS = `For a finished, reusable piece of text (draft, rewrite, email, message, document text), put the complete text in one <wickrun_output>{"title":"short optional label","text":"complete final text"}</wickrun_output> JSON marker. The app renders a copyable card. Do not repeat its text outside the marker. For optional questions the user might ask you next, put 1–3 complete questions in <wickrun_followups>{"questions":["Question?"]}</wickrun_followups>. These are suggestions only: do not wait for answers. Ask for user input separately when you need a real user decision, clarification, or permission. These output markers only display content in this conversation; they never edit files, run commands, or send messages. Do not put output markers inside examples or quotations.`;
+
 /** Keep protocol-like examples in Markdown fences and quotations as ordinary text. */
 export function mapOutsideMarkdown(text: string, transform: (outside: string) => string, protectedTransform: (inside: string) => string = inside=>inside): string {
   const lines=text.match(/[^\n]*\n|[^\n]+$/g)??[];
@@ -85,6 +87,12 @@ export function presentedOutputs(steps: ToolStep[]): PresentedOutput[] {
   });
 }
 
+/** Native output cards are also part of the conversation the model must remember. */
+export function outputTranscript(content: string, steps: ToolStep[]): string {
+  const outputs = presentedOutputs(steps).map(item => item.text);
+  return [content, ...outputs.filter(text => !content.includes(text))].filter(Boolean).join('\n\n');
+}
+
 export interface FollowupPresentation { body: string; questions: string[] }
 
 /**
@@ -110,6 +118,8 @@ export function followupPresentation(content: string, steps: ToolStep[]): Follow
     while (i>=0 && !lines[i].trim()) i--;
   }
   if (!items.length || i<0) return {body:content,questions:[]};
+  const outsideLines=mapOutsideMarkdown(content,part=>part,part=>part.replace(/[^\r\n]/g,' ')).trimEnd().split(/\r?\n/);
+  if(outsideLines[i]?.trim()!==lines[i].trim())return {body:content,questions:[]};
   const label = lines[i].trim().replace(/^#{1,6}\s*/, '').replace(/\*\*/g,'');
   if (!/^(?:a few things worth a second look|(?:suggested|possible|optional|follow[- ]?up|further) questions|(?:你可以|可选|建议|进一步|后续|以下).{0,16}(?:追问|问题|再问)|有几个值得进一步考虑的问题)\s*[:：]?$/.test(label.toLowerCase())) {
     return {body:content,questions:[]};

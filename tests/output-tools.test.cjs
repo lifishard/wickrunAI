@@ -47,6 +47,7 @@ test('native output markers inside a fenced example stay ordinary answer text',(
     assert.equal(load(file('src/lib/native-progress.ts')).nativeVisibleText(text),text);
   }
   assert.deepEqual(output.followupPresentation('> A few things worth a second look:\n> - What happens next?',[]).questions,[]);
+  assert.deepEqual(output.followupPresentation('```markdown\nA few things worth a second look:\n- What happens next?',[]).questions,[]);
 });
 
 test('a Chat response containing only output tool calls completes without another model request',async()=>{

@@ -6,13 +6,23 @@ function fixture(result='方案比较与结论',options={}){
     nativeAiState:async()=>({tasks:[task||{id:'desktop-task',status:'completed',result,workers:[],jobs:[],progress:[],createdAt:1}]}),nativeAiOpen:async(...args)=>opened.push(args),nativeAiCancel:async()=>{}};
   const load=loader({[file('src/lib/transport.ts')]:{desktop:()=>bridge},[file('src/lib/agent.ts')]:{buildWire:history=>history}});
   const args={requestId:'desktop-turn',config:{model:'desktop',client:{kind:'claude-desktop',model:'desktop'},toolsEnabled:false},history:[{id:'goal',role:'user',content:'比较两个方案',createdAt:1}],extraSystem:'',
-    events:{onRunState:s=>{if(s)states.push(structuredClone(s));},onContentReplace(){},onNotice(){},onDone:()=>finish('completed'),onPaused:()=>finish('paused')},...options};
+    events:{onRunState:s=>{if(s)states.push(structuredClone(s));},onStep(){},onContentReplace(){},onNotice(){},onDone:()=>finish('completed'),onPaused:()=>finish('paused')},...options};
   const handle=load(file('src/lib/desktop-conversation.ts')).runDesktopConversation(args);
   return {states,created,opened,finished,handle};
 }
 test('normal conversation creates desktop handoff without API workers and receives result in same run',async()=>{
   const f=fixture();assert.equal(await f.finished,'completed');assert.equal(f.created.length,1);assert.deepEqual(f.created[0].workers,[]);
   assert.equal(f.created[0].requestKey,'desktop-turn');assert.equal(f.states.at(-1).content,'方案比较与结论');assert.equal(f.states.at(-1).nativeDesktop.taskId,'desktop-task');
+});
+
+test('Claude Desktop renders output markers and keeps the actual text in conversation context',async()=>{
+  const f=fixture('Here is your draft.\n<wickrun_output>{"title":"Draft","text":"Exact reusable content"}</wickrun_output>\n<wickrun_followups>{"questions":["How could this be shorter?"]}</wickrun_followups>');
+  assert.equal(await f.finished,'completed');
+  const state=f.states.at(-1);
+  assert.equal(state.steps.filter(step=>step.status==='ok').length,2);
+  assert.equal(state.content,'Here is your draft.');
+  assert.match(state.working.at(-1).content,/Exact reusable content/);
+  assert.doesNotMatch(state.working.at(-1).content,/wickrun_output/);
 });
 test('restored desktop conversation reads the original task instead of creating another',async()=>{
   const f=fixture('已保存的成果',{resume:{runId:'previous',working:[],round:1,at:1,stoppedBy:'unknown',nativeDesktop:{taskId:'desktop-task'}}});
