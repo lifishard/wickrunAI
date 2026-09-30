@@ -281,14 +281,15 @@ export function buildRequestBody(
     stream: cfg.stream,
   };
 
-  // Questions and task coordination are renderer-owned interactions.
-  // They stay available in Chat; host tools follow the toolsEnabled switch.
-  const questionTool = toolNames.filter(name => ['request_user_input','create_conversation','coordinate_tasks'].includes(name));
-  const hostToolNames = toolNames.filter((name) => !['request_user_input','create_conversation','coordinate_tasks'].includes(name));
-  if (questionTool.length || (cfg.toolsEnabled && hostToolNames.length)) {
+  // Renderer-owned interaction and output tools stay available in Chat.
+  // Host tools follow the toolsEnabled switch.
+  const uiTools = ['request_user_input','create_conversation','coordinate_tasks','present_output','suggest_followups'];
+  const rendererTools = toolNames.filter(name => uiTools.includes(name));
+  const hostToolNames = toolNames.filter((name) => !uiTools.includes(name));
+  if (rendererTools.length || (cfg.toolsEnabled && hostToolNames.length)) {
     // 排序是为了上下文缓存：缓存按前缀逐字节匹配，工具勾选顺序一变
     // 序列化出来的 tools 就变了，整段前缀跟着失配，缓存永远命中不了
-    body.tools = toolsPayload([...(cfg.toolsEnabled ? hostToolNames : []), ...questionTool].sort());
+    body.tools = toolsPayload([...(cfg.toolsEnabled ? hostToolNames : []), ...rendererTools].sort());
     body.tool_choice = 'auto';
   }
   if (cfg.stream) {

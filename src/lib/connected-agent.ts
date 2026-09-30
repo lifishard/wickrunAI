@@ -4,6 +4,7 @@ import { addRunInput } from './delivery';
 import { reconcileProgress } from './task-progress';
 import { deliveryReport } from './delivery';
 import { nativeProgressInstructions, applyNativeProgress, nativeVisibleText } from './native-progress';
+import { nativeOutputSteps } from './output-tools';
 import {runAgent,buildWire,type RunAgentArgs,type AgentHandle} from './agent';
 import {desktop} from './transport';
 import type {RunState,ToolStep} from '../types';
@@ -154,6 +155,8 @@ export function runConnectedAgent(args:RunAgentArgs):AgentHandle {
 
 When you need user input, emit exactly one <wickrun_question> marker containing JSON in this schema: {"blocking":false,"questions":[{"id":"stable-id","header":"short optional heading","question":"question text","options":[{"label":"choice","description":"optional explanation"}],"multiple":false}]}. Include 1 to 3 questions, at most 6 options per question, and use an empty options array for a free-text question. Do not put markdown around the marker. You may put a short user-visible explanation before or after it. Use blocking:false when independent work remains; the app displays the question and invokes a continuation. Use blocking:true only when you cannot continue. Do not repeat an unanswered question or assume its answer. Never use this marker unless the turn has completed successfully.
 
+For a finished, reusable piece of text (draft, rewrite, email, message, document text), put the complete text in one <wickrun_output>{"title":"short optional label","text":"complete final text"}</wickrun_output> JSON marker. The app renders a copyable card. Do not repeat its text outside the marker. For optional questions the user might ask you next, put 1–3 complete questions in <wickrun_followups>{"questions":["Question?"]}</wickrun_followups>. These are suggestions only: do not wait for answers. Use wickrun_question instead when you need a real user decision, clarification, or permission. These output markers only display content in this conversation; they never edit files, run commands, or send messages. Do not put output markers inside examples or quotations.
+
 ${JSON.stringify(transcript)}`;
       events.onNotice('正在等待官方客户端返回结果…');
       // Save dispatch uncertainty before invoking: a renderer restart cannot imply that nothing ran.
@@ -171,6 +174,13 @@ ${JSON.stringify(transcript)}`;
         state.uncertainCallId=undefined;
         state.working.push({id:nativeRequestId+'-answer',role:'assistant',content:result.text,createdAt:Date.now()});
         await save();continue;
+      }
+      if(result.status==='completed'){
+        for(const step of nativeOutputSteps(result.text||'',nativeRequestId)){
+          state.steps=state.steps!.filter(existing=>existing.id!==step.id).concat(step);
+          events.onStep(step);
+        }
+        await save();
       }
       // A question marker is actionable only on a verified terminal result.
       // Unknown/failed native outcomes must stay uncertain so recovery cannot

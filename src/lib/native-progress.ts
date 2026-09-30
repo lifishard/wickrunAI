@@ -2,6 +2,7 @@ import type { AcceptanceCheck, RunState, ToolResult } from '../types';
 import { memoryInstructions, updatePlan } from './context-memory';
 import { updateRequirements, verifyRequirements } from './delivery';
 import { qualityLoop, reconcileProgress } from './task-progress';
+import { mapOutsideMarkdown } from './output-tools';
 
 export function nativeProgressInstructions(state:RunState):string {
   return memoryInstructions(state,false,false)+`
@@ -12,13 +13,14 @@ All fields are optional. Reuse saved IDs and preserve unfinished work. Host vali
 
 /** Internal protocol records never belong in the visible answer, even on error. */
 export function nativeVisibleText(text:string, streaming=false):string {
-  const visible=text.replace(/<(wickrun_progress|wickrun_question)\b[^>]*>[\s\S]*?(?:<\/\1\s*>|$)/gi,'');
-  // A marker can straddle arbitrary transport chunks. Hold a possible opening
-  // tag until it is either recognized or turns out to be ordinary answer text.
-  const tail=/<[^<>]*$/.exec(visible)?.[0];
-  if(tail && ['<wickrun_progress','<wickrun_question'].some(tag=>(streaming && tag.startsWith(tail.toLowerCase())) || tail.toLowerCase().startsWith(tag))) {
-    return visible.slice(0,-tail.length);
-  }
+  const visible=mapOutsideMarkdown(text,part=>{
+    const stripped=part.replace(/<(wickrun_progress|wickrun_question|wickrun_output|wickrun_followups)\b[^>]*>[\s\S]*?(?:<\/\1\s*>|$)/gi,'');
+    // A marker can straddle arbitrary transport chunks. Hold a possible opening
+    // tag until it is either recognized or turns out to be ordinary answer text.
+    const tail=/<[^<>]*$/.exec(stripped)?.[0];
+    return tail && ['<wickrun_progress','<wickrun_question','<wickrun_output','<wickrun_followups'].some(tag=>(streaming && tag.startsWith(tail.toLowerCase())) || tail.toLowerCase().startsWith(tag))
+      ? stripped.slice(0,-tail.length) : stripped;
+  });
   return streaming ? visible : visible.trim();
 }
 
