@@ -1,4 +1,5 @@
 import React from 'react';
+import Icon from './Icon';
 import { useT } from '../lib/i18n';
 import AnchoredPopover from './AnchoredPopover';
 import type { KeyProfile, ModelHealth, ModelHealthMap, ModelHealthStatus, ModelInfo } from '../types';
@@ -199,7 +200,7 @@ export default function ModelPicker(props: {
               else setConfirmRemove(m.id);
             }}
           >
-            {confirmRemove === m.id ? t('确认删除') : '🗑'}
+            {confirmRemove === m.id ? t('确认删除') : <Icon name="trash" size={17}/>}
           </button>
         ) : null}
         <button
@@ -210,7 +211,7 @@ export default function ModelPicker(props: {
             props.onMute(m.id, !broken);
           }}
         >
-          {broken ? '↩' : '✕'}
+          <Icon name={broken ? 'back' : 'eyeOff'} size={17}/>
         </button>
       </div>
     );
@@ -226,7 +227,7 @@ export default function ModelPicker(props: {
         onClick={() => setOpen((v) => !v)}
       >
         <span className="model-btn-name">{props.displayModel || props.model || t('选模型')}</span>
-        <span className="model-btn-caret">▾</span>
+        <span className="model-btn-caret"><Icon name="chevronDown" size={14}/></span>
       </button>
 
       {open ? (
@@ -238,7 +239,7 @@ export default function ModelPicker(props: {
               {t('路由组')}
               <span style={{ flex: 1 }} />
               {props.onManageRouteGroups ? <button className="icon-btn" title={t('管理路由组')}
-                onClick={() => { setOpen(false); props.onManageRouteGroups!(); }}>⚙</button> : null}
+                onClick={() => { setOpen(false); props.onManageRouteGroups!(); }}><Icon name="settings" size={17}/></button> : null}
             </div>
             <div className="picker-profiles">
               {props.routeGroups?.length ? props.routeGroups.map((g) => <button key={g.id} disabled={!g.count}
@@ -261,7 +262,7 @@ export default function ModelPicker(props: {
                 onClick={props.onRefresh}
                 disabled={props.loading}
               >
-                {props.loading ? '…' : '↻'}
+                <Icon name="retry" size={17} className={props.loading ? 'icon-loading' : undefined}/>
               </button>
             </div>
             <div className="picker-profiles">
@@ -389,7 +390,7 @@ export default function ModelPicker(props: {
               <div className="picker-bad">
                 <div className="picker-bad-row">
                   <button className="picker-bad-head" onClick={() => setShowBad((v) => !v)}>
-                  <span>{showBad ? '▾' : '▸'}</span>
+                  <Icon name={showBad ? 'chevronDown' : 'chevronRight'} size={15}/>
                   {t('有问题的模型 {n} 个', { n: bad.length })}
                   <span className="hint" style={{ marginLeft: 6 }}>
                     {BAD_GROUPS.map((g) => {
@@ -416,7 +417,7 @@ export default function ModelPicker(props: {
                     void navigator.clipboard.writeText(text);
                   }}
                 >
-                    ⧉
+                    <Icon name="copy" size={17}/>
                   </button>
                 </div>
 

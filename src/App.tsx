@@ -113,6 +113,7 @@ import SettingsDialog from './components/SettingsDialog';
 import CloudSyncControl from './components/CloudSyncControl';
 import { applyCloudLocal, recoverCloudApply, BUTLER_BRAIN_KEY } from './lib/cloud-local';
 import Sidebar from './components/Sidebar';
+import Icon from './components/Icon';
 import WorkspaceHeader from './components/WorkspaceHeader';
 import ArtifactPanel from './components/ArtifactPanel';
 import Resizer from './components/Resizer';
@@ -2237,9 +2238,10 @@ export default function App() {
             <button
               className="btn sm ghost wide-only"
               title={t('展开侧栏（Ctrl+B）')}
+              aria-label={t('展开侧栏（Ctrl+B）')}
               onClick={() => setSidebarHidden(false)}
             >
-              ⇥
+              <Icon name="menu" size={18}/>
             </button>
           ) : null}
           <span className="page-title" title={active ? conversationTitle(active.title, t) : undefined}>{active ? conversationTitle(active.title, t) : t('新对话')}</span>
@@ -2278,7 +2280,7 @@ export default function App() {
           {msgs.some(hasActivity) ? <button className="btn sm" aria-pressed={activityOpen && !configOpen && !openArtifact} onClick={() => { setCodeChangesOpen(false); setActivityOpen(!(activityOpen && !configOpen && !openArtifact)); setConfigOpen(false); setOpenArtifact(null); }}>{t('任务动态')}</button> : null}
 
           <button className="btn sm" onClick={() => setConfigOpen((v) => !v)}>
-            {t('⚙ 配置')}
+            <Icon name="settings" size={16}/>{t('配置')}
           </button>
         </div>
 

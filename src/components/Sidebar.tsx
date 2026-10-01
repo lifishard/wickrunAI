@@ -3,6 +3,7 @@ import type { Conversation } from '../types';
 import type { Project } from '../lib/projects';
 import { useT } from '../lib/i18n';
 import { conversationTitle } from '../lib/store';
+import Icon from './Icon';
 
 export default function Sidebar(props: {
   conversations: Conversation[];
@@ -99,50 +100,54 @@ export default function Sidebar(props: {
           />
         ) : (
           <>
-            {c.pinned ? <span className="pin-dot" title={t('已钉选')}>📌</span> : null}
+            {c.pinned ? <span className="pin-dot" title={t('已钉选')}><Icon name="pin" size={13}/></span> : null}
             <span className="conv-title" title={conversationTitle(c.title, t)}>
-              {c.forkedFrom ? <span className="fork-mark" title={t('从别的对话分叉来的')}>⑂</span> : null}
+              {c.forkedFrom ? <span className="fork-mark" title={t('从别的对话分叉来的')}><Icon name="fork" size={13}/></span> : null}
               {conversationTitle(c.title, t)}
             </span>
             <button
               className="icon-btn"
               title={c.pinned ? t('取消钉选') : t('钉到顶部')}
+              aria-label={c.pinned ? t('取消钉选') : t('钉到顶部')}
               onClick={(e) => {
                 e.stopPropagation();
                 props.onTogglePin(c.id);
               }}
             >
-              {c.pinned ? '📌' : '📍'}
+              <Icon name={c.pinned ? 'pinOff' : 'pin'} size={17}/>
             </button>
             <button
               className="icon-btn"
               title={t('复制一份，带上全部上下文，接着聊')}
+              aria-label={t('复制一份，带上全部上下文，接着聊')}
               onClick={(e) => {
                 e.stopPropagation();
                 props.onFork(c.id);
               }}
             >
-              ⑂
+              <Icon name="copy" size={17}/>
             </button>
             <button
               className="icon-btn"
               title={t('存成文件')}
+              aria-label={t('存成文件')}
               onClick={(e) => {
                 e.stopPropagation();
                 props.onExport(c.id);
               }}
             >
-              ⤓
+              <Icon name="download" size={17}/>
             </button>
             <button
               className="icon-btn"
               title={t('删除')}
+              aria-label={t('删除')}
               onClick={(e) => {
                 e.stopPropagation();
                 setPendingDelete(c);
               }}
             >
-              ✕
+              <Icon name="trash" size={17}/>
             </button>
           </>
         )}
@@ -180,7 +185,7 @@ export default function Sidebar(props: {
 
       <div className="sidebar-head">
         <button className="btn primary block" onClick={props.onNew}>
-          {t('＋ 新对话')}
+          <Icon name="plus" size={18}/>{t('新对话')}
         </button>
         {props.conversations.length > 4 ? (
           <input
@@ -202,7 +207,7 @@ export default function Sidebar(props: {
 
         {pinned.length ? (
           <>
-            <div className="conv-group">📌 {t('已钉选')}</div>
+            <div className="conv-group"><Icon name="pin" size={14}/> {t('已钉选')}</div>
             {pinned.map((c) => renderItem(c, 'pin'))}
           </>
         ) : null}
@@ -213,16 +218,17 @@ export default function Sidebar(props: {
           return (
             <div key={p.id}>
               <div className="conv-group project-group">
-                <button className="project-toggle" onClick={() => toggleFold(p.id)}>
-                  {collapsed ? '▸' : '▾'} {p.emoji} {p.name}
+                <button className="project-toggle" aria-expanded={!collapsed} onClick={() => toggleFold(p.id)}>
+                  <Icon name={collapsed ? 'chevronRight' : 'chevronDown'} size={15}/> {p.emoji} {p.name}
                   <span className="project-count">{list.length}</span>
                 </button>
                 <button
                   className="icon-btn"
                   title={t('在「{name}」里新开一个对话', { name: p.name })}
+                  aria-label={t('在「{name}」里新开一个对话', { name: p.name })}
                   onClick={() => props.onNewInProject(p.id)}
                 >
-                  ＋
+                  <Icon name="plus" size={17}/>
                 </button>
               </div>
               {!collapsed ? list.map((c) => renderItem(c, p.id)) : null}
@@ -244,17 +250,17 @@ export default function Sidebar(props: {
       <div className="sidebar-foot">
         <div className="row" style={{ gap: 4 }}>
           <button className="btn sm ghost" style={{ flex: 1 }} onClick={() => props.onOpenWorkspace('projects')}>
-            {t('📁 项目')}
+            <Icon name="folder" size={16}/>{t('项目')}
           </button>
           <button className="btn sm ghost" style={{ flex: 1 }} onClick={() => props.onOpenWorkspace('skills')}>
-            {t('⚡ 技能')}
+            <Icon name="sparkles" size={16}/>{t('技能')}
           </button>
           <button className="btn sm ghost" style={{ flex: 1 }} onClick={() => props.onOpenWorkspace('tasks')}>
-            {t('⏰ 定时')}
+            <Icon name="clock" size={16}/>{t('定时')}
           </button>
         </div>
         <button className="btn block ghost" onClick={props.onOpenSettings}>
-          {t('⚙ 设置')}
+          <Icon name="settings" size={16}/>{t('设置')}
         </button>
         <button className="btn block ghost" onClick={props.onOpenObservations}>{t('任务记录与分析')}</button>
       </div>

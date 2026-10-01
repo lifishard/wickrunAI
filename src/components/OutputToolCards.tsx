@@ -4,6 +4,7 @@ import Markdown from './Markdown';
 import { followupPresentation, presentedOutputs, type PresentedOutput } from '../lib/output-tools';
 import { useT } from '../lib/i18n';
 import './OutputToolCards.css';
+import Icon from './Icon';
 
 function OutputCard({ item }: { item: PresentedOutput }) {
   const t=useT();
@@ -17,7 +18,7 @@ function OutputCard({ item }: { item: PresentedOutput }) {
   return <section className="output-tool-card">
     <div className="output-tool-head">
       <div className="output-tool-title">{item.title || t('成品文本')}</div>
-      <button type="button" className="btn sm" onClick={()=>void copy()}>{t(copied==='ok'?'已复制':copied==='error'?'复制失败':'复制文本')}</button>
+      <button type="button" className="btn sm output-copy-button" onClick={()=>void copy()} aria-live="polite"><Icon name="copy" size={17}/>{t(copied==='ok'?'已复制':copied==='error'?'复制失败':'复制文本')}</button>
     </div>
     <Markdown text={item.text}/>
   </section>;
@@ -44,7 +45,7 @@ export default function OutputToolCards(props: {
   return <div className="output-tool-cards">
     {outputs.map(item => <OutputCard item={item} key={item.id}/>)}
     {questions.length ? <section className="output-followups" aria-label={t('可选追问')}>
-      {questions.map((question,index) => <button type="button" key={`${index}-${question}`} disabled={!props.onFollowup} onClick={() => props.onFollowup?.(question)}>{question}<span aria-hidden="true">↗</span></button>)}
+      {questions.map((question,index) => <button type="button" key={`${index}-${question}`} disabled={!props.onFollowup} onClick={() => props.onFollowup?.(question)}>{question}<Icon name="enter" size={18}/></button>)}
     </section> : null}
   </div>;
 }

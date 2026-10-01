@@ -43,9 +43,8 @@
   .composer-wrap .composer-bar > .menu-anchor:has(.model-btn) { flex: 1 1 90px; min-width: 48px; }
   .composer-wrap .composer-bar .model-btn { max-width: 140px; }
   .composer-mode-switch .mode-switch-btn { min-width: 32px; padding: 3px 5px; }
-  .composer-wrap .composer-bar .composer-more { font-size: 0; min-width: 28px; }
-  .composer-wrap .composer-more::after { content: '•••'; font-size: 13px; }
+  .composer-wrap .composer-bar .composer-more { min-width: 44px; }
   .composer-wrap .composer-send-group { gap: 3px; }
-  .composer-wrap .composer-send-group .btn { font-size: 0; min-width: 30px; }
-  .composer-wrap .composer-send-group .btn::after { content: attr(data-short-label); font-size: 14px; }
+  .composer-wrap .composer-send-group .btn { min-width: 44px; min-height: 44px; }
+  .composer-wrap .composer-bar .composer-action-label { display: none; }
 }

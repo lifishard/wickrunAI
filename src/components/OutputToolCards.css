@@ -2,8 +2,11 @@
 .output-tool-card { min-width: 0; padding: 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-elev); }
 .output-tool-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
 .output-tool-title { font-weight: 650; }
+.output-copy-button { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; }
+.output-copy-button svg { flex: none; }
 .output-followups { display: grid; gap: 6px; }
-.output-followups button { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 100%; text-align: left; padding: 10px 12px; border: 1px solid var(--border, #d6d8de); border-radius: 8px; background: transparent; color: inherit; cursor: pointer; }
+.output-followups button { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 100%; min-height: 44px; text-align: left; padding: 10px 12px; border: 1px solid var(--border, #d6d8de); border-radius: 8px; background: transparent; color: inherit; cursor: pointer; }
 .output-followups button:hover, .output-followups button:focus-visible { background: var(--bg-elev); }
 .output-followups button:disabled { cursor: default; opacity: .6; }
-.output-followups button span { flex: none; opacity: .55; }
+.output-followups button svg { flex: none; opacity: .7; }
+@media (max-width: 860px) { .output-copy-button { min-height: 44px; } }
