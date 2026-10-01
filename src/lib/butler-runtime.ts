@@ -156,7 +156,8 @@ export class ButlerRuntime {
   }
   private async ingestExternal(supplied?:ButlerCollectorState) {
     const prefs=this.prefs();
-    await this.io.collector('suspend',{suspended:!prefs.enabled||prefs.paused,sources:prefs.sources,mode:prefs.externalUnderstanding});
+    const enabledSources=Object.fromEntries(BUTLER_SOURCES.map(source=>[source,prefs.sources[source]===true&&(source==='wickrun'||this.local.consent[source]===true)]));
+    await this.io.collector('suspend',{suspended:!prefs.enabled||prefs.paused,sources:enabledSources,mode:prefs.externalUnderstanding});
     const result=supplied??await this.io.collector('poll');
     if(result.privacy||result.background)this.emit({privacy:result.privacy??this.snapshot.privacy,background:result.background??this.snapshot.background});
     this.checkActive();
