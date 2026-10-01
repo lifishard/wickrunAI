@@ -1,17 +1,39 @@
-const {test}=require('node:test');const assert=require('node:assert/strict');const path=require('node:path');
-const {loader}=require('./load-ts.cjs');const load=loader();
-const {butlerWorkConfig,butlerWorkPrompt}=load(path.join(__dirname,'../src/lib/butler-work.ts'));
-const {emptyButlerBrain,DEFAULT_BUTLER_PREFERENCES}=load(path.join(__dirname,'../src/lib/proactive-butler.ts'));
-test('Butler Work inherits user tool permissions and config while using real group handoff and core context',()=>{
- const settings={defaultConfig:{model:'old',client:{kind:'codex'},enabledTools:['web_search'],approvalMode:'ask',maxToolRounds:31,runtime:{maxMinutes:17,maxTokens:90000}},routeGroups:[{id:'group',routes:[{profileId:'key',model:'first'},{profileId:'backup',model:'second'}]}]};
- const prefs={...DEFAULT_BUTLER_PREFERENCES,backend:{kind:'route-group',routeGroupId:'group',effort:'high'}};
- const {config,keyProfileId}=butlerWorkConfig(settings,prefs);
- assert.equal(keyProfileId,'key');assert.equal(config.client,undefined);assert.equal(config.model,'first');assert.equal(config.effortLevel,'high');
- assert.equal(config.runtime.maxMinutes,17);assert.equal(config.runtime.semanticCompression,true);assert.equal(config.runtime.harness,'guided');assert.equal(config.approvalMode,'ask');
- assert.ok(config.enabledTools.includes('write_document'));assert.ok(config.enabledTools.includes('run_command'));assert.equal(config.failover.groupId,'group');assert.equal(config.failover.routes[1].model,'second');assert.equal(settings.defaultConfig.model,'old');
+const {test}=require('node:test');
+const assert=require('node:assert/strict');
+const path=require('node:path');
+const {loader}=require('./load-ts.cjs');
+const source=p=>path.join(__dirname,'..',p);
+const load=loader();
+const {butlerWorkConfig,butlerWorkPrompt,BUTLER_AUTONOMOUS_TOOLS}=load(source('src/lib/butler-work.ts'));
+const defaults=load(source('src/lib/paramSchema.ts')).defaultGenerationConfig();
+const settings={defaultConfig:{...defaults,enabledTools:['run_command','chrome_click','mcp_any','claude_code','delete_file']},
+  routeGroups:[{id:'chosen',routes:[{profileId:'key',model:'mock'}]}]};
+const prefs={allowRoutineExecution:true,backend:{kind:'route-group',routeGroupId:'chosen',effort:'medium'}};
+const brain={schema:1,accountId:'own',signals:[],goals:[],briefs:[],skillProposals:[],actionGrants:[],updatedAt:1};
+const goal={id:'goal',accountId:'own',title:'Make a shortlist',hypothesis:'Create a reviewable draft',evidenceIds:[],confidence:'medium',status:'proposed',updatedAt:1};
+
+test('automatic Work uses a strict file-artifact tool list and no inherited broad tools',()=>{
+  const {config}=butlerWorkConfig(settings,prefs,{autonomous:true});
+  assert.deepEqual(config.enabledTools,[...BUTLER_AUTONOMOUS_TOOLS]);
+  assert.equal(config.approvalMode,'auto');
+  for(const forbidden of ['run_command','chrome_click','mcp_any','claude_code','delete_file'])
+    assert.equal(config.enabledTools.includes(forbidden),false,forbidden);
+  assert.ok(config.enabledTools.includes('write_file'));
+  assert.ok(config.enabledTools.includes('read_source_text'));
 });
-test('Work starts only from reviewed goals and carries the user correction plus financial boundary',()=>{
- const brain=emptyButlerBrain('user');const goal={id:'goal',accountId:'user',title:'Build a report',hypothesis:'Maybe a report',userCorrection:'Make a spreadsheet with sources',status:'proposed',evidenceIds:[],updatedAt:1};
- assert.throws(()=>butlerWorkPrompt(brain,goal),/确认/);goal.status='corrected';
- const prompt=butlerWorkPrompt(brain,goal);assert.match(prompt,/Make a spreadsheet with sources/);assert.match(prompt,/禁止支付/);assert.match(prompt,/不要只交付分析或计划/);
+
+test('automatic Work requires routine permission and marks native clients for host enforcement',()=>{
+  assert.throws(()=>butlerWorkConfig(settings,{...prefs,allowRoutineExecution:false},{autonomous:true}),/日常执行权限/);
+  const native=butlerWorkConfig(settings,{...prefs,backend:{kind:'native',client:{kind:'codex',model:'default'}}},{autonomous:true});
+  assert.equal(native.config.client.butlerAutonomous,true);
+});
+
+test('automatic proposed goal gets a bounded, cautious handoff and dismissed goal is rejected',()=>{
+  const prompt=butlerWorkPrompt(brain,{...goal,hypothesis:'draft '.repeat(10000)},{autonomous:true});
+  assert.ok(prompt.length<=16000);
+  assert.match(prompt,/候选需求/);
+  assert.match(prompt,/butler-brain/);
+  assert.match(prompt,/隔离工作目录/);
+  assert.throws(()=>butlerWorkPrompt(brain,goal),/确认或纠正/);
+  assert.throws(()=>butlerWorkPrompt(brain,{...goal,status:'dismissed'},{autonomous:true}),/已否定/);
 });
