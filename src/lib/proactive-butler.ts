@@ -1,9 +1,11 @@
 import { redactSecrets } from './memory-core';
 import type { ClientSelection } from './connections';
+import type { ClientStatus } from './connections';
 import type { EffortLevel } from './effort';
 
 /** The synced brain contains bounded observations, never raw app logs or credentials. */
 export type ButlerSource = 'wickrun' | 'browser' | 'desktop' | 'android' | 'integration' | 'share';
+export const BUTLER_SOURCES:ButlerSource[]=['wickrun','browser','desktop','android','integration','share'];
 export type ButlerConfidence = 'low' | 'medium' | 'high';
 export type ButlerGoalStatus = 'proposed' | 'confirmed' | 'corrected' | 'dismissed';
 
@@ -18,6 +20,8 @@ export interface ButlerProactivePreferences {
   morning: string;
   evening: string;
   timezone: string;
+  /** Only this same-account device may run the recurring scheduler. */
+  hostDeviceId?: string;
   allowResearch: boolean;
   /** Financial and negotiation actions always need their own exact grant. */
   allowRoutineExecution: boolean;
@@ -110,17 +114,22 @@ export interface ButlerBrainState {
 
 export interface ButlerRuntimeSnapshot {
   brain: ButlerBrainState;
-  host: {status:'local'|'connected'|'offline'|'unavailable';deviceName?:string;lastSeenAt?:number};
+  deviceId?: string;
+  host: {status:'local'|'connected'|'offline'|'unavailable';deviceId?:string;deviceName?:string;lastSeenAt?:number};
   busy: boolean;
   error?: string;
   /** Device-local collection consent and actual availability; never cloud-synced. */
   sources: Partial<Record<ButlerSource,{available:boolean;consented:boolean;note?:string}>>;
+  nativeClients?: ClientStatus[];
 }
 
 export type ButlerRuntimeAction =
   | {kind:'review-goal';goalId:string;decision:'confirm'|'dismiss'|'correct';correction?:string}
   | {kind:'review-skill';proposalId:string;decision:'accept'|'dismiss'}
   | {kind:'set-device-consent';source:ButlerSource;consented:boolean}
+  | {kind:'select-host';deviceId:string}
+  | {kind:'refresh'} | {kind:'analyze-now'} | {kind:'generate-brief';period:'morning'|'evening'}
+  | {kind:'import-link';url:string}
   | {kind:'run-research';goalId:string}
   | {kind:'pause'} | {kind:'resume'} | {kind:'turn-off'};
 
@@ -148,12 +157,17 @@ export function modelSafeSummary(raw:string,maxLength=240):string {
 export function projectButlerSignal(input:Omit<ButlerSignal,'topic'|'intent'|'summary'|'sourceLabel'|'sourceRef'|'modelSafe'> &
  {topic:string;intent:string;summary:string;sourceLabel:string;sourceRef?:string},
  consent:Partial<Record<ButlerSource,boolean>>,deviceConsent:Partial<Record<ButlerSource,boolean>>):ButlerSignal|null {
-  if (!input.accountId || !consent[input.source] || (input.source!=='wickrun' && !deviceConsent[input.source])) return null;
+  const validId=(s:unknown):s is string=>typeof s==='string'&&/^[a-zA-Z0-9:_-]{1,120}$/.test(s);
+  if (!validId(input.id)||!validId(input.accountId)||!BUTLER_SOURCES.includes(input.source)||
+    !Number.isFinite(input.observedAt)||input.observedAt<=0||
+    !['low','medium','high'].includes(input.confidence)||!['user-stated','behavior','result'].includes(input.basis)||
+    !consent[input.source] || (input.source!=='wickrun' && !deviceConsent[input.source])) return null;
   const topic=modelSafeSummary(input.topic,80),intent=modelSafeSummary(input.intent,120),summary=modelSafeSummary(input.summary,240);
-  if(!topic || !summary || summary.includes('[REDACTED]'))return null;
+  if(!topic || !summary || [topic,intent,summary].some(s=>s.includes('[REDACTED]')))return null;
   const sourceLabel=modelSafeSummary(input.sourceLabel,60);
   const sourceRef=input.sourceRef && /^[a-zA-Z0-9:_-]{1,120}$/.test(input.sourceRef) ? input.sourceRef : undefined;
-  return {...input,topic,intent,summary,sourceLabel,sourceRef,modelSafe:true};
+  return {id:input.id,accountId:input.accountId,source:input.source,sourceLabel,sourceRef,topic,intent,summary,
+    observedAt:input.observedAt,confidence:input.confidence,basis:input.basis,modelSafe:true};
 }
 
 export function sameAccountEvidence(brain:ButlerBrainState,ids:string[]):ButlerSignal[] {
@@ -168,7 +182,8 @@ export function addGoalProposal(brain:ButlerBrainState,candidate:Omit<ButlerGoal
   const title=modelSafeSummary(candidate.title,100),hypothesis=modelSafeSummary(candidate.hypothesis,400);
   if(!title||!hypothesis||brain.goals.some(g=>g.id===candidate.id || (g.status!=='dismissed'&&g.title.toLocaleLowerCase()===title.toLocaleLowerCase())))return brain;
   const confidence:ButlerConfidence = candidate.confidence==='high' && !evidence.some(s=>s.basis==='user-stated') ? 'medium' : candidate.confidence;
-  return {...brain,goals:[...brain.goals,{...candidate,title,hypothesis,evidenceIds:[...new Set(candidate.evidenceIds)],confidence,status:'proposed',accountId:brain.accountId,updatedAt:now}],updatedAt:now};
+  return {...brain,goals:[...brain.goals,{id:candidate.id,accountId:brain.accountId,title,hypothesis,evidenceIds:[...new Set(candidate.evidenceIds)],
+    confidence,status:'proposed',updatedAt:now}],updatedAt:now};
 }
 
 export function reviewGoal(brain:ButlerBrainState,goalId:string,decision:'confirm'|'dismiss'|'correct',correction='',now=Date.now()):ButlerBrainState {
@@ -182,4 +197,70 @@ export function actionGrantMatches(grant:ButlerActionGrant,request:Pick<ButlerAc
   return !grant.consumedAt && grant.expiresAt>now && grant.accountId===request.accountId && grant.action===request.action &&
     grant.account===request.account && grant.target===request.target && grant.amount===request.amount && grant.currency===request.currency &&
     Number.isFinite(request.amount) && request.amount>0;
+}
+
+/** Revocation removes derived records, not just the collection toggle. */
+export function revokeButlerSource(brain:ButlerBrainState,source:ButlerSource,now=Date.now()):ButlerBrainState {
+  const signals=brain.signals.filter(s=>s.source!==source && s.accountId===brain.accountId);
+  const kept=new Set(signals.map(s=>s.id));
+  return {...brain,signals,
+    goals:brain.goals.filter(g=>g.accountId===brain.accountId && g.evidenceIds.every(id=>kept.has(id))),
+    briefs:brain.briefs.filter(b=>b.accountId===brain.accountId).map(b=>({...b,items:b.items.filter(i=>i.evidenceIds.every(id=>kept.has(id)))})).filter(b=>b.items.length>0),
+    skillProposals:brain.skillProposals.filter(s=>s.accountId===brain.accountId && s.evidenceIds.every(id=>kept.has(id))),
+    updatedAt:now};
+}
+
+export function reviewSkillProposal(brain:ButlerBrainState,id:string,decision:'accept'|'dismiss',now=Date.now()):ButlerBrainState {
+  const proposal=brain.skillProposals.find(s=>s.id===id && s.accountId===brain.accountId && s.status==='proposed');
+  if(!proposal || !sameAccountEvidence(brain,proposal.evidenceIds).length)return brain;
+  return {...brain,skillProposals:brain.skillProposals.map(s=>s!==proposal?s:{...s,status:decision==='accept'?'accepted':'dismissed',reviewedAt:now}),updatedAt:now};
+}
+
+export function addButlerBrief(brain:ButlerBrainState,brief:ButlerBrief):ButlerBrainState {
+  if(brief.accountId!==brain.accountId || brain.briefs.some(b=>b.id===brief.id))return brain;
+  const ids=new Set(sameAccountEvidence(brain,brain.signals.map(s=>s.id)).map(s=>s.id));
+  const items=brief.items.filter(i=>i.evidenceIds.length>0 && i.evidenceIds.every(id=>ids.has(id))).map(i=>({
+    id:i.id,kind:i.kind,title:modelSafeSummary(i.title,100),summary:modelSafeSummary(i.summary,500),
+    goalId:i.goalId,evidenceIds:[...new Set(i.evidenceIds)],result:safeResultRef(i.result),
+  })).filter(i=>i.title && i.summary && !i.summary.includes('[REDACTED]'));
+  if(!items.length)return brain;
+  return {...brain,briefs:[...brain.briefs,{id:brief.id,accountId:brain.accountId,period:brief.period,createdAt:brief.createdAt,items}],updatedAt:Math.max(brain.updatedAt,brief.createdAt)};
+}
+
+/** Cloud sync gets the account's normalized brain, without device-local grants. */
+export function projectButlerBrainForSync(brain:ButlerBrainState):ButlerBrainState {
+  const accountId=brain.accountId;
+  const consent=Object.fromEntries(BUTLER_SOURCES.map(s=>[s,true])) as Record<ButlerSource,boolean>;
+  const signals=brain.signals.filter(s=>s.accountId===accountId&&s.modelSafe===true)
+    .map(s=>projectButlerSignal(s,consent,consent)).filter((s):s is ButlerSignal=>!!s).slice(-500);
+  const ids=new Set(signals.map(s=>s.id));
+  const refs=(evidenceIds:string[])=>[...new Set(evidenceIds.filter(id=>ids.has(id)))];
+  return {schema:1,accountId,
+    signals:signals.map(({sourceRef:_,...safe})=>safe),
+    goals:brain.goals.filter(g=>g.accountId===accountId&&refs(g.evidenceIds).length>0).slice(-200).map(g=>({
+      id:g.id,accountId,title:modelSafeSummary(g.title,100),hypothesis:modelSafeSummary(g.hypothesis,400),
+      evidenceIds:refs(g.evidenceIds),confidence:g.confidence,status:g.status,
+      userCorrection:g.userCorrection?modelSafeSummary(g.userCorrection,400):undefined,
+      updatedAt:g.updatedAt,dismissedAt:g.dismissedAt,
+    })),
+    briefs:brain.briefs.filter(b=>b.accountId===accountId).slice(-100).map(b=>({
+      id:b.id,accountId,period:b.period,createdAt:b.createdAt,
+      items:b.items.filter(i=>refs(i.evidenceIds).length>0).map(i=>({id:i.id,kind:i.kind,
+        title:modelSafeSummary(i.title,100),summary:modelSafeSummary(i.summary,500),goalId:i.goalId,
+        evidenceIds:refs(i.evidenceIds),result:safeResultRef(i.result)})),
+    })).filter(b=>b.items.length>0),
+    skillProposals:brain.skillProposals.filter(s=>s.accountId===accountId&&refs(s.evidenceIds).length>0).slice(-100).map(s=>({
+      id:s.id,accountId,name:modelSafeSummary(s.name,60),description:modelSafeSummary(s.description,160),
+      body:modelSafeSummary(s.body,2000),evidenceIds:refs(s.evidenceIds),status:s.status,
+      createdAt:s.createdAt,reviewedAt:s.reviewedAt,
+    })),
+    actionGrants:[],updatedAt:brain.updatedAt};
+}
+
+function safeResultRef(result:ButlerResultRef|undefined):ButlerResultRef|undefined {
+  if(!result||!['conversation','team-run','artifact','url'].includes(result.kind)||!modelSafeSummary(result.id,120))return undefined;
+  if(result.kind!=='url')return {kind:result.kind,id:modelSafeSummary(result.id,120)};
+  try {const url=new URL(result.url??'');if(url.protocol!=='https:'||url.username||url.password)return undefined;
+    url.search='';url.hash='';return {kind:'url',id:modelSafeSummary(result.id,120),url:url.toString()};}
+  catch{return undefined;}
 }
