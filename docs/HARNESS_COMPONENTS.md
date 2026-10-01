@@ -45,3 +45,6 @@
 ## 管家统一操作层（2.20.16）
 
 结构化安排先在副本内解析并复用流程、任务依赖、模型工具和目录权限校验，整批成功才保存。配置戳防止旧提案覆盖期间变更；已有运行快照不变。启动独立于采用，提交前持久化操作回执，未知结果不自动重复。由 `tests/workspace-planner.test.cjs` 覆盖。原子应用、权限和幂等边界不能因模型变强而删；只有真实任务对照证明同类漏安排不再出现时，才能移除“只说建议”的一次有界修正。
+| 共享内容与个人管家边界（4.0.0） | 共享整个对象时把私人目标、来源原文、派生会话、凭据或工具权限一起传给其他账户 | `src/lib/shared-resources.ts`、`server/collaboration-api.mjs`（Web 仓库）、`tests/shared-resources.test.cjs` | 不删除；只能以等效且服务端验证的身份及权限边界替换 |
+| 共享消息追加、版本冲突与交接去重（4.0.0） | 两人同时发言互相覆盖、草稿丢失、重试交接产生重复任务 | 共享 API、`CollaborationHub.tsx`、`tests/shared-import.test.cjs`、`tests/shared-runtime.test.cjs` | 不删除；界面可以改变，去重与权限复核必须保留 |
+| 首次登录延续本机工作区（4.0.0） | 登录把既有对话、项目记忆、模型和流程隐藏在另一目录 | `electron/device-workspace.cjs`、`tests/device-workspace.test.cjs` | 不删除；若改存储模型，必须证明首次登录延续和后续账户隔离都成立 |

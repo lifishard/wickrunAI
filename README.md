@@ -6,9 +6,9 @@
 
 **Every AI model you own, in one app — and when one fails, the next one takes over mid-task.**
 
-Open or closed, paid or free. Bring your own keys; they never leave your machine.
+Open or closed, paid or free. Bring your own keys; cloud sync is optional, and sharing never transfers your credentials.
 
-[![Version](https://img.shields.io/badge/version-3.0.0-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
+[![Version](https://img.shields.io/badge/version-4.0.0-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-lightgrey)](#install)
 [![CI](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml/badge.svg)](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml)
@@ -20,6 +20,22 @@ Open or closed, paid or free. Bring your own keys; they never leave your machine
 </div>
 
 ---
+
+## 4.0.0 — Cross-account collaboration
+
+This major update adds a shared workspace for people using different wickrunAI accounts. Share files and folders, join the same conversation, maintain project instructions together, or jointly edit a workflow and inspect its published execution history.
+
+- **Choose who can do what.** Grant viewer, commenter, or editor access through a link, verified email invitations, or personal and company spaces. Children inherit their parent’s access. Guests can view public links; guest comments require the owner to enable them. Changes, versions, and messages retain their author and time.
+- **Work together with your own models.** Human messages appear on the left and AI replies on the right with the generating account and model. Private and shared annotations stay outside AI requests and memory. Concurrent messages are preserved; conflicting edits keep your draft.
+- **Transfer files up to 100 MB.** Shared uploads and downloads use bounded chunks and store file versions by reference. Document attachments also accept 100 MB; large extracted text shows a clearly marked preview instead of putting the whole file into a model request. Image and media inputs retain their separate model limits.
+- **Change simple settings beside your message.** Click native AI effort levels and the Streaming / Non-streaming control directly in the composer. Adjust mapping opens the current conversation’s thinking settings. The right panel groups response and thinking options together.
+- **Connect independent teams and Agents.** Both sides accept a connection before handing over a goal, summary, and explicitly selected text files. Each side keeps its own workflow, tools, and model settings. Received work opens as a draft; copied Agents and routines start disabled.
+- **Keep personal data personal.** Personal Butler goals, memory, signals, tasks, logs, and derived conversations cannot enter sharing. Company administrators only manage their shared space. Sharing excludes credentials and tool permissions.
+- **Keep this computer’s history when signing in.** The first desktop account continues the existing local conversations, project memory, model setup, and workflows. Later accounts remain isolated. The empty-workspace first-login issue in 3.0.1 recovers when the original data remains and the new local account has no work to overwrite.
+
+Personal and company spaces are currently free, with individual monthly and company seat billing reserved for future use. Google sign-in is available; the common wickrunAI identity model supports other providers, while Apple setup is still pending. This release requires matching Windows, macOS, Linux, and Android preview packages. See [sharing and handoffs](docs/SHARING_COLLABORATION.md) and the [4.0.0 release notes](docs/releases/v4.0.0.md).
+
+**Android 3.0.0 migration:** its temporary signing key was not retained, so 4.0.0 cannot install over that preview. Back up the data you need before uninstalling and reinstalling; uninstalling deletes data that has not been backed up. The application ID remains the same. Future releases require the fixed 4.0.0 signing certificate.
 
 **When a route dies mid-task, the task does not.** This is the notice you get, verbatim, and the run continues from where it stopped:
 

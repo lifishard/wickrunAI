@@ -4,7 +4,7 @@ import { Modal } from './ui';
 import { useT } from '../lib/i18n';
 import { getTransport } from '../lib/transport';
 import { cloudBridge, cloudCall, configureCloudKeys, type CloudStatus, type DesktopCloudState } from '../lib/cloud-api';
-import { canonicalCloud, CloudMergeConflict, emptyCloudData, hydrateCloudData, mergeCloudData, projectCloudData, cloudCollections, butlerCloudSlice, firstButlerBase, withButlerCloudSlice, mergeButlerSlices, butlerBrainFromRows, butlerPreferencesFromCloud, type CloudData, type CloudLocal } from '../lib/cloud-data';
+import { canonicalCloud, CloudMergeConflict, emptyCloudData, hydrateCloudData, mergeCloudData, projectCloudData, firstSyncBase, butlerCloudSlice, firstButlerBase, withButlerCloudSlice, mergeButlerSlices, butlerBrainFromRows, butlerPreferencesFromCloud, type CloudData, type CloudLocal } from '../lib/cloud-data';
 import { readCloudObservations, readCloudArchives, readCloudButler } from '../lib/cloud-local';
 import { emptyButlerBrain, type ButlerBrainState, type ButlerProactivePreferences } from '../lib/proactive-butler';
 
@@ -18,6 +18,7 @@ export default function CloudSyncControl(props:Props){
   const [working,setWorking]=React.useState(false),[error,setError]=React.useState(''),[notice,setNotice]=React.useState('');
   const [conflicts,setConflicts]=React.useState<ConflictReview|null>(null);
   const [archives,setArchives]=React.useState<CloudData['archives']>([]);
+  const [cloudKeyIds,setCloudKeyIds]=React.useState<string[]>([]);
   const lock=React.useRef(false),last=React.useRef(''),didInitial=React.useRef(false);
   const statusRef=React.useRef(status);statusRef.current=status;
   React.useEffect(()=>{
@@ -27,8 +28,13 @@ export default function CloudSyncControl(props:Props){
     return()=>{alive=false;};
   },[]);
   React.useEffect(()=>{
-    configureCloudKeys(status?.available?status.user?.id??null:null,props.local.settings.keyProfiles.map(p=>p.id));
-  },[status,props.local.settings.keyProfiles]);
+    configureCloudKeys(status?.available?status.user?.id??null:null,cloudKeyIds);
+  },[status,cloudKeyIds]);
+  React.useEffect(()=>{
+    let alive=true;setCloudKeyIds([]);
+    if(status?.available&&status.user)void cloudCall<{ids:string[]}>('keys').then(value=>{if(alive)setCloudKeyIds(value.ids);}).catch(()=>{});
+    return()=>{alive=false;};
+  },[status?.user?.id,status?.available]);
   React.useEffect(()=>{
     if(!native?.pending)return;
     const timer=setInterval(()=>{void cloudBridge()?.cloudPoll().then(async()=>{const next=await cloudBridge()!.cloudState();setNative(next);}).catch(e=>{setError(String(e.message||e));setNative(value=>value?{...value,pending:null}:value);});},2500);
@@ -67,11 +73,12 @@ export default function CloudSyncControl(props:Props){
       if(choice&&(!conflicts||conflicts.revision!==remote.revision||conflicts.fingerprint!==canonicalCloud(local)))throw new Error(t('内容已变化，请重新同步并检查冲突。'));
       let base=saved?.data??emptyCloudData();
       if(!saved&&remote.revision>0&&!importGuest){
-        // On first login, account data supersedes seed/default entries with the same id.
-        // Keep an untouched migration copy; unique local records are still merged.
+        // Keep an untouched migration copy; a continued desktop workspace
+        // retains its habits while genuine cloud/local differences need review.
         await transport.kvSet('wickrun:cloud:before-first-sync:v1',JSON.stringify(original));
-        base={...emptyCloudData(),preferences:local.preferences};
-        for(const key of cloudCollections)base[key]=(local[key]??[]).filter(row=>(remote.data[key]??[]).some(r=>r.id===row.id));
+        const bridge=cloudBridge(),state=bridge?await bridge.cloudState():null;
+        const continuing=state?.continuesLocalWorkspace===true&&(state.workspaceAccountId??state.user?.id)===account.user.id;
+        base=firstSyncBase(local,remote.data,continuing);
       }
       let merged:CloudData=local;
       for(let attempt=0;attempt<3;attempt++){
@@ -109,6 +116,7 @@ export default function CloudSyncControl(props:Props){
         const key=await cloudCall<{value:string|null}>('keyGet',{id:profile.id});
         if(key.value)await transport.secretSet(profile.id,key.value);
       }
+      setCloudKeyIds(keyResult.ids);
       if(current.current.isBlocked())throw new Error(t('任务正在运行，云端已保存；空闲后会继续合并本机内容。'));
       const finalLocal=await collect();
       combined=mergeCloudData(projectCloudData(latest),projectCloudData(finalLocal),combined);
@@ -186,6 +194,7 @@ export default function CloudSyncControl(props:Props){
     <button className="btn sm cloud-account-trigger" onClick={()=>setOpen(true)} title={t('账号与云同步')}>{working?t('同步中…'):error?t('同步需要处理'):status?.user?t('云端同步'):t('Google 账号')}</button>
     {open?<Modal title={t('账号与云同步')} onClose={()=>setOpen(false)}><div className="modal-body" style={{display:'grid',gap:14}}>
       <p>{t('同一 Google 账号可在桌面版与网页版查看聊天、项目、技能和任务记录，并使用自己的 API 密钥。')}</p>
+      {native?.continuesLocalWorkspace!==undefined&&<p>{t(native.continuesLocalWorkspace?'当前账号继续使用这台机器原有的对话、记忆、模型和工作区。':'首次登录会延续本机工作区；切换到其他账号时，会使用该账号自己的工作区。')}</p>}
       {status?.user?<p><strong>{status.user.name}</strong><br/>{status.user.email}</p>:native?.user?<p>{native.user.email}</p>:null}
       {error?<p role="alert" style={{color:'var(--danger)'}}>{error}</p>:null}
       {notice?<p role="status">{notice}</p>:null}
@@ -194,7 +203,7 @@ export default function CloudSyncControl(props:Props){
       {cloudBridge()?<>
         {!native?.pending&&!native?.ready?<button className="btn primary" disabled={unavailable} onClick={()=>{setError('');void cloudBridge()!.cloudLogin().then(async()=>setNative(await cloudBridge()!.cloudState())).catch(e=>setError(String(e.message||e)));}}>{t('使用 Google 登录')}</button>:null}
         {native?.pending?<div><p>{t('浏览器会打开 Google 登录。请核对两处校验码一致，再批准此桌面程序。')}</p><strong style={{font:'24px monospace',letterSpacing:4}}>{native.pending.code}</strong></div>:null}
-        {native?.ready?<button className="btn primary" disabled={unavailable} onClick={()=>void switchAccount(false)}>{t('登录完成，重启进入账号工作区')}</button>:null}
+        {native?.ready?<button className="btn primary" disabled={unavailable} onClick={()=>void switchAccount(false)}>{t('登录完成，重启继续使用')}</button>:null}
         {native?.user?<button className="btn" disabled={unavailable} onClick={()=>void switchAccount(true)}>{t('退出并返回未登录工作区')}</button>:null}
       </>:!status?.user?<a className="btn primary" href="/api/auth/google">{t('使用 Google 登录')}</a>:null}
       {status?.user&&status.available?<>

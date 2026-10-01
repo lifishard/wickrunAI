@@ -75,7 +75,7 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 22
-      - name: 创建新版本标签并启动三平台发布
+      - name: 创建新版本标签并启动四平台发布
         run: node scripts/auto-release.mjs
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -4,7 +4,7 @@
  */
 const fs = require('node:fs');
 const path = require('node:path');
-const { extractDocument } = require('./attachment-documents.cjs');
+const { extractDocument, MAX_CHARS } = require('./attachment-documents.cjs');
 
 const TEXT_EXT = new Set([
   '.ics', '.ical', '.txt', '.md', '.markdown', '.rst', '.log', '.csv', '.tsv', '.json', '.jsonl',
@@ -28,7 +28,7 @@ const IMAGE_MIME = {
 // Keep these limits in step with src/lib/attachment-limits.ts.  The renderer
 // and native clients use the same values when they accept pasted/remote files.
 const MIB = 1024 * 1024;
-const MAX_TEXT = 25 * MIB;
+const MAX_TEXT = 100 * MIB;
 const MAX_IMAGE = 20 * MIB;
 const MAX_BATCH = 100 * MIB;
 
@@ -95,7 +95,10 @@ async function readOne(p) {
     name,
     mime: 'text/plain',
     size,
-    text: buf.toString('utf8'),
+    text: (() => {
+      const text = buf.toString('utf8');
+      return text.length > MAX_CHARS ? `${text.slice(0, MAX_CHARS)}\n\n[只显示前 ${MAX_CHARS} 字]` : text;
+    })(),
   };
 }
 

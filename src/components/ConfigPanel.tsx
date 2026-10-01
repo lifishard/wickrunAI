@@ -107,12 +107,6 @@ export default function ConfigPanel(props: {
           {t('当前：')}<code>{cfg.model || t('未选择')}</code>
         </div>
 
-        <div className="field">
-          <Switch checked={cfg.stream} onChange={(v) => onChange({ stream: v })} label={t('流式响应')} />
-          <div className="hint">
-            {t('开启后逐字返回（SSE）；关掉则等整段生成完一次性返回。调试接口时关掉更容易看清完整响应。')}
-          </div>
-        </div>
       </div>
 
       {props.onFailoverChange ? <FailoverList
@@ -247,12 +241,17 @@ export default function ConfigPanel(props: {
         ) : null}
       </div>
 
-      {/* ---------------- 思考强度 ---------------- */}
+      {/* ---------------- 请求发送与思考 ---------------- */}
       <div className="section">
-        <div className="section-title">{t('思考强度')}</div>
+        <div className="section-title">{t('发送与思考')}</div>
+
+        <div className="field">
+          <Switch checked={cfg.stream} onChange={(v) => onChange({ stream: v })} label={t('流式响应')} />
+          <div className="hint">{t('开启后逐字返回（SSE）；关掉则等整段生成完一次性返回。调试接口时关掉更容易看清完整响应。')}</div>
+        </div>
 
         <Field
-          label={t('下发方式')}
+          label={t('思考字段下发方式')}
           hint={
             cfg.thinkingStyle === 'auto'
               ? t('按当前模型匹配映射表，自动翻译成那家该用的字段。档位在输入框右下角选。')
@@ -260,6 +259,8 @@ export default function ConfigPanel(props: {
           }
         >
           <select
+            id="thinking-send-style"
+            aria-label={t('思考字段下发方式')}
             value={cfg.thinkingStyle}
             onChange={(e) => onChange({ thinkingStyle: e.target.value as ThinkingStyle })}
           >
@@ -302,6 +303,7 @@ export default function ConfigPanel(props: {
             />
           </Field>
         ) : null}
+        {props.profile && props.onProfileChange ? <RouteSettings part="reasoning" profile={props.profile} config={cfg} onChange={props.onProfileChange} /> : null}
       </div>
 
       {/* ---------------- 上下文 ---------------- */}

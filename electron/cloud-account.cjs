@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { randomBytes, createHash } = require('node:crypto');
 
-const ORIGIN = 'https://wickrunai-web-production.up.railway.app';
+const ORIGIN = 'https://wickrunai.com';
 function createCloudAccount({ app, safeStorage, openExternal, fetcher = fetch }) {
   const base = app.getPath('userData');
   const registryFile = path.join(base, 'cloud-accounts.json');
@@ -13,10 +13,19 @@ function createCloudAccount({ app, safeStorage, openExternal, fetcher = fetch })
     if (!parsed || !parsed.accounts || typeof parsed.accounts !== 'object' || Array.isArray(parsed.accounts)) throw new Error('Invalid cloud account registry.');
     registry = parsed;
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
+  const persist = () => {
+    fs.mkdirSync(base, { recursive: true });
+    const temp = registryFile + '.' + randomBytes(6).toString('hex') + '.tmp';
+    fs.writeFileSync(temp, JSON.stringify(registry), { mode: 0o600 });
+    fs.renameSync(temp, registryFile);
+  };
   const validId = id => typeof id === 'string' && /^[\w-]{1,128}$/.test(id) && !['__proto__','prototype','constructor'].includes(id);
   const active = validId(registry.active) && Object.hasOwn(registry.accounts, registry.active) ? registry.active : null;
   if (active) {
-    const directory = path.join(base, 'cloud-profiles', createHash('sha256').update(active).digest('hex'));
+    const workspace=require('./device-workspace.cjs').chooseDeviceWorkspace(base,registry,active,{safeStorage});
+    const directory = workspace.directory;
+    if(workspace.changed)persist();
+    if(registry.deviceWorkspaceOwner===active)require('./device-workspace.cjs').adoptLocalButler(base,active);
     fs.mkdirSync(directory, { recursive: true });
     // Windows safeStorage ciphertext is bound to Chromium's Local State key.
     // Keep the same OS-protected key across isolated account directories so
@@ -28,12 +37,6 @@ function createCloudAccount({ app, safeStorage, openExternal, fetcher = fetch })
     app.setPath('userData', directory);
     app.setPath('sessionData', directory);
   }
-  const persist = () => {
-    fs.mkdirSync(base, { recursive: true });
-    const temp = registryFile + '.' + randomBytes(6).toString('hex') + '.tmp';
-    fs.writeFileSync(temp, JSON.stringify(registry), { mode: 0o600 });
-    fs.renameSync(temp, registryFile);
-  };
   const credential = () => {
     if (!active) return null;
     const entry = registry.accounts[active];
@@ -46,8 +49,15 @@ function createCloudAccount({ app, safeStorage, openExternal, fetcher = fetch })
       headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       body: body ? JSON.stringify(body) : undefined,
     });
-    const data = await response.json();
-    if (!response.ok) { const error = new Error(data.error || `Cloud request failed (${response.status}).`); error.status = response.status; throw error; }
+    const data = await response.json().catch(() => null);
+    if (!response.ok) {
+      const detail = data && typeof data === 'object' ? data.error || data.message : null;
+      const message = typeof detail === 'string' ? detail : detail && typeof detail === 'object' && typeof detail.message === 'string' ? detail.message : null;
+      const error = new Error(message || `Cloud request failed (${response.status}).`);
+      error.status = response.status;
+      throw error;
+    }
+    if (!data || typeof data !== 'object') throw new Error('Invalid cloud response.');
     return data;
   }
   return {
@@ -60,7 +70,7 @@ function createCloudAccount({ app, safeStorage, openExternal, fetcher = fetch })
       if (typeof urlPath !== 'string' || !/^\/api\/cloud\/relay\/[\w/-]+$/.test(urlPath)) throw new Error('Unsupported relay operation.');
       return request(urlPath, method, body);
     },
-    state() { return { user: active ? registry.accounts[active].user : null, origin: ORIGIN, pending: pending ? { code: pending.code, expires: pending.expires } : null, ready: readyAccount?.user || null }; },
+    state() { return { user: active ? registry.accounts[active].user : null,workspaceAccountId:active??registry.deviceWorkspaceOwner??'guest', continuesLocalWorkspace:Boolean(active&&registry.deviceWorkspaceOwner===active),origin: ORIGIN, pending: pending ? { code: pending.code, expires: pending.expires } : null, ready: readyAccount?.user || null }; },
     async login() {
       if (!safeStorage.isEncryptionAvailable() || safeStorage.getSelectedStorageBackend?.() === 'basic_text') throw new Error('Secure system storage is required to save your cloud sign-in.');
       if (pending && pending.expires > Date.now()) return { code: pending.code, expires: pending.expires };
@@ -92,6 +102,7 @@ function createCloudAccount({ app, safeStorage, openExternal, fetcher = fetch })
       if (!readyAccount) throw new Error('Complete Google sign-in first.');
       registry.accounts[readyAccount.user.id] = readyAccount;
       registry.active = readyAccount.user.id;
+      require('./device-workspace.cjs').chooseDeviceWorkspace(base,registry,readyAccount.user.id,{firstLogin:!active,safeStorage});
       persist();
     },
     async logout() {
@@ -101,6 +112,11 @@ function createCloudAccount({ app, safeStorage, openExternal, fetcher = fetch })
       persist();
     },
     async call(action, input = {}) {
+      if (action === 'collaboration') {
+        if (!input || typeof input !== 'object' || typeof input.operation !== 'string' || !input.input || typeof input.input !== 'object') throw new Error('Invalid collaboration operation.');
+        // The main process chooses the endpoint; renderer input cannot supply a URL or an authorization token.
+        return request('/api/collaboration', 'POST', input);
+      }
       if (!active) {
         if (action === 'status') return { user: null, available: true, origin: ORIGIN };
         throw new Error('Sign in to access your cloud account.');

@@ -3,7 +3,7 @@ const assert=require('node:assert/strict');
 const path=require('node:path');
 const {loader}=require('./load-ts.cjs');
 const root=path.join(__dirname,'..','src','lib');
-const {emptyCloudData,mergeCloudData,projectCloudData,hydrateCloudData,CloudMergeConflict}=loader()(path.join(root,'cloud-data.ts'));
+const {emptyCloudData,mergeCloudData,projectCloudData,hydrateCloudData,firstSyncBase,CloudMergeConflict}=loader()(path.join(root,'cloud-data.ts'));
 
 test('cloud merge keeps independent edits and propagates deletions without device timestamps',()=>{
   const base={...emptyCloudData(),projects:[{id:'p',name:'old'},{id:'deleted',name:'remove me'}]};
@@ -29,6 +29,35 @@ test('preferences merge per field; no timestamp can silently win a conflict',()=
   const local={...base,preferences:{theme:'dark',locale:'en'}};
   const remote={...base,preferences:{theme:'light',locale:'zh-Hans'}};
   assert.deepEqual(mergeCloudData(base,local,remote).preferences,{theme:'dark',locale:'zh-Hans'});
+});
+test('continued desktop workspace keeps explicit local habits over old cloud defaults and imports unique records',()=>{
+  const seed={id:'p',name:'新项目',emoji:'📁',instructions:'',docs:[],prompts:[],memory:'',memoryItems:[],createdAt:1};
+  const local={...emptyCloudData(),preferences:{theme:'dark',sendKey:'ctrl-enter',fontScale:1.25,requestTimeoutMs:240000,routeGroups:[{id:'r',name:'My route',routes:[]}]},
+    projects:[{...seed,name:'My project',instructions:'My instructions',docs:[{id:'d',name:'notes',content:'local'}]}]};
+  const remote={...emptyCloudData(),preferences:{theme:'system',sendKey:'enter',fontScale:1,requestTimeoutMs:180000,routeGroups:[]},
+    projects:[seed,{id:'other',name:'Cloud project'}]};
+  const merged=mergeCloudData(firstSyncBase(local,remote,true),local,remote);
+  assert.deepEqual(merged.preferences,local.preferences);
+  assert.equal(merged.projects.find(p=>p.id==='p').instructions,'My instructions');
+  assert.equal(merged.projects.find(p=>p.id==='p').docs[0].content,'local');
+  assert.equal(merged.projects.find(p=>p.id==='other').name,'Cloud project');
+});
+test('real first-login cloud/local differences remain reviewable while normal account seed policy is unchanged',()=>{
+  const local={...emptyCloudData(),preferences:{theme:'dark',locale:'en'},projects:[{id:'p',name:'Local',instructions:'Local work'}]};
+  const remote={...emptyCloudData(),preferences:{theme:'light',locale:'zh-Hans'},projects:[{id:'p',name:'Remote',instructions:'Remote work'}]};
+  const desktopBase=firstSyncBase(local,remote,true);
+  assert.throws(()=>mergeCloudData(desktopBase,local,remote),error=>error instanceof CloudMergeConflict&&error.records.includes('projects:p')&&error.records.includes('preferences:theme'));
+  assert.equal(mergeCloudData(desktopBase,local,remote,'local').projects[0].name,'Local');
+  const normalBase=firstSyncBase(local,remote,false);
+  assert.equal(mergeCloudData(normalBase,local,remote).projects[0].name,'Remote');
+  assert.equal(mergeCloudData(normalBase,local,remote).preferences.theme,'light');
+});
+test('continued desktop first sync cannot silently resume or enable Butler',()=>{
+  const local={...emptyCloudData(),preferences:{'butler.paused':true,'butler.enabled':false}};
+  const remote={...emptyCloudData(),preferences:{'butler.paused':false,'butler.enabled':true}};
+  const merged=mergeCloudData(firstSyncBase(local,remote,true),local,remote);
+  assert.equal(merged.preferences['butler.paused'],true);
+  assert.equal(merged.preferences['butler.enabled'],false);
 });
 
 test('an empty draft added by the UI is not a conflicting edit after importing a conversation',()=>{

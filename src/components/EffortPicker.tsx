@@ -85,8 +85,8 @@ export default function EffortPicker(props: {
                 ? t('当前模型匹配「{label}」{note}', { label: mapping.label, note: mapping.unverified ? t('（这条是推的，没实测）') : '' })
                 : t('没有匹配到映射规则')}
             </span>
-            <button className="btn sm ghost" onClick={props.onOpenMappings}>
-              {t('改映射')}
+            <button className="btn sm ghost" onClick={() => { setOpen(false); props.onOpenMappings(); }}>
+              {t('手动改映射')}
             </button>
           </div>
         </AnchoredPopover>

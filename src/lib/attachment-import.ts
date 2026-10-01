@@ -112,5 +112,5 @@ export async function importBrowserFile(file:File):Promise<Imported> {
     text=new TextDecoder('utf-8',{fatal:true}).decode(bytes);
   } else throw Error('不是支持的文本、文档或图片格式。');
   if(!text.trim())throw Error('文件没有可提取的文字。');
-  return {kind:'text',name,mime:'text/plain',size:file.size,text};
+  return {kind:'text',name,mime:'text/plain',size:file.size,text:clip(text)};
 }

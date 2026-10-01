@@ -3,6 +3,7 @@ import * as React from 'react';
 // cn2t 子路径同时给出 ESM 和 UMD，Vite 和 node 测试都能解析，且只打包简转繁这一个方向。
 import * as OpenCC from 'opencc-js/cn2t';
 import { BUTLER_EN } from './i18n-butler';
+import { SHARING_EN } from './i18n-sharing';
 
 export type Locale = 'zh-Hans' | 'zh-Hant' | 'en';
 
@@ -19,6 +20,7 @@ export const LOCALES: { value: Locale; label: string; label2: string; lang: stri
  */
 const EN: Record<string, string> = {
   ...BUTLER_EN,
+  ...SHARING_EN,
   '今日管家':'Today’s assistant',
   '管家 · ':'Assistant · ',
   '执行记录尚未同步到本设备，可先查看管家的任务摘要；完成或暂停后会继续同步。':'The execution record has not synced to this device yet. View the task summary here; syncing continues when it completes or pauses.',
@@ -822,6 +824,14 @@ const EN: Record<string, string> = {
   '一句不问，包括在你电脑上执行任意命令。只在你盯着屏幕、且工作目录里没有要紧东西时用。':
     'No questions, including arbitrary commands on your computer. Use it while you watch the screen and the working directory holds nothing you care about.',
   '非流式': 'Non-streaming',
+  '流式': 'Streaming',
+  '响应方式：{mode}，点击切换': 'Response mode: {mode}. Click to switch.',
+  '只影响下一条消息': 'Applies to your next message',
+  '手动改映射': 'Adjust mapping',
+  '发送与思考': 'Response and thinking',
+  '思考字段下发方式': 'How to send thinking settings',
+  '客户端尚未提供可选强度': 'This client does not offer selectable effort levels yet',
+  '当前路由的输出与思考兼容设置': 'Output and reasoning compatibility for this route',
   '请求模式': 'Request mode',
   '沿用同一段对话和附件；Chat 讨论，Work 接着执行。切换后对下一条消息生效。':
     'Same conversation and attachments. Chat discusses, Work executes. Takes effect on your next message.',

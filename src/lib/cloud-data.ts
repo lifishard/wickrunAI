@@ -17,6 +17,31 @@ export function canonicalCloud(value:unknown):string {
   return JSON.stringify(value)??'null';
 }
 const same = (a:unknown,b:unknown)=>canonicalCloud(a)===canonicalCloud(b);
+/** The first desktop account may continue an existing device workspace. */
+export function firstSyncBase(local:CloudData,remote:CloudData,continuesLocalWorkspace=false):CloudData {
+  const base=emptyCloudData();
+  if(!continuesLocalWorkspace){
+    base.preferences=local.preferences;
+    for(const key of cloudCollections)base[key]=(local[key]??[]).filter(row=>(remote[key]??[]).some(other=>other.id===row.id));
+    return base;
+  }
+  const defaults:Record<string,unknown>={theme:'system',sendKey:'enter',fontScale:1,showReasoningByDefault:true,requestTimeoutMs:180000,routeGroups:[]};
+  for(const key of new Set([...Object.keys(local.preferences),...Object.keys(remote.preferences)])){
+    if(key==='butler.paused'||key==='butler.enabled')continue;
+    if(Object.hasOwn(defaults,key)){
+      if(same(remote.preferences[key],defaults[key]))base.preferences[key]=remote.preferences[key];
+      else if(same(local.preferences[key],defaults[key]))base.preferences[key]=local.preferences[key];
+    }
+  }
+  // Only an untouched placeholder is an ancestor of local project work.
+  // Real divergent rows have no invented baseline and remain reviewable.
+  const seedFields=new Set(['id','name','emoji','instructions','docs','prompts','memory','memoryItems','createdAt']);
+  const seed=(row:CloudRow)=>Object.keys(row).every(key=>seedFields.has(key))&&row.name==='新项目'&&
+    (row.emoji===undefined||row.emoji==='📁')&&(row.instructions??'')===''&&
+    same(row.docs??[],[])&&same(row.prompts??[],[])&&(row.memory??'')===''&&same(row.memoryItems??[],[]);
+  base.projects=(remote.projects??[]).filter(row=>seed(row)&&(local.projects??[]).some(other=>other.id===row.id));
+  return base;
+}
 export class CloudMergeConflict extends Error {
   constructor(public records:string[]) { super(`Cloud sync conflict: ${records.join(', ')}`); }
 }
@@ -160,7 +185,7 @@ export function projectCloudData(local:CloudLocal):CloudData {
   }
   if(local.butler)result.butler=butlerRows(local.butler);
   result.profiles=local.settings.keyProfiles.map(p=>({ ...take(p,['name','baseUrl','createdAt','routeProfiles','quotaGroup']), id:p.id, extraHeaders:Object.fromEntries(Object.entries(p.extraHeaders??{}).filter(([k])=>!/(?:auth|token|secret|password|api.?key)/i.test(k))) }));
-  result.conversations=local.conversations.map(c=>({ ...take(c,['title','titleManuallySet','titleGenerated','pinned','forkedFrom','projectId','keyProfileId','createdAt','updatedAt','draft']), id:c.id, draft:c.draft??'', config:take(c.config,CONFIG), messages:c.messages.map(m=>take(m,MSG)) }));
+  result.conversations=local.conversations.map(c=>({ ...take(c,['privacy','title','titleManuallySet','titleGenerated','pinned','forkedFrom','projectId','keyProfileId','createdAt','updatedAt','draft']), id:c.id, draft:c.draft??'', config:take(c.config,CONFIG), messages:c.messages.map(m=>take(m,MSG)) }));
   result.projects=local.projects.map(p=>take(p,['id','name','emoji','instructions','docs','prompts','memory','memoryItems','defaultModel','defaultKeyProfileId','createdAt'])) as CloudRow[];
   result.skills=local.skills.map(s=>take(s,['id','name','description','body','source','installedAt','uses','outcomes','installedHash'])) as CloudRow[];
   result.tasks=local.tasks.map(t=>take(t,['id','name','prompt','schedule','projectId','keyProfileId','model','target','conversationId','createdAt','lastRunAt','lastResult'])) as CloudRow[];
@@ -184,7 +209,7 @@ export function hydrateCloudData(data:CloudData,local:CloudLocal,keyIds:string[]
       const shared=take(m,MSG), previous=old?.messages.find(x=>x.id===shared.id);
       return previous && same(take(previous,MSG),shared) ? previous : {...shared,pending:false,cloudImported:true};
     });
-    return {...take(old,['workspace','workspaceError','creationFingerprint','coordinationGroupId','coordinationMessages','handoffSourceRunId']),...take(row,['id','title','titleManuallySet','titleGenerated','pinned','forkedFrom','projectId','keyProfileId','createdAt','updatedAt','draft']),config,messages};
+    return {...take(old,['workspace','workspaceError','creationFingerprint','coordinationGroupId','coordinationMessages','handoffSourceRunId']),...take(row,['privacy','id','title','titleManuallySet','titleGenerated','pinned','forkedFrom','projectId','keyProfileId','createdAt','updatedAt','draft']),config,messages};
   }) as Conversation[];
   return {settings,conversations,butler:accountId?butlerBrainFromRows(data.butler,accountId,local.butler):local.butler,
     projects:data.projects.map(p=>take(p,['id','name','emoji','instructions','docs','prompts','memory','memoryItems','defaultModel','defaultKeyProfileId','createdAt'])) as unknown as Project[],

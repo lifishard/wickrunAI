@@ -30,7 +30,7 @@ interface Services {
   model:typeof runButlerModel;
   collector:(action:string,input?:Record<string,unknown>)=>Promise<ButlerCollectorState>;
 }
-const services:Services={storage:getTransport,account:async()=>{const bridge=cloudBridge();return bridge?(await bridge.cloudState()).user?.id??'guest':(await cloudCall<CloudStatus>('status')).user?.id??'guest';},
+const services:Services={storage:getTransport,account:async()=>{const bridge=cloudBridge();if(bridge){const state=await bridge.cloudState();return state.workspaceAccountId??state.user?.id??'guest';}return (await cloudCall<CloudStatus>('status')).user?.id??'guest';},
   host:()=>Boolean(desktop()),now:Date.now,model:runButlerModel,
   collector:async(action,input)=>{const bridge=desktop();if(!bridge?.butlerSources) return {sources:{}};return bridge.butlerSources(action,input);}};
 

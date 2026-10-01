@@ -49,6 +49,7 @@ export function createContextHandoff(source: Conversation, state: RunState, key:
     '【本次请求】', '请承接未完成事项；如果原任务仍在运行，请先核实其最新结果和待确认操作，再决定下一步。',
   ].join('\n\n');
   return { id: `context-${key}`, title: `交接 · ${source.title}`, forkedFrom: source.id, projectId: source.projectId,
+    privacy: source.privacy,
     keyProfileId: source.keyProfileId, config: structuredClone(source.config), messages: [], draft,
     handoffSourceRunId: state.runId, handoffKey: key, createdAt: Date.now(), updatedAt: Date.now() };
 }

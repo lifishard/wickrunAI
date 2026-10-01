@@ -38,3 +38,14 @@ test('handoff archives preserve full retrieval and never turn saved executions i
   assert.equal(withHandoffArchive(result, source).archive.length, 1);
   assert.deepEqual(withHandoffArchive(base, undefined), base);
 });
+
+test('context handoff retains personal Butler provenance across descendants', () => {
+  const source = { id:'private-source', title:'Private', privacy:'personal-butler', config:{model:'test'}, projectId:null };
+  const state = { runId:'private-run', round:1, status:'paused', working:[], steps:[] };
+  const first = createContextHandoff(source,state,'first');
+  const second = createContextHandoff(first,state,'second');
+  assert.equal(first.privacy,'personal-butler');
+  assert.equal(second.privacy,'personal-butler');
+  assert.equal(first.forkedFrom,source.id);
+  assert.equal(second.forkedFrom,first.id);
+});

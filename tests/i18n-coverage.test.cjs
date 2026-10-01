@@ -6,6 +6,8 @@ const path=require('node:path');
 const root=path.join(__dirname,'..','src');
 /** 已经改造成 t() 的文件。每完成一批就往这里加一个，覆盖率才不会往回掉。 */
 const TRANSLATED=[
+  'components/collaboration/CollaborationHub.tsx',
+  'components/collaboration/SharedWorkflowEditor.tsx',
   'components/ConversationCoordination.tsx',
   'components/CloudSyncControl.tsx',
   'App.tsx',
@@ -82,7 +84,7 @@ const TRANSLATED=[
 /** 纯逻辑模块：整份文件里的中文字符串都是给界面翻的 key。 */
 const KEY_SOURCES=['lib/errors.ts','lib/team-project-progress.ts','lib/team-run-guidance.ts','lib/team-limits.ts'];
 
-const dict=['i18n.ts','i18n-office.ts','i18n-butler.ts'].map(file=>fs.readFileSync(path.join(root,'lib',file),'utf8')).join('\n');
+const dict=['i18n.ts','i18n-office.ts','i18n-butler.ts','i18n-sharing.ts'].map(file=>fs.readFileSync(path.join(root,'lib',file),'utf8')).join('\n');
 const entries=[...dict.matchAll(/^\s+'((?:[^'\\]|\\.)+)':/gm)].map(m=>m[1]);
 
 test('词典没有重复 key', () => {

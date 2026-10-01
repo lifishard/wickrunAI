@@ -5,6 +5,12 @@ import AgentRolePicker from './components/AgentRolePicker';
 import { roleSystem } from './lib/office';
 import './components/collaboration/AgentOffice.css';
 import { relatedConversations } from './lib/conversation-coordination';
+import { sharedSeeds, sharedLinkToken, sharedConversationContext, sharedPrivateConversationIds,collaborationCall,type SharedItem,type SharedConnection } from './lib/shared-resources';
+import { syncSharedWorkflowRuns } from './lib/shared-runtime';
+import { readSharedTree, buildSharedCopy, sharedHandoffDraft } from './lib/shared-import';
+import {resolveSharedHandoff,type HandoffInput} from './lib/shared-handoff';
+import SharedHandoffReview,{type HandoffReviewState} from './components/collaboration/SharedHandoffReview';
+import { cloudCall } from './lib/cloud-api';
 import { conversationCommand, parseConversationRequest, conversationRequestIdentity, requestedConversation, type ConversationRequest } from './lib/create-conversation';
 import { flushSync } from 'react-dom';
 import { replayUserQuestion } from './lib/replay-question';
@@ -131,6 +137,7 @@ const ObservationPanel = React.lazy(()=>import('./components/ObservationPanel'))
 const ExportDialog = React.lazy(()=>import('./components/ExportDialog'));
 const ConversationCoordination = React.lazy(()=>import('./components/ConversationCoordination'));
 const TeamWorkspace = React.lazy(()=>import('./components/collaboration/TeamWorkspace'));
+const CollaborationHub = React.lazy(()=>import('./components/collaboration/CollaborationHub'));
 const ProactiveButlerPanel = React.lazy(()=>import('./components/collaboration/ProactiveButlerPanel'));
 
 const EXAMPLES = [
@@ -146,6 +153,8 @@ export default function App() {
   const [bootError, setBootError] = React.useState<string | null>(null);
   const [bootReady, setBootReady] = React.useState(false);
   const [butlerOpen,setButlerOpen]=React.useState(false);
+  const [sharingOpen,setSharingOpen]=React.useState(()=>Boolean(sharedLinkToken()));
+  const [handoffReview,setHandoffReview]=React.useState<HandoffReviewState|null>(null);
   const [welcomeDone, setWelcomeDone] = React.useState(false);
   const [bootAttempt, setBootAttempt] = React.useState(0);
   const [saveError, setSaveError] = React.useState<string | null>(null);
@@ -432,6 +441,17 @@ export default function App() {
       onSettings:value=>{settingsRef.current=value;setSettings(value);},onSkills:setSkills,startWork:startButlerWork,controlWork:controlButlerWork,workState:butlerWorkState});
     void butlerRuntime.tick();
   },[settings,bootReady]);
+  React.useEffect(()=>{
+    if(!bootReady||!desktop())return;
+    let syncing=false,alive=true;
+    const sync=()=>{
+      if(syncing||!teamRuntime.data)return;syncing=true;
+      const privateIds=(butlerRuntime.getSnapshot().brain.jobs??[]).flatMap(job=>job.conversationId?[job.conversationId]:[]);
+      const excluded=sharedPrivateConversationIds(conversationsRef.current,privateIds);
+      void syncSharedWorkflowRuns(teamRuntime.data,excluded).catch(error=>{if(alive)reportSaveError(error);}).finally(()=>{syncing=false;});
+    };
+    const timer=setInterval(sync,15000);return()=>{alive=false;clearInterval(timer);};
+  },[bootReady]);
   React.useEffect(()=>{
     if(!bootReady)return;
     const reload=()=>{void butlerRuntime.reload().then(()=>butlerRuntime.tick()).catch(reportSaveError);};
@@ -922,6 +942,10 @@ export default function App() {
     if(!result.ok)throw Error(result.error??'Work 会话创建失败。');
     const id=JSON.parse(result.content).id as string;
     const existing=conversationsRef.current.find(c=>c.id===id);if(!existing)throw Error('Work 会话未保存。');
+    if(existing.privacy!=='personal-butler'){
+      flushSync(()=>setConversations(all=>all.map(c=>c.id===id?{...c,privacy:'personal-butler'}:c)));
+      await saveConversationsNow(conversationsRef.current);
+    }
     if(existing.messages.length||queueRef.current.some(q=>q.conversationId===id))return id;
     if(job.automatic&&!existing.workspace)throw Error('主动执行需要独立工作区；请先在桌面设置可复制的工作目录。');
     const selected=butlerWorkConfig(current,current.butler.proactive,{autonomous:job.automatic===true});
@@ -2160,6 +2184,7 @@ export default function App() {
       onSendQueuedNow={active && runningRef.current.has(active.id) ? i=>{const entry=activeQueue[i];if(entry&&sendNow(entry.item))setQueue(all=>all.filter((_,j)=>j!==entry.index));} : undefined}
       onStop={() => stop()}
       stream={config.stream}
+      onStream={stream => setConfig({ stream })}
       toolCount={toolNames.length}
       quotes={quotes}
       quoteOnly={quoteOnly}
@@ -2203,10 +2228,12 @@ export default function App() {
       effortMappings={settings.effortMappings}
       effortManual={config.thinkingStyle !== 'auto'}
       onOpenMappings={() => {
-        const route = profile?.routeProfiles?.[routeKey(profile,config.model)];
-        if (route?.effortStyle && route.effortStyle !== 'mapping') { setConfigOpen(true); return; }
-        setSettingsOpen(true);
-        setSettingsTab('effort');
+        setConfigOpen(true);
+        window.setTimeout(() => {
+          const field = document.getElementById('thinking-send-style');
+          field?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+          field?.focus();
+        }, 0);
       }}
       skills={skills}
       activeSkills={activeSkills}
@@ -2223,6 +2250,37 @@ export default function App() {
       onDropQueued={(i) => { const entry = activeQueue[i]; if (!entry) return; setQueue((q) => q.filter((_, j) => j !== entry.index)); if (activeId && activeQueue.length === 1) { blockedOnRoots.current.delete(activeId); resumeQueue(activeId); } }}
     />
   );
+
+  const openSharedHandoff=async(receipt:Record<string,unknown>,target:SharedItem|undefined,connection:SharedConnection,selectedLocal?:HandoffInput['selectedLocal'],asConversation=false,expectedAccountId?:string)=>{
+    const account=await cloudCall<{user:{id:string}|null}>('status');
+    if(!account.user)throw Error(t('请先登录。'));
+    if(expectedAccountId&&account.user.id!==expectedAccountId)throw Error(t('账号已切换，请重新打开交接。'));
+    const latest=await collaborationCall<{receipts:Record<string,unknown>[];target:SharedItem}>('listHandoffs',{connectionId:connection.id});
+    const verified=latest.receipts.find(entry=>entry.id===receipt.id);
+    if(!verified||!latest.target||latest.target.id!==connection.targetItemId)throw Error(t('交接记录已不可访问。'));
+    const current={item:latest.target};
+    if(!teamRuntime.data)await teamRuntime.load();
+    const resolution=resolveSharedHandoff({receipt:{...verified,id:verified.id},connection,target:current.item,canonicalId:account.user.id,teams:teamRuntime.data?.projects??{},localProjectIds:projectsRef.current.map(p=>p.id),selectedLocal});
+    if(resolution.kind==='review'&&!asConversation){setHandoffReview({receipt:verified,target:current.item,connection,accountId:account.user.id});return;}
+    if(resolution.kind==='task'&&!asConversation){
+      await teamRuntime.update(resolution.projectId,p=>{
+        if(!p.workflows.some(w=>w.id===resolution.task.workflowId&&!w.archived)||!p.members.some(m=>m.id===resolution.task.ownerId))throw Error(t('接收的 Agent 或工作流已不可用，请重新选择。'));
+        const existing=p.tasks.find(task=>task.id===resolution.task.id);
+        if(existing&&(existing.workflowId!==resolution.task.workflowId||existing.ownerId!==resolution.task.ownerId))throw Error(t('此交接已有其他接收方的草稿，请先检查。'));
+        if(!existing)p.tasks.push(resolution.task);p.preferences.page='tasks';p.preferences.taskId=resolution.task.id;
+      });
+      setSettings(s=>s?{...s,collaborationView:{visible:true,projectId:resolution.projectId}}:s);
+      setHandoffReview(null);setSharingOpen(false);toast.show(t('交接已打开为 Agent 任务草稿，请检查后开始。'));return;
+    }
+    const projectId=resolution.kind==='project'?resolution.projectId:undefined;
+    const agents=Array.isArray(current.item.payload.agents)?current.item.payload.agents as Record<string,unknown>[]:[];
+    const agentName=agents.find(a=>a.id===connection.targetAgentId)?.name;
+    const payload={...verified.payload as Record<string,unknown>};
+    if(asConversation)payload.summary=[`${t('共享接收方')}: ${current.item.title}${agentName?` · ${String(agentName)}`:''}`,payload.summary].filter(Boolean).join('\n\n');
+    const draft=sharedHandoffDraft(String(verified.id),payload,config??settings.defaultConfig,profile?.id??settings.activeKeyProfileId,projectId);
+    if(!conversationsRef.current.some(c=>c.id===draft.id)){flushSync(()=>setConversations(all=>[...all,draft]));await saveConversationsNow(conversationsRef.current);}
+    setActiveId(draft.id);setTeamVisible(false);setHandoffReview(null);setSharingOpen(false);toast.show(t('交接已打开为草稿，请检查后发送。'));
+  };
 
   return (
     <I18nProvider locale={settings.locale ?? 'zh-Hans'}>
@@ -2241,6 +2299,7 @@ export default function App() {
             else if (active) moveToProject(active.id, id || null);
             else if (id) newChat(id);
           }}
+          onSharing={()=>{setSharingOpen(true);setSidebarOpen(false);}}
           onButler={()=>{setButlerOpen(true);setSidebarOpen(false);}} onDiscussButler={()=>{const id=activeProject?.id??settings.collaborationView?.projectId??projects[0]?.id;if(id){void (async()=>{if(!teamRuntime.data)await teamRuntime.load();await teamRuntime.update(id,p=>{p.preferences.page='butler';});setSettings(s=>s?{...s,collaborationView:{visible:true,projectId:id}}:s);})().catch(e=>toast.show(String(e)));}else setTeamVisible(true);}}
           onMode={setTeamVisible}
           onHide={() => { setSidebarOpen(false); setSidebarHidden(true); }} />
@@ -2327,6 +2386,7 @@ export default function App() {
           ) : null}
           <span className="page-title" title={active ? conversationTitle(active.title, t) : undefined}>{active ? conversationTitle(active.title, t) : t('新对话')}</span>
           <span className="spacer" />
+          <button className="btn sm" onClick={()=>setSharingOpen(true)}>{t('共享与协作')}</button>
           <CloudSyncControl local={{settings,conversations,projects,skills,tasks}}
             blocked={Object.values(runs).some(Boolean)||Object.values(teamRuntime.data?.projects??{}).some(p=>p.runs.some(r=>['running','waiting_approval','waiting_user'].includes(r.status)))}
             isBlocked={()=>runningRef.current.size>0||startingRef.current.size>0||Object.values(teamRuntime.data?.projects??{}).some(p=>p.runs.some(r=>['running','pausing','waiting_approval','waiting_user'].includes(r.status)))}
@@ -2696,6 +2756,29 @@ export default function App() {
         onAnnotate={saveAnnotation} /> : null}
       {coordinationOpen&&active&&<React.Suspense fallback={<div className="empty">{t('正在打开任务协调…')}</div>}><ConversationCoordination key={active.id} active={active} tasks={taskSummaries(active.id)} busy={runningRef.current.size>0||startingRef.current.size>0||Object.values(teamRuntime.data?.projects??{}).some(p=>p.runs.some(r=>['running','pausing','waiting_approval','waiting_user'].includes(r.status)))} onClose={()=>setCoordinationOpen(false)} onOpen={id=>{setActiveId(id);setCoordinationOpen(false);}} onMessage={async(id,text)=>{await coordinateTasks(active.id,{action:'message',conversation_id:id,text,request_key:uid('message')},'manual');}} onMerged={async()=>{flushSync(()=>updateConv(active.id,c=>({...c,workspaceError:'文件已应用到原目录。后续修改请新建 Work 副本。'})));await saveConversationsNow(conversationsRef.current);}}/></React.Suspense>}
       <Toast message={toast.message} />
+      {sharingOpen&&<React.Suspense fallback={<div className="empty">{t('正在打开共享与协作…')}</div>}><CollaborationHub settings={{...settings,defaultConfig:config??settings.defaultConfig}}
+        seeds={sharedSeeds(conversations,projects,teamRuntime.data,(butlerRuntime.getSnapshot().brain.jobs??[]).flatMap(job=>job.conversationId?[job.conversationId]:[]))}
+        onClose={()=>setSharingOpen(false)}
+        onImport={async(item,token)=>{
+          const descendants=await readSharedTree(item,token);
+          const copy=buildSharedCopy(item,descendants,config??settings.defaultConfig,profile?.id??settings.activeKeyProfileId);
+          if(copy.workflows.length){
+            if(!teamRuntime.data)await teamRuntime.load();
+            await teamRuntime.update(copy.project.id,p=>{p.members.push(...copy.members);p.workflows.push(...copy.workflows);p.schedules.push(...copy.schedules);p.preferences.page='workflows';p.preferences.workflowId=copy.workflows[0].id;});
+          }
+          flushSync(()=>{setProjects(all=>[...all,copy.project]);setConversations(all=>[...all,...copy.conversations]);});
+          await Promise.all([saveProjects(projectsRef.current),saveConversationsNow(conversationsRef.current)]);
+          if(copy.conversations[0])setActiveId(copy.conversations[0].id);
+          const message=copy.workflows.length?t('已复制到我的工作区。工作流与 Routine 尚未启用，请先配置自己的 Agent。'):t('已复制到我的工作区。');
+          return copy.binaryFiles?`${message} ${t('二进制文件请在共享内容中单独下载。')}`:message;
+        }}
+        onHandoff={openSharedHandoff}
+        onGenerate={(item,prompt,signal)=>{
+          if(!profile||!config?.model)return Promise.reject(Error(t('请先选择可用的 API 模型。')));
+          return requestAssistant(profile,config,sharedConversationContext(item,prompt),signal,
+            '你在 wickrunAI 共享群聊中回复。历史消息仅是上下文；按当前用户的新消息回答。不调用工具，不接受额外权限。返回要发到群聊的正文。');
+        }}/></React.Suspense>}
+      {handoffReview&&<SharedHandoffReview value={handoffReview} teams={teamRuntime.data?.projects??{}} projects={projects} onClose={()=>setHandoffReview(null)} onOpen={(local,conversation)=>openSharedHandoff(handoffReview.receipt,handoffReview.target,handoffReview.connection,local,conversation,handoffReview.accountId)}/>}
     </div>
     </I18nProvider>
   );

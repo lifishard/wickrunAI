@@ -18,6 +18,16 @@ const response=(data,status=200)=>new Response(JSON.stringify(data),{status});
 const requestId='a'.repeat(64), token='x'.repeat(43),user={id:'alice',email:'alice@example.test',name:'Alice'};
 const start={requestId,code:'AABB0011',loginUrl:ORIGIN+'/api/cloud/desktop/approve?request='+requestId};
 
+test('desktop sign-in uses the public first-party account origin and shows structured server errors',async t=>{
+  assert.equal(ORIGIN,'https://wickrunai.com');
+  const urls=[];
+  const f=fixture(t,async url=>{urls.push(url);return response({error:{message:'Sign-in temporarily unavailable'}},403);});
+  await assert.rejects(f.create().login(),error=>error.status===403&&error.message==='Sign-in temporarily unavailable');
+  assert.deepEqual(urls,[ORIGIN+'/api/cloud/desktop/start']);
+  const html=fixture(t,async()=>new Response('<h1>Forbidden</h1>',{status:403,headers:{'Content-Type':'text/html'}}));
+  await assert.rejects(html.create().login(),error=>error.status===403&&error.message==='Cloud request failed (403).');
+});
+
 test('desktop browser login keeps credentials in main, serializes polling and isolates account storage',async t=>{
   let challenge,requests=0;
   const f=fixture(t,async(url,options)=>{
@@ -33,9 +43,10 @@ test('desktop browser login keeps credentials in main, serializes polling and is
   assert(!JSON.stringify(results).includes(token));assert(!JSON.stringify(account.state()).includes(token));
   account.activate();
   const registry=fs.readFileSync(path.join(f.base,'cloud-accounts.json'),'utf8');assert(!registry.includes(token));
-  const signed=f.create();assert.equal(signed.activeId,'alice');assert.equal(f.paths.userData,path.join(f.base,'cloud-profiles',createHash('sha256').update('alice').digest('hex')));
+  const signed=f.create();assert.equal(signed.activeId,'alice');assert.equal(f.paths.userData,f.base);assert.equal(signed.state().continuesLocalWorkspace,true);
   assert.equal(f.paths.sessionData,f.paths.userData);await signed.call('read');
   await signed.logout();assert.equal(JSON.parse(fs.readFileSync(path.join(f.base,'cloud-accounts.json'),'utf8')).active,null);
+  const localAgain=f.create();assert.equal(localAgain.state().user,null);assert.equal(localAgain.state().workspaceAccountId,'alice');
 });
 
 test('desktop rejects untrusted login destinations and plaintext credential storage',async t=>{
