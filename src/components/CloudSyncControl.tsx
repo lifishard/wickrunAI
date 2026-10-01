@@ -151,7 +151,10 @@ export default function CloudSyncControl(props:Props){
       const prefs=butlerPreferencesFromCloud(combined.preferences,current.current.local.settings.butler?.proactive);
       if(canonicalCloud(brain)!==canonicalCloud(latestBrain)||canonicalCloud(prefs)!==canonicalCloud(current.current.local.settings.butler?.proactive))
         await current.current.onButlerApply(brain,prefs);
-      await transport.kvSet(BASE,JSON.stringify({userId:accountId,data:withButlerCloudSlice(remote.data,merged),revision:remote.revision}));
+      // Only advance the baseline for records actually applied on this device.
+      // Advancing unrelated rows would turn an old local chat into a new edit
+      // and overwrite another device's newer chat on the next full sync.
+      if(saved)await transport.kvSet(BASE,JSON.stringify({userId:accountId,data:withButlerCloudSlice(saved.data,merged),revision:remote.revision}));
     }catch(e){setError(String((e as Error).message||e));}
     finally{lock.current=false;}
   }

@@ -2261,7 +2261,7 @@ export default function App() {
             onApply={async next=>{
               for(const old of conversations){const incoming=next.conversations.find(c=>c.id===old.id);if(!incoming)await forgetRuns(old.id);else{const removed=new Set(old.messages.filter(m=>!incoming.messages.some(n=>n.id===m.id)).map(m=>m.id));if(removed.size)await forgetRuns(old.id,removed);}}
               await applyCloudLocal(next);
-              setSettings(next.settings);setConversations(next.conversations);setProjects(next.projects);setSkills(next.skills);setTasks(next.tasks);
+              flushSync(()=>{setSettings(next.settings);setConversations(next.conversations);setProjects(next.projects);setSkills(next.skills);setTasks(next.tasks);});
               window.dispatchEvent(new Event('wickrun:butler-reload'));
               if(!next.conversations.some(c=>c.id===activeId))setActiveId(next.conversations[0]?.id??null);
             }}/>
