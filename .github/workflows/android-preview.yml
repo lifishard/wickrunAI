@@ -1,0 +1,56 @@
+name: Publish Android preview
+
+on:
+  push:
+    tags: ['android-preview-v*']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-preview-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: npm ci
+      - name: Verify immutable preview tag
+        run: |
+          version=$(node -p 'require("./package.json").version')
+          test "$GITHUB_REF_NAME" = "android-preview-v$version"
+      - run: npm test
+      - run: npm run android:apk
+      - name: Verify and publish preview (never latest)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          version=$(node -p 'require("./package.json").version')
+          mkdir -p preview-assets
+          file="wickrunAI-${version}-android-preview.apk"
+          cp android/app/build/outputs/apk/debug/app-debug.apk "preview-assets/$file"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "preview-assets/$file" > preview-assets/SIGNATURE.txt
+          (cd preview-assets && sha256sum "$file" > SHA256SUMS.txt)
+          # Never overwrite a published APK or reuse an existing preview tag.
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo '::error::Preview release already exists; use a new version.'; exit 1
+          fi
+          gh release create "$GITHUB_REF_NAME" --verify-tag --draft --prerelease --latest=false \
+            --title "wickrunAI $version · Android preview" --notes-file docs/ANDROID_PREVIEW.md
+          gh release upload "$GITHUB_REF_NAME" preview-assets/*
+          gh release view "$GITHUB_REF_NAME" --json assets > preview-assets/uploaded.json
+          node --input-type=module -e 'import fs from "node:fs"; const v=JSON.parse(fs.readFileSync("package.json")).version; const name=`wickrunAI-${v}-android-preview.apk`; const assets=JSON.parse(fs.readFileSync("preview-assets/uploaded.json")).assets; if(!assets.some(a=>a.name===name&&a.size===fs.statSync(`preview-assets/${name}`).size)) throw Error("Uploaded APK mismatch");'
+          gh release edit "$GITHUB_REF_NAME" --draft=false --prerelease --latest=false

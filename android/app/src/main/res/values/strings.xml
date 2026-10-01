@@ -1,0 +1,12 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">灯芯AI</string>
+    <string name="title_activity_main">灯芯AI</string>
+    <string name="package_name">dev.anyai.app</string>
+    <string name="custom_url_scheme">dev.anyai.app</string>
+    <string name="context_accessibility_label">灯芯AI 阅读上下文</string>
+    <string name="context_accessibility_description">仅在你开启采集并选择应用后，读取可见且不可编辑的文字；不会读取密码或输入框，可随时停止。</string>
+    <string name="context_capture_channel">阅读上下文</string>
+    <string name="context_capture_active">灯芯AI 正在读取允许的应用</string>
+    <string name="context_capture_stop">停止读取</string>
+</resources>

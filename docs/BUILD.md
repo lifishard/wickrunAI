@@ -166,10 +166,10 @@ Release 还包含 `SHA256SUMS.txt` 和 `release-manifest.json`，记录文件大
 
 如果三个平台都构建成功，只有发布脚本需要修复，可修复并推送源码后运行 **Recover Release**，填写原 Release 的运行编号。恢复流程会核对原运行的源码提交与版本标签一致、三个平台均成功，再复用原安装包发布；不会移动版本标签。Linux 打包工具生成的 `x86_64.AppImage` / `amd64.deb` 文件会统一成 README 中的 `x64` 命名。
 
-**不需要配任何 secret。** 用的是 Actions 自带的 `GITHUB_TOKEN`，
+**默认未签名构建不需要配置 secret。** 用的是 Actions 自带的 `GITHUB_TOKEN`，
 仓库地址 electron-builder 会从 `GITHUB_REPOSITORY` 环境变量自己认。
 
-### 没有代码签名
+### macOS 签名开关
 
 `CSC_IDENTITY_AUTO_DISCOVERY: false`，mac 那边 `identity: null, notarize: false`。
 
@@ -177,9 +177,10 @@ Release 还包含 `SHA256SUMS.txt` 和 `release-manifest.json`，记录文件大
 这是没有证书时的预期行为。macOS 用户绕过的方法是右键 → 打开，
 或者 `xattr -dr com.apple.quarantine /Applications/wickrunAI.app`。
 
-要签名的话：Windows 需要一张 OV/EV 代码签名证书（一年几百刀），
-macOS 需要 Apple Developer Program（$99/年）。把证书放进仓库 secrets，
-electron-builder 会自己认 `CSC_LINK` / `CSC_KEY_PASSWORD` / `APPLE_ID` 那几个变量。
+macOS 官网版已准备可选的 Developer ID 签名与公证流程，详见
+[macOS 签名操作说明](MACOS_SIGNING.md)。开通 Apple Developer Program、配置证书与团队 API key
+后，把仓库变量 `MACOS_SIGNING_ENABLED` 设为 `true`。缺少凭据或任一架构验签失败会停止发布，
+不会降级成未签名包。当前尚未完成实际签名、公证或 Mac 真机验收。
 
 ### 许可合规
 

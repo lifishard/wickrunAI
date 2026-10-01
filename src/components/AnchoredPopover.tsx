@@ -1,4 +1,5 @@
 import React from 'react';
+import { useT } from '../lib/i18n';
 import { createPortal } from 'react-dom';
 
 /** Render outside chat scroll containers, then constrain to the visible viewport. */
@@ -10,12 +11,23 @@ export default function AnchoredPopover({ anchorRef, onClose, className, label, 
   align?: 'start' | 'end';
   children: React.ReactNode;
 }) {
+  const t = useT();
   const panelRef = React.useRef<HTMLDivElement>(null);
   React.useLayoutEffect(() => {
     const panel = panelRef.current, anchor = anchorRef.current;
     if (!panel || !anchor) return;
     const viewport = window.visualViewport;
     const measure = () => {
+      if (matchMedia('(max-width: 860px)').matches) {
+        const height = viewport?.height ?? innerHeight;
+        panel.style.maxWidth = ((viewport?.width ?? innerWidth) - 16) + 'px';
+        panel.style.width = ((viewport?.width ?? innerWidth) - 16) + 'px';
+        panel.style.maxHeight = Math.max(160, height - 32) + 'px';
+        panel.style.left = ((viewport?.offsetLeft ?? 0) + 8) + 'px';
+        panel.style.top = ((viewport?.offsetTop ?? 0) + Math.max(16, height - panel.getBoundingClientRect().height - 8)) + 'px';
+        panel.style.visibility = 'visible'; return;
+      }
+      panel.style.width = '';
       const r = anchor.getBoundingClientRect();
       const margin = 12, gap = 8;
       const left = (viewport?.offsetLeft ?? 0) + margin;
@@ -70,6 +82,7 @@ export default function AnchoredPopover({ anchorRef, onClose, className, label, 
   }, [anchorRef, onClose]);
 
   return createPortal(<div ref={panelRef} className={`${className} anchored-popover`} role="dialog" aria-label={label} tabIndex={-1}>
+    <div className="mobile-popover-close"><button className="btn sm ghost" onClick={onClose}>{t('关闭')}</button></div>
     {children}
   </div>, document.body);
 }

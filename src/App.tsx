@@ -1,3 +1,5 @@
+import MobileIcon from './components/MobileIcon';
+import { usePhoneLayout } from './lib/mobile-layout';
 import { localizeRoles } from './lib/role-locale';
 import { libraryRoles } from './lib/office-library';
 import { withRequestedDelegation } from './lib/role-delegation';
@@ -17,6 +19,7 @@ import { requestAssistant } from './lib/assistant-request';
 import { cleanConversationTitle, titlePrompt, TITLE_SYSTEM } from './lib/conversation-title';
 import MessageViewport, { type ReadingPosition } from './components/MessageViewport';
 import StartupWelcome from './components/StartupWelcome';
+import { pickBrowserAttachments } from './web/attachments';
 import BrandLogo, { BrandLoading } from './components/BrandLogo';
 import type {
   AccessRequest,
@@ -142,6 +145,8 @@ const EXAMPLES = [
 
 const saveConversationsNow=(list:Conversation[])=>saveConversationsRaw(conversationsForStorage(list));
 export default function App() {
+  const phone = usePhoneLayout();
+  const [phoneMenu, setPhoneMenu] = React.useState(false);
   const [mediaOpen, setMediaOpen] = React.useState(false);
   const [bootError, setBootError] = React.useState<string | null>(null);
   const [bootReady, setBootReady] = React.useState(false);
@@ -151,6 +156,7 @@ export default function App() {
   const [saveError, setSaveError] = React.useState<string | null>(null);
   const reportSaveError = (error: unknown) => setSaveError(t('尚未保存：{error}', { error: String(error) }));
   const [settings, setSettings] = React.useState<AppSettings | null>(null);
+  const unsentHomeDraft=React.useRef('');
   const teamVisible = Boolean(settings?.collaborationView?.visible);
   const setTeamVisible = (visible:boolean) => setSettings(s=>s?{...s,collaborationView:{...s.collaborationView,visible}}:s);
   const [conversations, setConversations] = React.useState<Conversation[]>([]);
@@ -251,7 +257,6 @@ export default function App() {
   const [workspaceTab, setWorkspaceTab] = React.useState<string>('projects');
 
   const [attachments, setAttachments] = React.useState<Attachment[]>([]);
-  const browserFileInput = React.useRef<HTMLInputElement>(null);
   /** 生成期间又发的消息，按顺序排队，等这一轮结束再依次发出去 */
   const [queue, setQueue] = React.useState<QueuedInput[]>([]);
   const queueLoaded=React.useRef(false);
@@ -810,7 +815,14 @@ export default function App() {
   async function addAttachments(mode: 'file' | 'image') {
     const bridge = desktop();
     if (!bridge) {
-      if(browserFileInput.current){browserFileInput.current.accept=mode==='image'?'image/png,image/jpeg,image/gif,image/webp,image/bmp':'';browserFileInput.current.click();}
+      try {
+        const added = await pickBrowserAttachments(mode);
+        const error = validateAttachmentBatch([...attachments, ...added].reduce((sum, item) => sum + item.size, 0));
+        if (error) toast.show(error, 4000);
+        else if (added.length) setAttachments(previous => [...previous, ...added]);
+      } catch (error) {
+        toast.show(error instanceof Error ? error.message : t('读取失败'), 4000);
+      }
       return;
     }
     const picked = await bridge.pickFiles(mode);
@@ -2125,6 +2137,34 @@ export default function App() {
       </div>
     ) : null;
 
+  const cloudControl = (<CloudSyncControl local={{settings,conversations,projects,skills,tasks}}
+            blocked={Object.values(runs).some(Boolean)||Object.values(teamRuntime.data?.projects??{}).some(p=>p.runs.some(r=>['running','waiting_approval','waiting_user'].includes(r.status)))}
+            isBlocked={()=>runningRef.current.size>0||startingRef.current.size>0||Object.values(teamRuntime.data?.projects??{}).some(p=>p.runs.some(r=>['running','pausing','waiting_approval','waiting_user'].includes(r.status)))}
+            beforeSwitch={async()=>{
+              butlerRuntime.stop();stopAll();await teamRuntime.pauseAll();await butlerRuntime.flush();
+              let saved=conversations;
+              if(!active&&unsentHomeDraft.current.trim()){
+                const draft=newConversation(config,settings.activeKeyProfileId);draft.draft=unsentHomeDraft.current;
+                saved=[draft,...conversations];setConversations(saved);setActiveId(draft.id);
+              }
+              await Promise.all([saveSettings(settings),saveConversationsNow(conversationsForStorage(saved)),saveProjects(projects),saveSkills(skills),saveTasks(tasks)]);
+            }}
+            onButlerApply={async(brain,prefs)=>{
+              const existing=settingsRef.current!;
+              const nextSettings=prefs?{...existing,butler:{...existing.butler,proactive:prefs}}:existing;
+              settingsRef.current=nextSettings;
+              flushSync(()=>setSettings(nextSettings));
+              await Promise.all([saveSettings(nextSettings),getTransport().kvSet(BUTLER_BRAIN_KEY,JSON.stringify(brain))]);
+              window.dispatchEvent(new Event('wickrun:butler-reload'));
+            }}
+            onApply={async next=>{
+              for(const old of conversations){const incoming=next.conversations.find(c=>c.id===old.id);if(!incoming)await forgetRuns(old.id);else{const removed=new Set(old.messages.filter(m=>!incoming.messages.some(n=>n.id===m.id)).map(m=>m.id));if(removed.size)await forgetRuns(old.id,removed);}}
+              await applyCloudLocal(next);
+              flushSync(()=>{setSettings(next.settings);setConversations(next.conversations);setProjects(next.projects);setSkills(next.skills);setTasks(next.tasks);});
+              window.dispatchEvent(new Event('wickrun:butler-reload'));
+              if(!next.conversations.some(c=>c.id===activeId))setActiveId(next.conversations[0]?.id??null);
+            }}/>);
+
   const composer = (
     <Composer
       layout={turns.length === 0 ? 'home' : 'conversation'}
@@ -2132,7 +2172,7 @@ export default function App() {
       controls={active?.messages.filter(m=>m.runState?.userQuestion&&!m.runState.userQuestion.answers).map(m=><button className="btn sm" key={m.id} onClick={()=>document.getElementById(`question-${m.runState!.userQuestion!.request.id}`)?.scrollIntoView({block:'center',behavior:'smooth'})}>{t('Answer Question · 回答问题')}</button>)}
       key={active?.id ?? 'new'}
       initialDraft={active?.draft}
-      onDraftChange={text => { if (active) updateConv(active.id, c => c.draft === text ? c : { ...c, draft: text }); }}
+      onDraftChange={text => { if (active) updateConv(active.id, c => c.draft === text ? c : { ...c, draft: text }); else unsentHomeDraft.current=text; }}
       client={config.client}
       onClient={client=>setConfig({client,model:client?client.model:models[0]?.id || ''})}
       connectionSettings={settings}
@@ -2173,6 +2213,7 @@ export default function App() {
       onPickWorkspace={() => void pickWorkspace()}
       workspaceCount={settings.tools.workspaceRoots.length}
       canPickLocal={Boolean(desktop())}
+      canPickFiles={true}
       approvalMode={config.approvalMode}
       onApprovalMode={(m: ApprovalMode) => setConfig({ approvalMode: m })}
       profiles={settings.keyProfiles}
@@ -2228,7 +2269,6 @@ export default function App() {
     <I18nProvider locale={settings.locale ?? 'zh-Hans'}>
     <div className="app" onDragOver={event=>{if(Array.from(event.dataTransfer.types).includes('Files'))event.preventDefault();}}
       onDrop={event=>{if(!event.dataTransfer.files.length)return;event.preventDefault();event.stopPropagation();void addBrowserFiles(Array.from(event.dataTransfer.files));}}>
-      <input ref={browserFileInput} type="file" multiple hidden aria-label={t('选择附件')} onChange={event=>{const files=Array.from(event.target.files??[]);event.target.value='';void addBrowserFiles(files);}}/>
       {!sidebarHidden ? (
       <aside
         className={`sidebar${sidebarOpen ? ' open' : ''}`}
@@ -2310,7 +2350,23 @@ export default function App() {
       <main className="main" style={teamVisible?{display:'none'}:undefined}>
         {active?.workspaceError?<div className="grant-banner" role="alert">{active.workspaceError}</div>:active?.workspace?<div className="grant-banner">{t('当前 Work 使用独立文件副本；在「并行任务」中检查并应用改动。')}</div>:null}
         {saveError ? <div className="grant-banner" role="alert">{saveError}<button className="btn sm" onClick={() => { void Promise.all([saveSettings(settings), saveConversationsNow(conversations),saveProjects(projects),saveSkills(skills),saveTasks(tasks)]).then(() => setSaveError(null)).catch(reportSaveError); }}>{t('重试保存')}</button></div> : null}
-        <div className="topbar">
+        <div className="mobile-topbar">
+          <button className="icon-btn" aria-label={t('展开侧栏')} onClick={() => { setSidebarHidden(false); setSidebarOpen(true); }}><MobileIcon name="menu"/></button>
+          <span className="page-title">{active ? conversationTitle(active.title, t) : 'wickrunAI'}</span>
+          {phone && cloudControl}
+          <button className="icon-btn" title={t('今日管家')} aria-label={t('今日管家')} onClick={()=>setButlerOpen(true)}><Icon name="sparkles" size={19}/></button>
+          <button className="icon-btn" aria-label={t('对话菜单')} onClick={() => setPhoneMenu(true)}><MobileIcon name="more"/></button>
+        </div>
+        {phoneMenu && <Modal title={t('对话设置')} onClose={() => setPhoneMenu(false)}>
+          <div className="mobile-actions">
+            <button className="btn" onClick={() => {setPhoneMenu(false);setSettingsTab('keys');setSettingsOpen(true);}}><MobileIcon name="key"/><span>{t('API 凭据')}</span><MobileIcon name="chevron"/></button>
+            <button className="btn" onClick={() => {setPhoneMenu(false);setConfigOpen(true);}}><MobileIcon name="settings"/><span>{t('对话偏好')}</span><MobileIcon name="chevron"/></button>
+            {canRunHostTools && <button className="btn" onClick={() => {setPhoneMenu(false);setCodeChangesOpen(true);setActivityOpen(false);setConfigOpen(false);setOpenArtifact(null);}}>{t('代码改动')}</button>}
+            {msgs.some(hasActivity) && <button className="btn" onClick={() => {setPhoneMenu(false);setActivityOpen(true);setConfigOpen(false);setOpenArtifact(null);}}>{t('任务动态')}</button>}
+            <LocaleSwitch onChange={locale => setSettings(prev => prev ? {...prev,locale} : prev)} />
+          </div>
+        </Modal>}
+        <div className="topbar desktop-topbar">
           <button className="btn sm butler-home-trigger" onClick={()=>setButlerOpen(true)}>{t('今日管家')}</button>
           <button className="btn sm ghost only-narrow" title={t('展开侧栏')} onClick={() => { setSidebarHidden(false); setSidebarOpen(true); }}>
             <Icon name="menu" size={18}/>
@@ -2327,25 +2383,7 @@ export default function App() {
           ) : null}
           <span className="page-title" title={active ? conversationTitle(active.title, t) : undefined}>{active ? conversationTitle(active.title, t) : t('新对话')}</span>
           <span className="spacer" />
-          <CloudSyncControl local={{settings,conversations,projects,skills,tasks}}
-            blocked={Object.values(runs).some(Boolean)||Object.values(teamRuntime.data?.projects??{}).some(p=>p.runs.some(r=>['running','waiting_approval','waiting_user'].includes(r.status)))}
-            isBlocked={()=>runningRef.current.size>0||startingRef.current.size>0||Object.values(teamRuntime.data?.projects??{}).some(p=>p.runs.some(r=>['running','pausing','waiting_approval','waiting_user'].includes(r.status)))}
-            beforeSwitch={async()=>{butlerRuntime.stop();stopAll();await teamRuntime.pauseAll();await butlerRuntime.flush();await Promise.all([saveSettings(settings),saveConversationsNow(conversationsForStorage(conversations)),saveProjects(projects),saveSkills(skills),saveTasks(tasks)]);}}
-            onButlerApply={async(brain,prefs)=>{
-              const existing=settingsRef.current!;
-              const nextSettings=prefs?{...existing,butler:{...existing.butler,proactive:prefs}}:existing;
-              settingsRef.current=nextSettings;
-              flushSync(()=>setSettings(nextSettings));
-              await Promise.all([saveSettings(nextSettings),getTransport().kvSet(BUTLER_BRAIN_KEY,JSON.stringify(brain))]);
-              window.dispatchEvent(new Event('wickrun:butler-reload'));
-            }}
-            onApply={async next=>{
-              for(const old of conversations){const incoming=next.conversations.find(c=>c.id===old.id);if(!incoming)await forgetRuns(old.id);else{const removed=new Set(old.messages.filter(m=>!incoming.messages.some(n=>n.id===m.id)).map(m=>m.id));if(removed.size)await forgetRuns(old.id,removed);}}
-              await applyCloudLocal(next);
-              flushSync(()=>{setSettings(next.settings);setConversations(next.conversations);setProjects(next.projects);setSkills(next.skills);setTasks(next.tasks);});
-              window.dispatchEvent(new Event('wickrun:butler-reload'));
-              if(!next.conversations.some(c=>c.id===activeId))setActiveId(next.conversations[0]?.id??null);
-            }}/>
+          {!phone && cloudControl}
           {!profile ? <span className="chip warn">{t('未配置凭据')}</span> : null}
           <span className="chip">{config.model || t('未选模型')}</span>
           <LocaleSwitch onChange={(locale) => setSettings((prev) => (prev ? { ...prev, locale } : prev))} />
@@ -2368,9 +2406,9 @@ export default function App() {
         {turns.length === 0 ? (
           <div className="hero">
             <BrandLogo size={48} label="wickrunAI" />
-            <h1 className="hero-title">{t(active?.handoffKey ? '审阅交接内容' : '问点什么')}</h1>
+            <h1 className="hero-title">{t(active?.handoffKey ? '审阅交接内容' : phone ? '开始新的想法' : '问点什么')}</h1>
             <p className="hero-sub">
-              {t(active?.handoffKey ? '新对话已准备好，由你决定下一步。' : '会自己联网查证、读你本地的文件、翻 Chrome 里的页面，答案里带可点的来源编号。')}
+              {t(active?.handoffKey ? '新对话已准备好，由你决定下一步。' : phone ? '提问、写作、整理资料' : '会自己联网查证、读你本地的文件、翻 Chrome 里的页面，答案里带可点的来源编号。')}
             </p>
             <div className="hero-box">
               {active?.handoffKey ? <section className="recovery-card" aria-label={t('交接草稿')}>
@@ -2382,9 +2420,9 @@ export default function App() {
               {composer}
             </div>
             {!active?.handoffKey ? <div className="hero-examples">
-              {EXAMPLES.map((e) => (
-                <button key={e} className="example-chip" onClick={() => void send(t(e))}>
-                  {t(e)}
+              {(phone ? ['帮我整理今天的计划', '帮我润色一段文字'] : EXAMPLES).map((e) => (
+                <button key={e} className="example-chip" onClick={() => phone ? window.dispatchEvent(new CustomEvent('wickrun:prompt',{detail:t(e)})) : void send(t(e))}>
+                  {phone && <MobileIcon name={e.includes('计划') ? 'note' : 'pen'}/>}<span>{t(e)}</span>{phone && <MobileIcon name="chevron"/>}
                 </button>
               ))}
             </div> : null}
@@ -2534,6 +2572,7 @@ export default function App() {
       }} /></React.Suspense> : null}
       {configOpen && !teamVisible ? (
       <aside className="config-panel open">
+        <button className="btn only-narrow mobile-panel-close" onClick={() => setConfigOpen(false)}>{t('关闭')}</button>
         <ConfigPanel
           profile={profile}
           onProfileChange={next => setSettings(prev => prev ? { ...prev,keyProfiles:prev.keyProfiles.map(p => p.id === next.id ? next : p) } : prev)}

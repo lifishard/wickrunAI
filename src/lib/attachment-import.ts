@@ -1,6 +1,5 @@
 import type { Attachment } from '../types';
 import { validateAttachmentSize } from './attachment-limits';
-import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 
 type Imported = Omit<Attachment, 'id'>;
 const TEXT_EXT = new Set(['txt','md','markdown','rst','log','csv','tsv','json','jsonl','yaml','yml','toml','ini','cfg','conf','env',
@@ -8,24 +7,22 @@ const TEXT_EXT = new Set(['txt','md','markdown','rst','log','csv','tsv','json','
 const MAX_CHARS = 200000;
 const clip = (text:string) => text.length > MAX_CHARS ? `${text.slice(0,MAX_CHARS)}\n\n[只显示前 ${MAX_CHARS} 字]` : text;
 const extension = (name:string) => name.toLowerCase().split('.').at(-1) ?? '';
+const DOCUMENT_EXT = new Set(['pdf','xlsx','xlsm','xls','pptx','potx','docx','ppt']);
+const DOCUMENT_MIMES = new Set([
+  'application/pdf', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-excel', 'application/vnd.ms-excel.sheet.macroenabled.12',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+]);
+
+export function canImportBrowserFile(file: Pick<File, 'name' | 'type'>): boolean {
+  const ext = file.name.includes('.') ? extension(file.name) : '';
+  return TEXT_EXT.has(ext) || DOCUMENT_EXT.has(ext) || ['png','jpg','jpeg','gif','webp','bmp'].includes(ext)
+    || (!ext && (file.type.startsWith('text/') || file.type === 'application/json' || DOCUMENT_MIMES.has(file.type.toLowerCase()) || /^image\/(png|jpeg|gif|webp|bmp)$/.test(file.type)));
+}
 
 async function imageData(file:File):Promise<string> {
   return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result));reader.onerror=()=>reject(Error('图片读取失败。'));reader.readAsDataURL(file);});
-}
-
-async function pdf(name:string,bytes:Uint8Array):Promise<string> {
-  if (new TextDecoder('latin1').decode(bytes.subarray(0,5)) !== '%PDF-') throw Error('文件内容不是有效的 PDF。');
-  const lib=await import('pdfjs-dist');
-  lib.GlobalWorkerOptions.workerSrc=workerUrl;
-  const document=await lib.getDocument({data:bytes}).promise;
-  const parts=[`# ${name}`,`> PDF：已提取 ${Math.min(50,document.numPages)}/${document.numPages} 页；图片中的文字未识别。`];
-  for(let n=1;n<=Math.min(50,document.numPages);n++) {
-    const page=await document.getPage(n),content=await page.getTextContent();
-    const text=content.items.map(item=>'str' in item ? item.str : '').filter(Boolean).join(' ').trim();
-    if(text)parts.push(`## 第 ${n} 页\n\n${text}`);
-  }
-  if(parts.length===2)throw Error('PDF 没有可提取的文字层；扫描件请先做 OCR。');
-  return clip(parts.join('\n\n'));
 }
 
 async function sheet(name:string,bytes:Uint8Array):Promise<string> {
@@ -96,13 +93,15 @@ export async function importBrowserFile(file:File):Promise<Imported> {
     'image/png':'png','image/jpeg':'jpg','image/gif':'gif','image/webp':'webp','image/bmp':'bmp',
   } as Record<string,string>)[file.type.toLowerCase()];
   const ext=name.includes('.')?extension(name):(inferred??'');
+  if (!canImportBrowserFile(file))
+    throw Error('不是支持的文本、文档或图片格式。');
   const mime=({png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',gif:'image/gif',webp:'image/webp',bmp:'image/bmp'} as Record<string,string>)[ext];
   const kind=mime?'image':'text';
   const error=validateAttachmentSize(kind,file.size,name);if(error)throw Error(error);
   if(mime)return {kind:'image',name,mime,size:file.size,dataUrl:await imageData(file)};
   const bytes=new Uint8Array(await file.arrayBuffer());
   let text:string;
-  if(ext==='pdf')text=await pdf(name,bytes);
+  if(ext==='pdf')text=await (await import('./attachment-pdf')).importPdfFile(name,bytes);
   else if(['xlsx','xlsm','xls'].includes(ext))text=await sheet(name,bytes);
   else if(ext==='pptx'||ext==='potx')text=await zippedText(name,bytes,'pptx');
   else if(ext==='docx')text=await zippedText(name,bytes,'docx');

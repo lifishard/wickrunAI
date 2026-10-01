@@ -1,3 +1,6 @@
+import MobileIcon from './MobileIcon';
+import { usePhoneLayout } from '../lib/mobile-layout';
+import { desktop } from '../lib/transport';
 import React from 'react';
 import MarkdownInput, {type MarkdownInputHandle} from './MarkdownInput';
 import AnchoredPopover from './AnchoredPopover';
@@ -85,6 +88,7 @@ export default function Composer(props: {
   onPickWorkspace: () => void;
   workspaceCount: number;
   canPickLocal: boolean;
+  canPickFiles: boolean;
 
   sendMode?: SendMode;
   onSendMode?: (mode: SendMode) => void;
@@ -136,9 +140,15 @@ export default function Composer(props: {
   onDropQueued: (index: number) => void;
 }) {
   const t = useT();
+  const phone = usePhoneLayout();
   const [,refreshCompatibility]=React.useReducer(x=>x+1,0);
   React.useEffect(()=>{const update=()=>refreshCompatibility();window.addEventListener('wickrun-compatibility',update);return()=>window.removeEventListener('wickrun-compatibility',update);},[]);
   const [text, setText] = React.useState(props.initialDraft ?? '');
+  React.useEffect(() => {
+    const fill = (event: Event) => { setText(String((event as CustomEvent).detail)); };
+    window.addEventListener('wickrun:prompt', fill);
+    return () => window.removeEventListener('wickrun:prompt', fill);
+  }, []);
   // Keep keystrokes local; synchronizing every key repaints and saves the entire conversation.
   const draftSink = React.useRef(props.onDraftChange);
   const composing = React.useRef(false);
@@ -260,6 +270,8 @@ export default function Composer(props: {
 
     const mod = e.metaKey || e.ctrlKey;
     if (e.key !== 'Enter') return;
+    // A phone keyboard Return inserts a newline; sending requires the visible button.
+    if (matchMedia('(pointer: coarse)').matches && !e.ctrlKey && !e.metaKey) return;
     if (props.sendKey === 'enter' ? !e.shiftKey && !mod : mod) {
       e.preventDefault();
       submit();
@@ -454,7 +466,7 @@ export default function Composer(props: {
           {props.controls}
           {props.contextPreview&&!props.client&&<CompatibilityStatus profile={props.contextPreview.profile} model={props.model}/>}
           <MarkdownInput ref={ref} value={text} disabled={props.disabled}
-            placeholder={props.disabled ? (props.disabledReason ?? t('请先完成配置')) : props.busy ? t('还在生成，现在输入会排到队尾…') : t('问点什么…（图片可以直接粘贴）')}
+            placeholder={props.disabled ? (props.disabledReason ?? t('请先完成配置')) : props.busy ? t('还在生成，现在输入会排到队尾…') : t(phone ? '发消息…' : '问点什么…（图片可以直接粘贴）')}
             onChange={setText} onCaret={setCaret} onKeyDown={onKeyDown} onPaste={onPaste} />
 
           {compact && moreOpen ? <div className="composer-options" id={optionsId} role="group" aria-label={t('输入设置')}>
@@ -473,7 +485,7 @@ export default function Composer(props: {
                   setApprovalOpen(false);
                 }}
               >
-                <Icon name="plus" size={18}/>
+                {phone ? <MobileIcon name="plus"/> : <Icon name="plus" size={18}/>}
               </button>
               {plusOpen ? (
                 <AnchoredPopover anchorRef={plusRef} onClose={() => setPlusOpen(false)} className="popup" label={t('添加附件与工作目录')}>
@@ -496,7 +508,7 @@ export default function Composer(props: {
                   </button>
                   <button
                     className="popup-item"
-                    disabled={!props.canPickLocal}
+                    disabled={!props.canPickFiles}
                     onClick={() => {
                       setPlusOpen(false);
                       props.onAddAttachments('file');
@@ -510,6 +522,7 @@ export default function Composer(props: {
                   </button>
                   <button
                     className="popup-item"
+                    disabled={!props.canPickFiles}
                     onClick={() => {
                       setPlusOpen(false);
                       props.onAddAttachments('image');
@@ -522,12 +535,15 @@ export default function Composer(props: {
                     </span>
                   </button>
                   {props.onAddMedia ? <button className="popup-item" onClick={() => { setPlusOpen(false); props.onAddMedia?.(); }}><span className="popup-icon" aria-hidden="true">◉</span><span><strong>添加图片、音频或视频</strong><small>原始媒体、转文字或带时间标记的视频抽帧</small></span></button> : null}
+                  {!props.canPickLocal ? (
+                    <div className="popup-note">{t('本机工作目录仅在桌面版可用；仍可添加文件和图片。')}</div>
+                  ) : null}
                 </AnchoredPopover>
               ) : null}
             </div>
 
             <ModelPicker
-              clientSlot={props.connectionSettings && props.onClient && props.onConnectionSettings ? <ClientConnections selection={props.client} onSelect={props.onClient} settings={props.connectionSettings} onSettings={props.onConnectionSettings}/> : undefined}
+              clientSlot={desktop() && props.connectionSettings && props.onClient && props.onConnectionSettings ? <ClientConnections selection={props.client} onSelect={props.onClient} settings={props.connectionSettings} onSettings={props.onConnectionSettings}/> : undefined}
               displayModel={props.client ? `${CLIENT_LABELS[props.client.kind]} · ${props.client.model==='default'?t('默认'):props.client.model}` : undefined}
               profiles={props.profiles}
               profileId={props.profileId}
@@ -553,11 +569,11 @@ export default function Composer(props: {
             />
 
             {!compact ? secondaryControls : <button className="btn sm ghost composer-more" aria-expanded={moreOpen} aria-controls={optionsId}
-              title={t(current.desc)} aria-label={`${t('更多')} · ${t(current.desc)}`} onClick={() => setMoreOpen(value => !value)}><Icon name="more" size={17}/><span className="composer-action-label">{t('更多')}</span></button>}
+              title={t(current.desc)} aria-label={`${t('更多')} · ${t(current.desc)}`} onClick={() => setMoreOpen(value => !value)}>{phone ? <MobileIcon name="more"/> : <Icon name="more" size={17}/>}<span className="composer-action-label">{t('更多')}</span></button>}
             <span className="spacer" />
 
             {/* ---- 右下角 ---- */}
-            <div className="composer-mode-switch" role="group" aria-label={t('请求模式')} title={t('沿用同一段对话和附件；Chat 讨论，Work 接着执行。切换后对下一条消息生效。')}>
+            {phone ? <select className="mobile-mode" aria-label={t('请求模式')} value={mode} onChange={event => setSendMode(event.target.value as SendMode)}><option value="chat">Chat</option><option value="work">Work</option></select> : (<div className="composer-mode-switch" role="group" aria-label={t('请求模式')} title={t('沿用同一段对话和附件；Chat 讨论，Work 接着执行。切换后对下一条消息生效。')}>
               <button
                 type="button"
                 aria-pressed={mode === 'chat'}
@@ -588,7 +604,7 @@ export default function Composer(props: {
               >
                 Work
               </button>
-            </div>
+            </div>)}
 
             {props.busy ? (
               /* 运行期间三项操作保持同一组，窄屏以图标显示。 */
@@ -611,8 +627,8 @@ export default function Composer(props: {
                 {props.onSendNow?<button className="btn sm primary" disabled={props.disabled||!canSend} title={t('保存当前执行现场，立即处理这条新要求')} onClick={()=>{if(props.onSendNow?.(text.trim()))setText('');}}><Icon name="arrowUpRight" size={16}/><span className="composer-action-label">{t('立即送出')}</span></button>:null}
               </div>
             ) : (
-              <button className="btn sm primary" onClick={submit} disabled={props.disabled || !canSend}>
-                <Icon name="send" size={16}/><span className="composer-action-label">{t('发送')}</span>
+              <button className={`btn sm primary${phone ? ' mobile-send' : ''}`} aria-label={t('发送')} onClick={submit} disabled={props.disabled || !canSend}>
+                {phone ? <MobileIcon name="send"/> : <Icon name="send" size={16}/>}<span className="composer-action-label">{t('发送')}</span>
               </button>
             )}
           </div>

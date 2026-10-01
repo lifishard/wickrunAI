@@ -19,6 +19,25 @@ export const LOCALES: { value: Locale; label: string; label2: string; lang: stri
  */
 const EN: Record<string, string> = {
   ...BUTLER_EN,
+  '取消登录': "Cancel sign-in",
+  '进入账号工作区': "Open account workspace",
+  '浏览器会打开 Google 登录。核对校验码后批准，再返回 App。': "Sign in with Google in your browser. Check the code, approve, then return to the app.",
+  '同一 Google 账号可在手机、桌面版与网页版同步聊天、项目、技能和任务记录，并使用自己的 API 密钥。': "Use the same Google account to sync chats, projects, skills and task records across mobile, desktop and web, with your own API keys.",
+  '登录已结束，请重新登录。': "Sign-in ended. Please try again.",
+  '登录': "Sign in",
+  '账号': "Account",
+  '对话菜单': 'Conversation menu',
+  '提问、写作、整理文件，从这里开始。': 'Ask, write, and organize files. Start here.',
+  '帮我整理今天的计划': 'Help me plan my day',
+  '帮我润色一段文字': 'Help me polish some writing',
+
+  '本机工作目录仅在桌面版可用；仍可添加文件和图片。': 'Local workspaces are available in the desktop app. You can still attach files and images.',
+  '仅存本机': 'On this device',
+  '此移动应用的账号同步尚未接通。聊天和设置保存在此设备，不会自动出现在其他设备。': 'Account sync is not connected in this mobile app yet. Chats and settings stay on this device and do not appear automatically on other devices.',
+  '需要跨设备同步时，可在网页版登录。网页与此应用的本地数据目前分别保存。': 'Sign in to the web app for cross-device sync. The web app and this app currently store their local data separately.',
+  '打开网页版': 'Open web app',
+  '请上传 PNG、JPEG、WebP 或 GIF 图片。': 'Choose a PNG, JPEG, WebP, or GIF image.',
+  '请上传文本或代码文件；PDF 和 Word 可先导出为文本。': 'Choose a text or code file. Export PDF and Word documents as text first.',
   '今日管家':'Today’s assistant',
   '管家 · ':'Assistant · ',
   '执行记录尚未同步到本设备，可先查看管家的任务摘要；完成或暂停后会继续同步。':'The execution record has not synced to this device yet. View the task summary here; syncing continues when it completes or pauses.',
@@ -1203,6 +1222,11 @@ const EN: Record<string, string> = {
     'Codex subscription quota',
 
   /* 面板、注释与反馈 */
+  '开始新的想法': 'Start a new idea',
+  '提问、写作、整理资料': 'Ask, write, organize',
+  '发消息…': 'Message…',
+  '对话偏好': 'Conversation preferences',
+  '对话设置': 'Conversation settings',
   '关闭': 'Close',
   '隐藏': 'Hide',
   '编辑': 'Edit',
