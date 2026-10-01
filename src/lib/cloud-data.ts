@@ -61,7 +61,7 @@ export function mergeCloudData(base:CloudData,local:CloudData,remote:CloudData, 
   for(const name of cloudCollections){
     const maps=[base,local,remote].map(data=>new Map((data[name]??[]).map(row=>[row.id,row])));
     const ids=new Set(maps.flatMap(map=>[...map.keys()]));
-    const merge=name==='projects'?mergeProjectRow:name==='butler'?(b:CloudRow|undefined,l:CloudRow|undefined,r:CloudRow|undefined,key:string)=>
+    const merge=name==='conversations'?mergeConversationRow:name==='projects'?mergeProjectRow:name==='butler'?(b:CloudRow|undefined,l:CloudRow|undefined,r:CloudRow|undefined,key:string)=>
       key.startsWith('butler:job:')?mergeButlerJobRow(b,l,r,key,pick):pick(b,l,r,key)
       :(b:CloudRow|undefined,l:CloudRow|undefined,r:CloudRow|undefined,key:string)=>pick(b,l,r,key);
     result[name]=[...ids].sort().map(id=>merge(maps[0].get(id),maps[1].get(id),maps[2].get(id),`${name}:${id}`,pick)).filter(Boolean) as CloudRow[];
@@ -72,6 +72,24 @@ export function mergeCloudData(base:CloudData,local:CloudData,remote:CloudData, 
   }
   if(conflicts.length)throw new CloudMergeConflict(conflicts);
   return result;
+}
+
+/** Concurrent messages are independent records; editing the same message still conflicts. */
+function mergeConversationRow(b:CloudRow|undefined,l:CloudRow|undefined,r:CloudRow|undefined,key:string,pick:(b:unknown,l:unknown,r:unknown,key:string)=>unknown):CloudRow|undefined {
+  if(!l||!r)return pick(b,l,r,key) as CloudRow|undefined;
+  const merged:CloudRow={id:l.id};
+  for(const field of new Set([...Object.keys(b??{}),...Object.keys(l),...Object.keys(r)])){
+    if(['id','messages','updatedAt'].includes(field))continue;
+    const value=pick(b?.[field],l[field],r[field],`${key}:${field}`);if(value!==undefined)merged[field]=value;
+  }
+  if([b,l,r].some(row=>typeof row?.updatedAt==='number'))merged.updatedAt=Math.max(...[b,l,r].map(row=>typeof row?.updatedAt==='number'?row.updatedAt:0));
+  const rows=[b,l,r].map(row=>(Array.isArray(row?.messages)?row.messages:[]) as CloudRow[]);
+  const maps=rows.map(list=>new Map(list.map(message=>[message.id,message])));
+  const original=rows[0].map(row=>row.id),known=new Set(original);
+  const additions=new Map([...rows[1],...rows[2]].filter(row=>!known.has(row.id)).map(row=>[row.id,row]));
+  const ids=[...original,...[...additions.values()].sort((a,b)=>Number(a.createdAt??0)-Number(b.createdAt??0)||a.id.localeCompare(b.id)).map(row=>row.id)];
+  merged.messages=ids.map(id=>pick(maps[0].get(id),maps[1].get(id),maps[2].get(id),`${key}:message:${id}`)).filter(Boolean);
+  return merged;
 }
 
 /** A phone's pause/message must survive a simultaneous host progress update. */
@@ -207,6 +225,11 @@ export function hydrateCloudData(data:CloudData,local:CloudLocal,keyIds:string[]
     const config={...local.settings.defaultConfig,...old?.config,...take(row.config,CONFIG),toolsEnabled:old?.config.toolsEnabled??false,enabledTools:old?.config.enabledTools??[],approvalMode:old?.config.approvalMode??'ask'};
     const messages=(Array.isArray(row.messages)?row.messages:[]).map(m=>{
       const shared=take(m,MSG), previous=old?.messages.find(x=>x.id===shared.id);
+      if(previous?.attachments&&Array.isArray(shared.attachments))shared.attachments=shared.attachments.map(a=>{
+        const local=previous.attachments?.find(item=>item.id===a.id);
+        const sameFile=local&&(local.cloudFile&&a.cloudFile?canonicalCloud(local.cloudFile)===canonicalCloud(a.cloudFile):local.name===a.name&&local.kind===a.kind&&local.size===a.size&&canonicalCloud([local.text,local.dataUrl])===canonicalCloud([a.text,a.dataUrl]));
+        return local?.path&&sameFile?{...a,path:local.path}:a;
+      });
       return previous && same(take(previous,MSG),shared) ? previous : {...shared,pending:false,cloudImported:true};
     });
     return {...take(old,['workspace','workspaceError','creationFingerprint','coordinationGroupId','coordinationMessages','handoffSourceRunId']),...take(row,['privacy','id','title','titleManuallySet','titleGenerated','pinned','forkedFrom','projectId','keyProfileId','createdAt','updatedAt','draft']),config,messages};

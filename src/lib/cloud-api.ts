@@ -1,6 +1,6 @@
 export type CloudUser = { id: string; name: string; email: string };
-export type CloudStatus = { user: CloudUser | null; available: boolean; googleConfigured?: boolean };
-export type DesktopCloudState = { user: CloudUser | null;workspaceAccountId?:string; continuesLocalWorkspace?:boolean;origin: string; pending: { code: string; expires: number } | null; ready: CloudUser | null };
+export type CloudStatus = { user: CloudUser | null; available: boolean; googleConfigured?: boolean;syncProtocol?:'layered-v1';fileRetentionDays?:number };
+export type DesktopCloudState = { user: CloudUser | null; workspaceAccountId?:string; continuesLocalWorkspace?:boolean; origin: string; pending: { code: string; expires: number } | null; ready: CloudUser | null };
 export interface CloudBridge {
   cloudState(): Promise<DesktopCloudState>;
   cloudLogin(): Promise<{ code: string; expires: number }>;
@@ -22,7 +22,7 @@ export async function cloudAccountIdentity():Promise<string|null> {
 export async function cloudCall<T>(action: string, input: Record<string, unknown> = {}): Promise<T> {
   const native = cloudBridge();
   if (native) return await native.cloudCall(action, input) as T;
-  const routes: Record<string, [string, string]> = { status: ['/api/cloud/status','GET'], read: ['/api/cloud/data','GET'], write: ['/api/cloud/data','PUT'], keys: ['/api/cloud/keys','GET'], collaboration:['/api/collaboration','POST'] };
+  const routes: Record<string, [string, string]> = { status: ['/api/cloud/status','GET'], read: ['/api/cloud/data','GET'], write: ['/api/cloud/data','PUT'], sync:['/api/cloud/sync','POST'],keys: ['/api/cloud/keys','GET'], collaboration:['/api/collaboration','POST'] };
   let route = routes[action];
   if (['keyGet','keySet','keyDelete'].includes(action)) route = ['/api/cloud/keys/'+encodeURIComponent(String(input.id)), {keyGet:'GET',keySet:'PUT',keyDelete:'DELETE'}[action]!];
   if (!route) throw new Error('Unsupported cloud operation');

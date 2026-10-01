@@ -267,6 +267,8 @@ export interface Attachment {
   contextOmitted?: boolean;
   duration?: number;
   path?: string;
+  /** Durable directory entry; payloads are transferred separately and cached locally. */
+  cloudFile?: { sha256:string;size:number;encrypted?:boolean };
 }
 
 /** 原文快照在来源消息被编辑后仍可阅读；id 用于跳回来源。 */

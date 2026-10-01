@@ -21,14 +21,15 @@ export function dueButlerBrief(prefs:ButlerProactivePreferences,now:number,done:
   return null;
 }
 
-export function parseButlerAnalysis(raw:string):{goals:{title:string;hypothesis:string;evidenceIds:string[];confidence:'low'|'medium'|'high'}[];skills:{name:string;description:string;body:string;evidenceIds:string[]}[]} {
+export function parseButlerAnalysis(raw:string):{summaries:{evidenceId:string;topic:string;intent:string;summary:string}[];goals:{goalId?:string;title:string;hypothesis:string;evidenceIds:string[];confidence:'low'|'medium'|'high'}[];skills:{name:string;description:string;body:string;evidenceIds:string[]}[]} {
   const clean=raw.trim().replace(/^```(?:json)?\s*/,'').replace(/\s*```$/,'');
   const data=JSON.parse(clean) as Record<string,unknown>;
   const strings=(value:unknown,max:number)=>Array.isArray(value)?value.filter((x):x is string=>typeof x==='string'&&x.length<=120).slice(0,max):[];
   const items=(key:string)=>Array.isArray(data[key])?(data[key] as unknown[]).filter((x):x is Record<string,unknown>=>!!x&&typeof x==='object').slice(0,5):[];
   const text=(v:unknown,max:number)=>typeof v==='string'?v.trim().slice(0,max):'';
   return {
-    goals:items('goals').map(g=>({title:text(g.title,100),hypothesis:text(g.hypothesis,400),evidenceIds:strings(g.evidenceIds,12),confidence:(['low','medium','high'].includes(String(g.confidence))?g.confidence:'low') as 'low'|'medium'|'high'})).filter(g=>g.title&&g.hypothesis&&g.evidenceIds.length),
+    summaries:items('summaries').map(s=>({evidenceId:text(s.evidenceId,120),topic:text(s.topic,80),intent:text(s.intent,160),summary:text(s.summary,240)})).filter(s=>s.evidenceId&&s.topic&&s.intent&&s.summary),
+    goals:items('goals').map(g=>({...typeof g.goalId==='string'?{goalId:text(g.goalId,120)}:{},title:text(g.title,100),hypothesis:text(g.hypothesis,400),evidenceIds:strings(g.evidenceIds,12),confidence:(['low','medium','high'].includes(String(g.confidence))?g.confidence:'low') as 'low'|'medium'|'high'})).filter(g=>g.title&&g.hypothesis&&g.evidenceIds.length),
     skills:items('skills').map(s=>({name:text(s.name,60),description:text(s.description,160),body:text(s.body,2000),evidenceIds:strings(s.evidenceIds,12)})).filter(s=>s.name&&s.description&&s.body&&s.evidenceIds.length),
   };
 }

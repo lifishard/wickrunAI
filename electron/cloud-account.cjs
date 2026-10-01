@@ -138,8 +138,8 @@ function createCloudAccount({ app, safeStorage, openExternal, fetcher = fetch })
         }
         return {ids};
       }
-      const paths = { status: ['/api/cloud/status','GET'], read: ['/api/cloud/data','GET'], write: ['/api/cloud/data','PUT'], keys: ['/api/cloud/keys','GET'] };
-      if (Object.hasOwn(paths,action)) return request(paths[action][0],paths[action][1],action==='write'?input:undefined);
+      const paths = { status: ['/api/cloud/status','GET'], read: ['/api/cloud/data','GET'], write: ['/api/cloud/data','PUT'], sync: ['/api/cloud/sync','POST'], keys: ['/api/cloud/keys','GET'] };
+      if (Object.hasOwn(paths,action)) return request(paths[action][0],paths[action][1],['write','sync'].includes(action)?input:undefined);
       if (['keyGet','keySet','keyDelete'].includes(action) && typeof input.id === 'string' && /^[\w:-]{1,160}$/.test(input.id)) {
         return request('/api/cloud/keys/'+encodeURIComponent(input.id),{keyGet:'GET',keySet:'PUT',keyDelete:'DELETE'}[action],action==='keySet'?{value:input.value}:undefined);
       }

@@ -21,6 +21,11 @@ export const LOCALES: { value: Locale; label: string; label2: string; lang: stri
 const EN: Record<string, string> = {
   ...BUTLER_EN,
   ...SHARING_EN,
+  '文字与目录已同步，{n} 个文件等待来源设备上线。':'Text and directories are synced. {n} files are waiting for a source device to come online.',
+  '文字对话、管家需求与同步目录保存在账号中。附件和文件以本机为主，传输缓存最多保留 7 天；目标设备收到后提前清理。新设备可双向同步，过期文件需要来源设备上线。':'Text conversations, Butler needs, and sync directories are saved to your account. Attachments and files stay primarily on your devices. Transfer copies expire after 7 days or earlier when target devices confirm receipt. New devices sync both ways; expired files require a source device to come online.',
+  '等待文件同步':'Waiting for file sync',
+  '请求同步文件':'Request file sync',
+  '缓存已过期时，需要保存原文件的设备上线。':'If the transfer copy has expired, a device holding the original file must come online.',
   '今日管家':'Today’s assistant',
   '管家 · ':'Assistant · ',
   '执行记录尚未同步到本设备，可先查看管家的任务摘要；完成或暂停后会继续同步。':'The execution record has not synced to this device yet. View the task summary here; syncing continues when it completes or pauses.',

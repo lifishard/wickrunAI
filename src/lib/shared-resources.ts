@@ -9,10 +9,11 @@ export type SharedVisibility = 'private' | 'link' | 'invite' | 'team';
 export interface SharedPolicy { visibility: SharedVisibility; linkRole: SharedRole; invites: {email:string;role:SharedRole}[]; teamRole?:SharedRole; allowGuestComments?:boolean; requireSignIn?:boolean }
 export interface SharedItem {
   id:string;kind:SharedKind;title:string;ownerId:string;sourceId?:string;spaceId?:string;parentId?:string;
-  revision:number;payload:Record<string,unknown>;policy:SharedPolicy;createdAt:number;updatedAt:number;
+  groupGrants?:{spaceId:string;role:SharedRole}[];revision:number;payload:Record<string,unknown>;policy:SharedPolicy;createdAt:number;updatedAt:number;
+  encryption?:import('./shared-encryption').SharedKeyManifest;encryptionLocked?:boolean;encryptionError?:string;
 }
 export interface SharedSpace {
-  id:string;name:string;kind:'personal'|'company';ownerId:string;revision:number;
+  id:string;name:string;kind:'personal'|'company'|'group';ownerId:string;revision:number;
   members:{email:string;role:'admin'|'member';userId?:string}[];defaultRole:SharedRole;role?:'admin'|'member';
   billing:{status:'free';period?:'month';model?:'individual'|'per_seat';seats?:number};
 }
@@ -26,10 +27,13 @@ export interface SharedEvent {id:string;actorId?:string;actorName?:string;author
 export interface SharedVersion {id:string;actorId:string;actorName:string;at:number;action:string;revision:number;title:string;payload:Record<string,unknown>}
 export interface SharedState {user:CloudUser|null;items:SharedItem[];spaces:SharedSpace[];connections:SharedConnection[]}
 export interface SharedView {item:SharedItem;role:SharedRole|'owner'|'admin';comments:SharedComment[];events:SharedEvent[];children?:SharedItem[];permissions?:{read:boolean;annotatePrivate:boolean;annotateShared:boolean;edit:boolean;postMessage:boolean;manageSharing:boolean}}
-export interface SharedSeed {kind:SharedKind;title:string;sourceId?:string;parentSourceId?:string;payload:Record<string,unknown>}
+export interface SharedSeed {kind:SharedKind;title:string;sourceId?:string;parentSourceId?:string;payload:Record<string,unknown>;localFile?:()=>Promise<File>}
 export const SHARED_FILE_MAX_BYTES=100*1024*1024;
+export function requestSharedSource(kind:SharedKind,sourceId:string){window.dispatchEvent(new CustomEvent('wickrun:share-source',{detail:{kind,sourceId}}));}
 
 export async function collaborationCall<T>(operation:string,input:Record<string,unknown>={}):Promise<T> {
+  const client=await (await import('./shared-encryption-bridge')).sharedEncryptionClient();
+  if(client)return client.call<T>(operation,input);
   return cloudCall<T>('collaboration',{operation,input});
 }
 export function shareLink(token:string):string {
@@ -74,11 +78,23 @@ export function projectShareSeed(project:Project):SharedSeed {
     docs:project.docs.map(d=>({id:d.id,name:d.name,content:d.text})),prompts:project.prompts.map(p=>({id:p.id,name:p.label,text:p.text}))}};
 }
 export function artifactShareSeed(artifact:Artifact,parentSourceId?:string):SharedSeed|null {
-  // A local path is a capability. Sharing it requires an explicit file upload instead.
-  if(typeof artifact.text!=='string'||!artifact.text)return null;
+  if(typeof artifact.text!=='string'&&!artifact.path)return null;
   const mime=artifact.type==='html'?'text/html':artifact.type==='svg'?'image/svg+xml':'text/plain';
-  return {kind:'file',title:artifact.name||'产物',sourceId:artifact.id,parentSourceId,
-    payload:{name:artifact.name||'artifact.txt',mime,text:artifact.text}};
+  return {kind:'file',title:artifact.name||'产物',sourceId:artifactShareSourceId(artifact),parentSourceId,
+    payload:{name:artifact.name||'artifact.txt',mime,text:artifact.path?'':artifact.text??''},
+    ...(artifact.path?{localFile:async()=>{
+      // The path remains inside this device-only closure, never in the shared payload.
+      const {desktop}=await import('./transport'),bridge=desktop() as unknown as {readSharedFile?:(path:string)=>Promise<Uint8Array>}|null;
+      const bytes=bridge?.readSharedFile?await bridge.readSharedFile(artifact.path!):(()=>{throw Error('请在保存原文件的桌面设备分享，或在共享空间上传该文件。');})();
+      if(bytes.length>SHARED_FILE_MAX_BYTES)throw Error('文件不能超过 100 MB。');
+      return new File([new Uint8Array(bytes)],artifact.name||'file',{type:'application/octet-stream'});
+    }}:{})};
+}
+export function artifactShareSourceId(artifact:Artifact){
+  if(/^[A-Za-z0-9_:-]{1,200}$/.test(artifact.id))return artifact.id;
+  // Stable local lookup key. This is not used for authentication or content integrity.
+  let a=2166136261,b=5381;for(const c of artifact.id){a=Math.imul(a^c.charCodeAt(0),16777619);b=Math.imul(b,33)^c.charCodeAt(0);}
+  return `artifact-${(a>>>0).toString(16)}-${(b>>>0).toString(16)}`;
 }
 export function publicWorkflowGraph(graph:Graph):Graph {
   return {nodes:graph.nodes.map(n=>({id:n.id,type:n.type,title:n.title,x:n.x,y:n.y,memberId:n.memberId,
@@ -124,16 +140,25 @@ export function sharedSeeds(conversations:Conversation[],projects:Project[],team
 }
 
 /** The selected project includes its explicitly projected chats, artifacts and workflow records. */
-export async function publishSharedSeed(seed:SharedSeed,seeds:SharedSeed[],spaceId?:string,parentId?:string,parentToken?:string):Promise<{item:SharedItem;token:string}> {
+export async function publishSharedSeed(seed:SharedSeed,seeds:SharedSeed[],spaceId?:string,parentId?:string,parentToken?:string,encrypt=true):Promise<{item:SharedItem;token:string}> {
   assertPublicCollaboration(seed.payload);
-  const root=await collaborationCall<{item:SharedItem;token:string}>('create',{kind:seed.kind,title:seed.title,payload:seed.payload,sourceId:seed.sourceId,spaceId,parentId,parentToken});
+  const sourceFile=seed.localFile?await seed.localFile():null;
+  const root=await collaborationCall<{item:SharedItem;token:string}>('create',{kind:seed.kind,title:seed.title,payload:seed.payload,sourceId:seed.sourceId,spaceId,parentId,parentToken,encrypt});
+  const publishFile=async(result:{item:SharedItem},file:File)=>{
+    const current=await collaborationCall<{item:SharedItem}>('get',{itemId:result.item.id,token:parentToken});
+    const payload=await (await import('./shared-files')).uploadSharedFile(result.item.id,file,{token:parentToken});
+    result.item=(await collaborationCall<{item:SharedItem}>('update',{itemId:result.item.id,token:parentToken,expectedRevision:current.item.revision,payload})).item;
+  };
+  if(sourceFile)await publishFile(root,sourceFile);
   if(seed.kind==='workflow')await (await import('./shared-runtime')).registerSharedWorkflow(seed,root.item);
   const walk=async(parentSeed:SharedSeed,parentId:string,visited:Set<string>)=>{
     if(!parentSeed.sourceId||visited.has(parentSeed.sourceId))return;
     visited.add(parentSeed.sourceId);
     for(const child of seeds.filter(s=>s.parentSourceId===parentSeed.sourceId)){
       assertPublicCollaboration(child.payload);
-      const next=await collaborationCall<{item:SharedItem}>('create',{kind:child.kind,title:child.title,payload:child.payload,sourceId:child.sourceId,spaceId,parentId,parentToken});
+      const file=child.localFile?await child.localFile():null;
+      const next=await collaborationCall<{item:SharedItem}>('create',{kind:child.kind,title:child.title,payload:child.payload,sourceId:child.sourceId,spaceId,parentId,parentToken,encrypt});
+      if(file)await publishFile(next,file);
       if(child.kind==='workflow')await (await import('./shared-runtime')).registerSharedWorkflow(child,next.item);
       await walk(child,next.item.id,visited);
     }

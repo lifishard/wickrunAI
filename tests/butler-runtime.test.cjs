@@ -197,3 +197,35 @@ test('a collector grant from another account cannot enable capture before local 
  await f.runtime.action({kind:'set-device-consent',source:'browser',consented:true});await f.runtime.tick();await settle(f.runtime);
  assert.equal(controls.at(-1).sources.browser,true);
 });
+
+test('semantic extraction sees the request at the end and saves a bounded summary without looping',async()=>{
+ let calls=0,excerpt;
+ const f=setup({model:async(_s,_p,prompt)=>{calls++;const p=JSON.parse(prompt);excerpt=p.excerpts[0].text;
+   return {text:JSON.stringify({summaries:[{evidenceId:p.signals[0].id,topic:'Budget report',intent:'Compare monthly spending',summary:'Prepare a monthly report under a fixed budget.'}],goals:[],skills:[]}),tokens:200,sources:[],steps:[]};}});
+ f.conversations[0].messages[0].content='Background '.repeat(400)+' My actual need is a budget report.';
+ await f.runtime.tick();await settle(f.runtime);assert.match(excerpt,/actual need is a budget report/);assert.ok(excerpt.length<1700);
+ const signal=f.runtime.getSnapshot().brain.signals[0];assert.equal(signal.summary,'Prepare a monthly report under a fixed budget.');
+ f.advance(40000);await f.runtime.tick();await settle(f.runtime);assert.equal(calls,1);assert.equal(f.runtime.getSnapshot().brain.signals[0].summary,signal.summary);
+ assert.equal(JSON.parse(f.db.get('wickrun:butler:brain:v1')).signals[0].summary,signal.summary);
+});
+
+test('new evidence refines a pending need in place while user correction remains authoritative',async()=>{
+ let calls=0,target;
+ const f=setup({model:async(_s,_p,prompt)=>{calls++;const p=JSON.parse(prompt);
+   return {text:JSON.stringify({goals:[{...(target?{goalId:target}:{}),title:calls===1?'Report':'Refined report',hypothesis:'Compare monthly expenses; currency still unknown.',evidenceIds:[p.signals[0].id],confidence:'medium'}],skills:[]}),tokens:200,sources:[],steps:[]};}});
+ await f.runtime.tick();await settle(f.runtime);target=f.runtime.getSnapshot().brain.goals[0].id;
+ f.conversations[0].messages.push({id:'m2',role:'user',content:'Include the last three months',createdAt:Date.now()});f.advance(40000);
+ await f.runtime.tick();await settle(f.runtime);let goals=f.runtime.getSnapshot().brain.goals;assert.equal(goals.length,1);assert.equal(goals[0].id,target);assert.equal(goals[0].title,'Refined report');
+ await f.runtime.action({kind:'review-goal',goalId:target,decision:'correct',correction:'Only this month, in Canadian dollars'});
+ await f.runtime.action({kind:'analyze-now'});await settle(f.runtime);goals=f.runtime.getSnapshot().brain.goals;
+ assert.equal(goals.length,1);assert.equal(goals[0].status,'corrected');assert.equal(goals[0].userCorrection,'Only this month, in Canadian dollars');
+});
+
+test('invented evidence cannot replace a summary and edited messages are extracted again',async()=>{
+ let calls=0;
+ const f=setup({model:async()=>{calls++;return {text:JSON.stringify({summaries:[{evidenceId:'invented',topic:'Fake',intent:'Fake',summary:'Fake'}],goals:[],skills:[]}),tokens:200,sources:[],steps:[]};}});
+ await f.runtime.tick();await settle(f.runtime);const original=f.runtime.getSnapshot().brain.signals[0].id;
+ f.conversations[0].messages[0].content='My corrected request is a reusable weekly plan';f.advance(40000);
+ await f.runtime.tick();await settle(f.runtime);assert.equal(calls,2);const signals=f.runtime.getSnapshot().brain.signals;
+ assert.equal(signals.length,1);assert.equal(signals[0].id,original);assert.match(signals[0].summary,/corrected request/);
+});

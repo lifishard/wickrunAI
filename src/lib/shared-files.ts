@@ -7,7 +7,7 @@ type Call = <T>(operation:string,input?:Data)=>Promise<T>;
 export type FileTransferProgress = {done:number;total:number;direction:'upload'|'download'};
 type TransferOptions = {token?:string;signal?:AbortSignal;onProgress?:(value:FileTransferProgress)=>void;call?:Call;account?:()=>Promise<string|null>;historyId?:string};
 type UploadStatus = {uploadId:string;chunkSize:number;chunkCount:number;missing:number[]};
-export type SharedFilePayload = {name:string;mime:string;size:number;blobId:string;sha256:string;chunkSize:number};
+export type SharedFilePayload = {name:string;mime:string;size:number;blobId:string;sha256:string;chunkSize:number;fileEncryption?:{keyId:string;plainSize:number}};
 
 function notCancelled(signal?:AbortSignal) {
   if(signal?.aborted)throw new DOMException('文件传输已取消。','AbortError');
@@ -63,10 +63,17 @@ async function session(options:TransferOptions) {
 export async function uploadSharedFile(itemId:string,file:File,options:TransferOptions={}):Promise<SharedFilePayload> {
   if(!Number.isSafeInteger(file.size)||file.size<0||file.size>SHARED_FILE_MAX_BYTES)throw Error('文件不能超过 100 MB。');
   const io=await session(options);if(!io.initial)throw Error('请先登录。');
+  const original=file;
+  const cryptoClient=options.call?null:await (await import('./shared-encryption-bridge')).sharedEncryptionClient();
+  const encrypted=cryptoClient?await cryptoClient.encryptFile(itemId,new Uint8Array(await file.arrayBuffer()),options.token):null;
+  if(encrypted){
+    if(encrypted.bytes.length>SHARED_FILE_MAX_BYTES)throw Error('加密后的文件不能超过 100 MB。');
+    file=new File([new Uint8Array(encrypted.bytes)],'encrypted',{type:'application/octet-stream'});
+  }
   options.onProgress?.({done:0,total:file.size,direction:'upload'});
   const sha256=await digest(file);notCancelled(options.signal);
   const scope={itemId,...(options.token?{token:options.token}:{})};
-  const started=await io.call<UploadStatus>('fileBegin',{...scope,name:file.name,mime:file.type||'application/octet-stream',size:file.size,sha256,requestKey:crypto.randomUUID()});
+  const started=await io.call<UploadStatus>('fileBegin',{...scope,name:file.name,mime:file.type||'application/octet-stream',size:file.size,sha256,requestKey:crypto.randomUUID(),...(encrypted?{keyId:encrypted.keyId}:{})});
   const count=Math.ceil(file.size/SHARED_FILE_CHUNK_BYTES);
   if(!started.uploadId||started.chunkSize!==SHARED_FILE_CHUNK_BYTES||started.chunkCount!==count||!Array.isArray(started.missing)||started.missing.some(i=>!Number.isSafeInteger(i)||i<0||i>=count)||new Set(started.missing).size!==started.missing.length)throw Error('文件传输信息无效。');
   let done=file.size-started.missing.reduce((bytes,index)=>bytes+Math.min(SHARED_FILE_CHUNK_BYTES,file.size-index*SHARED_FILE_CHUNK_BYTES),0);
@@ -81,7 +88,7 @@ export async function uploadSharedFile(itemId:string,file:File,options:TransferO
     const manifest=checkManifest(result.payload);
     if(manifest.size!==file.size||manifest.sha256!==sha256||manifest.name!==file.name||manifest.mime!==(file.type||'application/octet-stream'))throw Error('文件校验不一致，请重新上传。');
     options.onProgress?.({done:file.size,total:file.size,direction:'upload'});
-    return manifest;
+    return encrypted?{...manifest,name:original.name,mime:original.type||'application/octet-stream',fileEncryption:{keyId:encrypted.keyId,plainSize:original.size}}:manifest;
   } catch(error) {
     // A switched account must not issue cleanup as a different principal.
     if(await (options.account??cloudAccountIdentity)()===io.initial)await (options.call??collaborationCall)('fileAbort',{...scope,uploadId:started.uploadId}).catch(()=>{});
@@ -108,5 +115,12 @@ export async function downloadSharedFile(item:SharedItem,options:TransferOptions
   }
   const blob=new Blob(parts,{type:manifest.mime||'application/octet-stream'});
   if(blob.size!==manifest.size||await digest(blob)!==manifest.sha256)throw Error('文件校验失败，未保存损坏文件。');
-  notCancelled(options.signal);return blob;
+  notCancelled(options.signal);
+  if(manifest.fileEncryption){
+    const cryptoClient=await (await import('./shared-encryption-bridge')).sharedEncryptionClient();if(!cryptoClient)throw Error('请先登录并解锁此设备。');
+    const bytes=await cryptoClient.decryptFile(item,new Uint8Array(await blob.arrayBuffer()));
+    if(bytes.length!==manifest.fileEncryption.plainSize)throw Error('加密文件长度校验失败。');
+    return new Blob([new Uint8Array(bytes)],{type:manifest.mime||'application/octet-stream'});
+  }
+  return blob;
 }
