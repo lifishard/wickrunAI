@@ -2,6 +2,7 @@ import { OFFICE_EN } from './i18n-office';
 import * as React from 'react';
 // cn2t 子路径同时给出 ESM 和 UMD，Vite 和 node 测试都能解析，且只打包简转繁这一个方向。
 import * as OpenCC from 'opencc-js/cn2t';
+import { BUTLER_EN } from './i18n-butler';
 
 export type Locale = 'zh-Hans' | 'zh-Hant' | 'en';
 
@@ -17,6 +18,7 @@ export const LOCALES: { value: Locale; label: string; label2: string; lang: stri
  * 英文查词典，查不到就退回简体原文 —— 半翻译的界面也比缺字的界面好用。
  */
 const EN: Record<string, string> = {
+  ...BUTLER_EN,
   '今日管家':'Today’s assistant',
   '管家 · ':'Assistant · ',
   '执行记录尚未同步到本设备，可先查看管家的任务摘要；完成或暂停后会继续同步。':'The execution record has not synced to this device yet. View the task summary here; syncing continues when it completes or pauses.',
