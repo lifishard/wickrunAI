@@ -1,4 +1,5 @@
 import React from 'react';
+import Icon from './Icon';
 import { useT } from '../lib/i18n';
 import { createPortal } from 'react-dom';
 import type { ChatMessage, MessageAnnotation, MessageQuote } from '../types';
@@ -78,8 +79,8 @@ export default function SelectionActions(props: {
     {selected ? createPortal(<div className="selection-actions" role="toolbar" aria-label={t('选中文字的操作')}
       style={{ left: selected.x, top: selected.y, transform: `translate(-50%, ${selected.above ? '-100%' : '0'})` }}
       onPointerDown={(e) => e.preventDefault()} onMouseDown={(e) => e.preventDefault()}>
-      <button type="button" title={t('引用所选文字回复')} onClick={() => { props.onReply(selected.quote); clear(); }}>{t('↩ 回复')}</button>
-      <button type="button" title={t('为所选文字添加个人注释')} onClick={() => { setDraft(selected.quote); setText(''); setError(''); clear(); }}>{t('✎ 注释')}</button>
+      <button type="button" title={t('引用所选文字回复')} onClick={() => { props.onReply(selected.quote); clear(); }}><Icon name="back" size={16}/>{t('回复')}</button>
+      <button type="button" title={t('为所选文字添加个人注释')} onClick={() => { setDraft(selected.quote); setText(''); setError(''); clear(); }}><Icon name="edit" size={16}/>{t('注释')}</button>
     </div>, document.body) : null}
     {draft ? <Modal title={t('添加注释')} onClose={() => { if (!saving) setDraft(null); }}>
       <div className="modal-body annotation-editor">

@@ -26,6 +26,7 @@ import CompatibilityStatus from './CompatibilityStatus';
 import {validateAttachmentSize,validateAttachmentBatch} from '../lib/attachment-limits';
 import { useT } from '../lib/i18n';
 import { isCompositionKey } from '../lib/composer-keyboard';
+import Icon from './Icon';
 
 /** label / desc 是简体源文案，同时充当翻译 key。 */
 const APPROVAL_OPTIONS: { value: ApprovalMode; label: string; desc: string }[] = [
@@ -65,6 +66,8 @@ export default function Composer(props: {
   onQuoteOnly: (only: boolean) => void;
   onRemoveQuote: (id: string) => void;
   queuePaused: boolean;
+  workspaceHolder?: string;
+  onOpenWorkspaceHolder?: () => void;
   onResumeQueue: () => void;
   busy: boolean;
   preparing?: boolean;
@@ -321,7 +324,7 @@ export default function Composer(props: {
                   setPlusOpen(false);
                 }}
               >
-                {props.approvalMode === 'all' ? '⚡' : props.approvalMode === 'auto' ? '◐' : '🔒'}{' '}
+                <Icon name={props.approvalMode === 'all' ? 'bolt' : props.approvalMode === 'auto' ? 'circleHalf' : 'lock'} size={16}/>
                 {t(current.label)}
               </button>
               {approvalOpen ? (
@@ -335,9 +338,7 @@ export default function Composer(props: {
                         setApprovalOpen(false);
                       }}
                     >
-                      <span className="popup-icon">
-                        {o.value === 'all' ? '⚡' : o.value === 'auto' ? '◐' : '🔒'}
-                      </span>
+                      <span className="popup-icon"><Icon name={o.value === 'all' ? 'bolt' : o.value === 'auto' ? 'circleHalf' : 'lock'} size={17}/></span>
                       <span>
                         <strong>{t(o.label)}</strong>
                         <small>{t(o.desc)}</small>
@@ -373,7 +374,7 @@ export default function Composer(props: {
               {props.quotes.map((q) => (
                 <div className="quote-draft-item" key={q.id}>
                   <span className="quote-mark">“</span><div>{q.text}</div>
-                  <button className="icon-btn" aria-label={t('移除引用')} onClick={() => props.onRemoveQuote(q.id)}>✕</button>
+                  <button className="icon-btn" aria-label={t('移除引用')} onClick={() => props.onRemoveQuote(q.id)}><Icon name="close" size={16}/></button>
                 </div>
               ))}
               <label className="quote-scope"><input type="checkbox" checked={props.quoteOnly} onChange={(e) => props.onQuoteOnly(e.target.checked)} />
@@ -390,13 +391,14 @@ export default function Composer(props: {
                     {q}
                   </span>
                   {props.busy&&props.onSendQueuedNow?<button className="btn sm" onClick={()=>props.onSendQueuedNow?.(i)}>{t('立即送出')}</button>:null}
-                  <button className="icon-btn" title={t('取消这条')} onClick={() => props.onDropQueued(i)}>
-                    ✕
+                  <button className="icon-btn" title={t('取消这条')} aria-label={t('取消这条')} onClick={() => props.onDropQueued(i)}>
+                    <Icon name="close" size={16}/>
                   </button>
                 </span>
               ))}
-              <span className="queue-note">{props.queuePaused ? t('队列已暂停') : t('排队中，这一轮结束后依次发出')}</span>
-              {props.queuePaused ? <button className="btn sm" onClick={props.onResumeQueue}>{t('继续队列')}</button> : null}
+              <span className="queue-note">{props.workspaceHolder ? t('等待「{title}」释放工作目录', { title: props.workspaceHolder }) : props.queuePaused ? t('队列已暂停') : t('排队中，这一轮结束后依次发出')}</span>
+              {props.workspaceHolder && props.onOpenWorkspaceHolder ? <button className="btn sm" onClick={props.onOpenWorkspaceHolder}>{t('打开占用会话')}</button> : null}
+              {props.queuePaused ? <button className="btn sm" onClick={props.onResumeQueue}>{props.workspaceHolder ? t('重试') : t('继续队列')}</button> : null}
             </div>
           ) : null}
 
@@ -407,13 +409,13 @@ export default function Composer(props: {
                   {a.kind === 'image' && a.dataUrl ? (
                     <img src={a.dataUrl} alt="" />
                   ) : (
-                    <span className="attach-icon">{a.kind === 'audio' ? '♫' : a.kind === 'video' ? '▶' : '📄'}</span>
+                    <span className="attach-icon"><Icon name={a.kind === 'audio' ? 'audio' : a.kind === 'video' ? 'video' : 'file'} size={16}/></span>
                   )}
                   <span className="attach-name" title={a.name}>
                     {a.name}
                   </span>
-                  <button className="icon-btn" onClick={() => props.onRemoveAttachment(a.id)}>
-                    ✕
+                  <button className="icon-btn" aria-label={t('移除附件')} onClick={() => props.onRemoveAttachment(a.id)}>
+                    <Icon name="close" size={16}/>
                   </button>
                 </span>
               ))}
@@ -447,13 +449,13 @@ export default function Composer(props: {
                 <span key={sk.id} className="skill-chip" title={sk.description}>
                   <span className="skill-slash">/</span>
                   <span className="attach-name">{sk.name}</span>
-                  <button className="icon-btn" onClick={() => props.onDropSkill(sk.id)}>
-                    ✕
+                  <button className="icon-btn" aria-label={t('移除技能')} onClick={() => props.onDropSkill(sk.id)}>
+                    <Icon name="close" size={16}/>
                   </button>
                 </span>
               ))}
               <span className="queue-note">
-                {t('这些技能的指令会注入每一轮，直到你点 ✕ 摘掉')}
+                {t('这些技能的指令会注入每一轮，直到你手动移除')}
               </span>
             </div>
           ) : null}
@@ -499,7 +501,7 @@ export default function Composer(props: {
                   setApprovalOpen(false);
                 }}
               >
-                <MobileIcon name="plus"/>
+                {phone ? <MobileIcon name="plus"/> : <Icon name="plus" size={18}/>}
               </button>
               {plusOpen ? (
                 <AnchoredPopover anchorRef={plusRef} onClose={() => setPlusOpen(false)} className="popup" label={t('添加附件与工作目录')}>
@@ -511,7 +513,7 @@ export default function Composer(props: {
                       props.onPickWorkspace();
                     }}
                   >
-                    <span className="popup-icon">📁</span>
+                    <span className="popup-icon"><Icon name="folder" size={17}/></span>
                     <span>
                       <strong>{t('选择工作目录')}</strong>
                       <small>
@@ -583,8 +585,8 @@ export default function Composer(props: {
               onManageRouteGroups={props.onManageRouteGroups}
             />
 
-            {!compact ? secondaryControls : <button className="btn sm ghost composer-more" aria-label={t("更多")} aria-expanded={moreOpen} aria-controls={optionsId}
-              title={t(current.desc)} onClick={() => setMoreOpen(value => !value)}>{phone ? <MobileIcon name="more"/> : t("更多")}</button>}
+            {!compact ? secondaryControls : <button className="btn sm ghost composer-more" aria-expanded={moreOpen} aria-controls={optionsId}
+              title={t(current.desc)} aria-label={`${t('更多')} · ${t(current.desc)}`} onClick={() => setMoreOpen(value => !value)}>{phone ? <MobileIcon name="more"/> : <Icon name="more" size={17}/>}<span className="composer-action-label">{t('更多')}</span></button>}
             <span className="spacer" />
 
             {/* ---- 右下角 ---- */}
@@ -624,27 +626,26 @@ export default function Composer(props: {
             {props.busy ? (
               /* 运行期间三项操作保持同一组，窄屏以图标显示。 */
               <div className="composer-send-group">
-                <button className="btn sm danger" data-short-label="■" title={t('暂停')} aria-label={t('暂停')} onClick={() => {
+                <button className="btn sm danger" title={t('暂停')} aria-label={t('暂停')} onClick={() => {
                   if (props.preparing && preparingDraft.current) setText(text ? `${preparingDraft.current}\n\n${text}` : preparingDraft.current);
                   preparingDraft.current = '';
                   props.onStop();
                 }}>
-                  {t('暂停')}
+                  <Icon name="pause" size={16}/><span className="composer-action-label">{t('暂停')}</span>
                 </button>
                 <button
                   className="btn sm"
-                  data-short-label="↥"
                   onClick={submit}
                   disabled={props.disabled || !canSend}
                   title={t('排到队尾，这一轮结束后自动发出')}
                 >
-                  {t('排队发送')}
+                  <Icon name="send" size={16}/><span className="composer-action-label">{t('排队发送')}</span>
                 </button>
-                {props.onSendNow?<button className="btn sm primary" data-short-label="↗" disabled={props.disabled||!canSend} title={t('保存当前执行现场，立即处理这条新要求')} onClick={()=>{if(props.onSendNow?.(text.trim()))setText('');}}>{t('立即送出')}</button>:null}
+                {props.onSendNow?<button className="btn sm primary" disabled={props.disabled||!canSend} title={t('保存当前执行现场，立即处理这条新要求')} onClick={()=>{if(props.onSendNow?.(text.trim()))setText('');}}><Icon name="arrowUpRight" size={16}/><span className="composer-action-label">{t('立即送出')}</span></button>:null}
               </div>
             ) : (
-              <button className="btn sm primary mobile-send" aria-label={t("发送")} onClick={submit} disabled={props.disabled || !canSend}>
-                {phone ? <MobileIcon name="send"/> : t('发送')}
+              <button className={`btn sm primary${phone ? ' mobile-send' : ''}`} aria-label={t('发送')} onClick={submit} disabled={props.disabled || !canSend}>
+                {phone ? <MobileIcon name="send"/> : <Icon name="send" size={16}/>}<span className="composer-action-label">{t('发送')}</span>
               </button>
             )}
           </div>

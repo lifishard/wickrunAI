@@ -7,6 +7,8 @@ const { contextBridge, ipcRenderer } = require('electron');
  * 渲染进程拿不到 Node，也拿不到任何明文密钥。
  */
 contextBridge.exposeInMainWorld('snc', {
+  butlerSources:(action,input)=>ipcRenderer.invoke('snc:butlerSources',{action,input}),
+  butlerNativeRun:args=>ipcRenderer.invoke('snc:butlerNativeRun',args),
   cloudState: () => ipcRenderer.invoke('snc:cloudState'),
   cloudLogin: () => ipcRenderer.invoke('snc:cloudLogin'),
   cloudPoll: () => ipcRenderer.invoke('snc:cloudPoll'),
@@ -64,6 +66,7 @@ contextBridge.exposeInMainWorld('snc', {
   conversationClientCheck: kind => ipcRenderer.invoke('snc:conversationClientCheck',kind),
   conversationClientConnect: kind => ipcRenderer.invoke('snc:conversationClientConnect',kind),
   conversationClientRun: args => ipcRenderer.invoke('snc:conversationClientRun',args),
+  conversationClientTitle: args => ipcRenderer.invoke('snc:conversationClientTitle',args),
   conversationClientApprove:(requestId,id,approved)=>ipcRenderer.invoke('snc:conversationClientApprove',{requestId,id,approved}),
   conversationClientRecover:(runId,callId)=>ipcRenderer.invoke('snc:conversationClientRecover',{runId,callId}),
   brainGlobalStatus:()=>ipcRenderer.invoke('snc:brainGlobalStatus'),

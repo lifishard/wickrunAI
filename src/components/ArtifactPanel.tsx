@@ -9,6 +9,7 @@ import './ArtifactStrip.css';
 import ArtifactTextEditor from './ArtifactTextEditor';
 import CopyablePre from './CopyablePre';
 import type { ProposeArtifactEdit } from './ArtifactAiEdit';
+import Icon from './Icon';
 const ArtifactDocument = React.lazy(() => import('./ArtifactDocument'));
 
 const ICON: Record<string, string> = {
@@ -171,8 +172,8 @@ export default function ArtifactPanel(props: { artifact: Artifact; onClose: () =
             </button>
           </div>
         ) : null}
-        <button className="icon-btn" onClick={props.onClose} title={t('关掉')}>
-          ✕
+        <button className="icon-btn" onClick={props.onClose} title={t('关掉')} aria-label={t('关掉')}>
+          <Icon name="close" size={18}/>
         </button>
       </div>
 

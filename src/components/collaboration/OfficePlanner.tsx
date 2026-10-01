@@ -5,6 +5,8 @@ import { localizeRoles } from '../../lib/role-locale';
 import { useT, useLocale } from '../../lib/i18n';
 import { libraryRoles } from '../../lib/office-library';
 import ButlerPreferences from './ButlerPreferences';
+import ProactiveButlerPanel from './ProactiveButlerPanel';
+import type { ButlerRuntimeController, ButlerResultRef } from '../../lib/proactive-butler';
 import ProjectMemoryPanel from '../ProjectMemoryPanel';
 import { addMemory, redactSecrets, type ProjectMemoryItem } from '../../lib/memory-core';
 import { loadSkills, makeSkill, saveSkills, type Skill } from '../../lib/skills';
@@ -19,7 +21,7 @@ import { requestAssistant, type AssistantRetry } from '../../lib/assistant-reque
 import { limitKey, mergeLearnedLimit } from '../../lib/limits';
 import { probeCompatibility } from '../../lib/compatibility-probe';
 import Markdown from '../Markdown';
-export default function OfficePlanner({project,settings,update,onTask,onSettings,onSettingsChange,memoryItems=[],onMemory,onLaunch}:{project:TeamProject;settings:AppSettings;update:(fn:(p:TeamProject)=>void)=>Promise<unknown>;onTask:(id:string)=>void;onLaunch?:(taskId:string)=>void;onSettings:()=>void;onSettingsChange?:(fn:(s:AppSettings)=>AppSettings)=>void;memoryItems?:ProjectMemoryItem[];onMemory?:(fn:(items:ProjectMemoryItem[])=>ProjectMemoryItem[])=>void}){
+export default function OfficePlanner({project,settings,update,onTask,onSettings,onSettingsChange,memoryItems=[],onMemory,onLaunch,butlerController,onOpenButlerResult}:{project:TeamProject;settings:AppSettings;update:(fn:(p:TeamProject)=>void)=>Promise<unknown>;onTask:(id:string)=>void;onLaunch?:(taskId:string)=>void;onSettings:()=>void;onSettingsChange?:(fn:(s:AppSettings)=>AppSettings)=>void;memoryItems?:ProjectMemoryItem[];onMemory?:(fn:(items:ProjectMemoryItem[])=>ProjectMemoryItem[])=>void;butlerController?:ButlerRuntimeController;onOpenButlerResult?:(result:ButlerResultRef)=>void}){
   const tx=useT(),locale=useLocale();
   const [skills,setSkills]=React.useState<Skill[]>([]);React.useEffect(()=>{void loadSkills().then(setSkills).catch(()=>{});},[]);
   const roles=localizeRoles(libraryRoles(settings.officeLibrary,project.office?.customRoles),locale);
@@ -61,6 +63,7 @@ export default function OfficePlanner({project,settings,update,onTask,onSettings
   return <section className="office-planner" aria-label={tx("wickrunAI 管家")}>
     <div className="office-heading"><div><h2>{tx("先说说，你想做成什么？")}</h2><p>{tx("和管家商量目标、了解客户端、调整团队或复盘经验。它拟方案，你来决定。")}</p></div><details><summary>{tx("助手的模型")}</summary><div className="office-brain"><select aria-label={tx("设计助手接入")} value={brain.profileId} onChange={e=>setBrain({profileId:e.target.value,model:settings.cachedModels[e.target.value]?.[0]?.id??''})}>{settings.keyProfiles.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select><input aria-label={tx("设计助手模型")} value={brain.model} list="office-planner-models" onChange={e=>setBrain({...brain,model:e.target.value})}/><datalist id="office-planner-models">{(settings.cachedModels[brain.profileId]??[]).map(m=><option key={m.id} value={m.id}/>)}</datalist><button className="btn sm" onClick={onSettings}>{tx("管理接入")}</button></div></details></div>
     <ButlerPreferences settings={settings} onSettings={onSettingsChange} projectRules={office.instructions??''} onProjectRules={text=>{void update(p=>{ensureOffice(p).instructions=text;}).catch(e=>setError(String(e)));}} skills={skills}/>
+    <ProactiveButlerPanel settings={settings} onSettings={onSettingsChange} controller={butlerController} onOpenResult={onOpenButlerResult}/>
     {onMemory&&<details className="butler-memory"><summary>{tx("查看、修改管家的项目记忆")}</summary><ProjectMemoryPanel items={memoryItems} onChange={items=>onMemory(()=>items)} detailed/></details>}
     {!history.length&&<div className="office-examples">{[tx("我想做一个自媒体账号，但还没想清楚从哪里开始"),tx("帮我把一个产品想法变成能试用的原型"),tx("我有一套现成流程，想调整其中的分工")].map(text=><button className="btn" key={text} onClick={()=>setDraft(text)}>{text}</button>)}</div>}
     <div className="office-planning-history">{history.map((turn,i)=><article key={turn.id} className={`office-turn ${turn.role}`}>

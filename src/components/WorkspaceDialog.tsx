@@ -1,4 +1,5 @@
 import React from 'react';
+import Icon from './Icon';
 import { useT } from '../lib/i18n';
 import type { KeyProfile, ModelInfo, ToolContext } from '../types';
 import {
@@ -84,7 +85,7 @@ function ProjectsTab(props: {
             setSel(np.id);
           }}
         >
-          {t('＋ 新建项目')}
+          <Icon name="plus" size={17}/>{t('新建项目')}
         </button>
       </div>
 
@@ -205,7 +206,7 @@ function ProjectsTab(props: {
                 })
               }
             >
-              {t('＋ 加一篇文档')}
+              <Icon name="plus" size={17}/>{t('加一篇文档')}
             </button>
           </div>
 
@@ -243,9 +244,10 @@ function ProjectsTab(props: {
                 />
                 <button
                   className="btn sm danger"
+                  aria-label={t('删除提示词')}
                   onClick={() => patch({ prompts: p.prompts.filter((x) => x.id !== pp.id) })}
                 >
-                  ✕
+                  <Icon name="trash" size={16}/>
                 </button>
               </div>
             ))}
@@ -255,7 +257,7 @@ function ProjectsTab(props: {
                 patch({ prompts: [...(p.prompts ?? []), { id: uid('pp'), label: t('新提示词'), text: '' }] })
               }
             >
-              {t('＋ 加一条')}
+              <Icon name="plus" size={17}/>{t('加一条')}
             </button>
           </div>
         </div>
@@ -496,7 +498,7 @@ function SkillsTab(props: {
             ])
           }
         >
-          {t('＋ 手写一个')}
+          <Icon name="plus" size={17}/>{t('手写一个')}
         </button>
         <span className="hint" style={{ flex: 1 }}>
           {t('共 {n} 个', { n: props.skills.length })}
@@ -621,7 +623,7 @@ function TasksTab(props: {
         style={{ marginBottom: 12 }}
         onClick={() => props.onChange([...props.tasks, makeTask(t('任务 {n}', { n: props.tasks.length + 1 }))])}
       >
-        {t('＋ 新建任务')}
+        <Icon name="plus" size={17}/>{t('新建任务')}
       </button>
 
       {props.tasks.length === 0 ? <div className="empty">{t('还没有定时任务。')}</div> : null}

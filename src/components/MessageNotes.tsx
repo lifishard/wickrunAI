@@ -1,6 +1,7 @@
 import React from 'react';
 import { useT } from '../lib/i18n';
 import type { MessageAnnotation } from '../types';
+import Icon from './Icon';
 
 function Note({ note, onSave, onDelete }: { note: MessageAnnotation; onSave(n: MessageAnnotation): Promise<void>; onDelete(id: string): Promise<void> }) {
   const t = useT();
@@ -13,7 +14,7 @@ function Note({ note, onSave, onDelete }: { note: MessageAnnotation; onSave(n: M
     try { await fn(); setEditing(false); } catch (e) { setError(String(e)); } finally { setSaving(false); }
   };
   return <div className="message-note">
-    <div className="message-note-head"><strong>{t('✎ 我的注释')}</strong>
+    <div className="message-note-head"><strong><Icon name="edit" size={16}/>{t('我的注释')}</strong>
       <button className="icon-btn" title={t('编辑注释')} aria-label={t('编辑注释')} disabled={saving} onClick={() => { setText(note.text); setEditing(true); }}>{t('编辑')}</button>
       <button className="icon-btn" title={t('删除注释')} aria-label={t('删除注释')} disabled={saving} onClick={() => void action(() => onDelete(note.id))}>{t('删除')}</button>
     </div>

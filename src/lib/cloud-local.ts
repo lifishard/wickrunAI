@@ -2,15 +2,16 @@ import { getTransport, desktop } from './transport';
 import { observationStore, reloadCloudObservations } from './observations';
 import type { CloudLocal, CloudRow } from './cloud-data';
 const PENDING='wickrun:cloud:pending-apply:v1';
-const KEYS=['snc:settings:v1','snc:conversations:v1','snc:projects:v1','snc:skills:v1','snc:tasks:v1','anyai:observations:v1','wickrun:cloud:archives:v1'];
+export const BUTLER_BRAIN_KEY='wickrun:butler:brain:v1';
+const KEYS=['snc:settings:v1','snc:conversations:v1','snc:projects:v1','snc:skills:v1','snc:tasks:v1','anyai:observations:v1','wickrun:cloud:archives:v1',BUTLER_BRAIN_KEY];
 
 /** An interrupted local apply restores its saved source before normal app startup. */
 export async function recoverCloudApply():Promise<void> {
   const transport=getTransport(), raw=await transport.kvGet(PENDING);
   if(!raw || raw==='null')return;
   const backup=JSON.parse(raw) as Record<string,string>;
-  if(KEYS.some(key=>typeof backup[key]!=='string'))throw new Error('Cloud restore journal is invalid. Local data has been preserved.');
-  for(const key of KEYS)await transport.kvSet(key,backup[key]);
+  if(KEYS.slice(0,-1).some(key=>typeof backup[key]!=='string'))throw new Error('Cloud restore journal is invalid. Local data has been preserved.');
+  for(const key of KEYS)if(typeof backup[key]==='string')await transport.kvSet(key,backup[key]);
   await transport.kvSet(PENDING,'null');
 }
 export async function readCloudObservations():Promise<CloudRow[]> {
@@ -29,15 +30,19 @@ export async function readCloudArchives():Promise<CloudRow[]> {
   }
   return [...records.values()];
 }
+export async function readCloudButler(accountId:string):Promise<CloudLocal['butler']> {
+  try {const value=JSON.parse(await getTransport().kvGet(BUTLER_BRAIN_KEY)||'null');return value?.accountId===accountId?value:undefined;}
+  catch{return undefined;}
+}
 /** Persist before changing React state. The journal survives crashes between keys. */
 export async function applyCloudLocal(next:CloudLocal):Promise<void> {
   const transport=getTransport(), observations=await observationStore();
-  const values=[next.settings,next.conversations,next.projects,next.skills,next.tasks,{...observations,tasks:next.observations},next.archives??[]];
+  const values=[next.settings,next.conversations,next.projects,next.skills,next.tasks,{...observations,tasks:next.observations},next.archives??[],next.butler??null];
   const backup:Record<string,string>={};
   for(const key of KEYS)backup[key]=await transport.kvGet(key)??(key==='snc:settings:v1'?'{}':key==='anyai:observations:v1'?JSON.stringify(observations):'[]');
   await transport.kvSet(PENDING,JSON.stringify(backup));
   try {
-    for(let i=0;i<KEYS.length;i++)await transport.kvSet(KEYS[i],JSON.stringify(values[i]));
+    for(let i=0;i<KEYS.length;i++)if(i<KEYS.length-1||next.butler)await transport.kvSet(KEYS[i],JSON.stringify(values[i]));
     await reloadCloudObservations();
     await transport.kvSet(PENDING,'null');
   } catch(error) { await recoverCloudApply(); await reloadCloudObservations(); throw error; }

@@ -1,4 +1,5 @@
 import React from 'react';
+import Icon from './Icon';
 import { useT } from '../lib/i18n';
 
 /* 一批最小化的通用控件，避免每个面板各写一遍 */
@@ -82,7 +83,7 @@ export function Modal(props: {
           <span>{props.title}</span>
           <span style={{ flex: 1 }} />
           <button className="icon-btn" onClick={props.onClose} aria-label={t('关闭')}>
-            ✕
+            <Icon name="close" size={18}/>
           </button>
         </div>
         {/* children 原来直接挂在 .modal 上，没有滚动容器：内容一长（比如成员弹窗展开工具清单），

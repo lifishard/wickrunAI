@@ -539,6 +539,9 @@ export interface Conversation {
   handledHandoffKeys?: string[];
   id: string;
   title: string;
+  /** A sidebar rename always wins over background title generation. */
+  titleManuallySet?: boolean;
+  titleGenerated?: boolean;
   /** 钉在侧栏顶部 */
   pinned?: boolean;
   /** 从哪个会话分叉出来的，只用来显示 */
@@ -595,7 +598,7 @@ export interface RemoteConfig {
 
 export interface AppSettings {
   officeLibrary?: import('./lib/office-library').OfficeLibrary;
-  butler?: {instructions?:string;learning?:boolean;skillIds?:string[]};
+  butler?: {instructions?:string;learning?:boolean;skillIds?:string[];proactive?:import('./lib/proactive-butler').ButlerProactivePreferences};
   clients?: { codexBin:string; kimiBin?:string; grokBin?:string };
   collaborationView?: { visible:boolean; projectId?:string };
   keyProfiles: KeyProfile[];
@@ -704,6 +707,8 @@ export interface ChatStreamHandlers {
  * 回调一律放 ChatStreamHandlers，那个对象留在渲染进程里，不过 IPC。
  */
 export interface ChatRequestInit {
+  /** Private on-device observations are never copied into diagnostic request logs. */
+  privateInput?: boolean;
   requestId: string;
   url: string;
   headers: Record<string, string>;

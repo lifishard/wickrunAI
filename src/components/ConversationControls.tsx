@@ -5,6 +5,7 @@ import { defaultGenerationConfig } from '../lib/paramSchema';
 import type { SubagentConfig, SubagentWorker } from '../lib/subagents';
 import { useT } from '../lib/i18n';
 import './ConversationControls.css';
+import Icon from './Icon';
 
 const DEFAULT_RUNTIME = defaultGenerationConfig().runtime!;
 
@@ -57,7 +58,7 @@ export default function ConversationControls({ config, profiles, modelsByProfile
         title={t('对话运行方式：任务引导{harness} · 临时协作{subagents}。只作用于当前会话。', { harness: t(harness ? '开' : '关'), subagents: t(subagents.enabled ? '开' : '关') })}
         onClick={() => setOpen((v) => !v)}
       >
-        {t('⚙ 运行方式')}
+        <Icon name="settings" size={16}/>{t('运行方式')}
       </button>
       {open ? (
       <AnchoredPopover anchorRef={anchorRef} onClose={() => setOpen(false)} className="popup wide conversation-controls" label={t('对话运行方式')}>
@@ -120,7 +121,7 @@ export default function ConversationControls({ config, profiles, modelsByProfile
                     }} />
                     <datalist id={datalistId}>{models.map((model) => <option key={model.id} value={model.id}>{model.label ?? model.id}</option>)}</datalist>
                   </label>
-                  <button className="icon-btn sm" aria-label={t('移除工作模型 {n}', { n: index + 1 })} title={t('移除')} onClick={() => updateSubagents({ workers: subagents.workers.filter((item) => item.id !== worker.id) })}>×</button>
+                  <button className="icon-btn sm" aria-label={t('移除工作模型 {n}', { n: index + 1 })} title={t('移除')} onClick={() => updateSubagents({ workers: subagents.workers.filter((item) => item.id !== worker.id) })}><Icon name="close" size={17}/></button>
                 </div>
               );
             })}

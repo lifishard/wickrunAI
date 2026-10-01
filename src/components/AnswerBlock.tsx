@@ -26,6 +26,7 @@ import SubagentProgress from './SubagentProgress';
 import type { KeyProfile } from '../types';
 import type { GatewayRecoveryResult } from '../lib/gateway-recovery';
 import { clientText } from '../lib/client-text';
+import Icon from './Icon';
 import CopyablePre from './CopyablePre';
 
 /** finish_reason 的人话注解，鼠标悬停时显示 */
@@ -302,7 +303,7 @@ export default function AnswerBlock(props: {
             <blockquote key={q.id}>
               <button className="quote-source" onClick={() => {
                 document.getElementById(`msg-${q.messageId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-              }}>{t(q.role === 'assistant' ? '引用助手的原文 ↗' : '引用用户的原文 ↗')}</button>
+              }}>{t(q.role === 'assistant' ? '引用助手的原文' : '引用用户的原文')}<Icon name="arrowUpRight" size={15}/></button>
               <div>{q.text}</div>
             </blockquote>
           ))}
@@ -361,8 +362,8 @@ export default function AnswerBlock(props: {
             ) : null}
             <div className="question-markdown"><Markdown text={question.content} /></div>
             {props.onEditQuestion ? (
-              <button className="icon-btn q-edit-btn" title={t('改问题重问')} onClick={() => setEditing(true)}>
-                ✎
+              <button className="icon-btn q-edit-btn" title={t('改问题重问')} aria-label={t('改问题重问')} onClick={() => setEditing(true)}>
+                <Icon name="edit" size={17}/>
               </button>
             ) : null}
           </div>
@@ -499,26 +500,27 @@ export default function AnswerBlock(props: {
             </span>
           ) : null}
           <span className="spacer" />
-          <button className="icon-btn" title={t('复制回答')} onClick={() => props.onCopy(answer.content)}>
-            ⧉
+          <button className="icon-btn" title={t('复制回答')} aria-label={t('复制回答')} onClick={() => props.onCopy(answer.content)}>
+            <Icon name="copy" size={18}/>
           </button>
           {props.onRetry ? (
-            <button className="icon-btn" title={t('重新生成')} onClick={props.onRetry}>
-              ↻
+            <button className="icon-btn" title={t('重新生成')} aria-label={t('重新生成')} onClick={props.onRetry}>
+              <Icon name="retry" size={18}/>
             </button>
           ) : null}
           {props.onFork ? (
             <button
               className="icon-btn"
               title={t('从这里分叉出一条新对话，只带到这一步为止的上下文')}
+              aria-label={t('从这里分叉出一条新对话，只带到这一步为止的上下文')}
               onClick={props.onFork}
             >
-              ⑂
+              <Icon name="fork" size={18}/>
             </button>
           ) : null}
           {props.onDelete ? (
-            <button className="icon-btn" title={t('删除这一轮')} onClick={props.onDelete}>
-              ✕
+            <button className="icon-btn" title={t('删除这一轮')} aria-label={t('删除这一轮')} onClick={props.onDelete}>
+              <Icon name="trash" size={18}/>
             </button>
           ) : null}
         </div>

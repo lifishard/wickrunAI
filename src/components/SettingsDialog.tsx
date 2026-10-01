@@ -1,6 +1,7 @@
 import UpdatePanel from './UpdatePanel';
 import { usesCloudKey } from '../lib/cloud-api';
 import React from 'react';
+import Icon from './Icon';
 import { useT, LOCALES } from '../lib/i18n';
 import type { AppSettings, KeyProfile, SearchProvider } from '../types';
 import { BASE_URL_PRESETS, normalizeBaseUrl } from '../lib/api';
@@ -718,7 +719,7 @@ export default function SettingsDialog(props: {
         ))}
 
         <button className="btn block" onClick={addProfile}>
-          {t('＋ 添加一份凭据')}
+          <Icon name="plus" size={17}/>{t('添加一份凭据')}
         </button>
 
       </div>
@@ -769,7 +770,7 @@ export default function SettingsDialog(props: {
                 }
               }}
             >
-              {t('＋ 选一个目录')}
+              <Icon name="plus" size={17}/>{t('选一个目录')}
             </button>
           ) : (
             <div className="hint">{t('工作目录只能在桌面端添加。')}</div>
@@ -1053,7 +1054,7 @@ export default function SettingsDialog(props: {
               ])
             }
           >
-            {t('＋ 加一条（插到最前面）')}
+            <Icon name="plus" size={17}/>{t('加一条（插到最前面）')}
           </button>
           <button className="btn" onClick={() => setMappings(defaultEffortMappings())}>
             {t('恢复默认')}

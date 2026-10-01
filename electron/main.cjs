@@ -49,6 +49,7 @@ let brainProxy = null;
 let nativeAiBridge = null;
 let cloudRelay = null;
 let taskNotifier = null;
+let butlerSources = null;
 const activeToolControllers = new Map();
 const activeRunIds = new Set();
 function dataAvailable(){if(storageStartupError)throw Error('本地记录需要恢复，已停止读写：'+storageStartupError);if(restoringData)throw Error('正在恢复数据，请等待重启');const error=dataBackup?.recoveryError;if(error)throw Error('数据恢复未完成，已停止读写：'+error);}
@@ -335,6 +336,12 @@ async function handleGetJson(_evt, { url, headers, timeoutMs }) {
  * ------------------------------------------------------------------ */
 
 function registerIpc() {
+  ipcMain.handle('snc:butlerSources',(event,{action,input}={})=>{
+    if(!mainWindow||event.sender!==mainWindow.webContents||event.senderFrame!==mainWindow.webContents.mainFrame)throw Error('Untrusted Butler source request');
+    dataAvailable();
+    butlerSources??=require('./butler-sources.cjs').createButlerSources({userData:app.getPath('userData'),openPath:target=>shell.openPath(target)});
+    return butlerSources.action(action,input);
+  });
   ipcMain.handle('snc:cloudState', () => cloudAccount.state());
   ipcMain.handle('snc:cloudLogin', () => cloudAccount.login());
   ipcMain.handle('snc:cloudPoll', () => cloudAccount.poll());
@@ -451,6 +458,11 @@ function registerIpc() {
   ipcMain.handle('snc:conversationClientCheck',(_e,kind)=>{dataAvailable();return conversationClients.check(kind);});
   ipcMain.handle('snc:conversationClientConnect',(_e,kind)=>{dataAvailable();return conversationClients.connect(kind);});
   ipcMain.handle('snc:conversationClientRun',(event,args)=>{dataAvailable();return conversationClients.run(args,message=>sendClientEvent(event.sender,message));});
+  ipcMain.handle('snc:conversationClientTitle',(_event,args)=>{dataAvailable();return conversationClients.title(args);});
+  ipcMain.handle('snc:butlerNativeRun',(event,args)=>{
+    if(!mainWindow||event.sender!==mainWindow.webContents||event.senderFrame!==mainWindow.webContents.mainFrame)throw Error('Untrusted Butler request');
+    dataAvailable();return conversationClients.background(args);
+  });
   ipcMain.handle('snc:conversationClientApprove',(_e,{requestId,id,approved})=>conversationClients.approve(requestId,id,approved));
   ipcMain.handle('snc:conversationClientRecover',(_e,{runId,callId})=>{dataAvailable();return conversationClients.recover(runId,callId);});
   ipcMain.handle('snc:clientRun',(_e,args)=>{dataAvailable();return localClients.run(args);});
@@ -710,6 +722,7 @@ if (!app.requestSingleInstanceLock()) {
     conversationClients?.close();
     brainProxy?.close();
     cloudRelay?.close();
+    butlerSources?.close();
     for (const [, rec] of inflight) {
       clearTimeout(rec.timer);
       rec.controller.abort('quit');

@@ -14,6 +14,32 @@ test('official models and login are discovered without any renderer credential',
   const f=fixture(t);const result=await f.host.check('codex');assert.equal(result.status,'ready');assert.deepEqual(result.models[0].efforts,['high']);assert.equal((await f.host.connect('codex')).status,'ready');assert.equal(f.opened.length,0);
 });
 
+test('native title uses the conversation subscription in read-only chat mode',async t=>{
+  const f=fixture(t);
+  const result=await f.host.title({selection:{kind:'codex',model:'gpt-test',brain:{source:'subscription'}},system:'Write a title',prompt:'{"goal":"Fix queue"}',timeoutMs:15000});
+  assert.equal(result,'saved output');
+  assert.equal(f.calls.length,1);
+  assert.equal(f.calls[0].sandbox,'readOnly');
+  assert.equal(f.calls[0].isolateTools,true);
+  assert.equal(f.calls[0].cwd,path.join(f.root,'conversation-clients'));
+});
+
+test('Butler native inference is independently cancellable and does not create a shared run transcript',async t=>{
+  let started;const ready=new Promise(resolve=>{started=resolve;});
+  const f=fixture(t,{createCodexClient:()=>({run:async options=>{assert.equal(options.sandbox,'readOnly');assert.equal(await options.onApproval({kind:'write'}),false);started();return new Promise(resolve=>options.signal.addEventListener('abort',()=>resolve({status:'cancelled',text:''}),{once:true}));},close(){}})});
+  const pending=f.host.background({requestId:'butler-test',selection:{kind:'codex',model:'gpt-test'},prompt:'redacted page excerpt',system:'Extract needs only',timeoutMs:20000});
+  await ready;assert.equal(f.host.busy(),true);f.host.abort('butler-test');
+  await assert.rejects(pending);assert.equal(f.host.busy(),false);assert.equal(f.store.list().length,1);
+  assert.doesNotMatch(JSON.stringify(f.store.list()),/redacted page excerpt/);
+});
+
+test('Grok and Kimi semantic titles use isolated Chat calls with all action approval denied',async t=>{
+  const seen=[];
+  const f=fixture(t,{createAcpClient:()=>({run:async options=>{seen.push(options);assert.equal(await options.onApproval({kind:'execute'}),false);return {status:'completed',text:'Useful goal'};},close(){}})});
+  for(const kind of ['grok','kimi'])assert.equal(await f.host.title({selection:{kind,model:'test'},system:'Title',prompt:'Goal',timeoutMs:15000}),'Useful goal');
+  assert.equal(seen.length,2);assert.ok(seen.every(options=>options.mode==='chat'));
+});
+
 test('restart restores a previously validated native client path and rechecks its account',async t=>{
   const root=fs.mkdtempSync(path.join(fs.realpathSync.native(os.tmpdir()),'wickrun-client-restart-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
   const binary=path.join(root,'saved','codex.exe');fs.mkdirSync(path.dirname(binary),{recursive:true});fs.writeFileSync(binary,'fixture');
