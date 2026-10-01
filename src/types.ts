@@ -595,7 +595,7 @@ export interface RemoteConfig {
 
 export interface AppSettings {
   officeLibrary?: import('./lib/office-library').OfficeLibrary;
-  butler?: {instructions?:string;learning?:boolean;skillIds?:string[]};
+  butler?: {instructions?:string;learning?:boolean;skillIds?:string[];proactive?:import('./lib/proactive-butler').ButlerProactivePreferences};
   clients?: { codexBin:string; kimiBin?:string; grokBin?:string };
   collaborationView?: { visible:boolean; projectId?:string };
   keyProfiles: KeyProfile[];
