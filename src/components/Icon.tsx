@@ -7,7 +7,8 @@ export type IconName =
   | 'download' | 'folder' | 'sparkles' | 'clock' | 'more' | 'eyeOff' | 'arrowUpRight' | 'pause'
   | 'bolt' | 'circleHalf' | 'lock' | 'thumbsUp' | 'thumbsDown' | 'check'
   | 'checkCircle' | 'info' | 'list' | 'play' | 'brain' | 'shield'
-  | 'calendar' | 'link' | 'monitor' | 'sun' | 'moon';
+  | 'calendar' | 'link' | 'monitor' | 'sun' | 'moon'
+  | 'arrowUp' | 'arrowDown' | 'arrowRight' | 'sidebarCollapse';
 
 type Props = Omit<SVGProps<SVGSVGElement>, 'name'> & { name: IconName; size?: number };
 
@@ -43,6 +44,10 @@ export default function Icon({ name, size = 18, ...props }: Props) {
     more: <><circle cx="5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /></>,
     eyeOff: <><path d="M3 3 21 21M10.6 10.6a2 2 0 0 0 2.8 2.8" /><path d="M4.7 7.5A11 11 0 0 0 2 12s3.7 7 10 7a9.8 9.8 0 0 0 4.2-.9M9 5.4A10 10 0 0 1 12 5c6.3 0 10 7 10 7a15 15 0 0 1-2.5 3.2" /></>,
     arrowUpRight: <><path d="M5 19 19 5M8 5h11v11" /></>,
+    arrowUp: <path d="M12 19V5m-6 6 6-6 6 6" />,
+    arrowDown: <path d="M12 5v14m-6-6 6 6 6-6" />,
+    arrowRight: <path d="M5 12h14m-6-6 6 6-6 6" />,
+    sidebarCollapse: <><path d="M4 4h16v16H4zM9 4v16m7-11-3 3 3 3" /></>,
     pause: <><path d="M8 5v14M16 5v14" /></>,
     bolt: <path d="m13 2-8 11h6l-1 9 9-12h-6l1-8z" />,
     circleHalf: <><circle cx="12" cy="12" r="9" /><path d="M12 3v18" /></>,

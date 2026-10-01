@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useT } from '../../lib/i18n';
+import Icon from '../Icon';
 import './WorkflowCanvas.css';
 
 export interface CanvasNode {
@@ -462,7 +463,7 @@ export default function WorkflowCanvas({
       onKeyDown={handleKeyDown}
     >
       <div className="workflow-canvas-main" onClick={() => onSelect(null)}>
-        <div className="workflow-canvas-view-controls" onPointerDown={e=>e.stopPropagation()} onClick={e=>e.stopPropagation()}><button type="button" onClick={()=>onViewportChange({...viewport,zoom:clampZoom(viewport.zoom/1.2)})} aria-label={t('缩小画布')}>−</button><span>{Math.round(viewport.zoom*100)}%</span><button type="button" onClick={()=>onViewportChange({...viewport,zoom:clampZoom(viewport.zoom*1.2)})} aria-label={t('放大画布')}>+</button><button type="button" onClick={()=>{const main=containerRef.current?.querySelector('.workflow-canvas-main');if(!main||!nodes.length)return;const box=main.getBoundingClientRect(),minX=Math.min(...nodes.map(n=>n.x)),minY=Math.min(...nodes.map(n=>n.y)),maxX=Math.max(...nodes.map(n=>n.x+NODE_WIDTH)),maxY=Math.max(...nodes.map(n=>n.y+getNodeHeight(n)));const zoom=clampZoom(Math.min((box.width-80)/(maxX-minX),(box.height-100)/(maxY-minY),1.5));onViewportChange({x:(box.width-(maxX-minX)*zoom)/2-minX*zoom,y:(box.height-(maxY-minY)*zoom)/2-minY*zoom,zoom});}}>{t('适应画布')}</button></div>
+        <div className="workflow-canvas-view-controls" onPointerDown={e=>e.stopPropagation()} onClick={e=>e.stopPropagation()}><button type="button" onClick={()=>onViewportChange({...viewport,zoom:clampZoom(viewport.zoom/1.2)})} aria-label={t('缩小画布')}><Icon name="zoomOut"/></button><span>{Math.round(viewport.zoom*100)}%</span><button type="button" onClick={()=>onViewportChange({...viewport,zoom:clampZoom(viewport.zoom*1.2)})} aria-label={t('放大画布')}><Icon name="zoomIn"/></button><button type="button" onClick={()=>{const main=containerRef.current?.querySelector('.workflow-canvas-main');if(!main||!nodes.length)return;const box=main.getBoundingClientRect(),minX=Math.min(...nodes.map(n=>n.x)),minY=Math.min(...nodes.map(n=>n.y)),maxX=Math.max(...nodes.map(n=>n.x+NODE_WIDTH)),maxY=Math.max(...nodes.map(n=>n.y+getNodeHeight(n)));const zoom=clampZoom(Math.min((box.width-80)/(maxX-minX),(box.height-100)/(maxY-minY),1.5));onViewportChange({x:(box.width-(maxX-minX)*zoom)/2-minX*zoom,y:(box.height-(maxY-minY)*zoom)/2-minY*zoom,zoom});}}>{t('适应画布')}</button></div>
         <svg className="workflow-canvas-svg" aria-hidden="true">
           <g transform={`translate(${viewport.x} ${viewport.y}) scale(${viewport.zoom})`}>
             <defs>

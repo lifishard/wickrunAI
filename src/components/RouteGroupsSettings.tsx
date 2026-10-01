@@ -1,4 +1,5 @@
 import React from 'react';
+import Icon from './Icon';
 import { useT } from '../lib/i18n';
 import type { AppSettings } from '../types';
 import type { RouteRef } from '../lib/failover';
@@ -87,8 +88,8 @@ export default function RouteGroupsSettings({ settings, onChange }: {
               {i === 0 ? <small className="failover-score">{t('当前路由')}</small> : null}
             </span>
             <span className="failover-actions">
-              <button className="btn sm" aria-label={t('上移')} disabled={i === 0} onClick={() => move(g, i, i - 1)}>↑</button>
-              <button className="btn sm" aria-label={t('下移')} disabled={i === g.routes.length - 1} onClick={() => move(g, i, i + 1)}>↓</button>
+              <button className="btn sm" aria-label={t('上移')} disabled={i === 0} onClick={() => move(g, i, i - 1)}><Icon name="arrowUp"/></button>
+              <button className="btn sm" aria-label={t('下移')} disabled={i === g.routes.length - 1} onClick={() => move(g, i, i + 1)}><Icon name="arrowDown"/></button>
               <button className="btn sm ghost" aria-label={t('移出名单')} onClick={() => patch(g.id, { routes: g.routes.filter((_, x) => x !== i) })}>{t('移除')}</button>
             </span>
           </li>)}

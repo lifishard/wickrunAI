@@ -1,5 +1,6 @@
 import React from 'react';
 import BrandLogo from './BrandLogo';
+import Icon from './Icon';
 import { LOCALES, translate, type Locale } from '../lib/i18n';
 import './StartupWelcome.css';
 
@@ -39,7 +40,7 @@ export default function StartupWelcome({ ready, locale, onLocale, onDone }: {
       <div className="startup-languages" role="group" aria-label={t('界面语言')}>
         {LOCALES.map(item => <button key={item.value} aria-pressed={locale === item.value} onClick={() => onLocale(item.value)}>{item.label2}</button>)}
       </div>
-      <button className="btn ghost" onClick={onDone}>{t('进入应用')} <span aria-hidden="true">→</span></button>
+      <button className="btn ghost" onClick={onDone}>{t('进入应用')} <Icon name="arrowRight"/></button>
     </div> : null}
   </main>;
 }
