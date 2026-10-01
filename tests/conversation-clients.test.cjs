@@ -139,6 +139,41 @@ test('Chat refuses native permission even if a client asks for mutation',async t
   const f=fixture(t,{createCodexClient:()=>({run:async options=>{decision=await options.onApproval({command:'write'});return {status:'approval_required',text:''};},close(){}})});
   await f.host.run({runId:'run-1',requestId:'request-4',prompt:'chat'});assert.equal(decision,'decline');
 });
+
+test('automatic Codex Work needs an isolated workspace and declines extra native authority',async t=>{
+  const notifications=[];let decision;
+  const f=fixture(t,{workspaceForRun:()=>f.root,createCodexClient:()=>({run:async options=>{
+    decision=await options.onApproval({method:'item/commandExecution/requestApproval',command:'unsafe'});
+    return {status:'approval_required',text:'draft'};
+  },close(){}})});
+  f.record.config={toolsEnabled:true,client:{kind:'codex',model:'default',butlerAutonomous:true}};f.store.save(f.record);
+  await assert.rejects(f.host.run({runId:'run-1',requestId:'missing',prompt:'draft'}),/独立工作区/);
+  const result=await f.host.run({runId:'run-1',requestId:'auto',prompt:'draft',cwd:f.root},event=>notifications.push(event));
+  assert.equal(result.status,'approval_required');assert.equal(decision,'decline');assert.equal(notifications.length,0);
+});
+
+test('automatic ACP Work accepts only scoped edits without publishing approval cards',async t=>{
+  const decisions=[],notifications=[];
+  const f=fixture(t,{workspaceForRun:()=>f.root,createAcpClient:()=>({run:async options=>{
+    for(const toolCall of [{kind:'edit',locations:[{path:path.join(f.root,'draft.md')}]},
+      {kind:'execute',locations:[{path:path.join(f.root,'draft.md')}]},
+      {kind:'edit',locations:[{path:path.join(f.root,'..','other.md')}]}])
+      decisions.push(await options.onApproval({toolCall}));
+    return {status:'completed',text:'draft'};
+  },close(){}})});
+  f.record.config={toolsEnabled:true,client:{kind:'grok',model:'default',butlerAutonomous:true}};f.store.save(f.record);
+  const result=await f.host.run({runId:'run-1',requestId:'acp-auto',prompt:'draft',cwd:f.root},event=>notifications.push(event));
+  assert.deepEqual(decisions,['accept','decline','decline']);assert.equal(notifications.length,0);
+  assert.equal(result.status,'permission_required');
+});
+
+test('automatic Claude Work runs in tool-free draft mode and reports that no file was created',async t=>{
+  let received;
+  const f=fixture(t,{workspaceForRun:()=>f.root,claudeCode:async(_request,ctx)=>{received=ctx;return {ok:true,content:'Draft text'};}});
+  f.record.config={toolsEnabled:true,client:{kind:'claude',model:'default',butlerAutonomous:true}};f.store.save(f.record);
+  const result=await f.host.run({runId:'run-1',requestId:'claude-auto',prompt:'draft',cwd:f.root});
+  assert.equal(received.chatOnly,true);assert.match(result.text,/未生成文件/);
+});
 test('unexpected login domains never open and API accounts are not called subscription-ready',async t=>{
   const f=fixture(t,{createCodexClient:()=>({readAccount:async()=>({account:{type:'apiKey'}}),login:async()=>({authUrl:'https://evil.example/'}),close(){}})});
   assert.equal((await f.host.check('codex')).status,'login_required');await assert.rejects(f.host.connect('codex'));assert.equal(f.opened.length,0);
