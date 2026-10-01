@@ -37,7 +37,7 @@ test('automatic proposed goal gets a bounded, cautious handoff and dismissed goa
   assert.match(prompt,/隔离工作目录/);
   const memory=prompt.match(/近期线索：(\{[^\n]+\})\n/);
   assert.ok(memory,'memory excerpt is a complete JSON object');
-  assert.equal(JSON.parse(memory[1]).sourceTextId,'butler-brain');
+  const parsed=JSON.parse(memory[1]);assert.match(parsed.archive,/butler-brain/);assert.equal(parsed.counts.signals,250);assert.ok(parsed.signals.length>0);
   assert.throws(()=>butlerWorkPrompt(brain,goal),/确认或纠正/);
   assert.throws(()=>butlerWorkPrompt(brain,{...goal,status:'dismissed'},{autonomous:true}),/已否定/);
 });

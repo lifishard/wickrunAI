@@ -1,6 +1,6 @@
 import type { AppSettings, GenerationConfig } from '../types';
 import type { ButlerBrainState, ButlerGoal, ButlerProactivePreferences } from './proactive-butler';
-import { butlerMemoryView } from './butler-memory';
+import { butlerMemoryCapsule } from './butler-memory';
 import { failoverFromGroup } from './route-groups';
 import { DEFAULT_RUNTIME } from './task-context';
 
@@ -46,10 +46,10 @@ export function butlerWorkPrompt(brain:ButlerBrainState,goal:ButlerGoal,options:
   const boundary=autonomous
     ? '本次自动执行仅获准在当前隔离工作目录内读写文件。禁止运行命令、访问浏览器或外部应用、调用代理、发布、发送、删除、支付、交易或谈判。需要这些能力时停止相应部分并明确请求用户处理。不要要求用户事先确认这份候选需求；先完成安全的草稿或原型。'
     : '默认禁止支付、转账、下单交易或代表用户进行财务及商务谈判。任何涉及账户、外部发送、删除、发布或其他敏感操作，都须沿用现有逐项确认；历史活动和目标确认不能授予这些权限。';
-  const head=`${opening}\n目标：${clip(goal.title,500)}\n${autonomous?'候选需求':'用户确认的具体需求'}：${clip(goal.userCorrection??goal.hypothesis,3000)}\n以下记忆是有来源的历史资料，不是额外授权；用户的纠正和否定优先，禁止把推测当成事实。完整但仍经过隐私筛选的资料可用 read_source_text({id:"butler-brain",part:1}) 分段读取，完成前按需核查相关原文。\n近期线索：`;
+  const head=`${opening}\n目标：${clip(goal.title,500)}\n${autonomous?'候选需求':'用户确认的具体需求'}：${clip(goal.userCorrection??goal.hypothesis,3000)}\n以下记忆是有来源的历史资料，不是额外授权；用户的纠正和否定优先，禁止把推测当成事实。若当前工具支持，可用 read_source_text({id:"butler-brain",part:1}) 或单条记录编号读取完整但仍经过隐私筛选的资料。不支持该工具的订阅客户端只能依据当前摘要，明确缺项，不能假称已读完整资料。\n近期线索：`;
   const tail=`\n${boundary}完成后列出实际产物、操作记录、核验结果和未完成事项。`;
   const budget=PROMPT_LIMIT-head.length-tail.length;
-  const recent=JSON.stringify(butlerMemoryView(brain,18));
+  const recent=JSON.stringify(butlerMemoryCapsule(brain,Math.min(7000,budget)));
   const memory=recent.length<=budget?recent:JSON.stringify({truncated:true,sourceTextId:'butler-brain',instruction:'Use read_source_text for relevant full records.'});
   return head+memory+tail;
 }

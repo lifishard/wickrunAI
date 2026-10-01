@@ -38,6 +38,14 @@ test('an empty draft added by the UI is not a conflicting edit after importing a
   const remote={...base,conversations:base.conversations.map(c=>({...c,title:'Renamed elsewhere'}))};
   assert.equal(mergeCloudData(base,projectCloudData(hydrated),remote).conversations[0].title,'Renamed elsewhere');
 });
+
+test('sync preserves an existing device workspace and runtime policy without exporting it',()=>{
+ const config={model:'chosen',toolsEnabled:true,enabledTools:['write_file'],approvalMode:'auto',runtime:{maxTokens:5000},client:{kind:'codex',butlerAutonomous:true}};
+ const workspace={id:'isolated',root:'C:/authorized',isolatedRoot:'C:/copies/task'};
+ const local={settings:{keyProfiles:[],defaultConfig:{}},conversations:[{id:'c',title:'Work',config,workspace,creationFingerprint:'stable',messages:[]}],projects:[],skills:[],tasks:[],observations:[]};
+ const projected=projectCloudData(local);assert.equal(projected.conversations[0].workspace,undefined);assert.equal(projected.conversations[0].config.client,undefined);
+ const hydrated=hydrateCloudData(projected,local,[]);assert.deepEqual(hydrated.conversations[0].workspace,workspace);assert.deepEqual(hydrated.conversations[0].config.client,config.client);assert.deepEqual(hydrated.conversations[0].config.runtime,config.runtime);
+});
 test('cloud projection excludes device capabilities and secrets; imported history cannot resume tools',()=>{
   const config={model:'test',toolsEnabled:true,enabledTools:['shell'],approvalMode:'all',client:{kind:'codex'},systemPrompt:'hello'};
   const local={settings:{theme:'dark',locale:'en',tools:{roots:['C:/private']},hooks:[{command:'bad'}],defaultConfig:config,keyProfiles:[{id:'k',name:'API',baseUrl:'https://api.example.test/v1',hasSecret:true,extraHeaders:{Authorization:'secret','x-custom':'okay'},createdAt:1}],activeKeyProfileId:'k'},

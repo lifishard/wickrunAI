@@ -158,12 +158,12 @@ export function hydrateCloudData(data:CloudData,local:CloudLocal,keyIds:string[]
   if(!settings.keyProfiles.some(p=>p.id===settings.activeKeyProfileId))settings.activeKeyProfileId=settings.keyProfiles[0]?.id??null;
   const conversations=data.conversations.map(row=>{
     const old=local.conversations.find(c=>c.id===row.id);
-    const config={...local.settings.defaultConfig,...take(row.config,CONFIG),toolsEnabled:old?.config.toolsEnabled??false,enabledTools:old?.config.enabledTools??[],approvalMode:old?.config.approvalMode??'ask'};
+    const config={...local.settings.defaultConfig,...old?.config,...take(row.config,CONFIG),toolsEnabled:old?.config.toolsEnabled??false,enabledTools:old?.config.enabledTools??[],approvalMode:old?.config.approvalMode??'ask'};
     const messages=(Array.isArray(row.messages)?row.messages:[]).map(m=>{
       const shared=take(m,MSG), previous=old?.messages.find(x=>x.id===shared.id);
       return previous && same(take(previous,MSG),shared) ? previous : {...shared,pending:false,cloudImported:true};
     });
-    return {...take(row,['id','title','titleManuallySet','titleGenerated','pinned','forkedFrom','projectId','keyProfileId','createdAt','updatedAt','draft']),config,messages};
+    return {...take(old,['workspace','workspaceError','creationFingerprint','coordinationGroupId','coordinationMessages','handoffSourceRunId']),...take(row,['id','title','titleManuallySet','titleGenerated','pinned','forkedFrom','projectId','keyProfileId','createdAt','updatedAt','draft']),config,messages};
   }) as Conversation[];
   return {settings,conversations,butler:accountId?butlerBrainFromRows(data.butler,accountId,local.butler):local.butler,
     projects:data.projects.map(p=>take(p,['id','name','emoji','instructions','docs','prompts','memory','memoryItems','defaultModel','defaultKeyProfileId','createdAt'])) as unknown as Project[],

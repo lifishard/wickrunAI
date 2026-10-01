@@ -90,8 +90,9 @@ import { MemoryCandidateCard } from './components/ProjectMemoryPanel';
 import { teamRuntime } from './lib/team-runtime';
 import { butlerRuntime } from './lib/butler-runtime';
 import { butlerClock } from './lib/butler-policy';
+import { butlerMemorySources } from './lib/butler-memory';
 import { butlerWorkConfig } from './lib/butler-work';
-import { projectButlerBrainForSync, type ButlerJob, type ButlerWorkCommand } from './lib/proactive-butler';
+import type { ButlerJob, ButlerWorkCommand } from './lib/proactive-butler';
 import { conversationQueue, nextQueuedIndex, type QueuedInput } from './lib/run-queue';
 import { teamNotifications } from './lib/team-notify';
 import { I18nProvider, LOCALES, setActiveLocale, translate, type Locale } from './lib/i18n';
@@ -1509,7 +1510,7 @@ export default function App() {
           return {profile:structuredClone(workerProfile),apiKey:workerKey || '',models:[...(settings.cachedModels[profileId] || []),...(settings.customModels[profileId] || [])]};
         },
         history,
-        sourceTexts:butlerRuntime.getSnapshot().brain.jobs?.some(job=>job.conversationId===convId)?[{id:'butler-brain',text:JSON.stringify(projectButlerBrainForSync(butlerRuntime.getSnapshot().brain))}]:undefined,
+        sourceTexts:butlerRuntime.getSnapshot().brain.jobs?.some(job=>job.conversationId===convId)?butlerMemorySources(butlerRuntime.getModelBrain()):undefined,
         autoRetry: settings.autoRetry ?? 2,
         profileName: profile.name,
         // 传函数而不是快照：中途拿到的授权要对后面的工具调用立刻生效
@@ -2618,7 +2619,7 @@ export default function App() {
         </React.Suspense>
       ) : null}
 
-      {butlerOpen&&<Modal title={t('今日管家')} onClose={()=>setButlerOpen(false)} wide><div className="modal-body butler-home"><React.Suspense fallback={<BrandLoading label={t('正在读取记录…')}/>}><ProactiveButlerPanel settings={settings} controller={butlerRuntime} onSettings={update=>setSettings(prev=>prev?update(prev):prev)} onOpenResult={result=>{if(result.kind==='conversation'&&conversations.some(c=>c.id===result.id)){setActiveId(result.id);setTeamVisible(false);setButlerOpen(false);}}}/></React.Suspense></div></Modal>}
+      {butlerOpen&&<Modal title={t('今日管家')} onClose={()=>setButlerOpen(false)} wide><div className="modal-body butler-home"><React.Suspense fallback={<BrandLoading label={t('正在读取记录…')}/>}><ProactiveButlerPanel settings={settings} controller={butlerRuntime} onSettings={update=>setSettings(prev=>prev?update(prev):prev)} onOpenResult={result=>{if(result.kind==='conversation'&&conversations.some(c=>c.id===result.id)){setActiveId(result.id);setTeamVisible(false);setButlerOpen(false);}else toast.show(t('执行记录尚未同步到本设备，可先查看管家的任务摘要；完成或暂停后会继续同步。'));}}/></React.Suspense></div></Modal>}
       {observationsOpen ? <React.Suspense fallback={<Modal title={t('任务记录与分析')} onClose={()=>setObservationsOpen(false)}><div className="modal-body">{t('正在读取记录…')}</div></Modal>}>
         <ObservationPanel onClose={()=>setObservationsOpen(false)}
           onOpenTask={(conversationId,answerId)=>{setActiveId(conversationId);setObservationsOpen(false);setTimeout(()=>document.getElementById(`msg-${answerId}`)?.scrollIntoView({block:'center'}),150);}}/>
