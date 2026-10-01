@@ -4,7 +4,8 @@ const fs=require('node:fs');
 const os=require('node:os');
 const path=require('node:path');
 const http=require('node:http');
-const {createButlerSources,domainAllowlist,publicUrl,redactExcerpt}=require('../electron/butler-sources.cjs');
+const vm=require('node:vm');
+const {createButlerSources,domainAllowlist,publicUrl,redactExcerpt,browserContentScript}=require('../electron/butler-sources.cjs');
 const {windowsScript,readForegroundText,desktopSourceStatus}=require('../electron/butler-desktop-source.cjs');
 
 const make=()=>{
@@ -118,4 +119,60 @@ test('old local records expire and retention is bounded to 500',async t=>{
   t.after(()=>collector.close());
   const retained=JSON.parse(fs.readFileSync(path.join(local,'events.json'),'utf8'));
   assert.equal(retained.length,500);assert.equal(retained[0].id,'50');
+});
+
+test('SPA capture waits for visible content changes and never resends unchanged text',()=>{
+  const sent=[],listeners={},nodes=[{textContent:'AI skills',parentElement:{closest:()=>null}}];
+  let callback,timer;
+  const root={},documentElement={};
+  const document={documentElement,title:'AI skills',visibilityState:'visible',querySelector:()=>root,
+    createTreeWalker:()=>({currentNode:null,index:0,nextNode(){if(this.index>=nodes.length)return false;this.currentNode=nodes[this.index++];return true;}}),
+    createRange:()=>({selectNodeContents(node){this.node=node;},getClientRects(){return this.node.rects??[{width:100,height:20,top:10,left:0,right:100,bottom:30}];}}),
+    addEventListener:(name,fn)=>{listeners[name]=fn;}};
+  const window={top:null,addEventListener:(name,fn)=>{listeners[name]=fn;}};window.top=window;
+  const context={window,document,location:{protocol:'https:',pathname:'/reels',href:'https://example.com/reels'},
+    NodeFilter:{SHOW_TEXT:4},innerHeight:800,innerWidth:1000,getComputedStyle:()=>({display:'block',visibility:'visible'}),
+    chrome:{runtime:{sendMessage:message=>sent.push(message)}},
+    MutationObserver:class{constructor(fn){callback=fn;}observe(target,opts){assert.equal(target,documentElement);assert.equal(opts.characterData,true);}},
+    clearTimeout:()=>{timer=undefined;},setTimeout:(fn,delay)=>{assert.equal(delay,5000);timer=fn;return 1;}};
+  vm.runInNewContext(browserContentScript(),context);
+  assert.equal(sent.length,0);timer();assert.equal(sent.length,1);
+  callback();timer();listeners.scroll();timer();assert.equal(sent.length,1);
+  nodes[0].textContent='AI skills new reel';callback();timer();assert.equal(sent.length,2);
+  nodes[0].rects=[{width:100,height:20,top:900,left:0,right:100,bottom:920}];callback();timer();assert.equal(sent.length,2);
+  document.visibilityState='hidden';nodes[0].textContent='AI skills hidden';listeners.visibilitychange();timer();assert.equal(sent.length,2);
+  document.visibilityState='visible';nodes[0].rects=[{width:100,height:20,top:10,left:0,right:100,bottom:30}];listeners.visibilitychange();timer();assert.equal(sent.length,3);
+});
+
+test('desktop unchanged content is stable across polls and pending records survive restart until ack',async t=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'wickrun-butler-ack-'));
+  const makeCollector=()=>createButlerSources({userData:dir,platform:'linux',env:{},desktopStatus:()=>({available:true,note:'test'}),
+    readDesktop:async()=>({processName:'editor.exe',title:'AI skills notes',text:'AI skills and investment strategy'})});
+  let collector=makeCollector();t.after(async()=>collector.close());
+  await collector.action('configure',{source:'desktop',allowlist:['editor.exe']});
+  await collector.action('consent',{source:'desktop',consented:true});
+  await collector.action('suspend',{suspended:false,sources:{desktop:true},mode:'redacted-context'});
+  const first=await collector.action('poll'),second=await collector.action('poll');
+  assert.deepEqual(second.recordIds,first.recordIds);
+  assert.deepEqual(second.signals.map(x=>x.id),first.signals.map(x=>x.id));
+  assert.equal(second.contexts[0].id,first.contexts[0].id);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(dir,'butler-local','events.json'),'utf8')).length,1);
+  await collector.close();collector=makeCollector();
+  await collector.action('suspend',{suspended:false,sources:{desktop:true},mode:'redacted-context'});
+  const resumed=await collector.action('poll');assert.deepEqual(resumed.recordIds,first.recordIds);
+  await collector.action('ack',{ids:resumed.recordIds});
+  const after=await collector.action('poll');assert.deepEqual(after.recordIds,[]);assert.deepEqual(after.signals,[]);
+});
+
+test('desktop accessibility failure is surfaced in source status',async t=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'wickrun-butler-error-'));
+  const collector=createButlerSources({userData:dir,platform:'darwin',env:{},desktopStatus:()=>({available:true,note:'AX permission required'}),
+    readDesktop:async()=>{throw Error('Not authorized to send Apple events');}});
+  t.after(()=>collector.close());
+  await collector.action('configure',{source:'desktop',allowlist:['Notes']});
+  await collector.action('consent',{source:'desktop',consented:true});
+  await collector.action('suspend',{suspended:false,sources:{desktop:true}});
+  const result=await collector.action('poll');
+  assert.match(result.sources.desktop.note,/Not authorized to send Apple events/);
+  assert.deepEqual(result.signals,[]);
 });
