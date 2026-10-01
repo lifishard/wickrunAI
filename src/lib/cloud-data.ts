@@ -36,7 +36,9 @@ export function mergeCloudData(base:CloudData,local:CloudData,remote:CloudData, 
   for(const name of cloudCollections){
     const maps=[base,local,remote].map(data=>new Map((data[name]??[]).map(row=>[row.id,row])));
     const ids=new Set(maps.flatMap(map=>[...map.keys()]));
-    const merge=name==='projects'?mergeProjectRow:(b:CloudRow|undefined,l:CloudRow|undefined,r:CloudRow|undefined,key:string)=>pick(b,l,r,key);
+    const merge=name==='projects'?mergeProjectRow:name==='butler'?(b:CloudRow|undefined,l:CloudRow|undefined,r:CloudRow|undefined,key:string)=>
+      key.startsWith('butler:job:')?mergeButlerJobRow(b,l,r,key,pick):pick(b,l,r,key)
+      :(b:CloudRow|undefined,l:CloudRow|undefined,r:CloudRow|undefined,key:string)=>pick(b,l,r,key);
     result[name]=[...ids].sort().map(id=>merge(maps[0].get(id),maps[1].get(id),maps[2].get(id),`${name}:${id}`,pick)).filter(Boolean) as CloudRow[];
   }
   for(const key of new Set([...Object.keys(base.preferences),...Object.keys(local.preferences),...Object.keys(remote.preferences)])){
@@ -45,6 +47,25 @@ export function mergeCloudData(base:CloudData,local:CloudData,remote:CloudData, 
   }
   if(conflicts.length)throw new CloudMergeConflict(conflicts);
   return result;
+}
+
+/** A phone's pause/message must survive a simultaneous host progress update. */
+function mergeButlerJobRow(b:CloudRow|undefined,l:CloudRow|undefined,r:CloudRow|undefined,key:string,pick:(b:unknown,l:unknown,r:unknown,key:string)=>unknown):CloudRow|undefined {
+  if(!l||!r)return pick(b,l,r,key) as CloudRow|undefined;
+  const merged:CloudRow={id:l.id};
+  for(const field of new Set([...Object.keys(b??{}),...Object.keys(l),...Object.keys(r)])){
+    if(field==='id'||field==='commands')continue;
+    const value=pick(b?.[field],l[field],r[field],`${key}:${field}`);
+    if(value!==undefined)merged[field]=value;
+  }
+  const commands=new Map<string,Record<string,unknown>>();
+  for(const row of [b,l,r])for(const value of Array.isArray(row?.commands)?row.commands:[]){
+    if(!value||typeof value!=='object'||typeof value.id!=='string'||!value.id)continue;
+    const prior=commands.get(value.id);
+    if(!prior||value.kind==='pause')commands.set(value.id,value);
+  }
+  if(commands.size)merged.commands=[...commands.values()].sort((a,b)=>Number(a.createdAt??0)-Number(b.createdAt??0)||String(a.id).localeCompare(String(b.id))).slice(-20);
+  return merged;
 }
 
 /**

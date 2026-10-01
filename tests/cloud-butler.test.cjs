@@ -63,6 +63,25 @@ test('independent Butler entities merge while a narrow pause write preserves oth
   assert.equal(merged.preferences['butler.paused'],true);
 });
 
+test('a remote pause command survives concurrent host status and summary changes',()=>{
+  const base={...emptyCloudData(),butler:[{id:'job:work-1',entityId:'work-1',kind:'job',accountId:'account-1',status:'running',summary:'Starting',updatedAt:1,commands:[]}]};
+  const host={...base,butler:[{...base.butler[0],status:'waiting',summary:'Needs review',updatedAt:3}]};
+  const phone={...base,butler:[{...base.butler[0],commands:[{id:'pause-1',kind:'pause',createdAt:2}],updatedAt:2}]};
+  for(const [local,remote] of [[host,phone],[phone,host]]){
+    const merged=mergeButlerSlices(base,local,remote).butler[0];
+    assert.equal(merged.status,'waiting');assert.equal(merged.summary,'Needs review');
+    assert.deepEqual(merged.commands,[{id:'pause-1',kind:'pause',createdAt:2}]);
+  }
+});
+
+test('concurrent commands on one Work job merge by stable id without duplicating earlier commands',()=>{
+  const old={id:'old',kind:'message',text:'Earlier',createdAt:1};
+  const base={...emptyCloudData(),butler:[{id:'job:work-1',entityId:'work-1',kind:'job',accountId:'account-1',status:'running',commands:[old]}]};
+  const host={...base,butler:[{...base.butler[0],commands:[old,{id:'host',kind:'message',text:'Host note',createdAt:2}]}]};
+  const phone={...base,butler:[{...base.butler[0],commands:[old,{id:'phone',kind:'pause',createdAt:3}]}]};
+  assert.deepEqual(mergeButlerSlices(base,host,phone).butler[0].commands.map(command=>command.id),['old','host','phone']);
+});
+
 test('route groups and the autonomous task cap sync without credentials or local rules',()=>{
  const input=local();input.settings.routeGroups=[{id:'group-one',name:'My routes',routes:[{profileId:'profile-one',model:'model-one',secret:'never-sync'}],createdAt:1,note:'private note',secret:'never-sync'}];input.settings.butler.proactive.maxWorkPerDay=2;
  const data=projectCloudData(input);assert.equal(data.preferences['butler.maxWorkPerDay'],2);assert.deepEqual(data.preferences.routeGroups,[{id:'group-one',name:'My routes',routes:[{profileId:'profile-one',model:'model-one'}],createdAt:1}]);assert.equal(JSON.stringify(data).includes('never-sync'),false);
