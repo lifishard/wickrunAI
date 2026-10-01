@@ -8,7 +8,7 @@ function fixture(t, overrides={}){
   const store=createRunStore(path.join(root,'runtime')),calls=[],opened=[];
   const record={id:'run-1',conversationId:'conversation-1',answerId:'answer-1',config:{toolsEnabled:false,client:{kind:'codex',model:'gpt-test',effort:'high'}},state:{working:[],status:'running'}};store.save(record);
   const deps={discoverClient:()=>path.join(root,'codex.exe'),createCodexClient:()=>({readAccount:async()=>({account:{type:'chatgpt'}}),listModels:async()=>({data:[{model:'gpt-test',displayName:'Test',supportedReasoningEfforts:[{reasoningEffort:'high'}]}]}),login:async()=>({authUrl:'https://chatgpt.com/auth/test'}),run:async options=>{calls.push(options);return {status:'completed',text:'saved output',threadId:'thread-1'};},close(){}}),...overrides};
-  const host=createConversationClients({userData:root,store,getSettings:()=>({tools:{workspaceRoots:[root]}}),openExternal:async url=>opened.push(url),deps});t.after(()=>host.close());return {root,store,record,calls,opened,host};
+  const host=createConversationClients({userData:root,store,getSettings:()=>({tools:{workspaceRoots:[root],reviewCodeChanges:overrides.reviewCodeChanges===true}}),openExternal:async url=>opened.push(url),deps});t.after(()=>host.close());return {root,store,record,calls,opened,host};
 }
 test('official models and login are discovered without any renderer credential',async t=>{
   const f=fixture(t);const result=await f.host.check('codex');assert.equal(result.status,'ready');assert.deepEqual(result.models[0].efforts,['high']);assert.equal((await f.host.connect('codex')).status,'ready');assert.equal(f.opened.length,0);
@@ -165,6 +165,18 @@ test('automatic ACP Work accepts only scoped edits without publishing approval c
   const result=await f.host.run({runId:'run-1',requestId:'acp-auto',prompt:'draft',cwd:f.root},event=>notifications.push(event));
   assert.deepEqual(decisions,['accept','decline','decline']);assert.equal(notifications.length,0);
   assert.equal(result.status,'permission_required');
+});
+
+test('automatic isolated ACP edits bypass prewrite review but retain postrun file history',async t=>{
+  const output='draft.md';
+  const f=fixture(t,{reviewCodeChanges:true,workspaceForRun:()=>f.root,createAcpClient:()=>({run:async options=>{
+    assert.equal(await options.onApproval({toolCall:{kind:'edit',locations:[{path:path.join(f.root,output)}]}}),'accept');
+    fs.writeFileSync(path.join(f.root,output),'Reviewable draft\n');
+    return {status:'completed',text:'done'};
+  },close(){}})});
+  f.record.config={toolsEnabled:true,client:{kind:'kimi',model:'default',butlerAutonomous:true}};f.store.save(f.record);
+  const result=await f.host.run({runId:'run-1',requestId:'review-auto',prompt:'draft',cwd:f.root});
+  assert.equal(result.status,'completed');assert.equal(result.codeChanges[0].kind,'added');
 });
 
 test('automatic Claude Work runs in tool-free draft mode and reports that no file was created',async t=>{
