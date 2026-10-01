@@ -139,9 +139,22 @@ public class WickrunContextPlugin extends Plugin {
     }
 
     @PluginMethod
-    public void drain(PluginCall call) {
+    public void poll(PluginCall call) {
         JSObject result = new JSObject();
-        result.put("items", WickrunContextStore.drain());
+        result.put("items", WickrunContextStore.poll());
         call.resolve(result);
+    }
+
+    @PluginMethod
+    public void ack(PluginCall call) {
+        JSArray input = call.getArray("ids");
+        if (input == null) { call.reject("Missing record ids."); return; }
+        Set<String> ids = new HashSet<>();
+        for (int i = 0; i < input.length(); i++) {
+            String id = input.optString(i, "");
+            if (!id.isEmpty()) ids.add(id);
+        }
+        WickrunContextStore.acknowledge(ids);
+        call.resolve(status());
     }
 }

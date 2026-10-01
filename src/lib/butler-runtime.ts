@@ -5,6 +5,7 @@ import { cloudBridge, cloudCall, type CloudStatus } from './cloud-api';
 import { desktop, getTransport } from './transport';
 import { uid } from './store';
 import { runButlerModel, type ButlerModelResult } from './butler-model';
+import { androidButlerCollector } from './butler-mobile';
 import { butlerClock, dueButlerBrief, parseButlerAnalysis } from './butler-policy';
 import { DEFAULT_BUTLER_PREFERENCES, BUTLER_SOURCES, emptyButlerBrain, projectButlerBrainForSync, projectButlerSignal, addGoalProposal, addButlerBrief,
   modelSafeSummary, reviewGoal, reviewSkillProposal, revokeButlerSource,
@@ -23,7 +24,7 @@ interface Services {
 }
 const services:Services={storage:getTransport,account:async()=>{const bridge=cloudBridge();return bridge?(await bridge.cloudState()).user?.id??'guest':(await cloudCall<CloudStatus>('status')).user?.id??'guest';},
   host:()=>Boolean(desktop()),now:Date.now,model:runButlerModel,
-  collector:async(action,input)=>{const bridge=desktop();if(!bridge?.butlerSources) return {sources:{}};return bridge.butlerSources(action,input);}};
+  collector:async(action,input)=>{const bridge=desktop();if(bridge?.butlerSources)return bridge.butlerSources(action,input);return androidButlerCollector(action,input);}};
 
 /** Only the selected desktop executes. Phones contribute evidence, queue work, and control it. */
 export class ButlerRuntime {

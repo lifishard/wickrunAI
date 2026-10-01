@@ -9,6 +9,7 @@ import java.util.ArrayDeque;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.UUID;
 
 /** Local, bounded inbox. Captured text is never written to disk or sent over a network here. */
 final class WickrunContextStore {
@@ -36,14 +37,18 @@ final class WickrunContextStore {
     }
     static void add(JSONObject item) {
         synchronized (inbox) {
+            try { item.put("id", UUID.randomUUID().toString()); } catch (Exception ignored) { return; }
             while (inbox.size() >= MAX_ITEMS) inbox.removeFirst();
             inbox.addLast(item);
         }
     }
-    static JSONArray drain() {
+    static JSONArray poll() {
         JSONArray result = new JSONArray();
-        synchronized (inbox) { while (!inbox.isEmpty()) result.put(inbox.removeFirst()); }
+        synchronized (inbox) { for (JSONObject item : inbox) result.put(item); }
         return result;
+    }
+    static void acknowledge(Set<String> ids) {
+        synchronized (inbox) { inbox.removeIf(item -> ids.contains(item.optString("id"))); }
     }
     static void acceptShare(Intent intent) {
         if (intent == null || !Intent.ACTION_SEND.equals(intent.getAction()) || !"text/plain".equals(intent.getType())) return;
