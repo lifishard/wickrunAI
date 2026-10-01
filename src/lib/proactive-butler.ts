@@ -129,6 +129,7 @@ export interface ButlerAudit {id:string;accountId:string;jobId?:string;at:number
 export interface ButlerRuntimeSnapshot {
   brain: ButlerBrainState;
   deviceId?: string;
+  canHost?: boolean;
   host: {status:'local'|'connected'|'offline'|'unavailable';deviceId?:string;deviceName?:string;lastSeenAt?:number};
   busy: boolean;
   error?: string;

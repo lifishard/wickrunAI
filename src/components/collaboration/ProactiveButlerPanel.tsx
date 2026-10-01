@@ -5,6 +5,7 @@ import { DEFAULT_BUTLER_PREFERENCES, emptyButlerBrain, type ButlerProactivePrefe
   type ButlerResultRef, type ButlerRuntimeAction, type ButlerRuntimeController, type ButlerRuntimeSnapshot,
   type ButlerSource } from '../../lib/proactive-butler';
 import type { AppSettings } from '../../types';
+import Icon from '../Icon';
 import './ProactiveButlerPanel.css';
 
 const SOURCE_LABEL:Record<ButlerSource,string>={wickrun:'wickrunAI 对话与任务',browser:'浏览器活动',desktop:'电脑应用活动',android:'Android 活动',integration:'已连接应用',share:'主动分享的链接'};
@@ -47,7 +48,7 @@ export default function ProactiveButlerPanel({settings,onSettings,controller,onO
   const act=async(action:ButlerRuntimeAction)=>{
     if(!controller)return;
     setWorking(true);setError('');
-    try{await controller.action(action);}catch(e){setError(String(e));}finally{setWorking(false);}
+    try{await controller.action(action);return true;}catch(e){setError(String(e));return false;}finally{setWorking(false);}
   };
   const save=(next:ButlerProactivePreferences)=>{
     onSettings?.(s=>({...s,butler:{...s.butler,proactive:next}}));
@@ -91,12 +92,12 @@ export default function ProactiveButlerPanel({settings,onSettings,controller,onO
     <header className="proactive-head"><div><h2>{t('今天，有什么值得帮你做？')}</h2><p>{t('发现需求，准备结果。由你决定判断是否准确、做法是否合适。')}</p></div>
       <span className={`proactive-state ${inactive?'off':'on'}`}>{!pref.enabled?t('已关闭'):pref.paused?t('已暂停'):t('已启用')}</span></header>
     <div className="proactive-quickbar">
-      <button className="btn" onClick={()=>setSetupOpen(value=>!value)}>{t(pref.enabled?'管家设置':'开始设置')}</button>
-      {pref.enabled&&<button className={`btn ${pref.paused?'':'danger'}`} onClick={()=>void act({kind:pref.paused?'resume':'pause'})}>{t(pref.paused?'恢复管家':'紧急暂停')}</button>}
+      <button className="btn" aria-expanded={setupOpen} onClick={()=>setSetupOpen(value=>!value)}><Icon name="settings"/>{t(pref.enabled?'管家设置':'开始设置')}</button>
+      {pref.enabled&&<button className={`btn ${pref.paused?'':'danger'}`} onClick={()=>void act({kind:pref.paused?'resume':'pause'})}><Icon name={pref.paused?'play':'pause'}/>{t(pref.paused?'恢复管家':'紧急暂停')}</button>}
       {pref.enabled&&<span className="proactive-host-chip">{snapshot.host.status==='local'?t('本机后台执行'):snapshot.host.status==='connected'?t('执行电脑在线'):t('等待执行电脑')}</span>}
     </div>
     {!pref.enabled&&<p className="proactive-empty">{t('先选大脑模型和执行电脑。启用后，管家会从需求中准备研究和简报；外部活动需另行同意。')}</p>}
-    <form className="proactive-need" onSubmit={event=>{event.preventDefault();if(need.trim())void act({kind:'add-need',text:need.trim()}).then(()=>setNeed(''));}}>
+    <form className="proactive-need" onSubmit={event=>{event.preventDefault();if(need.trim())void act({kind:'add-need',text:need.trim()}).then(ok=>{if(ok)setNeed('');});}}>
       <label htmlFor="butler-new-need">{t('补充一个需求')}</label><div><input id="butler-new-need" value={need} maxLength={2000} onChange={event=>setNeed(event.target.value)} placeholder={t('例如：每天帮我挑出适合工作的 AI skills')}/><button className="btn primary" disabled={working||!need.trim()||!controller}>{t('交给管家')}</button></div>
     </form>
     <details className="proactive-settings" open={setupOpen} onToggle={event=>setSetupOpen(event.currentTarget.open)}><summary>{t('模型、来源与每日安排')}</summary>
@@ -117,17 +118,18 @@ export default function ProactiveButlerPanel({settings,onSettings,controller,onO
             {cap?.available&&scoped&&<div className="proactive-scope"><label className="team-field"><span>{t(source==='browser'?'允许的域名（逗号分隔）':source==='desktop'?'允许的应用进程名（逗号分隔）':'允许的连接（逗号分隔）')}</span><input value={sourceScope[source]??cap.allowlist?.join(', ')??''} disabled={!canEdit||working} placeholder={source==='browser'?'example.com, docs.example.org':source==='desktop'?'chrome.exe, code.exe':''} onChange={e=>setSourceScope(s=>({...s,[source]:e.target.value}))}/></label><button className="btn sm ghost" disabled={!controller||working||!allowlist.length} onClick={()=>void act({kind:'configure-source',source,allowlist})}>{t('保存范围')}</button><small>{t('只采集列出的范围。关闭来源会撤销本机同意。')}</small></div>}
           </div>;
         })}
-        {snapshot.deviceId&&<button className="btn sm ghost" disabled={working||!controller} onClick={()=>void act({kind:'install-browser-extension'})}>{t('安装浏览器扩展')}</button>}
-        <p className="hint">{t('不读取私信、密码页、视频或声音；Instagram 收藏等平台接口可能不可用。Android 将通过主动分享入口接入，未提供时不可选择。')}</p>
+        {snapshot.canHost&&snapshot.sources.browser?.available&&<><button className="btn sm ghost" disabled={working||!controller} onClick={()=>void act({kind:'install-browser-extension'})}><Icon name="link"/>{t('安装浏览器扩展')}</button><p className="hint">{t('打开扩展文件夹后，在 Chrome 或 Edge 扩展管理中开启开发者模式，选择“加载已解压的扩展程序”，选中该文件夹。')}</p></>}
+        <p className="hint">{t('只理解授权范围内的可见文字；未实现视频、声音或屏幕录制识别。Android 需另行开启系统授权；仅使用已接通的来源。')}</p>
       </section>
       <section className="proactive-card"><h3>{t('执行电脑与模型')}</h3><p>{t('手机可查看与发起任务；定时工作由同一账号下选定的常开电脑运行。')}</p>
         <div className="proactive-host"><strong>{snapshot.host.deviceName||t('尚未选择执行电脑')}</strong><span>{t(snapshot.host.status==='local'?'当前设备':snapshot.host.status==='connected'?'已连接':snapshot.host.status==='offline'?'离线':'不可用')}{snapshot.host.lastSeenAt?` · ${new Date(snapshot.host.lastSeenAt).toLocaleString()}`:''}</span></div>
-        {snapshot.deviceId&&snapshot.host.deviceId!==snapshot.deviceId&&<button className="btn sm" disabled={working||!controller} onClick={()=>{change({hostDeviceId:snapshot.deviceId});void act({kind:'select-host',deviceId:snapshot.deviceId!});}}>{t('将本机设为执行电脑')}</button>}
+        {snapshot.canHost&&snapshot.deviceId&&snapshot.host.deviceId!==snapshot.deviceId&&<button className="btn sm" disabled={working||!controller} onClick={()=>void act({kind:'select-host',deviceId:snapshot.deviceId!})}><Icon name="monitor"/>{t('将本机设为执行电脑')}</button>}
+        {!!snapshot.brain.hosts?.length&&<label className="team-field"><span>{t('同账号的执行电脑')}</span><select value={pref.hostDeviceId??''} disabled={working||!controller} onChange={event=>void act({kind:'select-host',deviceId:event.target.value})}><option value="">{t('请选择')}</option>{snapshot.brain.hosts.map(host=><option key={host.id} value={host.id}>{host.name} · {new Date(host.lastSeenAt).toLocaleString()}</option>)}</select></label>}
         <label className="team-field"><span>{t('模型来源')}</span><select value={pref.backend.kind} disabled={!canEdit} onChange={e=>change({backend:e.target.value==='native'?{kind:'native',client:{kind:'codex',model:''}}:{kind:'route-group',routeGroupId:availableGroups[0]?.id??'',effort:'medium'}})}><option value="route-group">{t('API 路由组')}</option><option value="native">{t('本机订阅客户端')}</option></select></label>
         {pref.backend.kind==='route-group'?<><label className="team-field"><span>{t('路由组')}</span><select value={routeBackend.routeGroupId} disabled={!canEdit} onChange={e=>change({backend:{...routeBackend,routeGroupId:e.target.value}})}><option value="">{t('请选择')}</option>{availableGroups.map(g=><option key={g.id} value={g.id}>{g.name} · {g.routes.length}</option>)}</select></label><label className="team-field"><span>{t('思考强度')}</span><select value={routeBackend.effort} disabled={!canEdit} onChange={e=>change({backend:{...routeBackend,effort:e.target.value as typeof routeBackend.effort}})}>{['off','low','medium','high','xhigh','max'].map(x=><option key={x} value={x}>{x}</option>)}</select></label></>
           :<><label className="team-field"><span>{t('客户端')}</span><select value={nativeBackend.client.kind} disabled={!canEdit} onChange={e=>{const kind=e.target.value as ClientKind,first=snapshot.nativeClients?.find(c=>c.kind===kind)?.models[0];change({backend:{kind:'native',client:{kind,model:first?.id??'',effort:first?.defaultEffort}}});}}>{CLIENTS.map(kind=><option key={kind} value={kind}>{CLIENT_LABELS[kind]}</option>)}</select></label><label className="team-field"><span>{t('模型')}</span><input value={nativeBackend.client.model} disabled={!canEdit} list="butler-native-models" onChange={e=>change({backend:{kind:'native',client:{...nativeBackend.client,model:e.target.value}}})}/><datalist id="butler-native-models">{snapshot.nativeClients?.find(c=>c.kind===nativeBackend.client.kind)?.models.map(m=><option key={m.id} value={m.id}/>)}</datalist></label><label className="team-field"><span>{t('思考强度')}</span><input value={nativeBackend.client.effort??''} disabled={!canEdit} onChange={e=>change({backend:{kind:'native',client:{...nativeBackend.client,effort:e.target.value}}})}/></label><small>{snapshot.nativeClients?.find(c=>c.kind===nativeBackend.client.kind)?.message||t('连接状态尚未检查；请在模型接入设置确认登录。')}</small></>}
       </section>
-      <section className="proactive-card"><h3>{t('节奏与范围')}</h3><label className="team-field"><span>{t('每日最多 tokens')}</span><input type="number" min="1000" max="1000000" step="1000" value={pref.maxTokensPerDay} disabled={!canEdit} onChange={e=>change({maxTokensPerDay:Math.max(1000,Number(e.target.value)||1000)})}/></label>
+      <section className="proactive-card"><h3>{t('节奏与范围')}</h3><label className="team-field"><span>{t('每台设备每日预算（tokens）')}</span><input type="number" min="2000" max="500000" step="1000" value={pref.maxTokensPerDay} disabled={!canEdit} onChange={e=>change({maxTokensPerDay:Math.min(500000,Math.max(2000,Number(e.target.value)||2000))})}/></label><p className="hint">{t('采集设备可调用模型提取摘要，执行电脑负责持续研究。预算按设备估算；订阅客户端未返回用量时按预留量计算。')}</p>
         <label className="team-field"><span>{t('外部内容理解方式')}</span><select value={pref.externalUnderstanding} disabled={!canEdit} onChange={e=>change({externalUnderstanding:e.target.value as ButlerProactivePreferences['externalUnderstanding']})}><option value="redacted-context">{t('增强理解：脱敏片段交给选定模型')}</option><option value="local-topics">{t('仅本机主题提取')}</option></select></label>
         <label className="team-field"><span>{t('简报节奏')}</span><select value={pref.cadence} disabled={!canEdit} onChange={e=>change({cadence:e.target.value as 'daily'|'twice-daily'})}><option value="daily">{t('每天早晨')}</option><option value="twice-daily">{t('早晚各一次')}</option></select></label>
         <div className="proactive-times"><label className="team-field"><span>{t('早晨')}</span><input type="time" value={pref.morning} disabled={!canEdit} onChange={e=>change({morning:e.target.value})}/></label><label className="team-field"><span>{t('晚上')}</span><input type="time" value={pref.evening} disabled={!canEdit||pref.cadence==='daily'} onChange={e=>change({evening:e.target.value})}/></label></div>
@@ -174,15 +176,15 @@ export default function ProactiveButlerPanel({settings,onSettings,controller,onO
       {[...(snapshot.brain.audit??[])].reverse().slice(0,80).map(entry=><article key={entry.id} className="proactive-audit"><div><strong>{entry.title}</strong><span>{t(entry.status==='planned'?'计划 / 已发起':entry.status==='completed'?'已完成':entry.status==='blocked'?'待授权':'失败')}</span></div><p>{entry.detail}</p><small>{new Date(entry.at).toLocaleString()}{entry.model?' · '+entry.model:''}</small></article>)}
       {snapshot.brain.goals.filter(goal=>goal.status==='dismissed').map(goal=><p key={goal.id}>{t('已排除的需求：')}{goal.title}</p>)}
     </details>
-    {snapshot.sources.share?.available&&<form className="proactive-link" onSubmit={e=>{e.preventDefault();if(link.trim())void act({kind:'import-link',url:link.trim()}).then(()=>setLink(''));}}><label className="team-field"><span>{t('主动分享链接作为线索')}</span><input type="url" value={link} onChange={e=>setLink(e.target.value)} placeholder="https://"/></label><button className="btn sm" disabled={!link.trim()||working||inactive}>{t('加入线索')}</button></form>}
+    {snapshot.sources.share?.available&&<form className="proactive-link" onSubmit={e=>{e.preventDefault();if(link.trim())void act({kind:'import-link',url:link.trim()}).then(ok=>{if(ok)setLink('');});}}><label className="team-field"><span>{t('主动分享链接作为线索')}</span><input type="url" value={link} onChange={e=>setLink(e.target.value)} placeholder="https://"/></label><button className="btn sm" disabled={!link.trim()||working||inactive}><Icon name="link"/>{t('加入线索')}</button></form>}
   </section>;
 }
 
-function ButlerFeedbackControl({value,disabled,onSend}:{value?:{rating:'useful'|'not-useful'|'not-my-need';comment?:string};disabled:boolean;onSend:(rating:'useful'|'not-useful',comment?:string)=>Promise<void>}) {
+function ButlerFeedbackControl({value,disabled,onSend}:{value?:{rating:'useful'|'not-useful'|'not-my-need';comment?:string};disabled:boolean;onSend:(rating:'useful'|'not-useful',comment?:string)=>Promise<unknown>}) {
   const t=useT(),[comment,setComment]=React.useState(value?.comment??'');
   return <div className="proactive-feedback"><div className="proactive-primary-actions"><span>{t('这个结果合适吗？')}</span>
-    <button className="btn ghost" aria-pressed={value?.rating==='useful'} disabled={disabled} onClick={()=>void onSend('useful',comment)}>{t('喜欢')}</button>
-    <button className="btn ghost" aria-pressed={value?.rating==='not-useful'} disabled={disabled} onClick={()=>void onSend('not-useful',comment)}>{t('不喜欢')}</button></div>
+    <button className="btn ghost" aria-pressed={value?.rating==='useful'} disabled={disabled} onClick={()=>void onSend('useful',comment)}><Icon name="thumbsUp"/>{t('喜欢')}</button>
+    <button className="btn ghost" aria-pressed={value?.rating==='not-useful'} disabled={disabled} onClick={()=>void onSend('not-useful',comment)}><Icon name="thumbsDown"/>{t('不喜欢')}</button></div>
     <details><summary>{t('告诉管家怎么改')}</summary><label className="team-field"><span>{t('反馈原因（可选）')}</span><textarea rows={2} maxLength={1000} value={comment} onChange={event=>setComment(event.target.value)} placeholder={t('例如：主题对，但希望更具体，少一点基础介绍')}/></label>
       <button className="btn" disabled={disabled||!comment.trim()} onClick={()=>void onSend(value?.rating==='useful'?'useful':'not-useful',comment)}>{t('保存反馈')}</button></details>
     {value&&<small role="status">{t('反馈已记录，会影响后续判断和做法。')}</small>}

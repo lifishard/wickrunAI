@@ -89,6 +89,7 @@ import { addMemory, memoryCandidatesFrom, memoryItemsOf, mergeMemoryItems, type 
 import { MemoryCandidateCard } from './components/ProjectMemoryPanel';
 import { teamRuntime } from './lib/team-runtime';
 import { butlerRuntime } from './lib/butler-runtime';
+import { butlerClock } from './lib/butler-policy';
 import { conversationQueue, nextQueuedIndex, type QueuedInput } from './lib/run-queue';
 import { teamNotifications } from './lib/team-notify';
 import { I18nProvider, LOCALES, setActiveLocale, translate, type Locale } from './lib/i18n';
@@ -292,6 +293,7 @@ export default function App() {
     void desktop()?.notifyTask?.({kind,id,conversationId,title,body:body.slice(0,500),silent:settingsRef.current?.notifications?.sound===false}).catch(()=>{});
   }
   React.useEffect(()=>desktop()?.onTaskNotificationClick?.(event=>{
+    if(event.conversationId==='butler:today'){setButlerOpen(true);return;}
     // 协作空间的通知带的是 team:<projectId>，点开回到那个项目而不是某个会话
     if(event.conversationId.startsWith('meeting:')){
       const address=event.conversationId.slice(8),cut=address.lastIndexOf(':');
@@ -403,6 +405,24 @@ export default function App() {
 
   const quitSnapshot=React.useRef({settings,conversations,projects,skills,tasks,bootReady});quitSnapshot.current={settings,conversations,projects,skills,tasks,bootReady};
   React.useEffect(()=>{
+    if(!bootReady)return;
+    let alive=true,seeded=false;const seen=new Set<string>();
+    const update=()=>{
+      const snapshot=butlerRuntime.getSnapshot(),prefs=settingsRef.current?.butler?.proactive;
+      if(!snapshot.deviceId||!prefs?.enabled||prefs.paused)return;
+      if(!seeded){
+        seeded=true;for(const brief of snapshot.brain.briefs)seen.add(brief.id);
+        const day=butlerClock(Date.now(),prefs.timezone).day,key='wickrun:butler:welcome:'+snapshot.brain.accountId;
+        void getTransport().kvGet(key).then(async old=>{if(!alive||old===day)return;await getTransport().kvSet(key,day);if(alive)setButlerOpen(true);}).catch(reportSaveError);
+        return;
+      }
+      for(const brief of snapshot.brain.briefs)if(!seen.has(brief.id)){
+        seen.add(brief.id);notifyTask('completed','butler:'+brief.id,'butler:today',t('管家已准备好新的结果'),brief.items.map(item=>item.title).slice(0,3).join(' · '));
+      }
+    };
+    update();const unsubscribe=butlerRuntime.subscribe(update);return()=>{alive=false;unsubscribe();};
+  },[bootReady,settings?.butler?.proactive?.enabled]);
+  React.useEffect(()=>{
     if(!settings||!bootReady)return;
     butlerRuntime.configure({settings:()=>settingsRef.current!,conversations:()=>quitSnapshot.current.conversations,skills:()=>quitSnapshot.current.skills,
       onSettings:value=>{settingsRef.current=value;setSettings(value);},onSkills:setSkills});
@@ -416,7 +436,7 @@ export default function App() {
     return()=>{clearInterval(timer);window.removeEventListener('wickrun:butler-reload',reload);butlerRuntime.stop();};
   },[bootReady]);
   React.useEffect(()=>desktop()?.onPrepareQuit?.(async()=>{
-    butlerRuntime.stop();
+    await butlerRuntime.flush();
     flushSync(()=>window.dispatchEvent(new Event('wickrun:flush-draft')));
     const latest=quitSnapshot.current;if(!latest.settings||!latest.bootReady)return;
     await Promise.all([saveSettings(latest.settings),saveConversationsNow(latest.conversations),saveProjects(latest.projects),saveSkills(latest.skills),saveTasks(latest.tasks)]);

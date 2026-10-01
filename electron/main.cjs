@@ -336,10 +336,11 @@ async function handleGetJson(_evt, { url, headers, timeoutMs }) {
  * ------------------------------------------------------------------ */
 
 function registerIpc() {
-  butlerSources=require('./butler-sources.cjs').createButlerSources({userData:app.getPath('userData'),openPath:target=>shell.openPath(target)});
   ipcMain.handle('snc:butlerSources',(event,{action,input}={})=>{
     if(!mainWindow||event.sender!==mainWindow.webContents||event.senderFrame!==mainWindow.webContents.mainFrame)throw Error('Untrusted Butler source request');
-    dataAvailable();return butlerSources.action(action,input);
+    dataAvailable();
+    butlerSources??=require('./butler-sources.cjs').createButlerSources({userData:app.getPath('userData'),openPath:target=>shell.openPath(target)});
+    return butlerSources.action(action,input);
   });
   ipcMain.handle('snc:cloudState', () => cloudAccount.state());
   ipcMain.handle('snc:cloudLogin', () => cloudAccount.login());

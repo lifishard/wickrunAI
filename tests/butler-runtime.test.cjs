@@ -7,9 +7,9 @@ let serial=0;
 const uid=p=>`${p||'id'}-${++serial}`;
 const hash=s=>require('node:crypto').createHash('sha256').update(s).digest('hex').slice(0,16);
 function setup(options={}) {
-  const db=new Map(),calls=[];let now=Date.UTC(2026,8,30,7);
+  const db=new Map(),calls=[];let now=Date.UTC(2026,8,30,7),account=options.account??'account-one';
   db.set('wickrun:butler:device:v1',JSON.stringify({deviceId:'device-one',consent:{},day:'',spent:0,analyzed:'',done:[],contextSeen:[]}));
-  const noopStorage={kvGet:async k=>db.get(k)||null,kvSet:async(k,v)=>db.set(k,v)};
+  const noopStorage={kvGet:async k=>db.get(k)||null,kvSet:async(k,v)=>{await options.beforeWrite?.(k,v);db.set(k,v);}};
   const load=loader({'./store':{uid},'./skills':{bodyHash:hash,slugify:s=>s},'./transport':{desktop:()=>null,getTransport:()=>noopStorage},
     './cloud-api':{cloudCall:async()=>({user:null}),cloudBridge:()=>null},'./butler-model':{runButlerModel:async()=>{throw Error('unexpected default model');}}});
   const domain=load(path.join(base,'proactive-butler.ts'));
@@ -18,10 +18,10 @@ function setup(options={}) {
   const model=options.model??(async(_settings,_prefs,prompt)=>{calls.push(JSON.parse(prompt));const evidence=calls.at(-1).signals?.[0]?.id;
     return {text:JSON.stringify({goals:[{title:'Find practical AI skills',hypothesis:'May want a daily shortlist',evidenceIds:[evidence],confidence:'high'}],skills:[]}),tokens:800,sources:[],steps:[],route:'Fixture · brain'};});
   const {ButlerRuntime}=load(path.join(base,'butler-runtime.ts'));
-  const runtime=new ButlerRuntime({storage:()=>noopStorage,account:async()=>options.account??'account-one',host:()=>options.host!==false,now:()=>now,model,
-    collector:async()=>({sources:{}})});
+  const runtime=new ButlerRuntime({storage:()=>noopStorage,account:async()=>account,host:()=>options.host!==false,now:()=>now,model,
+    collector:options.collector??(async()=>({sources:{}}))});
   runtime.configure({settings:()=>settings,conversations:()=>conversations,skills:()=>skills,onSettings:s=>{settings=s;},onSkills:s=>{skills=s;}});
-  return {runtime,db,calls,domain,settings:()=>settings,advance:ms=>{now+=ms;},load,conversations};
+  return {runtime,db,calls,domain,settings:()=>settings,setAccount:id=>{account=id;},advance:ms=>{now+=ms;},load,conversations};
 }
 async function settle(runtime){for(let i=0;i<80;i++){await new Promise(r=>setImmediate(r));if(!runtime.getSnapshot().busy)return;}throw Error('runtime did not settle');}
 
@@ -82,4 +82,37 @@ test('private Butler content never enters diagnostic exchanges',()=>{
   const {beginExchange,exchangeOf,recordRaw}=loader()(path.join(base,'wiretap.ts'));
   beginExchange({requestId:'private-butler',url:'https://model.test',body:{messages:'private page content'},stream:true,privateInput:true});
   recordRaw('private response','private-butler');assert.equal(exchangeOf('private-butler'),null);
+});
+
+test('pause during reservation save prevents dispatch before the model starts',async()=>{
+  let release,entered;const reserved=new Promise(r=>{entered=r;});
+  const f=setup({beforeWrite:async(k,v)=>{if(k.endsWith('device:v1')&&JSON.parse(v).spent>0&&!release){entered();await new Promise(r=>{release=r;});}}});
+  const ticking=f.runtime.tick();await reserved;
+  const pausing=f.runtime.action({kind:'pause'});await new Promise(r=>setImmediate(r));release();
+  await Promise.all([ticking,pausing]);await settle(f.runtime);
+  assert.equal(f.calls.length,0);assert.equal(f.settings().butler.proactive.paused,true);
+});
+
+test('account reload discards the previous brain and writes only the new account',async()=>{
+  const f=setup({prefs:{enabled:false}});await f.runtime.load();
+  f.setAccount('account-two');const next=f.domain.emptyButlerBrain('account-two');
+  f.db.set('wickrun:butler:brain:v1',JSON.stringify(next));await f.runtime.reload();
+  assert.equal(f.runtime.getSnapshot().brain.accountId,'account-two');
+  assert.equal(JSON.parse(f.db.get('wickrun:butler:brain:v1')).accountId,'account-two');
+});
+
+test('imported links are persisted before collector acknowledgement without a draining second poll',async()=>{
+  const trace=[];const f=setup({host:false,prefs:{sources:{share:true},externalUnderstanding:'local-topics'},collector:async(action)=>{
+    trace.push(action);if(action==='ack')assert.ok(JSON.parse(f.db.get('wickrun:butler:brain:v1')).signals.some(s=>s.id==='shared:topic'));
+    return {sources:{share:{available:true,consented:true}},...(action==='import-link'?{recordIds:['shared'],signals:[{id:'shared:topic',source:'share',topic:'Useful skills',intent:'Explore',summary:'Looking for skills',observedAt:1,confidence:'low',basis:'behavior'}]}:{})};
+  }});
+  await f.runtime.load();await f.runtime.action({kind:'set-device-consent',source:'share',consented:true});
+  await f.runtime.action({kind:'import-link',url:'https://example.org/skills'});
+  assert.ok(f.runtime.getSnapshot().brain.signals.some(s=>s.id==='shared:topic'));assert.ok(trace.includes('ack'));
+});
+
+test('a phone cannot select itself as executor or mutate the selected computer',async()=>{
+  const f=setup({host:false,prefs:{hostDeviceId:'desktop-other'}});await f.runtime.load();
+  await assert.rejects(f.runtime.action({kind:'select-host',deviceId:'device-one'}),/常开电脑/);
+  assert.equal(f.settings().butler.proactive.hostDeviceId,'desktop-other');assert.equal(f.runtime.getSnapshot().canHost,false);
 });
