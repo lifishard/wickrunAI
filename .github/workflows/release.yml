@@ -139,9 +139,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          apksigner=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -1)
-          aapt=$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -1)
+          # Match the stable tools used to verify the locally signed candidate.
+          # Do not let new runner SDKs silently change the verifier output format.
+          tools="$ANDROID_HOME/build-tools/35.0.0"
+          apksigner="$tools/apksigner"
+          aapt="$tools/aapt"
+          test -x "$apksigner"
+          test -x "$aapt"
           version=$(node -p 'require("./package.json").version')
+          "$apksigner" verify --verbose --print-certs "signed-android/wickrunAI-${version}-android-preview.apk"
           node scripts/verify-android-release.mjs android-source release "$apksigner" "$aapt" "signed-android/wickrunAI-${version}-android-preview.apk"
       - uses: actions/upload-artifact@v6
         with:
