@@ -70,6 +70,10 @@
 .proactive-audit>div{display:flex;gap:8px;justify-content:space-between}
 .proactive-audit span,.proactive-audit small{font-size:11px;color:var(--fg-dim)}
 .proactive-audit p{margin:5px 0;line-height:1.6;overflow-wrap:anywhere}
+.proactive-app-rule{display:flex;align-items:center;gap:8px;padding:6px 0;min-width:0}
+.proactive-app-rule>span{flex:1;min-width:0;overflow-wrap:anywhere}
+.proactive-app-rule small{display:block;font-size:11px;color:var(--fg-dim)}
+.proactive-app-rule select{max-width:48%;flex-shrink:0}
 .butler-home .proactive-butler{margin:0}
 @media(max-width:1050px){.proactive-grid{grid-template-columns:1fr 1fr}}
 @media(max-width:700px){

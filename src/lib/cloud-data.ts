@@ -4,6 +4,7 @@ import type { Skill } from './skills';
 import type { ScheduledTask } from './schedule';
 import { memoryItemsOf, mergeMemoryItems3, renderMemoryText, type ProjectMemoryItem } from './memory-core';
 import { emptyButlerBrain, projectButlerBrainForSync, type ButlerBrainState, type ButlerProactivePreferences } from './proactive-butler';
+import { sanitizeRouteGroups } from './route-groups';
 
 export type CloudRow = Record<string, unknown> & { id: string };
 export type CloudCollection = 'conversations'|'projects'|'skills'|'tasks'|'observations'|'profiles'|'archives'|'butler';
@@ -75,8 +76,8 @@ const take=(value:unknown,keys:string[]):Record<string,unknown>=>{
   const record=value&&typeof value==='object'?value as Record<string,unknown>:{};
   return Object.fromEntries(keys.filter(k=>record[k]!==undefined).map(k=>[k,record[k]]));
 };
-const PREFS=['theme','locale','uiDensity','sendKey','fontScale','showReasoningByDefault','requestTimeoutMs'];
-const BUTLER_PREFS=['enabled','paused','sources','backend','maxTokensPerDay','cadence','morning','evening','timezone','hostDeviceId','allowResearch','allowRoutineExecution','externalUnderstanding'];
+const PREFS=['theme','locale','uiDensity','sendKey','fontScale','showReasoningByDefault','requestTimeoutMs','routeGroups'];
+const BUTLER_PREFS=['enabled','paused','sources','backend','maxTokensPerDay','cadence','morning','evening','timezone','hostDeviceId','allowResearch','allowRoutineExecution','maxWorkPerDay','externalUnderstanding'];
 export function butlerCloudSlice(data:CloudData):CloudData {
   const slice=emptyCloudData();
   slice.butler=data.butler??[];
@@ -130,6 +131,7 @@ export function butlerBrainFromRows(rows:CloudRow[]|undefined,accountId:string,l
 export function projectCloudData(local:CloudLocal):CloudData {
   const result=emptyCloudData();
   result.preferences=take(local.settings,PREFS);
+  if(local.settings.routeGroups)result.preferences.routeGroups=sanitizeRouteGroups(local.settings.routeGroups).map(({id,name,routes,createdAt})=>({id,name,routes,createdAt}));
   const proactive=local.settings.butler?.proactive;
   if(proactive){
     for(const [key,value] of Object.entries(take(proactive,BUTLER_PREFS)))result.preferences[`butler.${key}`]=value;
@@ -149,6 +151,7 @@ export function projectCloudData(local:CloudLocal):CloudData {
 export function hydrateCloudData(data:CloudData,local:CloudLocal,keyIds:string[],accountId=local.butler?.accountId):CloudLocal {
   const ids=new Set(keyIds);
   const settings={...local.settings,...take(data.preferences,PREFS)} as AppSettings;
+  settings.routeGroups=sanitizeRouteGroups(data.preferences.routeGroups??local.settings.routeGroups);
   const proactive=butlerPreferencesFromCloud(data.preferences,local.settings.butler?.proactive);
   if(proactive)settings.butler={...local.settings.butler,proactive};
   settings.keyProfiles=data.profiles.map(p=>({...take(p,['id','name','baseUrl','createdAt','routeProfiles','quotaGroup']),extraHeaders:take(p,['extraHeaders']).extraHeaders??{},hasSecret:ids.has(p.id)})) as AppSettings['keyProfiles'];

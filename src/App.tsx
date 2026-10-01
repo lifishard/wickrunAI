@@ -91,7 +91,7 @@ import { teamRuntime } from './lib/team-runtime';
 import { butlerRuntime } from './lib/butler-runtime';
 import { butlerClock } from './lib/butler-policy';
 import { butlerWorkConfig } from './lib/butler-work';
-import type { ButlerJob, ButlerWorkCommand } from './lib/proactive-butler';
+import { projectButlerBrainForSync, type ButlerJob, type ButlerWorkCommand } from './lib/proactive-butler';
 import { conversationQueue, nextQueuedIndex, type QueuedInput } from './lib/run-queue';
 import { teamNotifications } from './lib/team-notify';
 import { I18nProvider, LOCALES, setActiveLocale, translate, type Locale } from './lib/i18n';
@@ -914,7 +914,8 @@ export default function App() {
     const id=JSON.parse(result.content).id as string;
     const existing=conversationsRef.current.find(c=>c.id===id);if(!existing)throw Error('Work 会话未保存。');
     if(existing.messages.length||queueRef.current.some(q=>q.conversationId===id))return id;
-    const selected=butlerWorkConfig(current,current.butler.proactive);
+    if(job.automatic&&!existing.workspace)throw Error('主动执行需要独立工作区；请先在桌面设置可复制的工作目录。');
+    const selected=butlerWorkConfig(current,current.butler.proactive,{autonomous:job.automatic===true});
     flushSync(()=>setConversations(all=>all.map(c=>c.id===id?{...c,...selected}:c)));
     await saveConversationsNow(conversationsRef.current);
     if(!settingsRef.current?.butler?.proactive?.enabled||settingsRef.current.butler.proactive.paused)throw Error('管家已暂停，Work 草稿已保存。');
@@ -1481,6 +1482,8 @@ export default function App() {
         }).catch(error=>{startingRef.current.delete(convId);reportSaveError(error);});
         return true;
       };
+      const autonomousButler=butlerRuntime.getSnapshot().brain.jobs?.some(job=>job.conversationId===convId&&job.automatic)===true;
+      if(autonomousButler&&!conv.workspace)throw Error('主动管家任务缺少独立工作区，已阻止执行。');
       const handle = runConnectedAgent({
         requestId,
         createConversation: (input,key) => createRequestedConversation(input,key,convId),
@@ -1498,10 +1501,11 @@ export default function App() {
           return {profile:structuredClone(workerProfile),apiKey:workerKey || '',models:[...(settings.cachedModels[profileId] || []),...(settings.customModels[profileId] || [])]};
         },
         history,
+        sourceTexts:butlerRuntime.getSnapshot().brain.jobs?.some(job=>job.conversationId===convId)?[{id:'butler-brain',text:JSON.stringify(projectButlerBrainForSync(butlerRuntime.getSnapshot().brain))}]:undefined,
         autoRetry: settings.autoRetry ?? 2,
         profileName: profile.name,
         // 传函数而不是快照：中途拿到的授权要对后面的工具调用立刻生效
-        toolCtx: () => conv.workspace ? {...toolContextOf(settings,conv.projectId??null),conversationId:conv.id,workspaceRoots:[conv.workspace.isolatedRoot],grants:{extraRoots:[],admin:false,screen:false}} : toolContextOf(settings, conv.projectId ?? null, grantsRef.current),
+        toolCtx: () => conv.workspace ? {...toolContextOf(settings,conv.projectId??null),...(autonomousButler?{reviewCodeChanges:false,postReviewCodeChanges:true}:{}),conversationId:conv.id,workspaceRoots:[conv.workspace.isolatedRoot],grants:{extraRoots:[],admin:false,screen:false}} : toolContextOf(settings, conv.projectId ?? null, grantsRef.current),
         effortMappings: settings.effortMappings,
         resume: resumeFrom,
         compactBeforeRun,

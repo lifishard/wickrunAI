@@ -1,4 +1,4 @@
-import type { AppSettings, Conversation } from '../types';
+import type { AppSettings, Conversation, RunState } from '../types';
 import type { Skill } from './skills';
 import { bodyHash, slugify } from './skills';
 import { cloudBridge, cloudCall, type CloudStatus } from './cloud-api';
@@ -8,19 +8,21 @@ import { runButlerModel, type ButlerModelResult } from './butler-model';
 import { butlerClock, dueButlerBrief, parseButlerAnalysis } from './butler-policy';
 import { butlerMemoryView, repeatsDeniedGoal, retainButlerSignals } from './butler-memory';
 import { butlerWorkPrompt } from './butler-work';
+import { butlerPrivateText } from './butler-privacy';
 import { DEFAULT_BUTLER_PREFERENCES, BUTLER_SOURCES, emptyButlerBrain, projectButlerBrainForSync, projectButlerSignal, addGoalProposal, addButlerBrief,
   modelSafeSummary, reviewGoal, reviewSkillProposal, revokeButlerSource,
   type ButlerBrainState, type ButlerProactivePreferences, type ButlerRuntimeSnapshot, type ButlerRuntimeAction, type ButlerSignal, type ButlerJob, type ButlerSource, type ButlerAudit, type ButlerBriefItem, type ButlerWorkCommand } from './proactive-butler';
 
 export const BUTLER_BRAIN_KEY='wickrun:butler:brain:v1';
 const LOCAL_KEY='wickrun:butler:device:v1';
+const CHECKPOINT_KEY='wickrun:butler:checkpoints:v1';
 interface Config { settings:()=>AppSettings; conversations:()=>Conversation[]; skills:()=>Skill[]; onSettings:(value:AppSettings)=>void; onSkills:(value:Skill[])=>void;
   startWork?:(job:ButlerJob,prompt:string)=>Promise<string>;
   controlWork?:(conversationId:string,command:ButlerWorkCommand)=>Promise<void>;
   workState?:(conversationId:string)=>{status:ButlerJob['status'];summary?:string;error?:string};
 }
 interface LocalState {deviceId:string;consent:Partial<Record<ButlerSource,boolean>>;day:string;spent:number;analyzed:string;done:string[];contextSeen:string[];commandsDone?:string[]}
-export interface ButlerCollectorState {sources:ButlerRuntimeSnapshot['sources'];recordIds?:string[];signals?:Omit<ButlerSignal,'accountId'|'modelSafe'>[];contexts?:{id:string;source:ButlerSource;sourceLabel:string;observedAt:number;text:string}[];deviceName?:string}
+export interface ButlerCollectorState {sources:ButlerRuntimeSnapshot['sources'];privacy?:ButlerRuntimeSnapshot['privacy'];background?:ButlerRuntimeSnapshot['background'];recordIds?:string[];signals?:Omit<ButlerSignal,'accountId'|'modelSafe'>[];contexts?:{id:string;source:ButlerSource;sourceLabel:string;observedAt:number;text:string}[];deviceName?:string}
 interface Services {
   storage:()=>{kvGet:(key:string)=>Promise<string|null>;kvSet:(key:string,value:string)=>Promise<void>};
   account:()=>Promise<string>;host:()=>boolean;now:()=>number;
@@ -40,6 +42,8 @@ export class ButlerRuntime {
   private loaded=false;private loading?:Promise<void>;private control?:AbortController;private ticking=false;private nextAttempt=0;private lastHeartbeat=0;
   private saveChain=Promise.resolve();private discardWrites=false;private nextCaptureAttempt=0;private syncingWork=false;
   private captureControl?:AbortController;private runningTask?:Promise<void>;private activeJobId?:string;private stopped=false;private tickTask?:Promise<void>;
+  private checkpoints:Record<string,{fingerprint:string;state:RunState;at:number}>={};
+  private checkpointEpoch=0;
   constructor(private io:Services=services) {}
   configure(config:Config) {
     this.config=config;
@@ -62,7 +66,8 @@ export class ButlerRuntime {
   private async save() {
     if(this.discardWrites)return;
     const brain=JSON.stringify(this.snapshot.brain),local=JSON.stringify(this.local),storage=this.io.storage();
-    this.saveChain=this.saveChain.catch(()=>{}).then(async()=>{if(this.discardWrites)return;await storage.kvSet(BUTLER_BRAIN_KEY,brain);await storage.kvSet(LOCAL_KEY,local);});
+    const checkpoints=JSON.stringify({accountId:this.snapshot.brain.accountId,sessions:this.checkpoints});
+    this.saveChain=this.saveChain.catch(()=>{}).then(async()=>{if(this.discardWrites)return;await storage.kvSet(BUTLER_BRAIN_KEY,brain);await storage.kvSet(LOCAL_KEY,local);await storage.kvSet(CHECKPOINT_KEY,checkpoints);});
     await this.saveChain;
     if(typeof window!=='undefined')window.dispatchEvent(new Event('wickrun:butler-change'));
     this.emit();
@@ -75,6 +80,13 @@ export class ButlerRuntime {
       let brain=emptyButlerBrain(account);
       try {const raw=JSON.parse(await storage.kvGet(BUTLER_BRAIN_KEY)??'null');if(raw?.schema===1&&raw.accountId===account)brain=projectButlerBrainForSync(raw);}catch{/* Ignore damaged Butler data; ordinary conversations remain intact. */}
       try {const raw=JSON.parse(await storage.kvGet(LOCAL_KEY)??'null');if(raw&&typeof raw.deviceId==='string')this.local={...this.local,...raw};}catch{/* Start with no external grants. */}
+      this.checkpoints={};
+      try {const raw=JSON.parse(await storage.kvGet(CHECKPOINT_KEY)??'null');if(raw?.accountId===account&&raw.sessions){
+        for(const [id,value] of Object.entries(raw.sessions).slice(-8)){
+          const entry=value as {fingerprint:string;state:RunState;at:number};
+          if(typeof entry?.fingerprint==='string'&&entry.state?.version===2&&Array.isArray(entry.state.working)&&brain.jobs?.some(j=>j.id===id&&j.status!=='completed'))this.checkpoints[id]=entry;
+        }
+      }}catch{/* Invalid device-local sessions start fresh. */}
       this.local.deviceId ||= uid('device');
       this.emit({brain,deviceId:this.local.deviceId,canHost:this.io.host()});
       this.loaded=true;
@@ -90,6 +102,7 @@ export class ButlerRuntime {
       this.discardWrites=true;
       await this.flush();
       this.local={deviceId:'',consent:{},day:'',spent:0,analyzed:'',done:[],contextSeen:[]};
+      this.checkpoints={};
       this.loaded=false;this.nextAttempt=0;this.lastHeartbeat=0;
       this.emit({brain:emptyButlerBrain(account),busy:false,error:undefined,sources:{}});
       this.stopped=false;this.discardWrites=false;await this.load();return;
@@ -113,7 +126,7 @@ export class ButlerRuntime {
   private async refreshSources() {
     const prefs=this.prefs();
     const result=await this.io.collector('status').catch(()=>({sources:{}} as ButlerCollectorState));
-    this.emit({sources:Object.fromEntries(BUTLER_SOURCES.map(source=>[source,source==='wickrun'?{available:true,consented:true}:
+    this.emit({privacy:result.privacy,background:result.background,sources:Object.fromEntries(BUTLER_SOURCES.map(source=>[source,source==='wickrun'?{available:true,consented:true}:
       {...result.sources[source],available:result.sources[source]?.available??source==='share',consented:this.local.consent[source]===true&&result.sources[source]?.consented!==false}]))});
     if(!prefs.enabled||prefs.paused)await this.io.collector('suspend',{suspended:true}).catch(()=>{});
     this.refreshHost();
@@ -125,7 +138,8 @@ export class ButlerRuntime {
     for(const conv of this.config.conversations().slice().sort((a,b)=>b.updatedAt-a.updatedAt).slice(0,30)) {
       for(const message of conv.messages.filter(m=>m.role==='user'&&!m.contextKind).slice(-8)) {
         const id='wickrun:'+bodyHash(`${conv.id}:${message.id}`);if(known.has(id))continue;
-        const summary=modelSafeSummary(message.content,240);
+        const allowed=butlerPrivateText(message.content,this.snapshot.privacy);if(!allowed)continue;
+        const summary=modelSafeSummary(allowed,240);
         if(!summary||summary.includes('[REDACTED]'))continue;
         const signal=projectButlerSignal({id,accountId:brain.accountId,source:'wickrun',sourceLabel:'wickrunAI 对话',sourceRef:conv.id,
           topic:modelSafeSummary(conv.title,80)||'用户提问',intent:'用户主动提出的需求',summary,observedAt:message.createdAt,confidence:'high',basis:'user-stated'},this.prefs().sources,this.local.consent);
@@ -138,6 +152,7 @@ export class ButlerRuntime {
     const prefs=this.prefs();
     await this.io.collector('suspend',{suspended:!prefs.enabled||prefs.paused,sources:prefs.sources,mode:prefs.externalUnderstanding});
     const result=supplied??await this.io.collector('poll');
+    if(result.privacy||result.background)this.emit({privacy:result.privacy??this.snapshot.privacy,background:result.background??this.snapshot.background});
     this.checkActive();
     let collected=result.signals??[];
     const contexts=(result.contexts??[]).filter(c=>prefs.sources[c.source]&&this.local.consent[c.source]&&!this.local.contextSeen.includes(c.id)).slice(0,6);
@@ -189,7 +204,24 @@ export class ButlerRuntime {
     this.local.spent+=reserved;await this.save();
     this.checkActive(control);
     this.audit('model',research?'开始公开资料研究':'开始需求理解',research?'只允许公开搜索和读取网页，禁止交易、发消息、谈判或修改本机文件。':'将经授权的有限资料交给所选大脑分析；内容理解请求不写入应用请求诊断记录。','planned');
-    const result=await this.io.model(this.config!.settings(),prefs,prompt,research,reserved,control.signal,s=>this.emit({error:s||undefined}));
+    const jobId=this.activeJobId,fingerprint=bodyHash(prompt),accountId=this.snapshot.brain.accountId,epoch=this.checkpointEpoch;
+    const result=await this.io.model(this.config!.settings(),prefs,prompt,research,reserved,control.signal,s=>this.emit({error:s||undefined}),{
+      initial:jobId&&this.checkpoints[jobId]?.fingerprint===fingerprint?this.checkpoints[jobId].state:undefined,
+      onCheckpoint:jobId?async state=>{
+        if(this.discardWrites||this.snapshot.brain.accountId!==accountId||this.checkpointEpoch!==epoch)return;
+        if(!state)delete this.checkpoints[jobId];
+        else {
+          const saved=structuredClone(state);saved.reasoning='';
+          const next={...this.checkpoints,[jobId]:{fingerprint,state:saved,at:this.io.now()}};
+          const entries=Object.entries(next).sort((a,b)=>b[1].at-a[1].at).slice(0,8);
+          if(JSON.stringify(entries).length>4000000)throw Error('管家检查点超过本机保存上限；请先完成或清理较早的任务。');
+          this.checkpoints=Object.fromEntries(entries);
+        }
+        await this.save();
+      }:undefined,
+      limitOf:key=>this.config?.settings().modelLimits?.[key],
+      onLearnLimit:(key,limit)=>{if(this.config){const settings=this.config.settings();this.config.onSettings({...settings,modelLimits:{...settings.modelLimits,[key]:limit}});}},
+    });
     if(control.signal.aborted)throw new DOMException('Aborted','AbortError');
     if(result.tokens>0)this.local.spent=Math.max(0,this.local.spent-reserved+result.tokens);
     this.audit('model','模型已返回',result.tokens>0?`本次累计用量 ${result.tokens} tokens。`:`客户端未返回可核实用量，按预留 ${reserved} tokens 计入本机日预算。`,'completed',{model:result.route});
@@ -224,11 +256,22 @@ export class ButlerRuntime {
       if(candidate)this.queue('research',candidate.id,undefined,`research:${butlerClock(this.io.now(),this.prefs().timezone).day}:${candidate.id}`);
     }
   }
+  private queueAutonomousWork() {
+    const prefs=this.prefs(),brain=this.snapshot.brain,jobs=brain.jobs??[];
+    if(!prefs.allowRoutineExecution||!this.config?.startWork||jobs.some(j=>j.kind==='work'&&['queued','running','waiting'].includes(j.status)))return;
+    const today=butlerClock(this.io.now(),prefs.timezone).day;
+    const count=jobs.filter(j=>j.kind==='work'&&j.automatic&&butlerClock(j.createdAt,prefs.timezone).day===today).length;
+    if(count>=Math.min(10,Math.max(1,prefs.maxWorkPerDay??3)))return;
+    const goal=brain.goals.find(g=>g.status!=='dismissed'&&g.confidence!=='low'&&!jobs.some(j=>j.kind==='work'&&j.goalId===g.id));
+    if(!goal)return;
+    const id=uid('butler-work');this.queue('work',goal.id,undefined,id);this.patchJob(id,{automatic:true});
+    this.audit('work','主动准备可撤销成果',`依据「${goal.title}」在独立工作区准备结果；${goal.status==='proposed'?'需求仍是待核对的推测。':'沿用你对需求的确认。'}不会自动发送、发布、付款或改动原目录。`,'planned',{sourceIds:goal.evidenceIds});
+  }
   private async research(goalId:string,control:AbortController) {
     const brain=this.snapshot.brain,goal=brain.goals.find(g=>g.id===goalId&&g.status!=='dismissed');
     if(!goal)throw Error('该目标已删除或否定。');
     if(!this.prefs().allowResearch)throw Error('尚未开启公开资料研究。');
-    const result=await this.request(JSON.stringify({task:'为此需求检索公开来源并产出可使用的研究简报。AI skills需求列出名称、适用场景和真实来源链接；投资需求给出有日期的资料、条件式进出场原则和不确定性，绝不下单或保证收益。不要与外部人联系。每项说明与需求的关系，引用本轮来源。',goal:{title:goal.title,hypothesis:goal.userCorrection??goal.hypothesis},userFeedback:(brain.feedback??[]).slice(-20),date:new Date(this.io.now()).toISOString()}),true,control);
+    const result=await this.request(JSON.stringify({task:'为此需求检索公开来源并产出可使用的研究简报。AI skills需求列出名称、适用场景和真实来源链接；投资需求给出有日期的资料、条件式进出场原则和不确定性，绝不下单或保证收益。不要与外部人联系。每项说明与需求的关系，引用本轮来源。',goal:{title:goal.title,hypothesis:goal.userCorrection??goal.hypothesis},userFeedback:(brain.feedback??[]).slice(-20),date:new Date(brain.jobs?.find(j=>j.id===this.activeJobId)?.createdAt??this.io.now()).toISOString()}),true,control);
     const now=this.io.now(),evidenceIds=goal.evidenceIds;
     const sections=result.text.split(/\n\s*\n/).filter(s=>s.trim()).flatMap(s=>s.match(/[\s\S]{1,1100}/g)??[]).slice(0,12);
     const items:ButlerBriefItem[]=[...sections.map((text,index)=>({id:uid('finding'),kind:'finding' as const,title:index===0?goal.title:`${goal.title} · ${index+1}`,summary:modelSafeSummary(text,1200),goalId,evidenceIds})),
@@ -301,6 +344,7 @@ export class ButlerRuntime {
       // A interrupted read-only job is marked retryable; never silently replay a completed one.
       for(const job of this.snapshot.brain.jobs??[])if(job.kind!=='work'&&job.status==='running'&&!this.control&&now-job.updatedAt>300000)this.patchJob(job.id,{status:'failed',error:'上次运行已中断，可重新提交。'});
       if(now>=this.nextAttempt&&!this.control) {
+        this.queueAutonomousWork();
         const fingerprint=bodyHash(this.snapshot.brain.signals.map(s=>`${s.id}:${s.summary}`).join('|'));
         if(this.snapshot.brain.signals.length&&fingerprint!==this.local.analyzed)this.queue('analyze');
         const due=dueButlerBrief(prefs,now,this.local.done);
@@ -321,13 +365,14 @@ export class ButlerRuntime {
       else if(job.kind==='work'){
         const goal=this.snapshot.brain.goals.find(g=>g.id===job.goalId);
         if(!goal||!this.config?.startWork)throw Error('执行电脑尚未提供 Work，或目标已不存在。');
-        const conversationId=await this.config.startWork(job,butlerWorkPrompt(this.snapshot.brain,goal));
+        if(job.automatic&&!this.prefs().allowRoutineExecution)throw Error('主动执行已关闭；任务保留，未继续操作。');
+        const conversationId=await this.config.startWork(job,butlerWorkPrompt(this.snapshot.brain,goal,{autonomous:job.automatic===true}));
         this.patchJob(job.id,{status:'running',conversationId});
         this.audit('work','已交给 Work 执行','使用原有任务引擎、记忆、上下文整理、路由接力和工具权限。需要确认时会等待用户处理。');
       }
       else await this.brief(job.period??'evening',control);
       if(control.signal.aborted)throw Error('已暂停；未继续执行。');
-      if(job.kind!=='work')this.patchJob(job.id,{status:'completed'});
+      if(job.kind!=='work'){this.patchJob(job.id,{status:'completed'});delete this.checkpoints[job.id];}
       if(job.id.startsWith('daily:'))this.local.done=[...this.local.done,job.id.slice(6)].slice(-90);
       this.nextAttempt=this.io.now()+30000;
     }catch(error){const message=control.signal.aborted?'已暂停；可重新提交。':String(error instanceof Error?error.message:error);this.patchJob(job.id,{status:'failed',error:modelSafeSummary(message,240)});this.emit({error:message});this.nextAttempt=this.io.now()+300000;}
@@ -347,13 +392,26 @@ export class ButlerRuntime {
     else if(action.kind==='set-device-consent'){
       if(action.source==='wickrun')return;
       await this.io.collector('consent',{source:action.source,consented:action.consented});this.local.consent[action.source]=action.consented;
-      if(!action.consented){this.control?.abort();this.captureControl?.abort();this.emit({brain:revokeButlerSource(this.snapshot.brain,action.source)});}
+      if(!action.consented){this.control?.abort();this.captureControl?.abort();this.checkpointEpoch++;this.checkpoints={};this.emit({brain:revokeButlerSource(this.snapshot.brain,action.source)});}
       await this.refreshSources();
-    }else if(action.kind==='configure-source'){await this.io.collector('configure',{source:action.source,allowlist:action.allowlist});await this.refreshSources();}
+    }else if(action.kind==='configure-source'){
+      await this.io.collector('configure',{source:action.source,allowlist:action.allowlist,denylist:action.denylist});
+      this.control?.abort();this.captureControl?.abort();this.checkpointEpoch++;this.checkpoints={};
+      this.stopWork();this.emit({brain:revokeButlerSource(this.snapshot.brain,action.source)});await this.refreshSources();
+    }
+    else if(action.kind==='configure-privacy'){
+      await this.io.collector('configure-privacy',{policy:action.policy});
+      this.control?.abort();this.captureControl?.abort();this.checkpointEpoch++;this.checkpoints={};this.stopWork();
+      let brain=this.snapshot.brain;for(const source of BUTLER_SOURCES)brain=revokeButlerSource(brain,source);
+      this.local.analyzed='';this.local.contextSeen=[];this.emit({brain});await this.refreshSources();
+      this.audit('control','敏感内容规则已更新','已停止当前管家操作并清除旧线索；后续按新规则重新提取，已有 Work 文件与会话不会被删除。');
+    }
+    else if(action.kind==='open-background-settings'){await this.io.collector('open-background-settings');await this.refreshSources();}
+    else if(action.kind==='list-source-apps'){await this.io.collector('list-source-apps');await this.refreshSources();}
     else if(action.kind==='install-browser-extension'){await this.io.collector('install-browser-extension');}
     else if(action.kind==='import-link') {if(!this.local.consent.share||!this.prefs().sources.share)throw Error('请先授权分享来源。');this.checkActive();const result=await this.io.collector('import-link',{url:action.url});await this.ingestExternal(result);}
     else if(action.kind==='add-need') {
-      const summary=modelSafeSummary(action.text,240);if(!summary||summary.includes('[REDACTED]'))throw Error('请只填写需求，不包含密码或密钥。');
+      const allowed=butlerPrivateText(action.text,this.snapshot.privacy),summary=allowed?modelSafeSummary(allowed,240):'';if(!summary||summary.includes('[REDACTED]'))throw Error('该内容受敏感规则保护；请去掉敏感信息后补充需求。');
       const brain=this.snapshot.brain,signal=projectButlerSignal({id:uid('need'),accountId:brain.accountId,source:'wickrun',sourceLabel:'你补充的需求',topic:summary.slice(0,60),intent:'用户明确提出',summary,observedAt:this.io.now(),confidence:'high',basis:'user-stated'},{wickrun:true},{});
       if(signal)this.emit({brain:{...brain,signals:retainButlerSignals({...brain,signals:[...brain.signals,signal]}),updatedAt:this.io.now()}});
       this.audit('collection','收到你的新需求',summary);

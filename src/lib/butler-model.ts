@@ -41,7 +41,8 @@ export async function runButlerModel(settings:AppSettings,prefs:ButlerProactiveP
   const order:RouteRef[]=client?[{profileId:'butler-native',model:client.model}]:(routes??[]).slice(0,5);
   const prior=session.initial?.requestStats?.at(-1);
   let current=order.find(route=>route.profileId===prior?.profileId&&route.model===prior?.model)??order[0];
-  let checkpoint=session.initial,used=checkpoint?.spentTokens??0,failure:unknown;
+  const startingSpent=session.initial?.spentTokens??0;
+  let checkpoint=session.initial,used=startingSpent,failure:unknown;
   const tried:RouteRef[]=[],learned=new Map<string,LearnedLimit>();
   const inputId=checkpoint?.working?.find(message=>message.role==='user'&&!message.contextKind)?.id??uid('input');
   while(current) {
@@ -55,18 +56,19 @@ export async function runButlerModel(settings:AppSettings,prefs:ButlerProactiveP
     if(!key){failure=new AttemptFailure('管家路由缺少 API 密钥。',{kind:'auth',title:'缺少密钥',detail:'管家路由缺少 API 密钥。',fixes:[],retryable:false,blameModel:false});
       const next=nextRoute({current:route,order,tried,health:{},info:(failure as AttemptFailure).info!});
       if(!next)throw failure;tried.push(route);current=next.route;continue;}
-    if(budget-used<1000)throw Error('管家今日预算不足，请增加预算或明天再运行。');
+    const remaining=budget-(used-startingSpent);
+    if(remaining<1000)throw Error('管家今日预算不足，请增加预算或明天再运行。');
     const config=defaultGenerationConfig();
     Object.assign(config,{model:route.model,client,stream:true,systemPrompt:'',customBody:'{}',effortLevel:prefs.backend.kind==='route-group'?prefs.backend.effort:'medium',
       toolsEnabled:true,enabledTools:research&&!client?['web_search','fetch_url']:[],approvalMode:'ask',maxToolRounds:6,
-      runtime:{contextTokens:32000,tpm:0,rpm:0,maxTokens:budget-used,maxMinutes:4,recoveryMinutes:1,milestones:false,harness:'guided',semanticCompression:true,autoHandoff:true}});
-    config.params.max_tokens={enabled:true,value:Math.min(3000,Math.max(1000,Math.floor((budget-used)/2)))};
+      runtime:{contextTokens:32000,tpm:0,rpm:0,maxTokens:remaining,maxMinutes:4,recoveryMinutes:1,milestones:false,harness:'guided',semanticCompression:true,autoHandoff:true}});
+    config.params.max_tokens={enabled:true,value:Math.min(3000,Math.max(1000,Math.floor(remaining/2)))};
     const keyId=limitKey(profile.id,route.model,profile.baseUrl);
     try {
       const result=await new Promise<ButlerModelResult>((resolve,reject)=>{
         let text=checkpoint?.content??'',sources:SourceRef[]=checkpoint?.sources??[],steps:ToolStep[]=checkpoint?.steps??[],settled=false;
         let handle:{abort():void}|undefined;
-        const finish=(error?:Error)=>{if(settled)return;settled=true;clearTimeout(timer);signal.removeEventListener('abort',abort);error?reject(error):resolve({text,tokens:used,sources,steps,route:`${profile.name} · ${route.model}`});};
+        const finish=(error?:Error)=>{if(settled)return;settled=true;clearTimeout(timer);signal.removeEventListener('abort',abort);error?reject(error):resolve({text,tokens:used-startingSpent,sources,steps,route:`${profile.name} · ${route.model}`});};
         const abort=()=>{handle?.abort();finish(new DOMException('Aborted','AbortError'));};
         const timer=setTimeout(()=>{handle?.abort();finish(Error('管家模型超时；本轮已停止，可稍后重试。'));},240000);
         signal.addEventListener('abort',abort,{once:true});

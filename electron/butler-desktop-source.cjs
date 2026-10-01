@@ -124,4 +124,11 @@ async function readForegroundText({allowlist,platform=process.platform,env=proce
   return null;
 }
 
-module.exports={desktopSourceStatus,readForegroundText,cleanAllowlist,windowsScript,macScript};
+async function listSourceApps({platform=process.platform,execFileImpl=execFile}={}) {
+  let text='';
+  if(platform==='win32')text=await run('powershell.exe',['-NoProfile','-NonInteractive','-Command',"Get-Process | Where-Object {$_.MainWindowHandle -ne 0} | ForEach-Object {$_.ProcessName + '.exe'} | Sort-Object -Unique"],execFileImpl);
+  else if(platform==='darwin')text=(await run('osascript',['-e','tell application "System Events" to get name of every application process whose background only is false'],execFileImpl)).split(', ').join('\n');
+  else if(platform==='linux')text=await run('ps',['-eo','comm='],execFileImpl);
+  return cleanAllowlist(text.split(/\r?\n/)).map(id=>({id,name:id}));
+}
+module.exports={desktopSourceStatus,readForegroundText,cleanAllowlist,windowsScript,macScript,listSourceApps};

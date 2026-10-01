@@ -339,7 +339,7 @@ function registerIpc() {
   ipcMain.handle('snc:butlerSources',(event,{action,input}={})=>{
     if(!mainWindow||event.sender!==mainWindow.webContents||event.senderFrame!==mainWindow.webContents.mainFrame)throw Error('Untrusted Butler source request');
     dataAvailable();
-    butlerSources??=require('./butler-sources.cjs').createButlerSources({userData:app.getPath('userData'),openPath:target=>shell.openPath(target)});
+    butlerSources??=require('./butler-sources.cjs').createButlerSources({userData:app.getPath('userData'),safeStorage,openPath:target=>shell.openPath(target)});
     return butlerSources.action(action,input);
   });
   ipcMain.handle('snc:cloudState', () => cloudAccount.state());

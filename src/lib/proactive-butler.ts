@@ -3,6 +3,7 @@ import type { ClientSelection } from './connections';
 import type { ClientStatus } from './connections';
 import type { EffortLevel } from './effort';
 import { retainButlerSignals } from './butler-memory';
+import type { ButlerPrivacyPolicy } from './butler-privacy';
 
 /** The synced brain contains bounded observations, never raw app logs or credentials. */
 export type ButlerSource = 'wickrun' | 'browser' | 'desktop' | 'android' | 'integration' | 'share';
@@ -26,6 +27,8 @@ export interface ButlerProactivePreferences {
   allowResearch: boolean;
   /** Financial and negotiation actions always need their own exact grant. */
   allowRoutineExecution: boolean;
+  /** New autonomous Work tasks per local calendar day; existing jobs resume separately. */
+  maxWorkPerDay?: number;
   /** Redacted excerpts can be sent to the selected model only while collection is on. */
   externalUnderstanding: 'local-topics' | 'redacted-context';
 }
@@ -122,7 +125,7 @@ export interface ButlerBrainState {
 export interface ButlerJob {
   id:string;accountId:string;kind:'analyze'|'research'|'brief'|'work';goalId?:string;period?:'morning'|'evening';
   status:'queued'|'running'|'waiting'|'completed'|'failed';createdAt:number;updatedAt:number;error?:string;
-  conversationId?:string;summary?:string;commands?:ButlerWorkCommand[];
+  conversationId?:string;summary?:string;commands?:ButlerWorkCommand[];automatic?:boolean;
 }
 export interface ButlerWorkCommand {id:string;kind:'message'|'pause'|'resume';text?:string;createdAt:number}
 export interface ButlerHost {id:string;accountId:string;name:string;lastSeenAt:number}
@@ -137,7 +140,9 @@ export interface ButlerRuntimeSnapshot {
   busy: boolean;
   error?: string;
   /** Device-local collection consent and actual availability; never cloud-synced. */
-  sources: Partial<Record<ButlerSource,{available:boolean;consented:boolean;note?:string;allowlist?:string[]}>>;
+  sources: Partial<Record<ButlerSource,{available:boolean;consented:boolean;note?:string;allowlist?:string[];denylist?:string[];apps?:{id:string;name:string}[]}>>;
+  privacy?:ButlerPrivacyPolicy;
+  background?:{supported:boolean;unrestricted:boolean;note?:string};
   nativeClients?: ClientStatus[];
 }
 
@@ -147,7 +152,10 @@ export type ButlerRuntimeAction =
   | {kind:'review-skill';proposalId:string;decision:'accept'|'dismiss'}
   | {kind:'feedback';targetKind:'goal'|'brief'|'skill';targetId:string;rating:'useful'|'not-useful'|'not-my-need';comment?:string}
   | {kind:'set-device-consent';source:ButlerSource;consented:boolean}
-  | {kind:'configure-source';source:ButlerSource;allowlist:string[]}
+  | {kind:'configure-source';source:ButlerSource;allowlist:string[];denylist?:string[]}
+  | {kind:'configure-privacy';policy:ButlerPrivacyPolicy}
+  | {kind:'open-background-settings'}
+  | {kind:'list-source-apps'}
   | {kind:'install-browser-extension'}
   | {kind:'select-host';deviceId:string}
   | {kind:'refresh'} | {kind:'analyze-now'} | {kind:'generate-brief';period:'morning'|'evening'}
@@ -171,7 +179,7 @@ export function emptyButlerBrain(accountId:string):ButlerBrainState {
 export const DEFAULT_BUTLER_PREFERENCES:ButlerProactivePreferences = {
   enabled:false,paused:false,sources:{wickrun:true},backend:{kind:'route-group',routeGroupId:'',effort:'medium'},
   maxTokensPerDay:12000,cadence:'twice-daily',morning:'08:00',evening:'18:00',
-  timezone:'UTC',allowResearch:true,allowRoutineExecution:true,externalUnderstanding:'redacted-context',
+  timezone:'UTC',allowResearch:true,allowRoutineExecution:true,maxWorkPerDay:3,externalUnderstanding:'redacted-context',
 };
 
 /** Remove raw links, identifiers and prompt-control text before a signal can leave a device. */
@@ -289,7 +297,7 @@ export function projectButlerBrainForSync(brain:ButlerBrainState):ButlerBrainSta
     jobs:brain.jobs?.filter(j=>j.accountId===accountId).slice(-200).map(j=>({id:j.id,accountId,kind:j.kind,goalId:j.goalId,
       period:j.period,status:j.status,createdAt:j.createdAt,updatedAt:j.updatedAt,error:j.error?modelSafeSummary(j.error,200):undefined,
       conversationId:j.conversationId?modelSafeSummary(j.conversationId,120):undefined,summary:j.summary?modelSafeSummary(j.summary,800):undefined,
-      commands:j.commands?.slice(-20).map(c=>({id:modelSafeSummary(c.id,120),kind:c.kind,text:c.text?modelSafeSummary(c.text,2000):undefined,createdAt:c.createdAt}))})),
+      automatic:j.automatic===true,commands:j.commands?.slice(-20).map(c=>({id:modelSafeSummary(c.id,120),kind:c.kind,text:c.text?modelSafeSummary(c.text,2000):undefined,createdAt:c.createdAt}))})),
     hosts:brain.hosts?.filter(h=>h.accountId===accountId).slice(-20).map(h=>({id:h.id,accountId,name:modelSafeSummary(h.name,80),lastSeenAt:h.lastSeenAt})),
     feedback:brain.feedback?.filter(f=>f.accountId===accountId).slice(-300).map(f=>({id:f.id,accountId,targetKind:f.targetKind,
       targetId:f.targetId,rating:f.rating,comment:f.comment?modelSafeSummary(f.comment,500):undefined,createdAt:f.createdAt})),

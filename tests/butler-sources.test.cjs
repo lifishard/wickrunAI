@@ -5,7 +5,13 @@ const os=require('node:os');
 const path=require('node:path');
 const http=require('node:http');
 const vm=require('node:vm');
-const {createButlerSources,domainAllowlist,publicUrl,redactExcerpt,browserContentScript}=require('../electron/butler-sources.cjs');
+const {createButlerSources:createRawSources,domainAllowlist,publicUrl,redactExcerpt,browserContentScript}=require('../electron/butler-sources.cjs');
+const crypto=require('node:crypto'),key=crypto.randomBytes(32);
+const safeStorage={isEncryptionAvailable:()=>true,getSelectedStorageBackend:()=> 'test-keychain',
+ encryptString(text){const iv=crypto.randomBytes(12),cipher=crypto.createCipheriv('aes-256-gcm',key,iv);return Buffer.concat([iv,cipher.update(text),cipher.final(),cipher.getAuthTag()]);},
+ decryptString(bytes){const decipher=crypto.createDecipheriv('aes-256-gcm',key,bytes.subarray(0,12));decipher.setAuthTag(bytes.subarray(-16));return Buffer.concat([decipher.update(bytes.subarray(12,-16)),decipher.final()]).toString();}};
+const createButlerSources=options=>createRawSources({safeStorage,...options});
+const readEvents=file=>{const envelope=JSON.parse(fs.readFileSync(file,'utf8'));assert.equal(envelope.encrypted,true);return JSON.parse(safeStorage.decryptString(Buffer.from(envelope.data,'base64')));};
 const {windowsScript,readForegroundText,desktopSourceStatus}=require('../electron/butler-desktop-source.cjs');
 
 const make=()=>{
@@ -50,10 +56,10 @@ test('browser collection is blocked until exact scope, device consent and runtim
   assert.equal(polled.signals[0].topic,'AI 工具与技能');
   assert.doesNotMatch(JSON.stringify(polled.signals),/example\.com|Prompt engineering|q=learn/);
   assert.equal(polled.contexts.length,1);
-  const stored=JSON.parse(fs.readFileSync(path.join(local,'events.json'),'utf8'));
+  const stored=readEvents(path.join(local,'events.json'));
   assert.equal(stored.length,1);assert.equal(stored[0].url,'https://example.com/ai-skills');
   await collector.action('consent',{source:'browser',consented:false});
-  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(local,'events.json'),'utf8')),[]);
+  assert.deepEqual(readEvents(path.join(local,'events.json')),[]);
   assert.equal(await post(cfg.port,cfg.token,page),403);
 });
 
@@ -117,7 +123,7 @@ test('old local records expire and retention is bounded to 500',async t=>{
   fs.writeFileSync(path.join(local,'events.json'),JSON.stringify(Array.from({length:550},(_,i)=>({id:String(i),source:'browser',at:i<10?1:1000,title:'AI',text:'AI skills'}))));
   const collector=createButlerSources({userData:dir,platform:'linux',env:{},desktopStatus:()=>({available:false,note:'test'}),now:()=>1000+24*60*60*1000});
   t.after(()=>collector.close());
-  const retained=JSON.parse(fs.readFileSync(path.join(local,'events.json'),'utf8'));
+  const retained=readEvents(path.join(local,'events.json'));
   assert.equal(retained.length,500);assert.equal(retained[0].id,'50');
 });
 
@@ -156,7 +162,7 @@ test('desktop unchanged content is stable across polls and pending records survi
   assert.deepEqual(second.recordIds,first.recordIds);
   assert.deepEqual(second.signals.map(x=>x.id),first.signals.map(x=>x.id));
   assert.equal(second.contexts[0].id,first.contexts[0].id);
-  assert.equal(JSON.parse(fs.readFileSync(path.join(dir,'butler-local','events.json'),'utf8')).length,1);
+  assert.equal(readEvents(path.join(dir,'butler-local','events.json')).length,1);
   await collector.close();collector=makeCollector();
   await collector.action('suspend',{suspended:false,sources:{desktop:true},mode:'redacted-context'});
   const resumed=await collector.action('poll');assert.deepEqual(resumed.recordIds,first.recordIds);
@@ -175,4 +181,28 @@ test('desktop accessibility failure is surfaced in source status',async t=>{
   const result=await collector.action('poll');
   assert.match(result.sources.desktop.note,/Not authorized to send Apple events/);
   assert.deepEqual(result.signals,[]);
+});
+
+test('blacklist wins before desktop capture and sensitive records never reach the model',async t=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'wickrun-butler-private-'));let text='AI skills confidential-project',seen;
+ const collector=createButlerSources({userData:dir,platform:'linux',env:{},desktopStatus:()=>({available:true,note:'test'}),readDesktop:async options=>{seen=options.allowlist;return {processName:'editor.exe',title:'AI skills',text};}});
+ t.after(()=>collector.close());
+ await collector.action('configure',{source:'desktop',allowlist:['editor.exe'],denylist:['editor.exe']});
+ await collector.action('consent',{source:'desktop',consented:true});await collector.action('suspend',{suspended:false,sources:{desktop:true},mode:'redacted-context'});
+ assert.deepEqual((await collector.action('poll')).signals,[]);assert.deepEqual(seen,[]);
+ await collector.action('configure',{source:'desktop',allowlist:['editor.exe'],denylist:[]});
+ await collector.action('configure-privacy',{policy:{excludedTerms:['confidential-project'],encryptedOnlyTerms:['private-project']}});
+ assert.deepEqual((await collector.action('poll')).signals,[]);assert.deepEqual(readEvents(path.join(dir,'butler-local','events.json')),[]);
+ text='AI skills private-project';const result=await collector.action('poll');assert.deepEqual(result.signals,[]);assert.equal(result.contexts,undefined);
+ const bytes=fs.readFileSync(path.join(dir,'butler-local','events.json'),'utf8');assert.doesNotMatch(bytes,/private-project|AI skills/);
+ assert.equal(readEvents(path.join(dir,'butler-local','events.json'))[0].encryptedOnly,true);
+ text='AI skills password: unsafe-credential';await collector.action('poll');assert.equal(readEvents(path.join(dir,'butler-local','events.json')).length,1);
+});
+
+test('unavailable OS encryption fails closed and does not erase an existing encrypted vault',async t=>{
+ const {dir,collector}=make();await collector.action('configure',{source:'desktop',allowlist:['editor.exe']});await collector.action('consent',{source:'desktop',consented:true});await collector.action('suspend',{suspended:false,sources:{desktop:true}});await collector.action('poll');await collector.close();
+ const file=path.join(dir,'butler-local','events.json'),saved=fs.readFileSync(file,'utf8');
+ const blocked=createButlerSources({userData:dir,safeStorage:{isEncryptionAvailable:()=>false},platform:'linux',env:{},desktopStatus:()=>({available:true,note:'test'})});t.after(()=>blocked.close());
+ assert.equal((await blocked.action('status')).privacy.encryptedStorage,false);await assert.rejects(blocked.action('consent',{source:'desktop',consented:true}),/加密/);
+ assert.equal(fs.readFileSync(file,'utf8'),saved);
 });

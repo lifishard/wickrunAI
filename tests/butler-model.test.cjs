@@ -76,7 +76,7 @@ test('pause, budget stop, and unknown error do not fan out to more routes',async
   }
 });
 
-test('a persisted checkpoint resumes its original model and keeps its prior token spend',async()=>{
+test('a persisted checkpoint keeps cumulative context but charges only newly spent tokens',async()=>{
   serial=0;let seen;
   const initial={version:2,runId:'prior-run',status:'paused',stoppedBy:'error',reason:'app closed',phase:'request',round:2,
     content:'Evidence already collected',spentTokens:600,working:[{id:'original',role:'user',content:'Original',createdAt:1}],
@@ -84,6 +84,6 @@ test('a persisted checkpoint resumes its original model and keeps its prior toke
   const {runButlerModel}=loadWith(args=>{seen=args;queueMicrotask(()=>{args.events.onUsage({total_tokens:800});args.events.onDone();});return {abort(){}};});
   const result=await runButlerModel(settings,prefs,'Original',true,3000,new AbortController().signal,()=>{},{initial});
   assert.equal(seen.profile.id,'p2');assert.equal(seen.config.model,'two');
-  assert.deepEqual(seen.resume,initial);assert.equal(seen.config.runtime.maxTokens,2400);
-  assert.equal(result.tokens,800);assert.equal(result.steps[0].id,'old-step');
+  assert.deepEqual(seen.resume,initial);assert.equal(seen.config.runtime.maxTokens,3000);
+  assert.equal(result.tokens,200);assert.equal(result.steps[0].id,'old-step');
 });
