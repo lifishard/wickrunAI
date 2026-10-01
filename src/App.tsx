@@ -88,6 +88,7 @@ import { loadProjects, makeProject, projectSystemBlock, saveProjects, type Proje
 import { addMemory, memoryCandidatesFrom, memoryItemsOf, mergeMemoryItems, type ProjectMemoryItem } from './lib/memory-core';
 import { MemoryCandidateCard } from './components/ProjectMemoryPanel';
 import { teamRuntime } from './lib/team-runtime';
+import { butlerRuntime } from './lib/butler-runtime';
 import { conversationQueue, nextQueuedIndex, type QueuedInput } from './lib/run-queue';
 import { teamNotifications } from './lib/team-notify';
 import { I18nProvider, LOCALES, setActiveLocale, translate, type Locale } from './lib/i18n';
@@ -125,6 +126,7 @@ const ObservationPanel = React.lazy(()=>import('./components/ObservationPanel'))
 const ExportDialog = React.lazy(()=>import('./components/ExportDialog'));
 const ConversationCoordination = React.lazy(()=>import('./components/ConversationCoordination'));
 const TeamWorkspace = React.lazy(()=>import('./components/collaboration/TeamWorkspace'));
+const ProactiveButlerPanel = React.lazy(()=>import('./components/collaboration/ProactiveButlerPanel'));
 
 const EXAMPLES = [
   '日日新现在有哪些免费模型，各自的上下文长度是多少？',
@@ -138,6 +140,7 @@ export default function App() {
   const [mediaOpen, setMediaOpen] = React.useState(false);
   const [bootError, setBootError] = React.useState<string | null>(null);
   const [bootReady, setBootReady] = React.useState(false);
+  const [butlerOpen,setButlerOpen]=React.useState(false);
   const [welcomeDone, setWelcomeDone] = React.useState(false);
   const [bootAttempt, setBootAttempt] = React.useState(0);
   const [saveError, setSaveError] = React.useState<string | null>(null);
@@ -398,7 +401,21 @@ export default function App() {
   }, [projects, skills, tasks, bootReady]);
 
   const quitSnapshot=React.useRef({settings,conversations,projects,skills,tasks,bootReady});quitSnapshot.current={settings,conversations,projects,skills,tasks,bootReady};
+  React.useEffect(()=>{
+    if(!settings||!bootReady)return;
+    butlerRuntime.configure({settings:()=>settingsRef.current!,conversations:()=>quitSnapshot.current.conversations,skills:()=>quitSnapshot.current.skills,
+      onSettings:value=>{settingsRef.current=value;setSettings(value);},onSkills:setSkills});
+    void butlerRuntime.tick();
+  },[settings,bootReady]);
+  React.useEffect(()=>{
+    if(!bootReady)return;
+    const reload=()=>{void butlerRuntime.reload().then(()=>butlerRuntime.tick()).catch(reportSaveError);};
+    const timer=setInterval(()=>void butlerRuntime.tick(),20000);
+    window.addEventListener('wickrun:butler-reload',reload);
+    return()=>{clearInterval(timer);window.removeEventListener('wickrun:butler-reload',reload);butlerRuntime.stop();};
+  },[bootReady]);
   React.useEffect(()=>desktop()?.onPrepareQuit?.(async()=>{
+    butlerRuntime.stop();
     flushSync(()=>window.dispatchEvent(new Event('wickrun:flush-draft')));
     const latest=quitSnapshot.current;if(!latest.settings||!latest.bootReady)return;
     await Promise.all([saveSettings(latest.settings),saveConversationsNow(latest.conversations),saveProjects(latest.projects),saveSkills(latest.skills),saveTasks(latest.tasks)]);
@@ -2142,7 +2159,7 @@ export default function App() {
             else if (active) moveToProject(active.id, id || null);
             else if (id) newChat(id);
           }}
-          onButler={()=>{const id=activeProject?.id??settings.collaborationView?.projectId??projects[0]?.id;if(id){void (async()=>{if(!teamRuntime.data)await teamRuntime.load();await teamRuntime.update(id,p=>{p.preferences.page='butler';});setSettings(s=>s?{...s,collaborationView:{visible:true,projectId:id}}:s);})().catch(e=>toast.show(String(e)));}else setTeamVisible(true);}}
+          onButler={()=>{setButlerOpen(true);setSidebarOpen(false);}} onDiscussButler={()=>{const id=activeProject?.id??settings.collaborationView?.projectId??projects[0]?.id;if(id){void (async()=>{if(!teamRuntime.data)await teamRuntime.load();await teamRuntime.update(id,p=>{p.preferences.page='butler';});setSettings(s=>s?{...s,collaborationView:{visible:true,projectId:id}}:s);})().catch(e=>toast.show(String(e)));}else setTeamVisible(true);}}
           onMode={setTeamVisible}
           onHide={() => { setSidebarOpen(false); setSidebarHidden(true); }} />
         <div className="sidebar-body" hidden={teamVisible}>
@@ -2207,11 +2224,12 @@ export default function App() {
         />
       )}
 
-      {teamVisible ? <div className="team-workspace-container"><React.Suspense fallback={<div className="empty"><BrandLoading label={t('正在打开协作空间…')} /></div>}><TeamWorkspace sidebarTarget={teamSidebar} sidebarHidden={sidebarHidden} onOpenSidebar={()=>{setSidebarHidden(false);setSidebarOpen(true);}} onNavigate={()=>setSidebarOpen(false)} projects={projects} settings={settings} sourceConversation={active} beforeRestore={async()=>{stopAll();await teamRuntime.pauseAll();await saveConversationsNow(conversations);}} onProject={projectId=>setSettings(s=>s?{...s,collaborationView:{visible:true,projectId}}:s)} onSettingsChange={update=>setSettings(prev=>prev?update(prev):prev)} onProjectMemory={updateProjectMemory} initialProjectId={settings.collaborationView?.projectId??activeProject?.id} onSingle={()=>setTeamVisible(false)} onSettings={()=>{setSettingsTab('keys');setSettingsOpen(true);}} onCreateProject={name=>{const p=makeProject(name);setProjects(all=>[...all,p]);return p.id;}} onHandoff={(text,projectId)=>{const conv=newConversation(settings.defaultConfig,settings.activeKeyProfileId);conv.projectId=projectId;conv.title=titleFrom(text);conv.messages=[{id:uid(),role:'user',content:text,createdAt:Date.now()}];setConversations(all=>[...all,conv]);setActiveId(conv.id);setTeamVisible(false);}}/></React.Suspense></div> : null}
+      {teamVisible ? <div className="team-workspace-container"><React.Suspense fallback={<div className="empty"><BrandLoading label={t('正在打开协作空间…')} /></div>}><TeamWorkspace butlerController={butlerRuntime} sidebarTarget={teamSidebar} sidebarHidden={sidebarHidden} onOpenSidebar={()=>{setSidebarHidden(false);setSidebarOpen(true);}} onNavigate={()=>setSidebarOpen(false)} projects={projects} settings={settings} sourceConversation={active} beforeRestore={async()=>{stopAll();await teamRuntime.pauseAll();await saveConversationsNow(conversations);}} onProject={projectId=>setSettings(s=>s?{...s,collaborationView:{visible:true,projectId}}:s)} onSettingsChange={update=>setSettings(prev=>prev?update(prev):prev)} onProjectMemory={updateProjectMemory} initialProjectId={settings.collaborationView?.projectId??activeProject?.id} onSingle={()=>setTeamVisible(false)} onSettings={()=>{setSettingsTab('keys');setSettingsOpen(true);}} onCreateProject={name=>{const p=makeProject(name);setProjects(all=>[...all,p]);return p.id;}} onHandoff={(text,projectId)=>{const conv=newConversation(settings.defaultConfig,settings.activeKeyProfileId);conv.projectId=projectId;conv.title=titleFrom(text);conv.messages=[{id:uid(),role:'user',content:text,createdAt:Date.now()}];setConversations(all=>[...all,conv]);setActiveId(conv.id);setTeamVisible(false);}}/></React.Suspense></div> : null}
       <main className="main" style={teamVisible?{display:'none'}:undefined}>
         {active?.workspaceError?<div className="grant-banner" role="alert">{active.workspaceError}</div>:active?.workspace?<div className="grant-banner">{t('当前 Work 使用独立文件副本；在「并行任务」中检查并应用改动。')}</div>:null}
         {saveError ? <div className="grant-banner" role="alert">{saveError}<button className="btn sm" onClick={() => { void Promise.all([saveSettings(settings), saveConversationsNow(conversations),saveProjects(projects),saveSkills(skills),saveTasks(tasks)]).then(() => setSaveError(null)).catch(reportSaveError); }}>{t('重试保存')}</button></div> : null}
         <div className="topbar">
+          <button className="btn sm butler-home-trigger" onClick={()=>setButlerOpen(true)}>{t('今日管家')}</button>
           <button className="btn sm ghost only-narrow" title={t('展开侧栏')} onClick={() => { setSidebarHidden(false); setSidebarOpen(true); }}>
             ☰
           </button>
@@ -2229,7 +2247,7 @@ export default function App() {
           <CloudSyncControl local={{settings,conversations,projects,skills,tasks}}
             blocked={Object.values(runs).some(Boolean)||Object.values(teamRuntime.data?.projects??{}).some(p=>p.runs.some(r=>['running','waiting_approval','waiting_user'].includes(r.status)))}
             isBlocked={()=>runningRef.current.size>0||startingRef.current.size>0||Object.values(teamRuntime.data?.projects??{}).some(p=>p.runs.some(r=>['running','pausing','waiting_approval','waiting_user'].includes(r.status)))}
-            beforeSwitch={async()=>{stopAll();await teamRuntime.pauseAll();await Promise.all([saveSettings(settings),saveConversationsNow(conversationsForStorage(conversations)),saveProjects(projects),saveSkills(skills),saveTasks(tasks)]);}}
+            beforeSwitch={async()=>{butlerRuntime.stop();stopAll();await teamRuntime.pauseAll();await Promise.all([saveSettings(settings),saveConversationsNow(conversationsForStorage(conversations)),saveProjects(projects),saveSkills(skills),saveTasks(tasks)]);}}
             onApply={async next=>{
               for(const old of conversations){const incoming=next.conversations.find(c=>c.id===old.id);if(!incoming)await forgetRuns(old.id);else{const removed=new Set(old.messages.filter(m=>!incoming.messages.some(n=>n.id===m.id)).map(m=>m.id));if(removed.size)await forgetRuns(old.id,removed);}}
               await applyCloudLocal(next);
@@ -2509,6 +2527,7 @@ export default function App() {
         </React.Suspense>
       ) : null}
 
+      {butlerOpen&&<Modal title={t('今日管家')} onClose={()=>setButlerOpen(false)} wide><div className="modal-body butler-home"><React.Suspense fallback={<BrandLoading label={t('正在读取记录…')}/>}><ProactiveButlerPanel settings={settings} controller={butlerRuntime} onSettings={update=>setSettings(prev=>prev?update(prev):prev)} onOpenResult={result=>{if(result.kind==='conversation'&&conversations.some(c=>c.id===result.id)){setActiveId(result.id);setTeamVisible(false);setButlerOpen(false);}}}/></React.Suspense></div></Modal>}
       {observationsOpen ? <React.Suspense fallback={<Modal title={t('任务记录与分析')} onClose={()=>setObservationsOpen(false)}><div className="modal-body">{t('正在读取记录…')}</div></Modal>}>
         <ObservationPanel onClose={()=>setObservationsOpen(false)}
           onOpenTask={(conversationId,answerId)=>{setActiveId(conversationId);setObservationsOpen(false);setTimeout(()=>document.getElementById(`msg-${answerId}`)?.scrollIntoView({block:'center'}),150);}}/>

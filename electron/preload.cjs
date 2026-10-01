@@ -7,6 +7,8 @@ const { contextBridge, ipcRenderer } = require('electron');
  * 渲染进程拿不到 Node，也拿不到任何明文密钥。
  */
 contextBridge.exposeInMainWorld('snc', {
+  butlerSources:(action,input)=>ipcRenderer.invoke('snc:butlerSources',{action,input}),
+  butlerNativeRun:args=>ipcRenderer.invoke('snc:butlerNativeRun',args),
   cloudState: () => ipcRenderer.invoke('snc:cloudState'),
   cloudLogin: () => ipcRenderer.invoke('snc:cloudLogin'),
   cloudPoll: () => ipcRenderer.invoke('snc:cloudPoll'),

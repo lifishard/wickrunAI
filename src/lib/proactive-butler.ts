@@ -138,6 +138,7 @@ export interface ButlerRuntimeSnapshot {
 }
 
 export type ButlerRuntimeAction =
+  | {kind:'add-need';text:string}
   | {kind:'review-goal';goalId:string;decision:'confirm'|'dismiss'|'correct';correction?:string}
   | {kind:'review-skill';proposalId:string;decision:'accept'|'dismiss'}
   | {kind:'feedback';targetKind:'goal'|'brief'|'skill';targetId:string;rating:'useful'|'not-useful'|'not-my-need';comment?:string}
@@ -243,7 +244,7 @@ export function addButlerBrief(brain:ButlerBrainState,brief:ButlerBrief):ButlerB
   if(brief.accountId!==brain.accountId || brain.briefs.some(b=>b.id===brief.id))return brain;
   const ids=new Set(sameAccountEvidence(brain,brain.signals.map(s=>s.id)).map(s=>s.id));
   const items=brief.items.filter(i=>i.evidenceIds.length>0 && i.evidenceIds.every(id=>ids.has(id))).map(i=>({
-    id:i.id,kind:i.kind,title:modelSafeSummary(i.title,100),summary:modelSafeSummary(i.summary,500),
+    id:i.id,kind:i.kind,title:modelSafeSummary(i.title,100),summary:modelSafeSummary(i.summary,1200),
     goalId:i.goalId,evidenceIds:[...new Set(i.evidenceIds)],result:safeResultRef(i.result),
   })).filter(i=>i.title && i.summary && !i.summary.includes('[REDACTED]'));
   if(!items.length)return brain;
@@ -269,7 +270,7 @@ export function projectButlerBrainForSync(brain:ButlerBrainState):ButlerBrainSta
     briefs:brain.briefs.filter(b=>b.accountId===accountId).slice(-100).map(b=>({
       id:b.id,accountId,period:b.period,createdAt:b.createdAt,
       items:b.items.filter(i=>refs(i.evidenceIds).length>0).map(i=>({id:i.id,kind:i.kind,
-        title:modelSafeSummary(i.title,100),summary:modelSafeSummary(i.summary,500),goalId:i.goalId,
+        title:modelSafeSummary(i.title,100),summary:modelSafeSummary(i.summary,1200),goalId:i.goalId,
         evidenceIds:refs(i.evidenceIds),result:safeResultRef(i.result)})),
     })).filter(b=>b.items.length>0),
     skillProposals:brain.skillProposals.filter(s=>s.accountId===accountId&&refs(s.evidenceIds).length>0).slice(-100).map(s=>({

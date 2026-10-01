@@ -1,7 +1,6 @@
 import React from 'react';
 import { useT } from '../../lib/i18n';
 import { CLIENT_LABELS, type ClientKind } from '../../lib/connections';
-import { loadSkills, makeSkill, saveSkills } from '../../lib/skills';
 import { DEFAULT_BUTLER_PREFERENCES, emptyButlerBrain, type ButlerProactivePreferences,
   type ButlerResultRef, type ButlerRuntimeAction, type ButlerRuntimeController, type ButlerRuntimeSnapshot,
   type ButlerSource } from '../../lib/proactive-butler';
@@ -35,9 +34,11 @@ export default function ProactiveButlerPanel({settings,onSettings,controller,onO
   const [corrections,setCorrections]=React.useState<Record<string,string>>({});
   const [link,setLink]=React.useState('');
   const [sourceScope,setSourceScope]=React.useState<Partial<Record<ButlerSource,string>>>({});
+  const [setupOpen,setSetupOpen]=React.useState(false);
+  const [need,setNeed]=React.useState('');
   const availableGroups=(settings.routeGroups??[]).filter(g=>g.routes.length>0);
   const latestBriefs=[...snapshot.brain.briefs].sort((a,b)=>b.createdAt-a.createdAt).slice(0,4);
-  const goals=[...snapshot.brain.goals].sort((a,b)=>b.updatedAt-a.updatedAt).slice(0,20);
+  const goals=[...snapshot.brain.goals].filter(g=>g.status!=='dismissed').sort((a,b)=>b.updatedAt-a.updatedAt).slice(0,12);
   const proposals=snapshot.brain.skillProposals.filter(p=>p.status==='proposed').slice(0,10);
   const jobs=[...(snapshot.brain.jobs??[])].sort((a,b)=>b.createdAt-a.createdAt).slice(0,5);
   const signals=new Map(snapshot.brain.signals.map(s=>[s.id,s]));
@@ -71,10 +72,6 @@ export default function ProactiveButlerPanel({settings,onSettings,controller,onO
     if(!proposal || !controller)return;
     setWorking(true);setError('');
     try{
-      const existing=await loadSkills();
-      const source=`wickrunAI Butler proposal ${proposal.id}`;
-      if(!existing.some(s=>s.source===source))await saveSkills([...existing,makeSkill({name:proposal.name,description:proposal.description,
-        body:proposal.body,enabled:false,source})]);
       await controller.action({kind:'review-skill',proposalId:id,decision:'accept'});
     }catch(e){setError(String(e));}finally{setWorking(false);}
   };
@@ -86,15 +83,27 @@ export default function ProactiveButlerPanel({settings,onSettings,controller,onO
     return <span className="butler-ref">{t('结果引用')} · {ref.id}</span>;
   };
   const inactive=!pref.enabled||pref.paused;
+  const feedback=(targetKind:'goal'|'brief'|'skill',targetId:string)=><ButlerFeedbackControl
+    value={[...(snapshot.brain.feedback??[])].reverse().find(f=>f.targetKind===targetKind&&f.targetId===targetId)} disabled={working||!controller}
+    onSend={(rating,comment)=>act({kind:'feedback',targetKind,targetId,rating,comment})}/>;
 
   return <section className="proactive-butler" aria-label={t('主动管家')}>
-    <header className="proactive-head"><div><h2>{t('主动管家')}</h2><p>{t('把你明确提出的目标和可选择的活动线索汇成可审阅的建议；由选定的常开电脑执行定时研究与简报。')}</p></div>
+    <header className="proactive-head"><div><h2>{t('今天，有什么值得帮你做？')}</h2><p>{t('发现需求，准备结果。由你决定判断是否准确、做法是否合适。')}</p></div>
       <span className={`proactive-state ${inactive?'off':'on'}`}>{!pref.enabled?t('已关闭'):pref.paused?t('已暂停'):t('已启用')}</span></header>
+    <div className="proactive-quickbar">
+      <button className="btn" onClick={()=>setSetupOpen(value=>!value)}>{t(pref.enabled?'管家设置':'开始设置')}</button>
+      {pref.enabled&&<button className={`btn ${pref.paused?'':'danger'}`} onClick={()=>void act({kind:pref.paused?'resume':'pause'})}>{t(pref.paused?'恢复管家':'紧急暂停')}</button>}
+      {pref.enabled&&<span className="proactive-host-chip">{snapshot.host.status==='local'?t('本机后台执行'):snapshot.host.status==='connected'?t('执行电脑在线'):t('等待执行电脑')}</span>}
+    </div>
+    {!pref.enabled&&<p className="proactive-empty">{t('先选大脑模型和执行电脑。启用后，管家会从需求中准备研究和简报；外部活动需另行同意。')}</p>}
+    <form className="proactive-need" onSubmit={event=>{event.preventDefault();if(need.trim())void act({kind:'add-need',text:need.trim()}).then(()=>setNeed(''));}}>
+      <label htmlFor="butler-new-need">{t('补充一个需求')}</label><div><input id="butler-new-need" value={need} maxLength={2000} onChange={event=>setNeed(event.target.value)} placeholder={t('例如：每天帮我挑出适合工作的 AI skills')}/><button className="btn primary" disabled={working||!need.trim()||!controller}>{t('交给管家')}</button></div>
+    </form>
+    <details className="proactive-settings" open={setupOpen} onToggle={event=>setSetupOpen(event.currentTarget.open)}><summary>{t('模型、来源与每日安排')}</summary>
     <div className="proactive-privacy"><strong>{t('启用前了解数据范围')}</strong><p>{t('默认只使用 wickrunAI 内的对话与任务。浏览器、电脑、Android、已连接应用和分享链接都要分别启用，并在收集设备上单独同意。密码输入不采集；外部原始活动留在收集设备。增强理解会把脱敏后的可见内容片段发给你选定的模型，脱敏无法保证零泄露；账号脑只同步提炼后的目标与简报。已有 API 密钥仍按现有加密密钥同步方式处理。你可随时暂停、关闭或撤销来源。')}</p>
       <p>{t('活动线索只能形成待核对的假设，不会自动认定你的兴趣或目标。金融与谈判动作另需针对具体账户、对象、动作和金额的明确授权；风险声明本身不构成授权。')}</p></div>
     <div className="proactive-actions"><label className="team-check"><input type="checkbox" checked={pref.enabled} disabled={!canEdit} onChange={e=>change({enabled:e.target.checked,paused:false})}/>{t('启用主动管家')}</label>
-      {pref.enabled&&<button className="btn sm" disabled={working} onClick={()=>{change({paused:!pref.paused});void act({kind:pref.paused?'resume':'pause'});}}>{pref.paused?t('继续'):t('紧急暂停')}</button>}
-      {pref.enabled&&<button className="btn sm ghost" disabled={working} onClick={()=>{change({enabled:false,paused:true});void act({kind:'turn-off'});}}>{t('关闭')}</button>}</div>
+      {pref.enabled&&<button className="btn sm ghost" onClick={()=>void act({kind:'turn-off'})}>{t('关闭管家')}</button>}</div>
     <div className="proactive-grid">
       <section className="proactive-card"><h3>{t('活动来源')}</h3><p>{t('先开总开关，再单独选择来源。未接通的来源不会假装正在收集。')}</p>
         {(['wickrun',...EXTERNAL] as ButlerSource[]).map(source=>{
@@ -127,13 +136,55 @@ export default function ProactiveButlerPanel({settings,onSettings,controller,onO
         <label className="team-check"><input type="checkbox" checked={pref.allowRoutineExecution} disabled={!canEdit} onChange={e=>change({allowRoutineExecution:e.target.checked})}/>{t('允许低风险例行任务按现有权限执行')}</label>
       </section>
     </div>
+    </details>
     {error&&<p role="alert" className="proactive-error">{error}</p>}{snapshot.error&&<p role="alert" className="proactive-error">{snapshot.error}</p>}
     {!!jobs.length&&<section className="proactive-jobs" aria-label={t('最近任务')}><h3>{t('最近任务')}</h3>{jobs.map(job=><div key={job.id} className="proactive-job"><span>{t(job.kind==='analyze'?'分析目标':job.kind==='research'?'研究目标':'生成简报')}</span><strong>{t(job.status==='queued'?'已排队，等待执行电脑':job.status==='running'?'执行中':job.status==='completed'?'已完成':'失败')}</strong>{job.error&&<small role="alert">{job.error}</small>}</div>)}</section>}
     <div className="proactive-section-head"><h3>{t('待核对的目标')}</h3><div className="team-actions"><button className="btn sm" disabled={working||snapshot.busy||inactive||!controller} onClick={()=>void act({kind:'analyze-now'})}>{t('现在分析')}</button><button className="btn sm ghost" disabled={working||!controller} onClick={()=>void act({kind:'refresh'})}>{t('刷新')}</button></div></div>
-    {goals.length?goals.map(goal=><article className="proactive-card proactive-goal" key={goal.id}><div className="proactive-card-top"><h4>{goal.title}</h4><span>{t(goal.status==='proposed'?'待核对':goal.status==='confirmed'?'已确认':goal.status==='corrected'?'已纠正':'已忽略')} · {t(goal.confidence==='high'?'较有把握':goal.confidence==='medium'?'部分依据':'线索较弱')}</span></div><p>{goal.hypothesis}</p>{goal.userCorrection&&<p><strong>{t('你的纠正：')}</strong>{goal.userCorrection}</p>}<div className="proactive-evidence">{evidence(goal.evidenceIds).map(s=><small key={s.id}>{s.sourceLabel||t(SOURCE_LABEL[s.source])} · {new Date(s.observedAt).toLocaleDateString()} · {s.topic}</small>)}</div>{goal.status==='proposed'&&<div className="proactive-review"><input aria-label={t('纠正目标')} placeholder={t('如果判断不对，请写下正确目标')} value={corrections[goal.id]??''} onChange={e=>setCorrections(v=>({...v,[goal.id]:e.target.value}))}/><div className="team-actions"><button className="btn sm" disabled={working||!controller} onClick={()=>void act({kind:'review-goal',goalId:goal.id,decision:'confirm'})}>{t('确认')}</button><button className="btn sm" disabled={working||!controller||!corrections[goal.id]?.trim()} onClick={()=>void act({kind:'review-goal',goalId:goal.id,decision:'correct',correction:corrections[goal.id]})}>{t('纠正')}</button><button className="btn sm ghost" disabled={working||!controller} onClick={()=>void act({kind:'review-goal',goalId:goal.id,decision:'dismiss'})}>{t('忽略')}</button><button className="btn sm ghost" disabled={working||inactive||!controller} onClick={()=>void act({kind:'run-research',goalId:goal.id})}>{t('研究这个目标')}</button></div></div>}</article>):<p className="proactive-empty">{t('目前没有可靠的目标线索。你可以在管家对话中明确说出目标；活动记录不会被当作确定意图。')}</p>}
+    {goals.length?goals.map(goal=><article className="proactive-card proactive-goal" key={goal.id}>
+      <div className="proactive-card-top"><h4>{goal.title}</h4><span>{t(goal.status==='proposed'?'待你确认':goal.status==='confirmed'?'已确认':'已纠正')}</span></div>
+      <p>{goal.userCorrection??goal.hypothesis}</p>
+      <div className="proactive-primary-actions">
+        {goal.status==='proposed'&&<button className="btn" disabled={working||!controller} onClick={()=>void act({kind:'review-goal',goalId:goal.id,decision:'confirm'})}>{t('是我的需求')}</button>}
+        <button className="btn ghost" disabled={working||!controller} onClick={()=>void act({kind:'feedback',targetKind:'goal',targetId:goal.id,rating:'not-my-need'})}>{t('不是我的需求')}</button>
+        <button className="btn ghost" disabled={working||inactive||!controller} onClick={()=>void act({kind:'run-research',goalId:goal.id})}>{t('继续研究')}</button>
+      </div>
+      <details className="proactive-detail"><summary>{t('为什么这样判断 · 纠正目标')}</summary>
+        <p>{t('判断依据：')}{goal.hypothesis}</p><p>{t('把握程度：')}{t(goal.confidence==='high'?'较有把握':goal.confidence==='medium'?'部分依据':'线索较弱')}</p>
+        {evidence(goal.evidenceIds).map(s=><blockquote key={s.id}><strong>{s.sourceLabel||t(SOURCE_LABEL[s.source])}</strong><small> · {new Date(s.observedAt).toLocaleDateString()} · {t(s.basis==='user-stated'?'你明确提出':'活动推测')}</small><p>{s.summary}</p></blockquote>)}
+        <label className="team-field"><span>{t('真正的需求是')}</span><textarea rows={2} value={corrections[goal.id]??''} onChange={event=>setCorrections(value=>({...value,[goal.id]:event.target.value}))}/></label>
+        <button className="btn" disabled={working||!controller||!corrections[goal.id]?.trim()} onClick={()=>void act({kind:'review-goal',goalId:goal.id,decision:'correct',correction:corrections[goal.id]})}>{t('保存纠正')}</button>
+      </details>{feedback('goal',goal.id)}
+    </article>):<p className="proactive-empty">{t('你可以补充目标，也可以让管家从获准的线索中发现需求。所有推测都能纠正。')}</p>}
     <div className="proactive-section-head"><h3>{t('早晚简报')}</h3><div className="team-actions"><button className="btn sm" disabled={working||snapshot.busy||inactive||!controller} onClick={()=>void act({kind:'generate-brief',period:'morning'})}>{t('生成早间简报')}</button><button className="btn sm ghost" disabled={working||snapshot.busy||inactive||!controller} onClick={()=>void act({kind:'generate-brief',period:'evening'})}>{t('生成晚间简报')}</button></div></div>
-    {latestBriefs.length?latestBriefs.map(brief=><article className="proactive-card" key={brief.id}><h4>{t(brief.period==='morning'?'早间简报':'晚间简报')} · {new Date(brief.createdAt).toLocaleString()}</h4>{brief.items.map(item=><div className="proactive-brief-item" key={item.id}><strong>{item.title}</strong><p>{item.summary}</p><div className="proactive-evidence">{evidence(item.evidenceIds).map(s=><small key={s.id}>{s.sourceLabel||t(SOURCE_LABEL[s.source])} · {s.topic}</small>)}</div>{result(item.result)}</div>)}</article>):<p className="proactive-empty">{t('还没有简报。')}</p>}
-    <div className="proactive-section-head"><h3>{t('学习建议')}</h3></div>{proposals.length?proposals.map(proposal=><article className="proactive-card" key={proposal.id}><h4>{proposal.name}</h4><p>{proposal.description}</p><div className="proactive-evidence">{evidence(proposal.evidenceIds).map(s=><small key={s.id}>{s.sourceLabel||t(SOURCE_LABEL[s.source])} · {s.topic}</small>)}</div><p className="hint">{t('采用后保存为停用的技能草案；你仍需查看并主动启用，权限不会扩大。')}</p><div className="team-actions"><button className="btn sm" disabled={working||!controller} onClick={()=>void adoptSkill(proposal.id)}>{t('保存为停用技能')}</button><button className="btn sm ghost" disabled={working||!controller} onClick={()=>void act({kind:'review-skill',proposalId:proposal.id,decision:'dismiss'})}>{t('忽略')}</button></div></article>):<p className="proactive-empty">{t('暂无可审阅的技能建议。')}</p>}
+    {latestBriefs.length?latestBriefs.map(brief=><article className="proactive-card" key={brief.id}>
+      <h4>{t(brief.period==='morning'?'早间简报':'研究与晚间简报')} · {new Date(brief.createdAt).toLocaleDateString()}</h4>
+      {brief.items.slice(0,2).map(item=><div className="proactive-brief-item" key={item.id}><strong>{item.title}</strong><p>{item.summary}</p>{result(item.result)}</div>)}
+      {brief.items.length>2&&<details className="proactive-detail"><summary>{t('阅读完整结果与来源')}</summary>{brief.items.slice(2).map(item=><div className="proactive-brief-item" key={item.id}><strong>{item.title}</strong><p>{item.summary}</p>{result(item.result)}</div>)}</details>}
+      <details className="proactive-detail"><summary>{t('依据了哪些需求')}</summary>{evidence([...new Set(brief.items.flatMap(item=>item.evidenceIds))]).map(s=><p key={s.id}>{s.sourceLabel} · {s.summary}</p>)}</details>
+      {feedback('brief',brief.id)}
+    </article>):<p className="proactive-empty">{t('完成的研究和今日安排会出现在这里。')}</p>}
+    <details className="proactive-detail"><summary>{t('学习建议')} · {proposals.length}</summary>
+      {proposals.map(proposal=><article className="proactive-card" key={proposal.id}><h4>{proposal.name}</h4><p>{proposal.description}</p>
+        <details><summary>{t('查看技能内容与依据')}</summary><p>{proposal.body}</p>{evidence(proposal.evidenceIds).map(s=><p key={s.id}>{s.sourceLabel} · {s.summary}</p>)}</details>
+        <p className="hint">{t('采用后管家会记住这个方法，并保存为停用的技能草案。可在技能管理中启用，权限不会扩大。')}</p>
+        <div className="proactive-primary-actions"><button className="btn" disabled={working||!controller} onClick={()=>void adoptSkill(proposal.id)}>{t('采用方法')}</button><button className="btn ghost" disabled={working||!controller} onClick={()=>void act({kind:'review-skill',proposalId:proposal.id,decision:'dismiss'})}>{t('忽略')}</button></div>{feedback('skill',proposal.id)}</article>)}
+    </details>
+    <details className="proactive-detail proactive-transparency"><summary>{t('管家做了什么 · 行动记录')}</summary>
+      <p>{t('计划、完成、失败和受阻分别记录。后台只做需求理解与公开研究；财务、消息发送和商业谈判需要另外的具体授权。')}</p>
+      {[...(snapshot.brain.audit??[])].reverse().slice(0,80).map(entry=><article key={entry.id} className="proactive-audit"><div><strong>{entry.title}</strong><span>{t(entry.status==='planned'?'计划 / 已发起':entry.status==='completed'?'已完成':entry.status==='blocked'?'待授权':'失败')}</span></div><p>{entry.detail}</p><small>{new Date(entry.at).toLocaleString()}{entry.model?' · '+entry.model:''}</small></article>)}
+      {snapshot.brain.goals.filter(goal=>goal.status==='dismissed').map(goal=><p key={goal.id}>{t('已排除的需求：')}{goal.title}</p>)}
+    </details>
     {snapshot.sources.share?.available&&<form className="proactive-link" onSubmit={e=>{e.preventDefault();if(link.trim())void act({kind:'import-link',url:link.trim()}).then(()=>setLink(''));}}><label className="team-field"><span>{t('主动分享链接作为线索')}</span><input type="url" value={link} onChange={e=>setLink(e.target.value)} placeholder="https://"/></label><button className="btn sm" disabled={!link.trim()||working||inactive}>{t('加入线索')}</button></form>}
   </section>;
+}
+
+function ButlerFeedbackControl({value,disabled,onSend}:{value?:{rating:'useful'|'not-useful'|'not-my-need';comment?:string};disabled:boolean;onSend:(rating:'useful'|'not-useful',comment?:string)=>Promise<void>}) {
+  const t=useT(),[comment,setComment]=React.useState(value?.comment??'');
+  return <div className="proactive-feedback"><div className="proactive-primary-actions"><span>{t('这个结果合适吗？')}</span>
+    <button className="btn ghost" aria-pressed={value?.rating==='useful'} disabled={disabled} onClick={()=>void onSend('useful',comment)}>{t('喜欢')}</button>
+    <button className="btn ghost" aria-pressed={value?.rating==='not-useful'} disabled={disabled} onClick={()=>void onSend('not-useful',comment)}>{t('不喜欢')}</button></div>
+    <details><summary>{t('告诉管家怎么改')}</summary><label className="team-field"><span>{t('反馈原因（可选）')}</span><textarea rows={2} maxLength={1000} value={comment} onChange={event=>setComment(event.target.value)} placeholder={t('例如：主题对，但希望更具体，少一点基础介绍')}/></label>
+      <button className="btn" disabled={disabled||!comment.trim()} onClick={()=>void onSend(value?.rating==='useful'?'useful':'not-useful',comment)}>{t('保存反馈')}</button></details>
+    {value&&<small role="status">{t('反馈已记录，会影响后续判断和做法。')}</small>}
+  </div>;
 }

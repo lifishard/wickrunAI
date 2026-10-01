@@ -3,8 +3,9 @@ import BrandLogo from './BrandLogo';
 import { useT } from '../lib/i18n';
 import type { Project } from '../lib/projects';
 
-export default function WorkspaceHeader({ team, platform, projects, projectId, onProject, onMode, onHide, onButler }: {
+export default function WorkspaceHeader({ team, platform, projects, projectId, onProject, onMode, onHide, onButler, onDiscussButler }: {
   onButler?:()=>void;
+  onDiscussButler?:()=>void;
   team: boolean;
   platform: string;
   projects: Project[];
@@ -30,6 +31,7 @@ export default function WorkspaceHeader({ team, platform, projects, projectId, o
       <button aria-pressed={!team} onClick={() => onMode(false)}>{t('单一 Agent')}</button>
       <button aria-pressed={team} onClick={() => onMode(true)}>{t('协作空间')}</button>
     </div>
-    {onButler&&<button className="btn block ghost" onClick={onButler}>{t('找管家 · 说说想做什么')}</button>}
+    {onButler&&<button className="btn block ghost" onClick={onButler}>{t('今日管家')}</button>}
+    {onDiscussButler&&<button className="btn block ghost" onClick={onDiscussButler}>{t('找管家 · 说说想做什么')}</button>}
   </div>;
 }
