@@ -3624,7 +3624,6 @@ const EN: Record<string, string> = {
   '不使用路由组（本层自己排）': 'No route group (order this layer yourself)',
   '原来选用的路由组已被删除，现在按选用时保存的顺序交接。': 'The selected route group was deleted. Failover now uses the order saved when it was selected.',
   '管理路由组': 'Manage route groups',
-  '路由组': 'Route groups',
   '还没有路由组。': 'No route groups yet.',
   '这一层跟随路由组「{name}」：在设置里改这一组，这里同步生效。直接在下面调整会脱离这一组。': 'This layer follows route group “{name}”. Edit the group in Settings and changes apply here. Editing the list below detaches it from the group.',
   '选用一个路由组…': 'Use a route group…',
