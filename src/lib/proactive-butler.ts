@@ -109,8 +109,16 @@ export interface ButlerBrainState {
   briefs: ButlerBrief[];
   skillProposals: ButlerSkillProposal[];
   actionGrants: ButlerActionGrant[];
+  jobs?: ButlerJob[];
+  hosts?: ButlerHost[];
   updatedAt: number;
 }
+
+export interface ButlerJob {
+  id:string;accountId:string;kind:'analyze'|'research'|'brief';goalId?:string;period?:'morning'|'evening';
+  status:'queued'|'running'|'completed'|'failed';createdAt:number;updatedAt:number;error?:string;
+}
+export interface ButlerHost {id:string;accountId:string;name:string;lastSeenAt:number}
 
 export interface ButlerRuntimeSnapshot {
   brain: ButlerBrainState;
@@ -119,7 +127,7 @@ export interface ButlerRuntimeSnapshot {
   busy: boolean;
   error?: string;
   /** Device-local collection consent and actual availability; never cloud-synced. */
-  sources: Partial<Record<ButlerSource,{available:boolean;consented:boolean;note?:string}>>;
+  sources: Partial<Record<ButlerSource,{available:boolean;consented:boolean;note?:string;allowlist?:string[]}>>;
   nativeClients?: ClientStatus[];
 }
 
@@ -127,11 +135,19 @@ export type ButlerRuntimeAction =
   | {kind:'review-goal';goalId:string;decision:'confirm'|'dismiss'|'correct';correction?:string}
   | {kind:'review-skill';proposalId:string;decision:'accept'|'dismiss'}
   | {kind:'set-device-consent';source:ButlerSource;consented:boolean}
+  | {kind:'configure-source';source:ButlerSource;allowlist:string[]}
+  | {kind:'install-browser-extension'}
   | {kind:'select-host';deviceId:string}
   | {kind:'refresh'} | {kind:'analyze-now'} | {kind:'generate-brief';period:'morning'|'evening'}
   | {kind:'import-link';url:string}
   | {kind:'run-research';goalId:string}
   | {kind:'pause'} | {kind:'resume'} | {kind:'turn-off'};
+
+export interface ButlerRuntimeController {
+  getSnapshot():ButlerRuntimeSnapshot;
+  subscribe(listener:()=>void):()=>void;
+  action(action:ButlerRuntimeAction):Promise<void>;
+}
 
 export function emptyButlerBrain(accountId:string):ButlerBrainState {
   return {schema:1,accountId,signals:[],goals:[],briefs:[],skillProposals:[],actionGrants:[],updatedAt:0};
@@ -254,7 +270,11 @@ export function projectButlerBrainForSync(brain:ButlerBrainState):ButlerBrainSta
       body:modelSafeSummary(s.body,2000),evidenceIds:refs(s.evidenceIds),status:s.status,
       createdAt:s.createdAt,reviewedAt:s.reviewedAt,
     })),
-    actionGrants:[],updatedAt:brain.updatedAt};
+    actionGrants:[],
+    jobs:brain.jobs?.filter(j=>j.accountId===accountId).slice(-200).map(j=>({id:j.id,accountId,kind:j.kind,goalId:j.goalId,
+      period:j.period,status:j.status,createdAt:j.createdAt,updatedAt:j.updatedAt,error:j.error?modelSafeSummary(j.error,200):undefined})),
+    hosts:brain.hosts?.filter(h=>h.accountId===accountId).slice(-20).map(h=>({id:h.id,accountId,name:modelSafeSummary(h.name,80),lastSeenAt:h.lastSeenAt})),
+    updatedAt:brain.updatedAt};
 }
 
 function safeResultRef(result:ButlerResultRef|undefined):ButlerResultRef|undefined {
