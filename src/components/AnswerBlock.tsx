@@ -348,7 +348,11 @@ export default function AnswerBlock(props: {
             {question.attachments?.length ? (
               <span className="q-attach">
                 {question.attachments.map((a) =>
-                  a.kind === 'image' && a.dataUrl ? (
+                  a.cloudFile && !a.dataUrl && !a.text ? (
+                    <button type="button" key={a.id} className="chip" title={t('缓存已过期时，需要保存原文件的设备上线。')} onClick={()=>window.dispatchEvent(new Event('wickrun:sync-files'))}>
+                      📄 {a.name} · {t('等待文件同步')}
+                    </button>
+                  ) : a.kind === 'image' && a.dataUrl ? (
                     <img key={a.id} src={a.dataUrl} alt={a.name} title={a.name} />
                   ) : (a.kind === 'audio' || a.kind === 'video') && a.dataUrl ? (
                     <span className="media-attachment" key={a.id}><span>{a.name}</span>{a.kind === 'audio' ? <audio controls preload="metadata" src={a.dataUrl} aria-label={a.name} /> : <video controls preload="metadata" src={a.dataUrl} aria-label={a.name} />}</span>

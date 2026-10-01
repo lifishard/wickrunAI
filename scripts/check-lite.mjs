@@ -43,6 +43,8 @@ const rel = (f) => path.relative(root, f).replace(/\\/g, '/');
 function resolveModule(from, spec) {
   if (!spec.startsWith('.')) return null;
   const base = path.resolve(path.dirname(from), spec);
+  // Explicit JavaScript modules outside src are checked by TypeScript and the build.
+  if (/\.(?:mjs|cjs|js)$/.test(spec) && fs.existsSync(base)) return null;
   for (const cand of [`${base}.ts`, `${base}.tsx`, path.join(base, 'index.ts'), path.join(base, 'index.tsx')]) {
     if (src.has(cand)) return cand;
   }

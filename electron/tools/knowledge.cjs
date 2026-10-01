@@ -136,7 +136,7 @@ function projectDocRead(args, ctx) {
 
   const name = String(args.name || '').trim();
   if (!name) {
-    return ok(docs.map((d) => `- ${d.name}（${d.text.length} 字）`).join('\n'), {
+    return ok(docs.map((d) => `- ${d.name}（${typeof d.text==='string'?d.text.length:0} 字）`).join('\n'), {
       summary: `列出项目文档（${docs.length} 篇）`,
     });
   }
@@ -150,6 +150,7 @@ function projectDocRead(args, ctx) {
     return fail(`没有叫「${name}」的文档。现有的：${docs.map((d) => d.name).join('、')}`);
   }
 
+  if(hit.cloudFile&&hit.text===undefined)return fail('这份文档尚未同步到本设备，请先让来源设备上线并同步文件。');
   const maxChars = Math.min(80000, Math.max(500, Number(args.max_chars) || 20000));
   return ok(`# ${hit.name}\n\n${clip(hit.text, maxChars)}`, {
     summary: `读文档《${hit.name}》`,
@@ -174,7 +175,7 @@ async function projectDocWrite(args, ctx) {
   const now = Date.now();
 
   if (j >= 0) {
-    docs[j] = { ...docs[j], text, updatedAt: now };
+    docs[j] = { ...docs[j], text, cloudFile: undefined, updatedAt: now };
   } else {
     docs.push({ id: `d-${now}-${Math.random().toString(36).slice(2, 8)}`, name, text, updatedAt: now });
   }

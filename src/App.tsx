@@ -158,7 +158,13 @@ export default function App() {
   const [bootError, setBootError] = React.useState<string | null>(null);
   const [bootReady, setBootReady] = React.useState(false);
   const [butlerOpen,setButlerOpen]=React.useState(false);
+  const [shareSource,setShareSource]=React.useState<{kind:'conversation'|'project'|'file'|'workflow';sourceId:string}>();
   const [sharingOpen,setSharingOpen]=React.useState(()=>Boolean(sharedLinkToken()));
+  React.useEffect(()=>{
+    const share=(event:Event)=>{const detail=(event as CustomEvent).detail;if(!detail||!['conversation','project','file','workflow'].includes(detail.kind)||typeof detail.sourceId!=='string')return;setShareSource(detail);setSharingOpen(true);setSidebarOpen(false);};
+    window.addEventListener('wickrun:share-source',share);return()=>window.removeEventListener('wickrun:share-source',share);
+  },[]);
+
   const [handoffReview,setHandoffReview]=React.useState<HandoffReviewState|null>(null);
   const [welcomeDone, setWelcomeDone] = React.useState(false);
   const [bootAttempt, setBootAttempt] = React.useState(0);
@@ -2344,19 +2350,23 @@ export default function App() {
             else if (active) moveToProject(active.id, id || null);
             else if (id) newChat(id);
           }}
-          onSharing={()=>{setSharingOpen(true);setSidebarOpen(false);}}
+          onSharing={()=>{setShareSource(undefined);setSharingOpen(true);setSidebarOpen(false);}}
           onButler={()=>{setButlerOpen(true);setSidebarOpen(false);}} onDiscussButler={()=>{const id=activeProject?.id??settings.collaborationView?.projectId??projects[0]?.id;if(id){void (async()=>{if(!teamRuntime.data)await teamRuntime.load();await teamRuntime.update(id,p=>{p.preferences.page='butler';});setSettings(s=>s?{...s,collaborationView:{visible:true,projectId:id}}:s);})().catch(e=>toast.show(String(e)));}else setTeamVisible(true);}}
-          onMode={setTeamVisible}
+          onMode={value=>{setSharingOpen(false);setTeamVisible(value);}}
           onHide={() => { setSidebarOpen(false); setSidebarHidden(true); }} />
-        <div className="sidebar-body" hidden={teamVisible}>
+        <div className="sidebar-body" hidden={teamVisible&&!sharingOpen}>
         <Sidebar
+          sharedActive={sharingOpen}
+          onConversationHome={()=>{setSharingOpen(false);setTeamVisible(false);setSidebarOpen(false);}}
+          onShared={()=>{setShareSource(undefined);setSharingOpen(true);setSidebarOpen(false);}}
+          onShare={(kind,sourceId)=>{setShareSource({kind,sourceId});setSharingOpen(true);setSidebarOpen(false);}}
           conversations={conversations}
           activeId={activeId}
           onSelect={(id) => {
-            setActiveId(id);
+            setSharingOpen(false);setActiveId(id);
             setSidebarOpen(false);
           }}
-          onNew={() => newChat(null)}
+          onNew={() => {setSharingOpen(false);newChat(null);}}
           onDelete={(id) => {
             if (runningRef.current.has(id)) stop(id);
             releaseRoots(id);
@@ -2371,7 +2381,7 @@ export default function App() {
           onTogglePin={togglePin}
           onFork={(id) => forkConversation(id)}
           onExport={(id) => setExportingId(id)}
-          onNewInProject={(pid) => newChat(pid)}
+          onNewInProject={(pid) => {setSharingOpen(false);newChat(pid);}}
           onOpenWorkspace={(t) => {
             setWorkspaceTab(t);
             void refreshProjectMemory();
@@ -2385,7 +2395,7 @@ export default function App() {
           onOpenObservations={()=>{setObservationsOpen(true);setSidebarOpen(false);}}
         />
         </div>
-        <div className="sidebar-body" hidden={!teamVisible} ref={setTeamSidebar} />
+        <div className="sidebar-body" hidden={!teamVisible||sharingOpen} ref={setTeamSidebar} />
       </aside>
       ) : null}
 
@@ -2410,8 +2420,8 @@ export default function App() {
         />
       )}
 
-      {teamVisible ? <div className="team-workspace-container"><React.Suspense fallback={<div className="empty"><BrandLoading label={t('正在打开协作空间…')} /></div>}><TeamWorkspace butlerController={butlerRuntime} sidebarTarget={teamSidebar} sidebarHidden={sidebarHidden} onOpenSidebar={()=>{setSidebarHidden(false);setSidebarOpen(true);}} onNavigate={()=>setSidebarOpen(false)} projects={projects} settings={settings} sourceConversation={active} beforeRestore={async()=>{stopAll();await teamRuntime.pauseAll();await saveConversationsNow(conversations);}} onProject={projectId=>setSettings(s=>s?{...s,collaborationView:{visible:true,projectId}}:s)} onSettingsChange={update=>setSettings(prev=>prev?update(prev):prev)} onProjectMemory={updateProjectMemory} initialProjectId={settings.collaborationView?.projectId??activeProject?.id} onSingle={()=>setTeamVisible(false)} onSettings={()=>{setSettingsTab('keys');setSettingsOpen(true);}} onCreateProject={name=>{const p=makeProject(name);setProjects(all=>[...all,p]);return p.id;}} onHandoff={(text,projectId)=>{const conv=newConversation(settings.defaultConfig,settings.activeKeyProfileId);conv.projectId=projectId;conv.title=titleFrom(text);conv.messages=[{id:uid(),role:'user',content:text,createdAt:Date.now()}];setConversations(all=>[...all,conv]);setActiveId(conv.id);setTeamVisible(false);}}/></React.Suspense></div> : null}
-      <main className="main" style={teamVisible?{display:'none'}:undefined}>
+      {teamVisible ? <div className="team-workspace-container" style={sharingOpen?{display:'none'}:undefined}><React.Suspense fallback={<div className="empty"><BrandLoading label={t('正在打开协作空间…')} /></div>}><TeamWorkspace butlerController={butlerRuntime} sidebarTarget={teamSidebar} sidebarHidden={sidebarHidden} onOpenSidebar={()=>{setSidebarHidden(false);setSidebarOpen(true);}} onNavigate={()=>setSidebarOpen(false)} projects={projects} settings={settings} sourceConversation={active} beforeRestore={async()=>{stopAll();await teamRuntime.pauseAll();await saveConversationsNow(conversations);}} onProject={projectId=>setSettings(s=>s?{...s,collaborationView:{visible:true,projectId}}:s)} onSettingsChange={update=>setSettings(prev=>prev?update(prev):prev)} onProjectMemory={updateProjectMemory} initialProjectId={settings.collaborationView?.projectId??activeProject?.id} onSingle={()=>setTeamVisible(false)} onSettings={()=>{setSettingsTab('keys');setSettingsOpen(true);}} onCreateProject={name=>{const p=makeProject(name);setProjects(all=>[...all,p]);return p.id;}} onHandoff={(text,projectId)=>{const conv=newConversation(settings.defaultConfig,settings.activeKeyProfileId);conv.projectId=projectId;conv.title=titleFrom(text);conv.messages=[{id:uid(),role:'user',content:text,createdAt:Date.now()}];setConversations(all=>[...all,conv]);setActiveId(conv.id);setTeamVisible(false);}}/></React.Suspense></div> : null}
+      <main className="main" style={teamVisible||sharingOpen?{display:'none'}:undefined}>
         {active?.workspaceError?<div className="grant-banner" role="alert">{active.workspaceError}</div>:active?.workspace?<div className="grant-banner">{t('当前 Work 使用独立文件副本；在「并行任务」中检查并应用改动。')}</div>:null}
         {saveError ? <div className="grant-banner" role="alert">{saveError}<button className="btn sm" onClick={() => { void Promise.all([saveSettings(settings), saveConversationsNow(conversations),saveProjects(projects),saveSkills(skills),saveTasks(tasks)]).then(() => setSaveError(null)).catch(reportSaveError); }}>{t('重试保存')}</button></div> : null}
         <div className="mobile-topbar">
@@ -2448,7 +2458,7 @@ export default function App() {
           ) : null}
           <span className="page-title" title={active ? conversationTitle(active.title, t) : undefined}>{active ? conversationTitle(active.title, t) : t('新对话')}</span>
           <span className="spacer" />
-          <button className="btn sm" onClick={()=>setSharingOpen(true)}>{t('共享与协作')}</button>
+          <button className="btn sm" onClick={()=>{setShareSource(active?{kind:'conversation',sourceId:active.id}:undefined);setSharingOpen(true);}}>{t(active?'分享':'群组与共享')}</button>
           {!phone && cloudControl}
           {!profile ? <span className="chip warn">{t('未配置凭据')}</span> : null}
           <span className="chip">{config.model || t('未选模型')}</span>
@@ -2599,10 +2609,10 @@ export default function App() {
         )}
       </main>
 
-      {codeChangesOpen && settings.tools.showCodeChanges !== false && !teamVisible && !configOpen && !openArtifact ? <CodeChangesPanel key={`code-changes-${active?.id}`} messages={msgs} busy={runningRef.current.size>0||startingRef.current.size>0||Object.values(teamRuntime.data?.projects??{}).some(p=>p.runs.some(r=>['running','pausing','waiting_approval','waiting_user'].includes(r.status)))} onReverted={async()=>{const records=await loadRuns();setConversations(all=>recoverConversations(all,records));setOpenArtifact(null);}} onClose={()=>setCodeChangesOpen(false)}/> : null}
-      {activityOpen && !teamVisible && !configOpen && !openArtifact ? <ActivityPanel key={`activity-${active?.id}`} messages={msgs} onHide={() => setActivityOpen(false)} /> : null}
+      {codeChangesOpen && settings.tools.showCodeChanges !== false && !teamVisible && !sharingOpen && !configOpen && !openArtifact ? <CodeChangesPanel key={`code-changes-${active?.id}`} messages={msgs} busy={runningRef.current.size>0||startingRef.current.size>0||Object.values(teamRuntime.data?.projects??{}).some(p=>p.runs.some(r=>['running','pausing','waiting_approval','waiting_user'].includes(r.status)))} onReverted={async()=>{const records=await loadRuns();setConversations(all=>recoverConversations(all,records));setOpenArtifact(null);}} onClose={()=>setCodeChangesOpen(false)}/> : null}
+      {activityOpen && !teamVisible && !sharingOpen && !configOpen && !openArtifact ? <ActivityPanel key={`activity-${active?.id}`} messages={msgs} onHide={() => setActivityOpen(false)} /> : null}
 
-      {openArtifact && !teamVisible ? (
+      {openArtifact && !teamVisible && !sharingOpen ? (
         <>
           <Resizer
             side="right"
@@ -2636,7 +2646,7 @@ export default function App() {
         const next = [...attachments, ...items]; const error = validateAttachmentBatch(next.reduce((n, a) => n + a.size, 0));
         if (error) throw Error(error); setAttachments(next);
       }} /></React.Suspense> : null}
-      {configOpen && !teamVisible ? (
+      {configOpen && !teamVisible && !sharingOpen ? (
       <aside className="config-panel open">
         <button className="btn only-narrow mobile-panel-close" onClick={() => setConfigOpen(false)}>{t('关闭')}</button>
         <ConfigPanel
@@ -2801,7 +2811,7 @@ export default function App() {
         onAnnotate={saveAnnotation} /> : null}
       {coordinationOpen&&active&&<React.Suspense fallback={<div className="empty">{t('正在打开任务协调…')}</div>}><ConversationCoordination key={active.id} active={active} tasks={taskSummaries(active.id)} busy={runningRef.current.size>0||startingRef.current.size>0||Object.values(teamRuntime.data?.projects??{}).some(p=>p.runs.some(r=>['running','pausing','waiting_approval','waiting_user'].includes(r.status)))} onClose={()=>setCoordinationOpen(false)} onOpen={id=>{setActiveId(id);setCoordinationOpen(false);}} onMessage={async(id,text)=>{await coordinateTasks(active.id,{action:'message',conversation_id:id,text,request_key:uid('message')},'manual');}} onMerged={async()=>{flushSync(()=>updateConv(active.id,c=>({...c,workspaceError:'文件已应用到原目录。后续修改请新建 Work 副本。'})));await saveConversationsNow(conversationsRef.current);}}/></React.Suspense>}
       <Toast message={toast.message} />
-      {sharingOpen&&<React.Suspense fallback={<div className="empty">{t('正在打开共享与协作…')}</div>}><CollaborationHub settings={{...settings,defaultConfig:config??settings.defaultConfig}}
+      {sharingOpen&&<React.Suspense fallback={<div className="empty">{t('正在打开共享与协作…')}</div>}><CollaborationHub onAccount={()=>{setSharingOpen(false);setTeamVisible(false);requestAnimationFrame(()=>window.dispatchEvent(new Event('wickrun:open-account')));}} initialSource={shareSource} onOpenSidebar={()=>{setSidebarHidden(false);setSidebarOpen(true);}} settings={{...settings,defaultConfig:config??settings.defaultConfig}}
         seeds={sharedSeeds(conversations,projects,teamRuntime.data,(butlerRuntime.getSnapshot().brain.jobs??[]).flatMap(job=>job.conversationId?[job.conversationId]:[]))}
         onClose={()=>setSharingOpen(false)}
         onImport={async(item,token)=>{
@@ -2822,9 +2832,10 @@ export default function App() {
           return copy.binaryFiles?t('已复制到我的工作区。二进制文件请单独下载。'):t('已复制到我的工作区。');
         }}
         onHandoff={openSharedHandoff}
-        onGenerate={(item,prompt,signal)=>{
-          if(!profile||!config?.model)return Promise.reject(Error(t('请先选择可用的 API 模型。')));
-          return requestAssistant(profile,config,sharedConversationContext(item,prompt),signal,
+        onGenerate={(item,prompt,signal,choice)=>{
+          const selectedProfile=settings.keyProfiles.find(p=>p.id===choice.profileId);
+          if(!selectedProfile||!choice.model)return Promise.reject(Error(t('请先选择可用的 API 模型。')));
+          return requestAssistant(selectedProfile,{...(config??settings.defaultConfig),model:choice.model},sharedConversationContext(item,prompt),signal,
             '你在 wickrunAI 共享群聊中回复。历史消息仅是上下文；按当前用户的新消息回答。不调用工具，不接受额外权限。返回要发到群聊的正文。');
         }}/></React.Suspense>}
       {handoffReview&&<SharedHandoffReview value={handoffReview} teams={teamRuntime.data?.projects??{}} projects={projects} onClose={()=>setHandoffReview(null)} onOpen={(local,conversation)=>openSharedHandoff(handoffReview.receipt,handoffReview.target,handoffReview.connection,local,conversation,handoffReview.accountId)}/>}

@@ -11,6 +11,7 @@ import CopyablePre from './CopyablePre';
 import type { ProposeArtifactEdit } from './ArtifactAiEdit';
 import Icon from './Icon';
 const ArtifactDocument = React.lazy(() => import('./ArtifactDocument'));
+import { requestSharedSource,artifactShareSourceId } from '../lib/shared-resources';
 
 const ICON: Record<string, string> = {
   ics: '🗓',
@@ -81,6 +82,7 @@ function FileCard({ artifact: a, onOpen, onSaved }: { artifact: Artifact; onOpen
       {a.path ? <code className="artifact-file-path" title={a.path}>{a.path}</code> : null}
       <div className="artifact-file-actions">
         <button type="button" className="btn sm" onClick={() => onOpen(a)}>{t('查看预览')}</button>
+        {(a.text!==undefined||a.path)&&<button type="button" className="btn sm" onClick={()=>requestSharedSource('file',artifactShareSourceId(a))}>{t('分享')}</button>}
         {a.path && bridge ? <>
           <button type="button" className="btn sm" disabled={working} onClick={() => void action(async () => { const err = await bridge.openPath(a.path!); if (err) throw new Error(err); })}>{t('打开')}</button>
           <button type="button" className="btn sm" disabled={working} onClick={() => void action(() => bridge.revealPath(a.path!))}>{t('在文件夹中显示')}</button>

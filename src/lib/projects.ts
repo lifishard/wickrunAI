@@ -22,6 +22,7 @@ export interface ProjectDoc {
   name: string;
   text: string;
   updatedAt: number;
+  cloudFile?: { sha256:string;size:number;encrypted?:boolean };
 }
 
 export interface ProjectPrompt {
@@ -123,7 +124,7 @@ export function projectSystemBlock(p: Project | null, query = '', opts: { memory
 
   if (p.docs.length) {
     const index = p.docs
-      .map((d) => `  - ${d.name}（${d.text.length} 字）`)
+      .map((d) => `  - ${d.name}（${d.cloudFile&&!d.text?'正文尚未同步，需要来源设备上线':`${d.text.length} 字`}）`)
       .join('\n');
     parts.push(
       `项目文档清单（正文没有直接给你，需要时用 project_doc_read 按名字读）：\n${index}`,

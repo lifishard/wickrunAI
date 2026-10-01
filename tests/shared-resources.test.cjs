@@ -4,7 +4,7 @@ const path=require('node:path');
 const {loader}=require('./load-ts.cjs');
 const root=path.join(__dirname,'..','src','lib');
 const calls=[];
-const shared=loader({[path.join(root,'cloud-api.ts')]:{cloudCall:async(action,input)=>{calls.push({action,...input});return {item:{id:'shared-'+calls.length},token:'a'.repeat(43)};}}})(path.join(root,'shared-resources.ts'));
+const shared=loader({[path.join(root,'cloud-api.ts')]:{cloudAccountIdentity:async()=>null,cloudCall:async(action,input)=>{calls.push({action,...input});return {item:{id:'shared-'+calls.length},token:'a'.repeat(43)};}}})(path.join(root,'shared-resources.ts'));
 const conversation=(id,extra={})=>({id,title:id,config:{},messages:[{id:'m'+id,role:'assistant',content:'answer',createdAt:1}],createdAt:1,...extra});
 const project={id:'p',name:'Project',instructions:'Scope',docs:[{id:'d',name:'Brief',text:'public draft',updatedAt:1}],prompts:[{id:'q',label:'Review',text:'review this'}],memory:'private memory',memoryItems:[{text:'private'}],defaultKeyProfileId:'secret-profile',createdAt:1};
 

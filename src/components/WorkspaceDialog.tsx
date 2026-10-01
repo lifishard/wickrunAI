@@ -56,7 +56,7 @@ function ProjectsTab(props: {
 
   const setDoc = (id: string, v: Partial<ProjectDoc>) =>
     patch({
-      docs: (p?.docs ?? []).map((d) => (d.id === id ? { ...d, ...v, updatedAt: Date.now() } : d)),
+      docs: (p?.docs ?? []).map((d) => (d.id === id ? { ...d, ...v, ...('text' in v?{cloudFile:undefined}:{}),updatedAt: Date.now() } : d)),
     });
 
   return (
@@ -179,7 +179,7 @@ function ProjectsTab(props: {
                     onChange={(e) => setDoc(d.id, { name: e.target.value })}
                     style={{ fontWeight: 600 }}
                   />
-                  <span className="chip">{t('{n} 字', { n: d.text.length })}</span>
+                  <span className="chip">{d.cloudFile&&!d.text?t('等待文件同步'):t('{n} 字', { n: d.text.length })}</span>
                   <button
                     className="btn sm danger"
                     onClick={() => patch({ docs: p.docs.filter((x) => x.id !== d.id) })}
@@ -191,8 +191,10 @@ function ProjectsTab(props: {
                   rows={5}
                   className="mono"
                   value={d.text}
+                  disabled={Boolean(d.cloudFile&&!d.text)}
                   onChange={(e) => setDoc(d.id, { text: e.target.value })}
                 />
+                {d.cloudFile&&!d.text?<button type="button" className="btn sm" onClick={()=>window.dispatchEvent(new Event('wickrun:sync-files'))}>{t('请求同步文件')}</button>:null}
               </div>
             ))}
             <button

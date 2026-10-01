@@ -15,6 +15,10 @@ export default function Sidebar(props: {
   onTogglePin: (id: string) => void;
   onFork: (id: string) => void;
   onExport: (id: string) => void;
+  onShare:(kind:'conversation'|'project',id:string)=>void;
+  onShared:()=>void;
+  onConversationHome:()=>void;
+  sharedActive?:boolean;
   onOpenSettings: () => void;
   onOpenObservations: () => void;
 
@@ -127,6 +131,7 @@ export default function Sidebar(props: {
             >
               <Icon name="copy" size={17}/>
             </button>
+            <button className="icon-btn" title={t('分享')} aria-label={t('分享对话')} onClick={e=>{e.stopPropagation();props.onShare('conversation',c.id);}}><Icon name="arrowUpRight"/></button>
             <button
               className="icon-btn"
               title={t('存成文件')}
@@ -198,6 +203,8 @@ export default function Sidebar(props: {
         ) : null}
       </div>
 
+      <nav className="web-nav" aria-label={t('工作区导航')}><button aria-current={!props.sharedActive?"page":undefined} onClick={props.onConversationHome}><Icon name="list" />{t('对话')}</button><button onClick={props.onShared} aria-current={props.sharedActive?'page':undefined}><Icon name="link" />{t('群组与共享')}</button></nav>
+      <div className="web-recent-label">{t('最近对话')}</div>
       <div className="conv-list">
         {pinned.length === 0 && loose.length === 0 && props.projects.length === 0 ? (
           <div className="empty" style={{ padding: '24px 10px' }}>
@@ -222,6 +229,7 @@ export default function Sidebar(props: {
                   <Icon name={collapsed ? 'chevronRight' : 'chevronDown'} size={15}/> {p.emoji} {p.name}
                   <span className="project-count">{list.length}</span>
                 </button>
+                <button className="icon-btn" title={t('分享项目')} onClick={()=>props.onShare('project',p.id)}><Icon name="arrowUpRight"/></button>
                 <button
                   className="icon-btn"
                   title={t('在「{name}」里新开一个对话', { name: p.name })}

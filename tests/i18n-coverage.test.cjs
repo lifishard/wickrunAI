@@ -10,6 +10,7 @@ const TRANSLATED=[
   'components/collaboration/SharedWorkflowEditor.tsx',
   'components/ConversationCoordination.tsx',
   'components/CloudSyncControl.tsx',
+  'components/EncryptionSettings.tsx',
   'App.tsx',
   'lib/tools/registry.ts',
   'lib/probe400.ts',

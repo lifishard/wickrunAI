@@ -3019,6 +3019,7 @@ kbd {
 /* Shared navigation frame for conversations and collaboration. */
 .workspace-header { padding: 12px 12px 10px; display: grid; gap: 16px; }
 .workspace-project { display: grid; gap: 6px; min-width: 0; }
+.workspace-project[hidden] { display: none; }
 .workspace-project > span { font-size: 12px; color: var(--fg-dim); }
 .workspace-project select { width: 100%; min-width: 0; font-size: 13px; padding: 8px 10px; }
 .workspace-mode { display: flex; align-items: center; gap: 3px; padding: 3px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg); }
@@ -3105,3 +3106,6 @@ kbd {
 .composer-rich-input code { font-family: var(--mono, monospace); font-size: .9em; }
 .composer-rich-input a { color: var(--accent); }
 .composer-rich-input.ProseMirror-focused { outline: none; }
+
+/* Shared navigation stays with the conversation sidebar. */
+.web-nav{padding:4px 10px;display:grid;gap:2px}.web-nav button{display:flex;align-items:center;gap:10px;min-height:38px;padding:8px 10px;border:0;border-radius:7px;background:transparent;color:var(--fg-dim);text-align:left;font:inherit;font-size:13px}.web-nav button[aria-current]{background:var(--accent-soft);color:var(--accent)}.web-nav button:hover{background:var(--bg-hover)}.web-recent-label{padding:10px 14px;font-size:12px;color:var(--fg-dim)}.workspace-mode-select{width:100%;min-height:32px;padding:5px 9px;background:var(--bg);color:var(--fg);font:inherit;font-size:12px;border:1px solid var(--border);border-radius:7px}

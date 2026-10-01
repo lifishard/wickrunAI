@@ -1,5 +1,7 @@
 # Shared Google accounts: desktop + web
 
+> This setup guide below describes the legacy snapshot protocol. The 10 MiB snapshot limit and unencrypted ordinary record description do not apply after 4.0.1 migration. Read [4.0.1 storage, encryption and recovery behavior](releases/v4.0.1.md) before using the legacy behavior section.
+
 The repositories remain separate. `lifishard/wickrunAI-web` owns the Railway HTTP service and PostgreSQL database. `lifishard/wickrunAI` contains the installed desktop client. Both use Google’s stable account ID, not an email address supplied by a client, to select account data.
 
 ## Railway setup

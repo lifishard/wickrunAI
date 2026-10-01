@@ -139,6 +139,7 @@ public class WickrunAccountPlugin extends Plugin {
             case "status":route="/api/cloud/status";break;
             case "read":route="/api/cloud/data";break;
             case "write":route="/api/cloud/data";method="PUT";body=input;break;
+            case "sync":route="/api/cloud/sync";method="POST";body=input;break;
             case "keys":route="/api/cloud/keys";break;
             case "collaboration":route="/api/collaboration";method="POST";body=input;break;
             case "keyGet":case "keySet":case "keyDelete":

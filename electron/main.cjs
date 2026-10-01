@@ -606,6 +606,7 @@ function registerIpc() {
     dataAvailable();
   };
   ipcMain.handle('snc:artifactDocument', (e, p) => { artifactSender(e); return artifacts.readDocument(p); });
+  ipcMain.handle('snc:readSharedFile', (e, p) => { artifactSender(e); return require('./shared-file-read.cjs').readSharedFile(p); });
   ipcMain.handle('snc:artifactWordPreview', (e, p) => { artifactSender(e); return require('./office-preview.cjs').previewWord(p); });
   ipcMain.handle('snc:artifactBinary', (e, { action, input }) => {
     artifactSender(e);
