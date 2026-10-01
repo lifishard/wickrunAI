@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { randomBytes, createHash } = require('node:crypto');
 
-const ORIGIN = 'https://wickrunai-web-production.up.railway.app';
+const ORIGIN = 'https://wickrunai.com';
 function createCloudAccount({ app, safeStorage, openExternal, fetcher = fetch }) {
   const base = app.getPath('userData');
   const registryFile = path.join(base, 'cloud-accounts.json');
@@ -46,8 +46,15 @@ function createCloudAccount({ app, safeStorage, openExternal, fetcher = fetch })
       headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       body: body ? JSON.stringify(body) : undefined,
     });
-    const data = await response.json();
-    if (!response.ok) { const error = new Error(data.error || `Cloud request failed (${response.status}).`); error.status = response.status; throw error; }
+    const data = await response.json().catch(() => null);
+    if (!response.ok) {
+      const detail = data && typeof data === 'object' ? data.error || data.message : null;
+      const message = typeof detail === 'string' ? detail : detail && typeof detail === 'object' && typeof detail.message === 'string' ? detail.message : null;
+      const error = new Error(message || `Cloud request failed (${response.status}).`);
+      error.status = response.status;
+      throw error;
+    }
+    if (!data || typeof data !== 'object') throw new Error('Invalid cloud response.');
     return data;
   }
   return {
