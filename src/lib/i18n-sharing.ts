@@ -1,5 +1,6 @@
 /** English copy for the shared work surface. Simplified Chinese is the source locale. */
 export const SHARING_EN: Record<string, string> = {
+  '对话设置': 'Conversation settings',
   '共享与协作': 'Sharing & collaboration',
   '一起完成工作': 'Work together',
   '共享内容': 'Shared items',
