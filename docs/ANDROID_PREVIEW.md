@@ -2,6 +2,8 @@
 
 这是公开测试 APK，可安装到 Android 手机和平板。尚未完成真机验收，不作为正式稳定版发布。
 
+3.0.0 更新：与四平台版本统一。加入需单独授权的「今日管家」：可选择允许和拒绝的应用，设置排除、脱敏与仅加密保留规则；活动原文由 Android Keystore 加密保存在本机。电池优化设置只会打开系统授权页面，不会绕过系统限制。手机可查看和补充管家需求，持续分析与自动 Work 仍由选定的常开电脑执行。可导入有文字层的 PDF、Office 文档和常见文本文件；扫描 PDF 与旧版 PPT 需先转换。
+
 2.20.26 更新：跟进桌面 2.20.26。暂停在后台回复完成或新对话建立期间仍然有效；回答、代码和工具输出增加随手可见的复制入口，代码复制保留原始空格、制表符与换行；支持独立的成品文本和可选追问卡片。
 
 2.20.25 更新：跟进桌面 2.20.25。看图能力按实测判断，不再只凭模型列表的登记拦下图片；检测时一并确认这条路由认哪种图片写法。
@@ -25,4 +27,4 @@
 - `SHA256SUMS.txt` 提供 APK 校验和，`SIGNATURE.txt` 记录测试签名验证结果。
 - 此预发布版不替换桌面稳定版，不进入桌面自动更新渠道。
 
-This APK is an Android engineering preview for phones and tablets, not a stable release. Version 2.20.26 brings the shared code up to desktop 2.20.26, including reliable pause behavior, visible copy controls that preserve code whitespace, finished-text cards, and suggested follow-ups. Tools that need the computer itself (local files, command line, screen control) are not offered on the phone. Physical-device acceptance is pending. Google sign-in, browser return and account-isolated cloud sync are connected. Real Google authorization on a physical Android device is still pending acceptance. Large task-file export remains unavailable. It uses a debug signing key; later builds may require uninstalling this preview, so back up data first. Checksums and signature verification are included. Desktop stable releases and automatic updates are unaffected.
+This 3.0.0 APK is an Android engineering preview for phones and tablets, not a stable release. It includes the opt-in assistant, per-app allow and deny choices, local privacy rules, and Android Keystore encryption for captured source text. Battery exemption opens the system approval page; the app cannot bypass Android limits. Continuous analysis and automatic Work run on a selected always-on computer, while the phone can review and add needs. Text-layer PDF, Office, and common text attachments are supported; scanned PDF and legacy PPT need conversion first. Tools that need the computer itself (local files, command line, screen control) are not offered on the phone. Physical-device acceptance remains pending. Google sign-in, browser return and account-isolated cloud sync are connected. It uses a debug signing key; later builds may require uninstalling this preview, so back up data first. Checksums and signature verification are included.
