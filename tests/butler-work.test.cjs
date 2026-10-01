@@ -29,11 +29,15 @@ test('automatic Work requires routine permission and marks native clients for ho
 });
 
 test('automatic proposed goal gets a bounded, cautious handoff and dismissed goal is rejected',()=>{
-  const prompt=butlerWorkPrompt(brain,{...goal,hypothesis:'draft '.repeat(10000)},{autonomous:true});
+  const large={...brain,signals:Array.from({length:250},(_,i)=>({id:String(i),accountId:'own',source:'wickrun',sourceLabel:'Chat',topic:'a'.repeat(100),intent:'b'.repeat(100),summary:'c'.repeat(400),observedAt:i,confidence:'medium',basis:'behavior',modelSafe:true})),goals:Array.from({length:30},(_,i)=>({...goal,id:String(i),status:'confirmed',evidenceIds:[String(i)]}))};
+  const prompt=butlerWorkPrompt(large,{...goal,hypothesis:'draft '.repeat(10000)},{autonomous:true});
   assert.ok(prompt.length<=16000);
   assert.match(prompt,/候选需求/);
   assert.match(prompt,/butler-brain/);
   assert.match(prompt,/隔离工作目录/);
+  const memory=prompt.match(/近期线索：(\{[^\n]+\})\n/);
+  assert.ok(memory,'memory excerpt is a complete JSON object');
+  const parsed=JSON.parse(memory[1]);assert.match(parsed.archive,/butler-brain/);assert.equal(parsed.counts.signals,250);assert.ok(parsed.signals.length>0);
   assert.throws(()=>butlerWorkPrompt(brain,goal),/确认或纠正/);
   assert.throws(()=>butlerWorkPrompt(brain,{...goal,status:'dismissed'},{autonomous:true}),/已否定/);
 });

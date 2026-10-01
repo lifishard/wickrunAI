@@ -87,3 +87,10 @@ test('a persisted checkpoint keeps cumulative context but charges only newly spe
   assert.deepEqual(seen.resume,initial);assert.equal(seen.config.runtime.maxTokens,3000);
   assert.equal(result.tokens,200);assert.equal(result.steps[0].id,'old-step');
 });
+
+test('analysis can retrieve supplied evidence records without enabling host writes',async()=>{
+ let seen;const {runButlerModel}=loadWith(args=>{seen=args;queueMicrotask(()=>args.events.onDone());return {abort(){}};});
+ const sourceTexts=[{id:'signal:one',text:'Full privacy-filtered evidence'}];
+ await runButlerModel(settings,prefs,'Use the signal record',false,8000,new AbortController().signal,()=>{},{sourceTexts});
+ assert.deepEqual(seen.sourceTexts,sourceTexts);assert.deepEqual(seen.config.enabledTools,['read_source_text']);assert.equal(seen.toolCtx().workspaceRoots.length,0);
+});

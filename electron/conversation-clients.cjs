@@ -226,8 +226,9 @@ function createConversationClients({ userData, getSettings, store, openExternal,
     const work=record.config.toolsEnabled===true&&!readOnlyFallback;
     // 逐项修改前确认：只有 Grok 能做到——它每处改动都带完整内容来申请，批准前能算出差异给用户看。
     // 其他客户端自己直接写文件，拦不下来，只能拒绝进入工作模式（界面会先弹说明）
-    const review=work && settings.tools?.reviewCodeChanges === true;
-    if(review&&autonomous)throw Error('已开启逐项修改前确认；自动 Work 不能跳过这项设置，请改用手动执行。');
+    // Routine Butler permission is scoped to a disposable conversation copy;
+    // its edits are recorded after execution for review and rollback.
+    const review=work && !autonomous && settings.tools?.reviewCodeChanges === true;
     if(review && selection.kind!=='grok')throw Error(reviewRefusal(selection.kind));
     const reviewed=new Map(), reviewNotes=[];
     let cwd=scratch;

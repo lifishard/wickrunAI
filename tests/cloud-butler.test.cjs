@@ -62,3 +62,8 @@ test('independent Butler entities merge while a narrow pause write preserves oth
   assert.deepEqual(merged.profiles,remote.profiles);
   assert.equal(merged.preferences['butler.paused'],true);
 });
+
+test('route groups and the autonomous task cap sync without credentials or local rules',()=>{
+ const input=local();input.settings.routeGroups=[{id:'group-one',name:'My routes',routes:[{profileId:'profile-one',model:'model-one',secret:'never-sync'}],createdAt:1,note:'private note',secret:'never-sync'}];input.settings.butler.proactive.maxWorkPerDay=2;
+ const data=projectCloudData(input);assert.equal(data.preferences['butler.maxWorkPerDay'],2);assert.deepEqual(data.preferences.routeGroups,[{id:'group-one',name:'My routes',routes:[{profileId:'profile-one',model:'model-one'}],createdAt:1}]);assert.equal(JSON.stringify(data).includes('never-sync'),false);
+});

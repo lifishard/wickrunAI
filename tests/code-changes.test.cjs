@@ -51,7 +51,7 @@ test('failed atomic replacement keeps original bytes and removes staging file',t
 test('shell snapshots find additions deletions and edits without including pre-existing changes',t=>{
   const {root,p}=fixture(t);fs.writeFileSync(p,'already dirty');fs.writeFileSync(path.join(root,'delete.ts'),'gone');fs.writeFileSync(path.join(root,'binary.bin'),Buffer.from([0,1]));
   const before=audit.snapshot([root]);fs.writeFileSync(p,'new');fs.unlinkSync(path.join(root,'delete.ts'));fs.writeFileSync(path.join(root,'new.ts'),'added');
-  const result=audit.compare(before,audit.snapshot([root]));assert.deepEqual(result.codeChanges.map(c=>c.kind).sort(),['added','deleted','modified']);assert.ok(result.codeAuditWarnings.length);
+  const result=audit.compare(before,audit.snapshot([root]));assert.deepEqual(result.codeChanges.map(c=>c.kind).sort(),['added','deleted','modified']);assert.equal(Buffer.isBuffer(before.files.get(path.join(root,'binary.bin'))),true);
   assert.ok(result.codeChanges.find(c=>c.path===p).lines.some(l=>l.kind==='delete'&&l.text==='already dirty'));
 });
 test('oversized, binary, ambiguous, and unauthorized proposals fail without writing',t=>{

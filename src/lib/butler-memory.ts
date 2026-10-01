@@ -68,3 +68,26 @@ export function butlerMemoryView(brain: ButlerBrainState, signalLimit = 24): But
       evidenceIds: s.evidenceIds.filter(id => byId.has(id)).slice(0, 12)})),
   };
 }
+
+/** A small initial context with explicit access to full, individually addressable records. */
+export function butlerMemoryCapsule(brain:ButlerBrainState,maxChars=4000) {
+  const view=butlerMemoryView(brain,12);
+  const capsule={...view,reviewedGoals:view.reviewedGoals.slice(0,8),recentGoals:view.recentGoals.slice(0,4),feedback:view.feedback.slice(0,6),acceptedSkills:view.acceptedSkills.slice(0,2),
+    archive:'Full records: read_source_text({id:"signal:<id>" | "goal:<id>" | "skill:<id>" | "feedback:<id>",part:1}). A complete archive is also available as butler-brain. Summaries do not replace archived evidence.',
+    counts:{signals:brain.signals.length,goals:brain.goals.length,skills:brain.skillProposals.length,feedback:brain.feedback?.length??0}};
+  while(JSON.stringify(capsule).length>maxChars){
+    if(capsule.recentGoals.length) capsule.recentGoals.pop();
+    else if(capsule.signals.length>1)capsule.signals.pop();
+    else if(capsule.acceptedSkills.length)capsule.acceptedSkills.pop();
+    else if(capsule.feedback.length)capsule.feedback.pop();
+    else if(capsule.reviewedGoals.length)capsule.reviewedGoals.pop();
+    else break;
+  }
+  return capsule;
+}
+
+export function butlerMemorySources(brain:ButlerBrainState):{id:string;text:string}[] {
+  const groups=[['signal',brain.signals],['goal',brain.goals],['skill',brain.skillProposals],['feedback',brain.feedback??[]]] as const;
+  return [{id:'butler-brain',text:JSON.stringify({signals:brain.signals,goals:brain.goals,skills:brain.skillProposals,feedback:brain.feedback??[]})},
+    ...groups.flatMap(([kind,items])=>items.map(item=>({id:`${kind}:${item.id}`,text:JSON.stringify(item)})))];
+}
