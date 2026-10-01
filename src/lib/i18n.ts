@@ -2,6 +2,7 @@ import { OFFICE_EN } from './i18n-office';
 import * as React from 'react';
 // cn2t 子路径同时给出 ESM 和 UMD，Vite 和 node 测试都能解析，且只打包简转繁这一个方向。
 import * as OpenCC from 'opencc-js/cn2t';
+import { BUTLER_EN } from './i18n-butler';
 
 export type Locale = 'zh-Hans' | 'zh-Hant' | 'en';
 
@@ -17,6 +18,7 @@ export const LOCALES: { value: Locale; label: string; label2: string; lang: stri
  * 英文查词典，查不到就退回简体原文 —— 半翻译的界面也比缺字的界面好用。
  */
 const EN: Record<string, string> = {
+  ...BUTLER_EN,
   '取消登录': "Cancel sign-in",
   '进入账号工作区': "Open account workspace",
   '浏览器会打开 Google 登录。核对校验码后批准，再返回 App。': "Sign in with Google in your browser. Check the code, approve, then return to the app.",
@@ -3646,7 +3648,6 @@ const EN: Record<string, string> = {
   '不使用路由组（本层自己排）': 'No route group (order this layer yourself)',
   '原来选用的路由组已被删除，现在按选用时保存的顺序交接。': 'The selected route group was deleted. Failover now uses the order saved when it was selected.',
   '管理路由组': 'Manage route groups',
-  '路由组': 'Route groups',
   '还没有路由组。': 'No route groups yet.',
   '这一层跟随路由组「{name}」：在设置里改这一组，这里同步生效。直接在下面调整会脱离这一组。': 'This layer follows route group “{name}”. Edit the group in Settings and changes apply here. Editing the list below detaches it from the group.',
   '选用一个路由组…': 'Use a route group…',
