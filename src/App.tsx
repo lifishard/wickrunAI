@@ -107,7 +107,7 @@ import {
 } from './lib/schedule';
 import AnswerBlock from './components/AnswerBlock';
 import ConversationControls from './components/ConversationControls';
-import {validateAttachmentSize,validateAttachmentBatch} from './lib/attachment-limits';
+import {validateAttachmentBatch} from './lib/attachment-limits';
 import ActivityPanel, { hasActivity } from './components/ActivityPanel';
 import SelectionActions from './components/SelectionActions';
 import Composer from './components/Composer';
@@ -250,6 +250,7 @@ export default function App() {
   const [workspaceTab, setWorkspaceTab] = React.useState<string>('projects');
 
   const [attachments, setAttachments] = React.useState<Attachment[]>([]);
+  const browserFileInput = React.useRef<HTMLInputElement>(null);
   /** 生成期间又发的消息，按顺序排队，等这一轮结束再依次发出去 */
   const [queue, setQueue] = React.useState<QueuedInput[]>([]);
   const queueLoaded=React.useRef(false);
@@ -749,13 +750,20 @@ export default function App() {
     toast.show(t('已删除手动模型 {id}', { id }));
   }
 
-  function addPastedImage(dataUrl: string, name: string, mime: string, size: number) {
-    const error=validateAttachmentSize('image',size,name)||validateAttachmentBatch(attachments.reduce((n,a)=>n+a.size,0)+size);
-    if(error){toast.show(error,5000);return;}
-    setAttachments((prev) => [
-      ...prev,
-      { id: uid('a'), kind: 'image', name, mime, size, dataUrl },
-    ]);
+  async function addBrowserFiles(files: File[]) {
+    if (!files.length) return;
+    const batchError=validateAttachmentBatch(attachments.reduce((sum,item)=>sum+item.size,0)+files.reduce((sum,file)=>sum+file.size,0));
+    if(batchError){toast.show(batchError,5000);return;}
+    let importBrowserFile:typeof import('./lib/attachment-import').importBrowserFile;
+    try{({importBrowserFile}=await import('./lib/attachment-import'));}
+    catch(error){toast.show(`附件读取组件未能打开：${error instanceof Error?error.message:String(error)}`,5000);return;}
+    const added:Attachment[]=[],errors:string[]=[];
+    for(const file of files){
+      try{added.push({id:uid('a'),...await importBrowserFile(file)});}
+      catch(error){errors.push(`${file.name}: ${error instanceof Error?error.message:String(error)}`);}
+    }
+    if(added.length)setAttachments(previous=>[...previous,...added]);
+    if(errors.length)toast.show(errors[0],5000);
   }
 
   function setConfig(patch: Partial<GenerationConfig>) {
@@ -801,7 +809,7 @@ export default function App() {
   async function addAttachments(mode: 'file' | 'image') {
     const bridge = desktop();
     if (!bridge) {
-      toast.show(t('这台设备读不了本地文件'));
+      if(browserFileInput.current){browserFileInput.current.accept=mode==='image'?'image/png,image/jpeg,image/gif,image/webp,image/bmp':'';browserFileInput.current.click();}
       return;
     }
     const picked = await bridge.pickFiles(mode);
@@ -2159,7 +2167,7 @@ export default function App() {
       attachments={attachments}
       onAddAttachments={(m) => void addAttachments(m)}
       onAddMedia={() => setMediaOpen(true)}
-      onPasteImage={addPastedImage}
+      onPasteFiles={files=>void addBrowserFiles(files)}
       onRemoveAttachment={(id) => setAttachments((p) => p.filter((a) => a.id !== id))}
       onPickWorkspace={() => void pickWorkspace()}
       workspaceCount={settings.tools.workspaceRoots.length}
@@ -2217,7 +2225,9 @@ export default function App() {
 
   return (
     <I18nProvider locale={settings.locale ?? 'zh-Hans'}>
-    <div className="app">
+    <div className="app" onDragOver={event=>{if(Array.from(event.dataTransfer.types).includes('Files'))event.preventDefault();}}
+      onDrop={event=>{if(!event.dataTransfer.files.length)return;event.preventDefault();event.stopPropagation();void addBrowserFiles(Array.from(event.dataTransfer.files));}}>
+      <input ref={browserFileInput} type="file" multiple hidden aria-label={t('选择附件')} onChange={event=>{const files=Array.from(event.target.files??[]);event.target.value='';void addBrowserFiles(files);}}/>
       {!sidebarHidden ? (
       <aside
         className={`sidebar${sidebarOpen ? ' open' : ''}`}

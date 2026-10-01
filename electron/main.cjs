@@ -563,7 +563,7 @@ function registerIpc() {
       mode === 'image'
         ? [{ name: '图片', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'] }]
         : [
-            { name: '文本与代码', extensions: ['txt', 'md', 'json', 'csv', 'yaml', 'yml', 'ts', 'tsx', 'js', 'py', 'go', 'rs', 'java', 'sql', 'html', 'css', 'log'] },
+            { name: '文档、表格、演示文稿、文本与代码', extensions: ['pdf', 'docx', 'xlsx', 'xlsm', 'xls', 'pptx', 'potx', 'txt', 'md', 'json', 'csv', 'yaml', 'yml', 'ts', 'tsx', 'js', 'py', 'go', 'rs', 'java', 'sql', 'html', 'css', 'log'] },
             { name: '所有文件', extensions: ['*'] },
           ];
     const r = await dialog.showOpenDialog(mainWindow, {
