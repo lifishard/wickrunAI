@@ -1,4 +1,5 @@
 import React from 'react';
+import Icon from './Icon';
 import { useT } from '../lib/i18n';
 import { hasReadingSelection } from '../lib/reading-selection';
 
@@ -75,6 +76,6 @@ export default function MessageViewport({ conversationId, positions, children }:
     <div className="messages" ref={viewport} tabIndex={0}>
       <div className="messages-inner" ref={content}>{children}</div>
     </div>
-    {showJump && <button className="btn jump-latest" onClick={() => jump.current()}>{t('回到最新内容')} ↓</button>}
+    {showJump && <button className="btn jump-latest" onClick={() => jump.current()}>{t('回到最新内容')} <Icon name="arrowDown"/></button>}
   </div>;
 }

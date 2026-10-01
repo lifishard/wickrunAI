@@ -1,5 +1,6 @@
 import React from 'react';
 import BrandLogo from './BrandLogo';
+import Icon from './Icon';
 import { useT } from '../lib/i18n';
 import type { Project } from '../lib/projects';
 
@@ -17,7 +18,7 @@ export default function WorkspaceHeader({ team, platform, projects, projectId, o
   const t = useT();
   return <div className="workspace-header">
     <div className="brand">
-      <button className="icon-btn brand-toggle" title={t('收起侧栏（Ctrl+B）')} onClick={onHide}>⇤</button>
+      <button className="icon-btn brand-toggle" title={t('收起侧栏（Ctrl+B）')} onClick={onHide}><Icon name="sidebarCollapse"/></button>
       <BrandLogo size={25} />
       <span title="wickrunAI">{t('灯芯AI')}</span><small>{platform}</small>
     </div>

@@ -1,4 +1,5 @@
 import React from 'react';
+import Icon from './Icon';
 import { useT } from '../lib/i18n';
 import type { FailoverConfig, FailoverScope, RouteRef } from '../lib/failover';
 import { resolveFailover } from '../lib/failover';
@@ -130,8 +131,8 @@ export default function FailoverList({ scopes, projectName, options, scores, onC
             })()}
           </span>
           <span className="failover-actions">
-            <button className="btn sm" aria-label={t('上移')} disabled={i === 0} onClick={() => move(i, i - 1)}>↑</button>
-            <button className="btn sm" aria-label={t('下移')} disabled={i === routes.length - 1} onClick={() => move(i, i + 1)}>↓</button>
+            <button className="btn sm" aria-label={t('上移')} disabled={i === 0} onClick={() => move(i, i - 1)}><Icon name="arrowUp"/></button>
+            <button className="btn sm" aria-label={t('下移')} disabled={i === routes.length - 1} onClick={() => move(i, i + 1)}><Icon name="arrowDown"/></button>
             <button className="btn sm ghost" aria-label={t('移出名单')} onClick={() => setRoutes(routes.filter((_, x) => x !== i))}>{t('移除')}</button>
           </span>
         </li>)}
