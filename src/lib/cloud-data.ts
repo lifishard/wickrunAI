@@ -160,7 +160,7 @@ export function projectCloudData(local:CloudLocal):CloudData {
   }
   if(local.butler)result.butler=butlerRows(local.butler);
   result.profiles=local.settings.keyProfiles.map(p=>({ ...take(p,['name','baseUrl','createdAt','routeProfiles','quotaGroup']), id:p.id, extraHeaders:Object.fromEntries(Object.entries(p.extraHeaders??{}).filter(([k])=>!/(?:auth|token|secret|password|api.?key)/i.test(k))) }));
-  result.conversations=local.conversations.map(c=>({ ...take(c,['title','titleManuallySet','titleGenerated','pinned','forkedFrom','projectId','keyProfileId','createdAt','updatedAt','draft']), id:c.id, draft:c.draft??'', config:take(c.config,CONFIG), messages:c.messages.map(m=>take(m,MSG)) }));
+  result.conversations=local.conversations.map(c=>({ ...take(c,['privacy','title','titleManuallySet','titleGenerated','pinned','forkedFrom','projectId','keyProfileId','createdAt','updatedAt','draft']), id:c.id, draft:c.draft??'', config:take(c.config,CONFIG), messages:c.messages.map(m=>take(m,MSG)) }));
   result.projects=local.projects.map(p=>take(p,['id','name','emoji','instructions','docs','prompts','memory','memoryItems','defaultModel','defaultKeyProfileId','createdAt'])) as CloudRow[];
   result.skills=local.skills.map(s=>take(s,['id','name','description','body','source','installedAt','uses','outcomes','installedHash'])) as CloudRow[];
   result.tasks=local.tasks.map(t=>take(t,['id','name','prompt','schedule','projectId','keyProfileId','model','target','conversationId','createdAt','lastRunAt','lastResult'])) as CloudRow[];
@@ -184,7 +184,7 @@ export function hydrateCloudData(data:CloudData,local:CloudLocal,keyIds:string[]
       const shared=take(m,MSG), previous=old?.messages.find(x=>x.id===shared.id);
       return previous && same(take(previous,MSG),shared) ? previous : {...shared,pending:false,cloudImported:true};
     });
-    return {...take(old,['workspace','workspaceError','creationFingerprint','coordinationGroupId','coordinationMessages','handoffSourceRunId']),...take(row,['id','title','titleManuallySet','titleGenerated','pinned','forkedFrom','projectId','keyProfileId','createdAt','updatedAt','draft']),config,messages};
+    return {...take(old,['workspace','workspaceError','creationFingerprint','coordinationGroupId','coordinationMessages','handoffSourceRunId']),...take(row,['privacy','id','title','titleManuallySet','titleGenerated','pinned','forkedFrom','projectId','keyProfileId','createdAt','updatedAt','draft']),config,messages};
   }) as Conversation[];
   return {settings,conversations,butler:accountId?butlerBrainFromRows(data.butler,accountId,local.butler):local.butler,
     projects:data.projects.map(p=>take(p,['id','name','emoji','instructions','docs','prompts','memory','memoryItems','defaultModel','defaultKeyProfileId','createdAt'])) as unknown as Project[],

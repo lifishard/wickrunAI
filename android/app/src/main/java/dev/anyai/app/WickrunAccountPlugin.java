@@ -140,12 +140,20 @@ public class WickrunAccountPlugin extends Plugin {
             case "read":route="/api/cloud/data";break;
             case "write":route="/api/cloud/data";method="PUT";body=input;break;
             case "keys":route="/api/cloud/keys";break;
+            case "collaboration":route="/api/collaboration";method="POST";body=input;break;
             case "keyGet":case "keySet":case "keyDelete":
                 String id=input.optString("id");if(!id.matches("[\\w:-]{1,160}"))throw new Exception("Invalid profile");
                 route="/api/cloud/keys/"+Uri.encode(id);method=action.equals("keyGet")?"GET":action.equals("keySet")?"PUT":"DELETE";body=action.equals("keySet")?input:null;break;
             default:throw new Exception("Unsupported cloud action");
         }
-        if(!action.equals("status")&&active==null)throw new HttpFailure(401);
+        if(!action.equals("status")&&active==null){
+            if(!action.equals("collaboration"))throw new HttpFailure(401);
+            String operation=input.optString("operation","");
+            boolean guestRead=operation.equals("state")||operation.equals("get")||operation.equals("openLink")||operation.equals("getHistory");
+            boolean guestComment=operation.equals("comment")&&input.optJSONObject("input")!=null&&
+                input.optJSONObject("input").optString("token","").matches("[A-Za-z0-9_-]{43}");
+            if(!guestRead&&!guestComment)throw new HttpFailure(401);
+        }
         JSONObject result=request(route,method,body,token);
         if(action.equals("status")&&active!=null) {
             if(result.isNull("user"))throw new HttpFailure(401);

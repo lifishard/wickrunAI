@@ -3,6 +3,7 @@ import * as React from 'react';
 // cn2t 子路径同时给出 ESM 和 UMD，Vite 和 node 测试都能解析，且只打包简转繁这一个方向。
 import * as OpenCC from 'opencc-js/cn2t';
 import { BUTLER_EN } from './i18n-butler';
+import { SHARING_EN } from './i18n-sharing';
 
 export type Locale = 'zh-Hans' | 'zh-Hant' | 'en';
 
@@ -19,6 +20,7 @@ export const LOCALES: { value: Locale; label: string; label2: string; lang: stri
  */
 const EN: Record<string, string> = {
   ...BUTLER_EN,
+  ...SHARING_EN,
   '取消登录': "Cancel sign-in",
   '进入账号工作区': "Open account workspace",
   '浏览器会打开 Google 登录。核对校验码后批准，再返回 App。': "Sign in with Google in your browser. Check the code, approve, then return to the app.",

@@ -37,6 +37,7 @@ function ConnectedCloudSyncControl(props:Props){
   const [working,setWorking]=React.useState(false),[error,setError]=React.useState(''),[notice,setNotice]=React.useState('');
   const [conflicts,setConflicts]=React.useState<ConflictReview|null>(null);
   const [archives,setArchives]=React.useState<CloudData['archives']>([]);
+  const [cloudKeyIds,setCloudKeyIds]=React.useState<string[]>([]);
   const lock=React.useRef(false),last=React.useRef(''),didInitial=React.useRef(false);
   const statusRef=React.useRef(status);statusRef.current=status;
   React.useEffect(()=>{
@@ -46,8 +47,13 @@ function ConnectedCloudSyncControl(props:Props){
     return()=>{alive=false;};
   },[]);
   React.useEffect(()=>{
-    configureCloudKeys(status?.available?status.user?.id??null:null,props.local.settings.keyProfiles.map(p=>p.id));
-  },[status,props.local.settings.keyProfiles]);
+    configureCloudKeys(status?.available?status.user?.id??null:null,cloudKeyIds);
+  },[status,cloudKeyIds]);
+  React.useEffect(()=>{
+    let alive=true;setCloudKeyIds([]);
+    if(status?.available&&status.user)void cloudCall<{ids:string[]}>('keys').then(value=>{if(alive)setCloudKeyIds(value.ids);}).catch(()=>{});
+    return()=>{alive=false;};
+  },[status?.user?.id,status?.available]);
   React.useEffect(()=>{
     if(!native?.pending)return;
     let alive=true,busy=false;
@@ -143,6 +149,7 @@ function ConnectedCloudSyncControl(props:Props){
         const key=await cloudCall<{value:string|null}>('keyGet',{id:profile.id});
         if(key.value)await transport.secretSet(profile.id,key.value);
       }
+      setCloudKeyIds(keyResult.ids);
       if(current.current.isBlocked())throw new Error(t('任务正在运行，云端已保存；空闲后会继续合并本机内容。'));
       const finalLocal=await collect();
       combined=mergeCloudData(projectCloudData(latest),projectCloudData(finalLocal),combined);

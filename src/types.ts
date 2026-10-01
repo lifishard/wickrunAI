@@ -526,6 +526,8 @@ export interface RunRecord {
 }
 
 export interface Conversation {
+  /** Proactive assistant work and its descendants are permanently personal. */
+  privacy?: 'personal-butler';
   /** Idempotent application-owned new-conversation request. */
   coordinationGroupId?: string;
   creationFingerprint?: string;

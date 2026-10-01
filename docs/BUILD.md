@@ -108,6 +108,8 @@ npx cap open android       # 用 Android Studio 打开，Build → APK
 **每次重新 `cap add android` 之后都要跑一遍 `npm run cap:patch`**，
 否则那个自写的流式插件不会被装进去，手机上流式响应会失效（退化成整包返回）。
 
+从 4.0.0 起，Android APK 由固定的 Android 源码提交构建并用固定证书签名。主版本发布流程读取固定提交、版本、应用标识、证书指纹和 APK 校验值的清单，核实 APK 后与桌面安装包放入同一版本 Release。缺少 APK 或核验不符会阻止公开；`SHA256SUMS.txt` 包含 APK 校验值。Android 下载页入口读取同一版本 Release。不要用每次重新生成的调试签名代替发布证书。
+
 为什么要自写插件：Capacitor 官方的 `CapacitorHttp` 能绕过 CORS，但它会把整个响应缓冲完才回调，
 拿不到流式增量。
 

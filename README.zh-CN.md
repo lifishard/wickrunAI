@@ -8,7 +8,7 @@
 
 开源的、闭源的，付费的、免费的，都能调度。Key 自己带，只留在你本机。
 
-[![Version](https://img.shields.io/badge/version-3.0.0-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
+[![Version](https://img.shields.io/badge/version-4.0.0-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-lightgrey)](#安装)
 [![CI](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml/badge.svg)](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml)
@@ -83,6 +83,12 @@
 可使用模型服务商的 API Key，也可在桌面版模型选择器中连接本机官方客户端。账号、订阅和 API 费用由对应服务商管理。项目另有 Android 客户端，可通过局域网连接电脑；目前尚未完成真机验证。
 
 界面支持简体中文、繁體中文和 English，在右上角切换；`docs/` 下的参考文档多数是中文，上面链接的五篇概念页是英文。
+
+## 4.0 跨账户共享与协作
+
+文件、文件夹、对话、项目和流程可以通过链接、邮箱邀请或个人／公司空间共享。查看、评论、编辑权限由账户服务端核验；修改保留作者和版本记录，别人同时更新时保留未保存草稿供你检查。群聊标明每条消息的发言人，群内 AI 使用你选定的模型回复，不借用其他人的工具或凭据。
+
+你可以把有权访问的内容复制进自己的工作区。副本使用新身份和自己的模型连接，导入的流程成员与定时任务默认关闭。工作区连接用于明确交接目标、说明和选中的文本文件；接收者打开的是未发送的本地草稿，是否执行由自己决定。个人管家的目标、观察、记忆、权限、日志及派生会话不进入共享。Android 可通过粘贴共享链接查看、评论、群聊、复制内容和检查流程；本机流程执行仍需桌面版。权限与限制见[共享与协作说明](docs/SHARING_COLLABORATION.md)。
 
 ## 2.10 导出对话
 
@@ -184,7 +190,7 @@ Chat 与 Work 都支持 AI 提问卡片，可选择选项或填写自己的回�
 | [Linux](https://wickrunai.com/download?platform=linux) | Intel / AMD · x64 | [AppImage](https://wickrunai.com/download/linux/x64/appimage) · [Debian / Ubuntu DEB](https://wickrunai.com/download/linux/x64/deb) |
 | [Android](https://wickrunai.com/download?platform=android) | 手机与平板 | [APK 预览版](https://wickrunai.com/download/android/universal/apk) |
 
-Android 为测试签名的工程预览，尚未完成真机验收，账号同步和大型文件导出暂未提供。版本说明、校验和与历史版本见 [GitHub Releases](https://github.com/lifishard/wickrunAI/releases)。
+Android 为测试签名的工程预览，尚未完成真机验收，大型文件导出暂未提供；账号同步已接通。**从已发布的 3.0.0 Android 预览版安装 4.0.0 前，请先备份手机数据，再自行卸载旧版、安装新版。** 两版签名证书不同，无法覆盖安装；未备份的本机数据会随卸载丢失。4.0.0 的 APK 必须随同版本 Release 上传，Android 下载入口才会生效。版本说明、校验和与历史版本见 [GitHub Releases](https://github.com/lifishard/wickrunAI/releases)。
 
 当前安装包没有代码签名，Windows 或 macOS 可能显示发布者提示。下载后可使用 Release 中的 `SHA256SUMS.txt` 核对文件；也可以按下面的方法从源码构建。
 

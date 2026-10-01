@@ -4,7 +4,8 @@ import Icon from './Icon';
 import { useT } from '../lib/i18n';
 import type { Project } from '../lib/projects';
 
-export default function WorkspaceHeader({ team, platform, projects, projectId, onProject, onMode, onHide, onButler, onDiscussButler }: {
+export default function WorkspaceHeader({ team, platform, projects, projectId, onProject, onMode, onHide, onButler, onDiscussButler, onSharing }: {
+  onSharing?:()=>void;
   onButler?:()=>void;
   onDiscussButler?:()=>void;
   team: boolean;
@@ -33,6 +34,7 @@ export default function WorkspaceHeader({ team, platform, projects, projectId, o
       <button aria-pressed={team} onClick={() => onMode(true)}>{t('协作空间')}</button>
     </div>
     {onButler&&<button className="btn block ghost" onClick={onButler}>{t('今日管家')}</button>}
+    {onSharing&&<button className="btn block ghost" onClick={onSharing}>{t('共享与协作')}</button>}
     {onDiscussButler&&<button className="btn block ghost" onClick={onDiscussButler}>{t('找管家 · 说说想做什么')}</button>}
   </div>;
 }

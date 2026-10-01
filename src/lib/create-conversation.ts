@@ -42,6 +42,7 @@ export function requestedConversation(source: Conversation | undefined, config: 
   return {
     id: identity.id, coordinationGroupId: source?.coordinationGroupId ?? source?.id ?? identity.id, title: request.title || request.prompt.replace(/\s+/g, ' ').slice(0, 48),
     projectId: source?.projectId ?? null, keyProfileId: source?.keyProfileId ?? keyProfileId,
+    ...(source?.privacy ? {privacy:source.privacy} : {}),
     config: {...structuredClone(source?.config ?? config), toolsEnabled: request.mode === 'work'},
     messages: [], draft: request.prompt, creationFingerprint: identity.fingerprint, createdAt: now, updatedAt: now,
   };

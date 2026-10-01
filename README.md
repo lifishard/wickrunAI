@@ -8,7 +8,7 @@
 
 Open or closed, paid or free. Bring your own keys; they never leave your machine.
 
-[![Version](https://img.shields.io/badge/version-3.0.0-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
+[![Version](https://img.shields.io/badge/version-4.0.0-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-lightgrey)](#install)
 [![CI](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml/badge.svg)](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml)
@@ -85,6 +85,12 @@ On a long task you can have one model gather the material, pause, then hand the 
 Use an API key from a model provider, or connect an official client you already run on your machine from the desktop model picker. Accounts, subscriptions, and API charges stay with the provider. An Android client connects to your computer over the local network; it has not been verified on a physical device yet.
 
 The interface reads in Simplified Chinese, Traditional Chinese, and English, switchable from the top right. Most reference documents under `docs/` are in Chinese; the concept pages linked above are in English.
+
+## 4.0 Shared workspaces and collaboration
+
+Share a file, folder, conversation, project, or workflow with a link, an email invitation, or a personal or company space. Each person gets a server-checked role: view, comment, or edit. Changes keep their author and revision history; concurrent edits preserve the unsaved draft so it can be reviewed instead of silently overwritten. Shared conversations show who sent each message, and group AI replies use the selected model without acquiring anyone else's tools or credentials.
+
+You can copy permitted content into your own workspace. Copies receive new identities and use your own model connection; imported workflows and schedules start disabled. A workspace connection allows a deliberate handoff of a goal, summary, and selected text files. Opening a handoff creates an unsent local draft, so the receiving account decides what to run. Private Butler goals, observations, memory, permissions, logs, and their derived conversations stay outside sharing. Android can open a pasted share link, comment, chat, copy content, and inspect workflows; executing a local workflow still requires the desktop app. See [sharing and collaboration](docs/SHARING_COLLABORATION.md) for permissions and limits.
 
 ## 2.10 Exporting a conversation
 
@@ -186,7 +192,7 @@ Open **[Download wickrunAI](https://wickrunai.com/download)** to choose an opera
 | [Linux](https://wickrunai.com/download?platform=linux) | Intel / AMD · x64 | [AppImage](https://wickrunai.com/download/linux/x64/appimage) · [Debian / Ubuntu DEB](https://wickrunai.com/download/linux/x64/deb) |
 | [Android](https://wickrunai.com/download?platform=android) | Phones and tablets | [Preview APK](https://wickrunai.com/download/android/universal/apk) |
 
-Android is a debug-signed engineering preview. Device acceptance is pending; account sync and large file export are not available. See [GitHub Releases](https://github.com/lifishard/wickrunAI/releases) for release notes, checksums, and older versions.
+Android is a debug-signed engineering preview. Device acceptance and large file export remain pending; account sync is available. **Before installing 4.0.0 over the published 3.0.0 Android preview, back up your phone data, uninstall the old app yourself, then install 4.0.0.** The signing certificates differ, so an in-place update is unavailable; uninstalling erases any local data you did not back up. The 4.0.0 APK must be attached to the matching release for the Android download link to work. See [GitHub Releases](https://github.com/lifishard/wickrunAI/releases) for release notes, checksums, and older versions.
 
 The packages are not code-signed, so Windows and macOS may warn about the publisher. Verify a download against `SHA256SUMS.txt` in the Release, or build from source as described below.
 
