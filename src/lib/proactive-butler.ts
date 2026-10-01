@@ -25,6 +25,8 @@ export interface ButlerProactivePreferences {
   allowResearch: boolean;
   /** Financial and negotiation actions always need their own exact grant. */
   allowRoutineExecution: boolean;
+  /** Redacted excerpts can be sent to the selected model only while collection is on. */
+  externalUnderstanding: 'local-topics' | 'redacted-context';
 }
 
 export interface ButlerSignal {
@@ -111,6 +113,8 @@ export interface ButlerBrainState {
   actionGrants: ButlerActionGrant[];
   jobs?: ButlerJob[];
   hosts?: ButlerHost[];
+  feedback?: ButlerFeedback[];
+  audit?: ButlerAudit[];
   updatedAt: number;
 }
 
@@ -119,6 +123,8 @@ export interface ButlerJob {
   status:'queued'|'running'|'completed'|'failed';createdAt:number;updatedAt:number;error?:string;
 }
 export interface ButlerHost {id:string;accountId:string;name:string;lastSeenAt:number}
+export interface ButlerFeedback {id:string;accountId:string;targetKind:'goal'|'brief'|'skill';targetId:string;rating:'useful'|'not-useful'|'not-my-need';comment?:string;createdAt:number}
+export interface ButlerAudit {id:string;accountId:string;jobId?:string;at:number;kind:'inference'|'model'|'research'|'collection'|'control'|'feedback';title:string;detail:string;sourceIds?:string[];model?:string;status:'planned'|'completed'|'failed'|'blocked'}
 
 export interface ButlerRuntimeSnapshot {
   brain: ButlerBrainState;
@@ -134,6 +140,7 @@ export interface ButlerRuntimeSnapshot {
 export type ButlerRuntimeAction =
   | {kind:'review-goal';goalId:string;decision:'confirm'|'dismiss'|'correct';correction?:string}
   | {kind:'review-skill';proposalId:string;decision:'accept'|'dismiss'}
+  | {kind:'feedback';targetKind:'goal'|'brief'|'skill';targetId:string;rating:'useful'|'not-useful'|'not-my-need';comment?:string}
   | {kind:'set-device-consent';source:ButlerSource;consented:boolean}
   | {kind:'configure-source';source:ButlerSource;allowlist:string[]}
   | {kind:'install-browser-extension'}
@@ -156,7 +163,7 @@ export function emptyButlerBrain(accountId:string):ButlerBrainState {
 export const DEFAULT_BUTLER_PREFERENCES:ButlerProactivePreferences = {
   enabled:false,paused:false,sources:{wickrun:true},backend:{kind:'route-group',routeGroupId:'',effort:'medium'},
   maxTokensPerDay:12000,cadence:'twice-daily',morning:'08:00',evening:'18:00',
-  timezone:'UTC',allowResearch:true,allowRoutineExecution:false,
+  timezone:'UTC',allowResearch:true,allowRoutineExecution:true,externalUnderstanding:'redacted-context',
 };
 
 /** Remove raw links, identifiers and prompt-control text before a signal can leave a device. */
@@ -274,6 +281,11 @@ export function projectButlerBrainForSync(brain:ButlerBrainState):ButlerBrainSta
     jobs:brain.jobs?.filter(j=>j.accountId===accountId).slice(-200).map(j=>({id:j.id,accountId,kind:j.kind,goalId:j.goalId,
       period:j.period,status:j.status,createdAt:j.createdAt,updatedAt:j.updatedAt,error:j.error?modelSafeSummary(j.error,200):undefined})),
     hosts:brain.hosts?.filter(h=>h.accountId===accountId).slice(-20).map(h=>({id:h.id,accountId,name:modelSafeSummary(h.name,80),lastSeenAt:h.lastSeenAt})),
+    feedback:brain.feedback?.filter(f=>f.accountId===accountId).slice(-300).map(f=>({id:f.id,accountId,targetKind:f.targetKind,
+      targetId:f.targetId,rating:f.rating,comment:f.comment?modelSafeSummary(f.comment,500):undefined,createdAt:f.createdAt})),
+    audit:brain.audit?.filter(a=>a.accountId===accountId).slice(-500).map(a=>({id:a.id,accountId,jobId:a.jobId,at:a.at,
+      kind:a.kind,title:modelSafeSummary(a.title,100),detail:modelSafeSummary(a.detail,500),
+      sourceIds:a.sourceIds?.filter(id=>ids.has(id)),model:a.model?modelSafeSummary(a.model,100):undefined,status:a.status})),
     updatedAt:brain.updatedAt};
 }
 
