@@ -2369,7 +2369,7 @@ export default function App() {
         <div className="topbar desktop-topbar">
           <button className="btn sm butler-home-trigger" onClick={()=>setButlerOpen(true)}>{t('今日管家')}</button>
           <button className="btn sm ghost only-narrow" title={t('展开侧栏')} onClick={() => { setSidebarHidden(false); setSidebarOpen(true); }}>
-            ☰
+            <Icon name="menu" size={18}/>
           </button>
           {sidebarHidden ? (
             <button
