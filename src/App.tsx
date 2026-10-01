@@ -111,7 +111,7 @@ import Composer from './components/Composer';
 import ConfigPanel from './components/ConfigPanel';
 import SettingsDialog from './components/SettingsDialog';
 import CloudSyncControl from './components/CloudSyncControl';
-import { applyCloudLocal, recoverCloudApply } from './lib/cloud-local';
+import { applyCloudLocal, recoverCloudApply, BUTLER_BRAIN_KEY } from './lib/cloud-local';
 import Sidebar from './components/Sidebar';
 import WorkspaceHeader from './components/WorkspaceHeader';
 import ArtifactPanel from './components/ArtifactPanel';
@@ -2247,11 +2247,20 @@ export default function App() {
           <CloudSyncControl local={{settings,conversations,projects,skills,tasks}}
             blocked={Object.values(runs).some(Boolean)||Object.values(teamRuntime.data?.projects??{}).some(p=>p.runs.some(r=>['running','waiting_approval','waiting_user'].includes(r.status)))}
             isBlocked={()=>runningRef.current.size>0||startingRef.current.size>0||Object.values(teamRuntime.data?.projects??{}).some(p=>p.runs.some(r=>['running','pausing','waiting_approval','waiting_user'].includes(r.status)))}
-            beforeSwitch={async()=>{butlerRuntime.stop();stopAll();await teamRuntime.pauseAll();await Promise.all([saveSettings(settings),saveConversationsNow(conversationsForStorage(conversations)),saveProjects(projects),saveSkills(skills),saveTasks(tasks)]);}}
+            beforeSwitch={async()=>{butlerRuntime.stop();stopAll();await teamRuntime.pauseAll();await butlerRuntime.flush();await Promise.all([saveSettings(settings),saveConversationsNow(conversationsForStorage(conversations)),saveProjects(projects),saveSkills(skills),saveTasks(tasks)]);}}
+            onButlerApply={async(brain,prefs)=>{
+              const existing=settingsRef.current!;
+              const nextSettings=prefs?{...existing,butler:{...existing.butler,proactive:prefs}}:existing;
+              settingsRef.current=nextSettings;
+              flushSync(()=>setSettings(nextSettings));
+              await Promise.all([saveSettings(nextSettings),getTransport().kvSet(BUTLER_BRAIN_KEY,JSON.stringify(brain))]);
+              window.dispatchEvent(new Event('wickrun:butler-reload'));
+            }}
             onApply={async next=>{
               for(const old of conversations){const incoming=next.conversations.find(c=>c.id===old.id);if(!incoming)await forgetRuns(old.id);else{const removed=new Set(old.messages.filter(m=>!incoming.messages.some(n=>n.id===m.id)).map(m=>m.id));if(removed.size)await forgetRuns(old.id,removed);}}
               await applyCloudLocal(next);
               setSettings(next.settings);setConversations(next.conversations);setProjects(next.projects);setSkills(next.skills);setTasks(next.tasks);
+              window.dispatchEvent(new Event('wickrun:butler-reload'));
               if(!next.conversations.some(c=>c.id===activeId))setActiveId(next.conversations[0]?.id??null);
             }}/>
           {!profile ? <span className="chip warn">{t('未配置凭据')}</span> : null}
