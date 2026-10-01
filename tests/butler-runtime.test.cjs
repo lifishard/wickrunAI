@@ -189,3 +189,11 @@ test('device privacy rules filter application conversations before inference',as
  const f=setup({collector:async()=>({sources:{},privacy:{excludedTerms:['daily work'],encryptedOnlyTerms:[],categories:{contact:'redact',financial:'redact',health:'exclude'},encryptedStorage:true}})});
  await f.runtime.tick();await settle(f.runtime);assert.equal(f.calls.length,0);assert.equal(f.runtime.getSnapshot().brain.signals.length,0);
 });
+
+test('a collector grant from another account cannot enable capture before local account consent',async()=>{
+ const controls=[];const f=setup({prefs:{sources:{browser:true}},collector:async(action,input)=>{if(action==='suspend')controls.push(input);return {sources:{browser:{available:true,consented:true}}};}});
+ await f.runtime.tick();await settle(f.runtime);
+ assert.equal(controls.at(-1).suspended,false);assert.equal(controls.at(-1).sources.browser,false);
+ await f.runtime.action({kind:'set-device-consent',source:'browser',consented:true});await f.runtime.tick();await settle(f.runtime);
+ assert.equal(controls.at(-1).sources.browser,true);
+});
