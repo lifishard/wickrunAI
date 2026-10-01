@@ -14,6 +14,16 @@ test('official models and login are discovered without any renderer credential',
   const f=fixture(t);const result=await f.host.check('codex');assert.equal(result.status,'ready');assert.deepEqual(result.models[0].efforts,['high']);assert.equal((await f.host.connect('codex')).status,'ready');assert.equal(f.opened.length,0);
 });
 
+test('native title uses the conversation subscription in read-only chat mode',async t=>{
+  const f=fixture(t);
+  const result=await f.host.title({selection:{kind:'codex',model:'gpt-test',brain:{source:'subscription'}},system:'Write a title',prompt:'{"goal":"Fix queue"}',timeoutMs:15000});
+  assert.equal(result,'saved output');
+  assert.equal(f.calls.length,1);
+  assert.equal(f.calls[0].sandbox,'readOnly');
+  assert.equal(f.calls[0].isolateTools,true);
+  assert.equal(f.calls[0].cwd,path.join(f.root,'conversation-clients'));
+});
+
 test('restart restores a previously validated native client path and rechecks its account',async t=>{
   const root=fs.mkdtempSync(path.join(fs.realpathSync.native(os.tmpdir()),'wickrun-client-restart-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
   const binary=path.join(root,'saved','codex.exe');fs.mkdirSync(path.dirname(binary),{recursive:true});fs.writeFileSync(binary,'fixture');

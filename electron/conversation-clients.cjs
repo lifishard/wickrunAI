@@ -346,6 +346,30 @@ function createConversationClients({ userData, getSettings, store, openExternal,
       return result;
     }finally{controller.abort();job.client?.close();active.delete(args.runId);if(brainSession)deps.brainProxy.closeSession(brainSession.token);}
   }
-  return {check,connect,restore,run,async repairClaude(){ try { const binary=discover('claude');(deps.validateClaudeBinary || require('./claude-program.cjs').assertClaudeCodeBinary)(binary); const recovery=await deps.repairClaudeGateway?.(); if(recovery && recovery.state!=='ready') return {kind:'claude',status:'error',models:[],message:recovery.message}; return await check('claude'); } catch { return {kind:'claude',status:'error',models:[],message:'Claude 恢复检查失败，请核对程序路径和用户路由配置。'}; } },recover(runId,callId){if(!/^native-[\w-]{1,160}$/.test(callId || '')||!store.list().some(r=>r.id===runId))throw Error('执行记录无效');const saved=store.job(runId,callId);return saved?.result || (saved?{status:'unknown',text:saved.partial || '',error:'先前操作未留下可靠的完成记录，请核实后再继续。'}:null);},approve(requestId,id,approved){const entry=approvals.get(id);if(!entry||entry.requestId!==requestId)throw Error('此操作已结束或授权已过期');entry.finish(approved===true);},abort:id=>active.get(id)?.controller.abort(),busy:()=>active.size>0,close(){for(const job of active.values())job.controller.abort();for(const client of logins.values())client.close();logins.clear();}};
+  async function title(args={}) {
+    const selection=args.selection;
+    if(!['codex','claude'].includes(selection?.kind))throw Error('此客户端不支持后台标题生成');
+    if(typeof selection.model!=='string'||!/^[\w./:-]{1,160}$/.test(selection.model))throw Error('标题模型无效');
+    if(typeof args.prompt!=='string'||args.prompt.length>6000||typeof args.system!=='string'||args.system.length>1000)throw Error('标题上下文无效');
+    const timeoutMs=Math.min(15000,Math.max(1000,Number(args.timeoutMs)||15000));
+    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
+    const brain=cleanBrain(selection.brain),binary=discover(selection.kind);
+    let brainSession,client;
+    try {
+      if(brain.source==='route')brainSession=await deps.brainProxy.openSession({profileId:brain.profileId,model:selection.model,extras:brain.extras,outputField:brain.outputField});
+      const prompt=`${args.system}\n\n${args.prompt}`;
+      if(selection.kind==='codex'){
+        client=codex(binary,{turnTimeoutMs:timeoutMs,...(brainSession?{brain:codexBrain(brainSession)}:{})});
+        const result=await client.run({prompt,model:selection.model==='default'?undefined:selection.model,effort:selection.effort||undefined,cwd:scratch,sandbox:'readOnly',signal:controller.signal,onApproval:async()=>false,isolateTools:true});
+        if(result.status!=='completed')throw Error(result.error||'标题生成未完成');
+        return result.text||'';
+      }
+      const extra=brainSession?'':[selection.model==='default'?'':`--model ${selection.model}`,selection.effort?`--effort ${selection.effort}`:''].filter(Boolean).join(' ');
+      const result=await (deps.claudeCode||claudeCode)({prompt,cwd:scratch},{workspaceRoots:[scratch],claudeBin:binary,claudeExtraArgs:extra,...(brainSession?{brainEnv:claudeBrainEnv(brainSession)}:brain.source==='subscription'?{subscription:true}:{}),claudeTimeoutMs:timeoutMs,signal:controller.signal,chatOnly:true});
+      if(!result.ok||result.uncertain)throw Error(result.error||'标题生成未完成');
+      return result.content||'';
+    }finally{clearTimeout(timer);controller.abort();client?.close();if(brainSession)deps.brainProxy.closeSession(brainSession.token);}
+  }
+  return {check,connect,restore,run,title,async repairClaude(){ try { const binary=discover('claude');(deps.validateClaudeBinary || require('./claude-program.cjs').assertClaudeCodeBinary)(binary); const recovery=await deps.repairClaudeGateway?.(); if(recovery && recovery.state!=='ready') return {kind:'claude',status:'error',models:[],message:recovery.message}; return await check('claude'); } catch { return {kind:'claude',status:'error',models:[],message:'Claude 恢复检查失败，请核对程序路径和用户路由配置。'}; } },recover(runId,callId){if(!/^native-[\w-]{1,160}$/.test(callId || '')||!store.list().some(r=>r.id===runId))throw Error('执行记录无效');const saved=store.job(runId,callId);return saved?.result || (saved?{status:'unknown',text:saved.partial || '',error:'先前操作未留下可靠的完成记录，请核实后再继续。'}:null);},approve(requestId,id,approved){const entry=approvals.get(id);if(!entry||entry.requestId!==requestId)throw Error('此操作已结束或授权已过期');entry.finish(approved===true);},abort:id=>active.get(id)?.controller.abort(),busy:()=>active.size>0,close(){for(const job of active.values())job.controller.abort();for(const client of logins.values())client.close();logins.clear();}};
 }
 module.exports={createConversationClients};

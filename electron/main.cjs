@@ -451,6 +451,7 @@ function registerIpc() {
   ipcMain.handle('snc:conversationClientCheck',(_e,kind)=>{dataAvailable();return conversationClients.check(kind);});
   ipcMain.handle('snc:conversationClientConnect',(_e,kind)=>{dataAvailable();return conversationClients.connect(kind);});
   ipcMain.handle('snc:conversationClientRun',(event,args)=>{dataAvailable();return conversationClients.run(args,message=>sendClientEvent(event.sender,message));});
+  ipcMain.handle('snc:conversationClientTitle',(_event,args)=>{dataAvailable();return conversationClients.title(args);});
   ipcMain.handle('snc:conversationClientApprove',(_e,{requestId,id,approved})=>conversationClients.approve(requestId,id,approved));
   ipcMain.handle('snc:conversationClientRecover',(_e,{runId,callId})=>{dataAvailable();return conversationClients.recover(runId,callId);});
   ipcMain.handle('snc:clientRun',(_e,args)=>{dataAvailable();return localClients.run(args);});

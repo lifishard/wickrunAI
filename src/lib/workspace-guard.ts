@@ -41,6 +41,11 @@ export function releaseRoots(conversationId: string): void {
   claims.delete(conversationId);
 }
 
+/** Waiters to resume after a claim changes; remaining holders keep their queues paused. */
+export function readyWorkspaceWaiters(waiting: ReadonlyMap<string, string[]>): string[] {
+  return [...waiting].filter(([id, roots]) => holdersOf(id, roots).length === 0).map(([id]) => id);
+}
+
 export function claimedRoots(conversationId: string): string[] {
   return [...(claims.get(conversationId) ?? [])];
 }

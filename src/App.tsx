@@ -14,6 +14,7 @@ import { probeCompatibility, probeVision } from './lib/compatibility-probe';
 import { validateMediaRoute, visionUntested } from './lib/media-input';
 const MediaInputDialog = React.lazy(() => import('./components/MediaInputDialog'));
 import { requestAssistant } from './lib/assistant-request';
+import { cleanConversationTitle, titlePrompt, TITLE_SYSTEM } from './lib/conversation-title';
 import MessageViewport, { type ReadingPosition } from './components/MessageViewport';
 import StartupWelcome from './components/StartupWelcome';
 import BrandLogo, { BrandLoading } from './components/BrandLogo';
@@ -91,7 +92,7 @@ import { conversationQueue, nextQueuedIndex, type QueuedInput } from './lib/run-
 import { teamNotifications } from './lib/team-notify';
 import { I18nProvider, LOCALES, setActiveLocale, translate, type Locale } from './lib/i18n';
 import LocaleSwitch from './components/LocaleSwitch';
-import { claimRoots, holdersOf, releaseRoots, claimedRoots } from './lib/workspace-guard';
+import { claimRoots, holdersOf, releaseRoots, claimedRoots, readyWorkspaceWaiters } from './lib/workspace-guard';
 import DataBackupPanel from './components/collaboration/DataBackupPanel';
 import {
   dueTasks,
@@ -266,6 +267,7 @@ export default function App() {
   const evalsRef=React.useRef<EvalStore|undefined>(undefined);evalsRef.current=evals;
   const writeEvals=React.useCallback((next:EvalStore)=>{setEvals(next);void saveEvals(next);},[]);
   const runningRef = React.useRef(new Map<string, { requestId: string; handle: AgentHandle }>());
+  const titleRequestsRef = React.useRef(new Set<string>());
   const questionDraftSaveRef = React.useRef(Promise.resolve());
   const questionSubmitRef = React.useRef(new Set<string>());
 
@@ -301,20 +303,16 @@ export default function App() {
     setActiveId(event.conversationId);setTeamVisible(false);
   }),[]);
 
-  React.useEffect(() => {
-    if (!pausedQueues.length) return;
-    const freed = pausedQueues.filter((id) => {
-      const waiting = blockedOnRoots.current.get(id);
-      return waiting !== undefined && holdersOf(id, waiting).length === 0;
-    });
-    if (!freed.length) return;
-    for (const id of freed) blockedOnRoots.current.delete(id);
-    setPausedQueues((list) => list.filter((id) => !freed.includes(id)));
-  }, [runs, pausedQueues]);
-
   /* ---------------- 协作空间通知 ---------------- */
 
   const blockedOnRoots = React.useRef(new Map<string, string[]>());
+  const wakeWorkspaceQueue = () => {
+    const freed = readyWorkspaceWaiters(blockedOnRoots.current);
+    if (!freed.length) return;
+    for (const id of freed) blockedOnRoots.current.delete(id);
+    setPausedQueues((list) => list.filter((id) => !freed.includes(id)));
+  };
+  React.useEffect(wakeWorkspaceQueue, [runs, pausedQueues]);
   const teamNotified = React.useRef(new Map<string, string>());
   const teamSeeded = React.useRef(false);
   React.useEffect(() => {
@@ -490,6 +488,9 @@ export default function App() {
   const resumeQueue = (id: string) => setPausedQueues((list) => list.filter((x) => x !== id));
   /** 输入框只显示本会话排的队；别的会话的队列跟这里无关。 */
   const activeQueue = React.useMemo(() => conversationQueue(queue, activeId), [queue, activeId]);
+  const waitingRoots = activeId ? blockedOnRoots.current.get(activeId) : undefined;
+  const workspaceHolderId = waitingRoots && activeId ? holdersOf(activeId, waitingRoots)[0] : undefined;
+  const workspaceHolder = workspaceHolderId ? conversations.find((conversation) => conversation.id === workspaceHolderId) : undefined;
 
   /**
    * 当前会话用哪份凭据。
@@ -1379,7 +1380,7 @@ export default function App() {
           setRuns((prev) => { if (prev[convId]?.requestId !== requestId) return prev; const next = { ...prev }; delete next[convId]; return next; });
         }
         startingRef.current.delete(convId);
-        if (!runningRef.current.has(convId)) releaseRoots(convId);
+        if (!runningRef.current.has(convId)) { releaseRoots(convId); wakeWorkspaceQueue(); }
       };
       const finishInterruption=()=>{
         const steering=interruptingRef.current.get(convId);
@@ -1566,6 +1567,28 @@ export default function App() {
               artifacts: arts.length ? arts : undefined,
             });
             if(finishInterruption())return;
+            if (!resumeFrom && kept.length === 0 && !conv.creationFingerprint && !conv.titleManuallySet && !titleRequestsRef.current.has(convId) && buf.content.trim()) {
+              titleRequestsRef.current.add(convId);
+              const originalTitle = nextConv.title;
+              const goal = latestState?.harness?.goal?.trim() || text;
+              const controller = new AbortController();
+              const timeout = window.setTimeout(() => controller.abort(), 15000);
+              void (async () => {
+                try {
+                  let raw: string | undefined;
+                  if (cfg.client && desktop()?.conversationClientTitle) {
+                    raw = await desktop()!.conversationClientTitle({ selection: cfg.client, prompt: titlePrompt(goal, buf.content), system: TITLE_SYSTEM, timeoutMs: 15000 });
+                  } else if (!cfg.client) {
+                    raw = await requestAssistant(profile, { ...cfg, toolsEnabled: false, customBody: '' }, titlePrompt(goal, buf.content), controller.signal, TITLE_SYSTEM);
+                  }
+                  const title = raw ? cleanConversationTitle(raw) : null;
+                  if (!title || controller.signal.aborted) return;
+                  setConversations((all) => all.map((current) => current.id === convId && !current.titleManuallySet && !current.titleGenerated && current.title === originalTitle && current.messages[0]?.id === userMsg.id
+                    ? { ...current, title, titleGenerated: true } : current));
+                } catch { /* The first-message title remains usable when the model is unavailable. */ }
+                finally { window.clearTimeout(timeout); }
+              })();
+            }
             failoverTriedRef.current.delete(convId);
             /*
              * 在跑回归题就把结果记回去。没有这一步，回归集只是一张清单 ——
@@ -2097,8 +2120,10 @@ export default function App() {
       projectPrompts={activeProject?.prompts ?? []}
       queued={activeQueue.map(({ item }) => item.text || t('{n} 个附件', { n: item.attachments.length }))}
       queuePaused={queuePaused}
-      onResumeQueue={() => { if (activeId) resumeQueue(activeId); }}
-      onDropQueued={(i) => { const entry = activeQueue[i]; if (entry) setQueue((q) => q.filter((_, j) => j !== entry.index)); }}
+      workspaceHolder={waitingRoots ? (workspaceHolder?.title || t('另一个会话')) : undefined}
+      onOpenWorkspaceHolder={workspaceHolder ? () => { setActiveId(workspaceHolder.id); setTeamVisible(false); } : undefined}
+      onResumeQueue={() => { if (!activeId) return; if (waitingRoots) { wakeWorkspaceQueue(); if (holdersOf(activeId, waitingRoots).length) toast.show(t('工作目录仍由另一个会话占用；排队消息会在它结束后发出。')); } else resumeQueue(activeId); }}
+      onDropQueued={(i) => { const entry = activeQueue[i]; if (!entry) return; setQueue((q) => q.filter((_, j) => j !== entry.index)); if (activeId && activeQueue.length === 1) { blockedOnRoots.current.delete(activeId); resumeQueue(activeId); } }}
     />
   );
 
@@ -2133,11 +2158,12 @@ export default function App() {
             if (runningRef.current.has(id)) stop(id);
             releaseRoots(id);
             blockedOnRoots.current.delete(id);
+            wakeWorkspaceQueue();
             void forgetRuns(id);
             setConversations((prev) => prev.filter((c) => c.id !== id));
             if (activeId === id) setActiveId(null);
           }}
-          onRename={(id, title) => updateConv(id, (c) => ({ ...c, title }))}
+          onRename={(id, title) => updateConv(id, (c) => ({ ...c, title, titleManuallySet: true }))}
           projects={projects}
           onTogglePin={togglePin}
           onFork={(id) => forkConversation(id)}

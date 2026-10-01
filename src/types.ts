@@ -539,6 +539,9 @@ export interface Conversation {
   handledHandoffKeys?: string[];
   id: string;
   title: string;
+  /** A sidebar rename always wins over background title generation. */
+  titleManuallySet?: boolean;
+  titleGenerated?: boolean;
   /** 钉在侧栏顶部 */
   pinned?: boolean;
   /** 从哪个会话分叉出来的，只用来显示 */

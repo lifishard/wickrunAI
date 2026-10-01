@@ -64,6 +64,7 @@ contextBridge.exposeInMainWorld('snc', {
   conversationClientCheck: kind => ipcRenderer.invoke('snc:conversationClientCheck',kind),
   conversationClientConnect: kind => ipcRenderer.invoke('snc:conversationClientConnect',kind),
   conversationClientRun: args => ipcRenderer.invoke('snc:conversationClientRun',args),
+  conversationClientTitle: args => ipcRenderer.invoke('snc:conversationClientTitle',args),
   conversationClientApprove:(requestId,id,approved)=>ipcRenderer.invoke('snc:conversationClientApprove',{requestId,id,approved}),
   conversationClientRecover:(runId,callId)=>ipcRenderer.invoke('snc:conversationClientRecover',{runId,callId}),
   brainGlobalStatus:()=>ipcRenderer.invoke('snc:brainGlobalStatus'),

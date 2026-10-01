@@ -63,7 +63,7 @@ test('协作空间状态变化映射到与单 Agent 一致的通知类型', () =
   assert.deepEqual(teamNotifications(seen,data([run('r1','cancelled')])),[]);
 });
 
-const {normalizeRoot,overlaps,holdersOf,claimRoots,releaseRoots,resetClaims}=load(src('lib/workspace-guard.ts'));
+const {normalizeRoot,overlaps,holdersOf,claimRoots,releaseRoots,readyWorkspaceWaiters,resetClaims}=load(src('lib/workspace-guard.ts'));
 
 test('工作目录重叠判定跨平台一致', () => {
   assert.equal(normalizeRoot('C:\\Users\\me\\proj\\'),'c:/users/me/proj');
@@ -91,6 +91,16 @@ test('只读运行不登记也不被挡', (t) => {
   resetClaims();
   claimRoots('a',[]);
   assert.deepEqual(holdersOf('b',['C:\\work\\repo']),[]);
+});
+
+test('释放工作目录后只唤醒真正空闲的等待队列', (t) => {
+  t.after(resetClaims); resetClaims();
+  claimRoots('first',['C:/work/a']); claimRoots('second',['C:/work/b']);
+  const waiting=new Map([['queued-a',['C:/work/a']],['queued-b',['C:/work/b']]]);
+  assert.deepEqual(readyWorkspaceWaiters(waiting),[]);
+  releaseRoots('first');
+  assert.deepEqual(readyWorkspaceWaiters(waiting),['queued-a']);
+  assert.deepEqual(holdersOf('queued-b',['C:/work/b']),['second']);
 });
 
 const {translate}=load(src('lib/i18n.ts'));

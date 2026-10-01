@@ -87,6 +87,7 @@ interface ElectronBridge extends CloudBridge {
   conversationClientCheck(kind:import('./connections').ClientKind):Promise<import('./connections').ClientStatus>;
   conversationClientConnect(kind:import('./connections').ClientKind):Promise<import('./connections').ClientStatus>;
   conversationClientRun(args:{runId:string;requestId:string;prompt:string;images?:string[];cwd?:string}):Promise<import('./connections').ClientTurnResult>;
+  conversationClientTitle(args:{selection:import('./connections').ClientSelection;prompt:string;system:string;timeoutMs:number}):Promise<string>;
   conversationClientApprove(requestId:string,id:string,approved:boolean):Promise<void>;
   conversationClientRecover(runId:string,callId:string):Promise<import('./connections').ClientTurnResult|null>;
   brainGlobalStatus():Promise<import('./connections').BrainGlobalStatus>;

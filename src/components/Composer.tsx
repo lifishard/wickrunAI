@@ -62,6 +62,8 @@ export default function Composer(props: {
   onQuoteOnly: (only: boolean) => void;
   onRemoveQuote: (id: string) => void;
   queuePaused: boolean;
+  workspaceHolder?: string;
+  onOpenWorkspaceHolder?: () => void;
   onResumeQueue: () => void;
   busy: boolean;
   preparing?: boolean;
@@ -383,8 +385,9 @@ export default function Composer(props: {
                   </button>
                 </span>
               ))}
-              <span className="queue-note">{props.queuePaused ? t('队列已暂停') : t('排队中，这一轮结束后依次发出')}</span>
-              {props.queuePaused ? <button className="btn sm" onClick={props.onResumeQueue}>{t('继续队列')}</button> : null}
+              <span className="queue-note">{props.workspaceHolder ? t('等待「{title}」释放工作目录', { title: props.workspaceHolder }) : props.queuePaused ? t('队列已暂停') : t('排队中，这一轮结束后依次发出')}</span>
+              {props.workspaceHolder && props.onOpenWorkspaceHolder ? <button className="btn sm" onClick={props.onOpenWorkspaceHolder}>{t('打开占用会话')}</button> : null}
+              {props.queuePaused ? <button className="btn sm" onClick={props.onResumeQueue}>{props.workspaceHolder ? t('重试') : t('继续队列')}</button> : null}
             </div>
           ) : null}
 
