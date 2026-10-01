@@ -134,7 +134,7 @@ export interface ButlerRuntimeSnapshot {
   busy: boolean;
   error?: string;
   /** Device-local collection consent and actual availability; never cloud-synced. */
-  sources: Partial<Record<ButlerSource,{available:boolean;consented:boolean;note?:string;allowlist?:string[]}>>;
+  sources: Partial<Record<ButlerSource,{available:boolean;consented:boolean;note?:string;allowlist?:string[];denylist?:string[];apps?:{id:string;name:string}[]}>>;
   nativeClients?: ClientStatus[];
 }
 

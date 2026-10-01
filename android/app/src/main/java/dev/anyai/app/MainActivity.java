@@ -13,7 +13,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(WickrunAccountPlugin.class);
         registerPlugin(WickrunContextPlugin.class);
         super.onCreate(savedInstanceState);
-        WickrunContextStore.acceptShare(getIntent());
+        WickrunContextStore.acceptShare(this, getIntent());
         if (Intent.ACTION_SEND.equals(getIntent().getAction())) setIntent(new Intent(this, MainActivity.class));
     }
 
@@ -21,7 +21,7 @@ public class MainActivity extends BridgeActivity {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
-        WickrunContextStore.acceptShare(intent);
+        WickrunContextStore.acceptShare(this, intent);
         if (Intent.ACTION_SEND.equals(intent.getAction())) setIntent(new Intent(this, MainActivity.class));
     }
 }

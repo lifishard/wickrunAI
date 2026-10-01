@@ -16,17 +16,31 @@ export interface MobileContextStatus {
   serviceGranted: boolean;
   notificationGranted: boolean;
   allowedPackages: string[];
+  deniedPackages: string[];
+  privateCount: number;
+  storageError?: boolean;
+  privacy: MobilePrivacy;
+  background: {supported:boolean;unrestricted:boolean};
 }
 export interface MobileContextApp { packageName: string; label: string }
+export interface MobilePrivacy {
+  excludedTerms:string[];
+  encryptedOnlyTerms:string[];
+  categories:{contact:'exclude'|'encrypt-only'|'redact';financial:'exclude'|'encrypt-only'|'redact';health:'exclude'|'encrypt-only'|'redact'};
+  encryptedStorage:boolean;
+}
 
 interface NativeContext {
   getStatus(): Promise<MobileContextStatus>;
   listApps(): Promise<{ apps: MobileContextApp[] }>;
-  setAllowedPackages(options: { packages: string[] }): Promise<MobileContextStatus>;
+  setAllowedPackages(options: { packages: string[]; deniedPackages:string[] }): Promise<MobileContextStatus>;
+  configurePrivacy(options:{policy:MobilePrivacy}):Promise<MobileContextStatus>;
   setEnabled(options: { enabled: boolean }): Promise<MobileContextStatus>;
   openAccessibilitySettings(): Promise<MobileContextStatus>;
   openNotificationSettings(): Promise<MobileContextStatus>;
   requestNotificationPermission(): Promise<MobileContextStatus>;
+  openBackgroundSettings(): Promise<MobileContextStatus>;
+  revokeSource(options:{kind:'accessibility'|'share'}):Promise<MobileContextStatus>;
   poll(): Promise<{ items: MobileContextItem[] }>;
   ack(options: { ids: string[] }): Promise<MobileContextStatus>;
 }
@@ -38,12 +52,15 @@ export const mobileContext = {
   available,
   status: () => available() ? native.getStatus() : Promise.resolve(null),
   apps: () => available() ? native.listApps().then(result => result.apps) : Promise.resolve([]),
-  allowApps: (packages: string[]) => native.setAllowedPackages({ packages }),
+  allowApps: (packages: string[], deniedPackages:string[] = []) => native.setAllowedPackages({ packages, deniedPackages }),
+  configurePrivacy: (policy:MobilePrivacy) => native.configurePrivacy({policy}),
   enable: () => native.setEnabled({ enabled: true }),
   stop: () => native.setEnabled({ enabled: false }),
   openAccessibilitySettings: () => native.openAccessibilitySettings(),
   openNotificationSettings: () => native.openNotificationSettings(),
   requestNotificationPermission: () => native.requestNotificationPermission(),
+  openBackgroundSettings: () => native.openBackgroundSettings(),
+  revokeSource:(kind:'accessibility'|'share')=>native.revokeSource({kind}),
   poll: () => available() ? native.poll().then(result => result.items) : Promise.resolve([]),
   ack: (ids: string[]) => native.ack({ ids }),
 };
@@ -71,18 +88,35 @@ export async function androidButlerCollector(action: string, input: Record<strin
   if (action === 'status') {
     const state = await mobileContext.status();
     if (!state) return empty;
+    const effective=state.allowedPackages.filter(name=>!state.deniedPackages.includes(name));
+    const apps=await mobileContext.apps();
     return { sources: {
-      android: { available: true, consented: state.serviceGranted && state.notificationGranted && state.allowedPackages.length > 0,
-        allowlist: state.allowedPackages, note: !state.serviceGranted ? '请开启 Android 阅读授权' : !state.notificationGranted ? '请允许状态通知' : state.active ? '正在读取所选应用' : '已停止读取' },
+      android: { available: true, consented: state.serviceGranted && state.notificationGranted && effective.length > 0 && !state.storageError,
+        allowlist: state.allowedPackages, denylist:state.deniedPackages,apps:apps.map(app=>({id:app.packageName,name:app.label})),
+        note: state.storageError?'加密存储不可用':!state.serviceGranted ? '请开启 Android 阅读授权' : !state.notificationGranted ? '请允许状态通知' : state.active ? '正在读取所选应用' : '已停止读取' },
       share: { available: true, consented: true, note: '可从其他应用的分享菜单发送文字或链接' },
-    }, deviceName: 'Android 手机' };
+    }, privacy:state.privacy, background:state.background, deviceName: 'Android 手机' };
   }
+  if (action === 'list-source-apps') return androidButlerCollector('status');
   if (action === 'configure' && input.source === 'android') {
-    await mobileContext.allowApps(Array.isArray(input.allowlist) ? input.allowlist.filter((name): name is string => typeof name === 'string') : []);
+    await mobileContext.allowApps(Array.isArray(input.allowlist) ? input.allowlist.filter((name): name is string => typeof name === 'string') : [],
+      Array.isArray(input.denylist)?input.denylist.filter((name):name is string=>typeof name==='string'):[]);
+    return androidButlerCollector('status');
+  }
+  if (action === 'configure-privacy' && input.policy && typeof input.policy === 'object') {
+    await mobileContext.configurePrivacy(input.policy as MobilePrivacy);
+    return androidButlerCollector('status');
+  }
+  if (action === 'open-background-settings') {
+    await mobileContext.openBackgroundSettings();
     return androidButlerCollector('status');
   }
   if (action === 'consent' && input.source === 'android') {
-    if (input.consented) await mobileContext.enable(); else await mobileContext.stop();
+    if (input.consented) await mobileContext.enable(); else await mobileContext.revokeSource('accessibility');
+    return androidButlerCollector('status');
+  }
+  if (action === 'consent' && input.source === 'share') {
+    if (!input.consented) await mobileContext.revokeSource('share');
     return androidButlerCollector('status');
   }
   if (action === 'suspend') {
@@ -109,10 +143,11 @@ export async function androidButlerCollector(action: string, input: Record<strin
     return empty;
   }
   if (action === 'import-link' && typeof input.url === 'string') {
-    const text = input.url.trim().slice(0, 2000), item: MobileContextItem = { id: `share:${Date.now()}:${Math.random().toString(36).slice(2)}`,
+    const url=new URL(input.url.trim());
+    if(url.protocol!=='https:')throw Error('只接受 HTTPS 链接。');
+    const text=`用户分享了 ${url.hostname} 的链接。`, item: MobileContextItem = { id: `share:${Date.now()}:${Math.random().toString(36).slice(2)}`,
       kind: 'share', packageName: null, text, capturedAt: Date.now() };
-    return { sources: {}, signals: [summarized(item)], contexts: mode === 'redacted-context' ? [{ id: item.id, source: 'share',
-      sourceLabel: '主动分享的链接', observedAt: item.capturedAt, text }] : [] };
+    return { sources: {}, signals: [summarized(item)] };
   }
   return empty;
 }

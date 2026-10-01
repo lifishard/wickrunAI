@@ -15,7 +15,7 @@ export const BUTLER_BRAIN_KEY='wickrun:butler:brain:v1';
 const LOCAL_KEY='wickrun:butler:device:v1';
 interface Config { settings:()=>AppSettings; conversations:()=>Conversation[]; skills:()=>Skill[]; onSettings:(value:AppSettings)=>void; onSkills:(value:Skill[])=>void }
 interface LocalState {deviceId:string;consent:Partial<Record<ButlerSource,boolean>>;day:string;spent:number;analyzed:string;done:string[];contextSeen:string[]}
-export interface ButlerCollectorState {sources:ButlerRuntimeSnapshot['sources'];recordIds?:string[];signals?:Omit<ButlerSignal,'accountId'|'modelSafe'>[];contexts?:{id:string;source:ButlerSource;sourceLabel:string;observedAt:number;text:string}[];deviceName?:string}
+export interface ButlerCollectorState {sources:ButlerRuntimeSnapshot['sources'];recordIds?:string[];signals?:Omit<ButlerSignal,'accountId'|'modelSafe'>[];contexts?:{id:string;source:ButlerSource;sourceLabel:string;observedAt:number;text:string}[];deviceName?:string;privacy?:unknown;background?:{supported:boolean;unrestricted:boolean;note?:string}}
 interface Services {
   storage:()=>{kvGet:(key:string)=>Promise<string|null>;kvSet:(key:string,value:string)=>Promise<void>};
   account:()=>Promise<string>;host:()=>boolean;now:()=>number;

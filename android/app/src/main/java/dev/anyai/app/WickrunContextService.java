@@ -39,7 +39,7 @@ public class WickrunContextService extends AccessibilityService {
     }
     @Override public void onDestroy() {
         active = false;
-        WickrunContextStore.setEnabled(this, false);
+        try { WickrunContextStore.setEnabled(this, false); } catch (Exception ignored) { /* No capture after service exit. */ }
         clearNotice();
         if (instance == this) instance = null;
         super.onDestroy();
@@ -50,7 +50,9 @@ public class WickrunContextService extends AccessibilityService {
         return Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
     }
     private void refreshNotice() {
-        active = WickrunContextStore.enabled(this) && !WickrunContextStore.packages(this).isEmpty() && notificationGranted();
+        java.util.Set<String> effective = WickrunContextStore.packages(this);
+        effective.removeAll(WickrunContextStore.denied(this));
+        active = WickrunContextStore.enabled(this) && !effective.isEmpty() && notificationGranted();
         if (!active) { clearNotice(); return; }
         NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (manager == null) { active = false; return; }
@@ -82,7 +84,7 @@ public class WickrunContextService extends AccessibilityService {
         CharSequence source = event.getPackageName();
         if (source == null) return;
         String packageName = source.toString();
-        if (!WickrunContextStore.packages(this).contains(packageName)) return;
+        if (!WickrunContextStore.allowed(this, packageName)) return;
         long now = System.currentTimeMillis();
         if (now - lastCapture < 1200) return;
         AccessibilityNodeInfo root = getRootInActiveWindow();
@@ -99,7 +101,10 @@ public class WickrunContextService extends AccessibilityService {
             item.put("packageName", packageName);
             item.put("text", text);
             item.put("capturedAt", now);
-            WickrunContextStore.add(item);
+            if (!WickrunContextStore.add(this, item)) {
+                try { WickrunContextStore.setEnabled(this, false); } catch (Exception ignored) { active = false; }
+                refreshNotice();
+            }
         } catch (Exception ignored) { /* Keep private content in memory only. */ }
     }
 
