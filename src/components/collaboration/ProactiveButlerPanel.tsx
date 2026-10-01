@@ -37,6 +37,7 @@ export default function ProactiveButlerPanel({settings,onSettings,controller,onO
   const [sourceScope,setSourceScope]=React.useState<Partial<Record<ButlerSource,string>>>({});
   const [setupOpen,setSetupOpen]=React.useState(false);
   const [need,setNeed]=React.useState('');
+  const [workInputs,setWorkInputs]=React.useState<Record<string,string>>({});
   const availableGroups=(settings.routeGroups??[]).filter(g=>g.routes.length>0);
   const latestBriefs=[...snapshot.brain.briefs].sort((a,b)=>b.createdAt-a.createdAt).slice(0,4);
   const goals=[...snapshot.brain.goals].filter(g=>g.status!=='dismissed').sort((a,b)=>b.updatedAt-a.updatedAt).slice(0,12);
@@ -140,7 +141,14 @@ export default function ProactiveButlerPanel({settings,onSettings,controller,onO
     </div>
     </details>
     {error&&<p role="alert" className="proactive-error">{error}</p>}{snapshot.error&&<p role="alert" className="proactive-error">{snapshot.error}</p>}
-    {!!jobs.length&&<section className="proactive-jobs" aria-label={t('最近任务')}><h3>{t('最近任务')}</h3>{jobs.map(job=><div key={job.id} className="proactive-job"><span>{t(job.kind==='analyze'?'分析目标':job.kind==='research'?'研究目标':'生成简报')}</span><strong>{t(job.status==='queued'?'已排队，等待执行电脑':job.status==='running'?'执行中':job.status==='completed'?'已完成':'失败')}</strong>{job.error&&<small role="alert">{job.error}</small>}</div>)}</section>}
+    {!!jobs.length&&<section className="proactive-jobs" aria-label={t('最近任务')}><h3>{t('最近任务')}</h3>{jobs.map(job=><div key={job.id} className="proactive-job"><span>{t(job.kind==='analyze'?'分析目标':job.kind==='research'?'研究目标':job.kind==='work'?'Work 执行':'生成简报')}</span><strong>{t(job.status==='queued'?'已排队，等待执行电脑':job.status==='running'?'执行中':job.status==='waiting'?'需要处理':job.status==='completed'?'已完成':'失败')}</strong>{job.error&&<small role="alert">{job.error}</small>}
+      {job.summary&&<p>{job.summary}</p>}
+      {job.status==='failed'&&job.kind!=='work'&&<button className="btn sm" disabled={working||inactive} onClick={()=>void act({kind:'retry-job',jobId:job.id})}><Icon name="retry"/>{t('重试')}</button>}
+      {job.kind==='work'&&job.conversationId&&<div className="proactive-work-controls">{result({kind:'conversation',id:job.conversationId})}
+        {job.status==='running'?<button className="btn sm" disabled={working||inactive} onClick={()=>void act({kind:'work-command',jobId:job.id,command:'pause'})}><Icon name="pause"/>{t('暂停任务')}</button>:job.status!=='completed'&&<button className="btn sm" disabled={working||inactive} onClick={()=>void act({kind:'work-command',jobId:job.id,command:'resume'})}><Icon name="play"/>{t('继续任务')}</button>}
+        <details className="proactive-detail"><summary>{t('补充要求与查看说明')}</summary><p>{t('补充要求会进入原 Work 会话，保留上下文。敏感操作仍须在执行设备确认。产物和完整记录完成同步后可在会话中查看。')}</p><label className="team-field"><span>{t('给执行任务补充要求')}</span><textarea value={workInputs[job.id]??''} onChange={e=>setWorkInputs(values=>({...values,[job.id]:e.target.value}))}/></label><button className="btn" disabled={working||inactive||!workInputs[job.id]?.trim()} onClick={()=>void act({kind:'work-command',jobId:job.id,command:'message',text:workInputs[job.id]}).then(ok=>{if(ok)setWorkInputs(values=>({...values,[job.id]:''}));})}><Icon name="enter"/>{t('发送补充')}</button></details>
+      </div>}
+    </div>)}</section>}
     <div className="proactive-section-head"><h3>{t('待核对的目标')}</h3><div className="team-actions"><button className="btn sm" disabled={working||snapshot.busy||inactive||!controller} onClick={()=>void act({kind:'analyze-now'})}>{t('现在分析')}</button><button className="btn sm ghost" disabled={working||!controller} onClick={()=>void act({kind:'refresh'})}>{t('刷新')}</button></div></div>
     {goals.length?goals.map(goal=><article className="proactive-card proactive-goal" key={goal.id}>
       <div className="proactive-card-top"><h4>{goal.title}</h4><span>{t(goal.status==='proposed'?'待你确认':goal.status==='confirmed'?'已确认':'已纠正')}</span></div>
@@ -149,6 +157,7 @@ export default function ProactiveButlerPanel({settings,onSettings,controller,onO
         {goal.status==='proposed'&&<button className="btn" disabled={working||!controller} onClick={()=>void act({kind:'review-goal',goalId:goal.id,decision:'confirm'})}>{t('是我的需求')}</button>}
         <button className="btn ghost" disabled={working||!controller} onClick={()=>void act({kind:'feedback',targetKind:'goal',targetId:goal.id,rating:'not-my-need'})}>{t('不是我的需求')}</button>
         <button className="btn ghost" disabled={working||inactive||!controller} onClick={()=>void act({kind:'run-research',goalId:goal.id})}>{t('继续研究')}</button>
+        {goal.status!=='proposed'&&<button className="btn primary" disabled={working||inactive||!controller} onClick={()=>void act({kind:'run-work',goalId:goal.id})}><Icon name="play"/>{t('执行这个需求')}</button>}
       </div>
       <details className="proactive-detail"><summary>{t('为什么这样判断 · 纠正目标')}</summary>
         <p>{t('判断依据：')}{goal.hypothesis}</p><p>{t('把握程度：')}{t(goal.confidence==='high'?'较有把握':goal.confidence==='medium'?'部分依据':'线索较弱')}</p>
@@ -172,7 +181,7 @@ export default function ProactiveButlerPanel({settings,onSettings,controller,onO
         <div className="proactive-primary-actions"><button className="btn" disabled={working||!controller} onClick={()=>void adoptSkill(proposal.id)}>{t('采用方法')}</button><button className="btn ghost" disabled={working||!controller} onClick={()=>void act({kind:'review-skill',proposalId:proposal.id,decision:'dismiss'})}>{t('忽略')}</button></div>{feedback('skill',proposal.id)}</article>)}
     </details>
     <details className="proactive-detail proactive-transparency"><summary>{t('管家做了什么 · 行动记录')}</summary>
-      <p>{t('计划、完成、失败和受阻分别记录。后台只做需求理解与公开研究；财务、消息发送和商业谈判需要另外的具体授权。')}</p>
+      <p>{t('计划、完成、失败和受阻分别记录。需求理解和研究可交给 Work 继续执行；Work 沿用现有工具、上下文、预算和审批。财务、消息发送和商业谈判需要另外的具体授权。')}</p>
       {[...(snapshot.brain.audit??[])].reverse().slice(0,80).map(entry=><article key={entry.id} className="proactive-audit"><div><strong>{entry.title}</strong><span>{t(entry.status==='planned'?'计划 / 已发起':entry.status==='completed'?'已完成':entry.status==='blocked'?'待授权':'失败')}</span></div><p>{entry.detail}</p><small>{new Date(entry.at).toLocaleString()}{entry.model?' · '+entry.model:''}</small></article>)}
       {snapshot.brain.goals.filter(goal=>goal.status==='dismissed').map(goal=><p key={goal.id}>{t('已排除的需求：')}{goal.title}</p>)}
     </details>

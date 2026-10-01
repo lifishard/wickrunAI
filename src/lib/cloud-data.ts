@@ -116,10 +116,10 @@ export type CloudLocal = { settings:AppSettings; conversations:Conversation[]; p
 export function butlerRows(brain:ButlerBrainState):CloudRow[] {
   const safe=projectButlerBrainForSync(brain);
   return ([['signal',safe.signals],['goal',safe.goals],['brief',safe.briefs],['skill',safe.skillProposals],['job',safe.jobs??[]],['host',safe.hosts??[]],['feedback',safe.feedback??[]],['audit',safe.audit??[]]] as const)
-    .flatMap(([kind,items])=>items.map(item=>({...item,id:`${kind}:${item.id}`,entityId:item.id,kind})));
+    .flatMap(([kind,items])=>items.map(item=>({...item,...(kind==='job'?{jobKind:(item as import('./proactive-butler').ButlerJob).kind}:{}),...(kind==='audit'?{auditKind:(item as import('./proactive-butler').ButlerAudit).kind}:{}),id:`${kind}:${item.id}`,entityId:item.id,kind})));
 }
 export function butlerBrainFromRows(rows:CloudRow[]|undefined,accountId:string,local?:ButlerBrainState):ButlerBrainState {
-  const scoped=(kind:string)=> (rows??[]).filter(row=>row.kind===kind&&row.accountId===accountId).map(({kind:_kind,entityId,id:_id,...rest})=>({...rest,id:entityId}));
+  const scoped=(kind:string)=> (rows??[]).filter(row=>row.kind===kind&&row.accountId===accountId).map(({kind:_kind,entityId,id:_id,jobKind,auditKind,...rest})=>({...rest,id:entityId,...(kind==='job'?{kind:jobKind}:{}),...(kind==='audit'?{kind:auditKind}:{} )}));
   const brain=emptyButlerBrain(accountId);
   return {...brain,signals:scoped('signal') as unknown as ButlerBrainState['signals'],goals:scoped('goal') as unknown as ButlerBrainState['goals'],
     briefs:scoped('brief') as unknown as ButlerBrainState['briefs'],skillProposals:scoped('skill') as unknown as ButlerBrainState['skillProposals'],

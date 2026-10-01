@@ -90,6 +90,8 @@ import { MemoryCandidateCard } from './components/ProjectMemoryPanel';
 import { teamRuntime } from './lib/team-runtime';
 import { butlerRuntime } from './lib/butler-runtime';
 import { butlerClock } from './lib/butler-policy';
+import { butlerWorkConfig } from './lib/butler-work';
+import type { ButlerJob, ButlerWorkCommand } from './lib/proactive-butler';
 import { conversationQueue, nextQueuedIndex, type QueuedInput } from './lib/run-queue';
 import { teamNotifications } from './lib/team-notify';
 import { I18nProvider, LOCALES, setActiveLocale, translate, type Locale } from './lib/i18n';
@@ -425,7 +427,7 @@ export default function App() {
   React.useEffect(()=>{
     if(!settings||!bootReady)return;
     butlerRuntime.configure({settings:()=>settingsRef.current!,conversations:()=>quitSnapshot.current.conversations,skills:()=>quitSnapshot.current.skills,
-      onSettings:value=>{settingsRef.current=value;setSettings(value);},onSkills:setSkills});
+      onSettings:value=>{settingsRef.current=value;setSettings(value);},onSkills:setSkills,startWork:startButlerWork,controlWork:controlButlerWork,workState:butlerWorkState});
     void butlerRuntime.tick();
   },[settings,bootReady]);
   React.useEffect(()=>{
@@ -902,6 +904,50 @@ export default function App() {
       const waiting=blockedOnRoots.current.get(c.id);
       return {id:c.id,title:c.title||'新对话',mode:c.config.toolsEnabled?'work':'chat',status:c.workspaceError?'blocked':waiting?'waiting_workspace':runningRef.current.has(c.id)?'running':queueRef.current.some(q=>q.conversationId===c.id)?'queued':state?.status??(last?'completed':'draft'),isolated:Boolean(c.workspace),roots:c.workspace?[c.workspace.isolatedRoot]:claimedRoots(c.id),blockedBy:waiting?holdersOf(c.id,waiting):[],progress:(last?.notice||last?.content||'').slice(-1600)};
     });
+  }
+  async function startButlerWork(job:ButlerJob,prompt:string):Promise<string>{
+    const current=settingsRef.current;if(!current?.butler?.proactive)throw Error('管家设置不可用。');
+    if(!desktop())throw Error('请在同账号的执行电脑处理后台 Work。');
+    const input=parseConversationRequest({mode:'work',title:t('管家 · ')+(butlerRuntime.getSnapshot().brain.goals.find(g=>g.id===job.goalId)?.title??'执行需求').slice(0,65),prompt,start:false,request_key:job.id});
+    const result=await createRequestedConversation(input,job.id,null,false);
+    if(!result.ok)throw Error(result.error??'Work 会话创建失败。');
+    const id=JSON.parse(result.content).id as string;
+    const existing=conversationsRef.current.find(c=>c.id===id);if(!existing)throw Error('Work 会话未保存。');
+    if(existing.messages.length||queueRef.current.some(q=>q.conversationId===id))return id;
+    const selected=butlerWorkConfig(current,current.butler.proactive);
+    flushSync(()=>setConversations(all=>all.map(c=>c.id===id?{...c,...selected}:c)));
+    await saveConversationsNow(conversationsRef.current);
+    if(!settingsRef.current?.butler?.proactive?.enabled||settingsRef.current.butler.proactive.paused)throw Error('管家已暂停，Work 草稿已保存。');
+    setQueue(all=>all.some(q=>q.conversationId===id)?all:[...all,{text:prompt,attachments:[],quotes:[],quoteOnly:false,conversationId:id,toolsEnabled:true,preserveComposer:true}]);
+    return id;
+  }
+  async function controlButlerWork(conversationId:string,command:ButlerWorkCommand):Promise<void>{
+    const conv=conversationsRef.current.find(c=>c.id===conversationId);if(!conv)return;
+    if(command.kind==='pause'){
+      abortRun(conversationId);setQueue(all=>all.filter(q=>q.conversationId!==conversationId));return;
+    }
+    if(command.kind==='message'){
+      if(!command.text||conv.coordinationMessages?.some(m=>m.id===command.id))return;
+      flushSync(()=>updateConv(conversationId,c=>({...c,coordinationMessages:[...(c.coordinationMessages??[]),{id:command.id,fromId:'butler-user',fromTitle:'用户通过管家补充',text:command.text!,at:command.createdAt}]})));
+      await saveConversationsNow(conversationsRef.current);return;
+    }
+    if(runningRef.current.has(conversationId)||startingRef.current.has(conversationId))return;
+    const answer=[...conv.messages].reverse().find(m=>m.role==='assistant');
+    const question=[...conv.messages].reverse().find(m=>m.role==='user'&&!m.contextKind)?.content??conv.draft;
+    if(!question)return;
+    if(answer?.runState){await sendRef.current(question,undefined,answer.runState,{text:question,attachments:[],quotes:[],quoteOnly:false,conversationId,toolsEnabled:true,preserveComposer:true});}
+    else if(!conv.messages.length&&!queueRef.current.some(q=>q.conversationId===conversationId))setQueue(all=>[...all,{text:question,attachments:[],quotes:[],quoteOnly:false,conversationId,toolsEnabled:true,preserveComposer:true}]);
+  }
+  function butlerWorkState(conversationId:string):{status:ButlerJob['status'];summary?:string;error?:string}{
+    const conv=conversationsRef.current.find(c=>c.id===conversationId);if(!conv)return {status:'waiting',error:'执行会话暂未同步到此电脑。'};
+    if(conv.workspaceError)return {status:'waiting',error:conv.workspaceError};
+    const last=[...conv.messages].reverse().find(m=>m.role==='assistant'),state=last?.runState;
+    if(state?.waitKind==='approval'||state?.waitKind==='question')return {status:'waiting',summary:state.reason??'请在执行电脑确认待处理操作。'};
+    if(runningRef.current.has(conversationId)||startingRef.current.has(conversationId)||queueRef.current.some(q=>q.conversationId===conversationId))return {status:'running',summary:last?.content?.slice(-800)};
+    if(last?.error)return {status:'failed',error:last.error,summary:last.content?.slice(-800)};
+    if(state&&state.status!=='completed')return {status:'waiting',summary:state.reason??'任务已暂停，执行记录已保存。'};
+    if(last&&!last.pending)return {status:'completed',summary:last.content?.slice(-800)};
+    return {status:'waiting',summary:'Work 草稿已保存，尚未开始。'};
   }
   async function coordinateTasks(sourceId:string,input:Record<string,unknown>,key:string):Promise<ToolResult>{
     const source=conversationsRef.current.find(c=>c.id===sourceId);if(!source)throw Error('来源会话不存在。');

@@ -51,8 +51,8 @@ export function butlerMemoryView(brain: ButlerBrainState, signalLimit = 24): But
   const selected: ButlerSignal[] = [], seen = new Set<string>();
   const take = (id: string) => { const signal = byId.get(id); if (signal && !seen.has(id) && selected.length < cap) { selected.push(signal); seen.add(id); } };
   // Reserve a representative source for each durable decision before filling with recent activity.
-  for (const goal of reviewed) { const id = goal.evidenceIds.find(candidate => byId.has(candidate)); if (id) take(id); }
-  for (const skill of accepted) { const id = skill.evidenceIds.find(candidate => byId.has(candidate)); if (id) take(id); }
+  for (const goal of reviewed.slice(0,Math.max(1,Math.floor(cap/2)))) { const id = goal.evidenceIds.find(candidate => byId.has(candidate)); if (id) take(id); }
+  for (const skill of accepted.slice(0,Math.max(1,Math.floor(cap/4)))) { const id = skill.evidenceIds.find(candidate => byId.has(candidate)); if (id) take(id); }
   for (const signal of [...ownSignals].sort((a, b) => b.observedAt - a.observedAt)) take(signal.id);
   const goalView = (goal: ButlerGoal) => ({id: goal.id, status: goal.status, title: modelSafeSummary(goal.title, 100),
     intent: modelSafeSummary(goal.userCorrection ?? goal.hypothesis, 220), evidenceIds: goal.evidenceIds.filter(id => byId.has(id)).slice(0, 12)});

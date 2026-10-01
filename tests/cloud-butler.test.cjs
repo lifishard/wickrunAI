@@ -26,6 +26,8 @@ test('Butler rows are scoped, whitelisted, and split by entity id',()=>{
   assert.equal(data.preferences['butler.externalUnderstanding'],'redacted-context');
   const restored=butlerBrainFromRows(data.butler,'account-1',input.butler);
   assert.equal(restored.jobs[0].status,'queued');
+  assert.equal(restored.jobs[0].kind,'research');
+  assert.equal(restored.audit[0].kind,'model');
   assert.equal(restored.actionGrants[0].id,'private-grant');
   assert.equal(butlerBrainFromRows(data.butler,'other-account').signals.length,0);
 });
