@@ -12,6 +12,13 @@ test('one revert restores deletions, removes creations, and preserves unrelated 
  const f=fixture(t),a=f.edit('created.ts',null,'new'),b=f.edit('deleted.ts','deleted\n',null);fs.writeFileSync(path.join(f.root,'unrelated'),'user');
  f.versions.revert([a,b],[f.root]);assert.equal(fs.existsSync(path.join(f.root,'created.ts')),false);assert.equal(f.read('deleted.ts'),'deleted\n');assert.equal(f.read('unrelated'),'user');
 });
+test('binary revisions restore exact bytes and refuse to overwrite later edits',t=>{
+ const f=fixture(t),p=path.join(f.root,'draft.pdf'),before=Buffer.from([0,255,4,13,10]),after=Buffer.from([37,80,68,70,0,200]);
+ fs.writeFileSync(p,after);const id='binary-change';f.versions.record({id,path:p,at:Date.now()},before,after);
+ assert.equal(f.versions.details([id]).files[0].binary,true);
+ fs.writeFileSync(p,Buffer.from([1,2,3]));assert.throws(()=>f.versions.revert([id],[f.root]),/后续修改/);
+ fs.writeFileSync(p,after);f.versions.revert([id],[f.root]);assert.deepEqual(fs.readFileSync(p),before);
+});
 test('all targets are checked before writing: later edit blocks the entire version',t=>{
  const f=fixture(t),a=f.edit('a.ts','a','aa'),b=f.edit('b.ts','b','bb');fs.writeFileSync(path.join(f.root,'b.ts'),'external');
  assert.throws(()=>f.versions.revert([a,b],[f.root]),/后续修改/);assert.equal(f.read('a.ts'),'aa');assert.equal(f.read('b.ts'),'external');assert.equal(f.versions.summary([a]).entries[0].status,'applied');
@@ -33,7 +40,7 @@ test('missing or corrupt backups and revoked roots cannot mutate files',t=>{
  assert.throws(()=>f.versions.revert([a],[f.root]),/快照校验失败/);assert.equal(f.read('a.ts'),'after');assert.throws(()=>f.versions.preview(['old-record'],[f.root]),/快照不存在/);
 });
 test('hard links are refused and path relocation cannot redirect the restore',t=>{
- const f=fixture(t),a=f.edit('a.ts','before','after');fs.linkSync(path.join(f.root,'a.ts'),path.join(f.root,'link.ts'));assert.throws(()=>f.versions.revert([a],[f.root]),/普通文本文件/);assert.equal(f.read('link.ts'),'after');
+ const f=fixture(t),a=f.edit('a.ts','before','after');fs.linkSync(path.join(f.root,'a.ts'),path.join(f.root,'link.ts'));assert.throws(()=>f.versions.revert([a],[f.root]),/普通文件/);assert.equal(f.read('link.ts'),'after');
 });
 test('full-file review preserves distant context and exact line numbers from the recorded version',t=>{
  const f=fixture(t),before=Array.from({length:60},(_,i)=>i===30?'old implementation':`context ${i+1}`).join('\n')+'\n',after=before.replace('old implementation','new implementation');

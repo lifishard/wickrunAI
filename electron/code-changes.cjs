@@ -5,6 +5,7 @@ const crypto = require('node:crypto');
 const { guardPath } = require('./tools/common.cjs');
 const { archive, runtimeVersions } = require('./code-versions.cjs');
 const MAX_BYTES = 512 * 1024;
+const MAX_SNAPSHOT_BYTES = 16 * 1024 * 1024;
 const proposals = new Map();
 const hash = value => crypto.createHash('sha256').update(value).digest('hex');
 const lines = value => value === null || value === '' ? [] : value.endsWith('\n') ? value.slice(0,-1).split('\n') : value.split('\n');
@@ -49,7 +50,8 @@ function read(p) {
   }catch(e){if(e.code==='ENOENT')return null;throw e;}
 }
 function change(p,before,after,status='applied') {
-  return {id:crypto.randomUUID(),path:p,kind:before===null?'added':after===null?'deleted':'modified',status,at:Date.now(),beforeHash:before===null?null:hash(before),afterHash:after===null?null:hash(after),...difference(before,after)};
+  const binary=Buffer.isBuffer(before)||Buffer.isBuffer(after);
+  return {id:crypto.randomUUID(),path:p,kind:before===null?'added':after===null?'deleted':'modified',status,at:Date.now(),beforeHash:before===null?null:hash(before),afterHash:after===null?null:hash(after),...(binary?{binary:true,additions:0,deletions:0,lines:[{kind:'hunk',text:'二进制文件：已保存完整版本，可按哈希核验后回退。',oldLine:null,newLine:null}]}:difference(before,after))};
 }
 function proposal(name,args,ctx) {
   if(!['write_file','edit_file','delete_file'].includes(name))throw Error('此工具不能生成可审核的文件差异');
@@ -98,6 +100,14 @@ function apply(name,args,ctx) {
   return {ok:true,content:`已${item.after===null?'删除':'保存'} ${item.p}`,summary:`${item.after===null?'删除':'修改'} ${path.basename(item.p)}`,filePath:item.after===null?undefined:item.p,codeChanges:item.before===item.after?[]:[archive({...item.change,status:'applied'},item.before,item.after,{beforeMode:item.beforeMode,afterMode:item.after===null?undefined:fs.statSync(item.p).mode})]};
 }
 const SKIP=new Set(['.git','node_modules','dist','build','.next','.venv','venv']);
+function snapshotContent(p){
+  const stat=fs.lstatSync(p);
+  if(!stat.isFile()||stat.isSymbolicLink()||stat.nlink>1)throw Error('仅支持普通文件');
+  if(stat.size>MAX_SNAPSHOT_BYTES)throw Error('文件超过 16 MB 的版本记录上限');
+  const bytes=fs.readFileSync(p);
+  const text=bytes.toString('utf8');
+  return bytes.length<=MAX_BYTES&&!bytes.includes(0)&&Buffer.from(text,'utf8').equals(bytes)?text:bytes;
+}
 function snapshot(roots) {
   const files=new Map(), modes=new Map(), warnings=[], skipped=new Set();let size=0, count=0, truncated=false;
   const walk=dir=>{
@@ -108,11 +118,22 @@ function snapshot(roots) {
       if(entry.isSymbolicLink()){skipped.add(p);continue;}
       if(entry.isDirectory()){if(!SKIP.has(entry.name))walk(p);continue;}
       if(count++>=4000||size>=16*1024*1024){truncated=true;warnings.push('扫描达到上限，记录可能不完整');break;}
-      try{const content=read(p);if(content!==null){if(lines(content).length>10000)throw Error('行数过多');size+=Buffer.byteLength(content);files.set(p,content);modes.set(p,fs.statSync(p).mode);}}catch{skipped.add(p);warnings.push(`未逐行记录：${p}`);}
+      try{const content=snapshotContent(p);if(typeof content==='string'&&lines(content).length>10000)throw Error('行数过多');size+=Buffer.byteLength(content);files.set(p,content);modes.set(p,fs.statSync(p).mode);}catch{skipped.add(p);warnings.push(`未记录版本：${p}`);}
     }
   };
   for(const root of new Set(roots||[]))walk(root);
   return {files,modes,skipped,truncated,warnings:[...new Set(warnings)].slice(0,20)};
+}
+/** Targeted document capture avoids losing the output in a large workspace. */
+function snapshotTargets(paths,roots){
+  const files=new Map(),modes=new Map(),skipped=new Set(),warnings=[];
+  for(const target of paths||[]){
+    const p=guardPath(target,roots);
+    if(!fs.existsSync(p))continue;
+    try{const content=snapshotContent(p);files.set(p,content);modes.set(p,fs.statSync(p).mode);}
+    catch{skipped.add(p);warnings.push(`未记录版本：${p}`);}
+  }
+  return {files,modes,skipped,truncated:false,warnings};
 }
 function compare(before,after){
   const codeChanges=[];
@@ -120,7 +141,7 @@ function compare(before,after){
     // Do not mislabel a skipped/oversized file as a deletion or creation.
     if(before.skipped.has(p)||after.skipped.has(p)||(!before.files.has(p)&&before.truncated)||(!after.files.has(p)&&after.truncated))continue;
     const a=before.files.get(p)??null,b=after.files.get(p)??null;
-    if(a!==b)codeChanges.push(archive(change(p,a,b),a,b,{beforeMode:before.modes?.get(p),afterMode:after.modes?.get(p)}));
+    if(!(Buffer.isBuffer(a)&&Buffer.isBuffer(b)?a.equals(b):a===b))codeChanges.push(archive(change(p,a,b),a,b,{beforeMode:before.modes?.get(p),afterMode:after.modes?.get(p)}));
   }
   return {codeChanges,codeAuditWarnings:[...new Set([...before.warnings,...after.warnings])]};
 }
@@ -149,4 +170,4 @@ function previewNative(rawInput){
 }
 /** 当前文件内容的哈希；不存在为 null，读不了（二进制、过大）为 undefined */
 function currentHash(p){try{const text=read(p);return text===null?null:hash(text);}catch{return undefined;}}
-module.exports={difference,prepare,apply,snapshot,compare,previewNative,currentHash};
+module.exports={difference,prepare,apply,snapshot,snapshotTargets,compare,previewNative,currentHash};

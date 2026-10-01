@@ -8,9 +8,9 @@ require.cache[electronId]={id:electronId,filename:electronId,loaded:true,exports
 const storeId=require.resolve('../electron/store.cjs'),storeCached=require.cache[storeId];
 require.cache[storeId]={id:storeId,filename:storeId,loaded:true,exports:{kvGet:()=>null,secretGet:()=>null}};
 const {runTool}=require('../electron/tools/index.cjs');
-const {createCodeVersions}=require('../electron/code-versions.cjs');
+const {runtimeVersions}=require('../electron/code-versions.cjs');
 
-test('an automatically generated HTML artifact has a real revision that can undo its creation',async t=>{
+test('automatic HTML and DOCX artifacts each have a verified revision that undoes creation',async t=>{
   t.after(()=>{if(cached)require.cache[electronId]=cached;else delete require.cache[electronId];
     if(storeCached)require.cache[storeId]=storeCached;else delete require.cache[storeId];
     assert.ok(path.resolve(home).startsWith(path.resolve(os.tmpdir())+path.sep));fs.rmSync(home,{recursive:true,force:true});});
@@ -23,12 +23,17 @@ test('an automatically generated HTML artifact has a real revision that can undo
   assert.equal(result.codeChanges[0].kind,'added');
   const revisionId=result.codeChanges[0].revisionId;
   assert.ok(revisionId,result.codeChanges[0].revertUnavailable);
-  const versions=createCodeVersions(path.join(home,'code-versions-v1'));
+  const versions=runtimeVersions();
   versions.revert([revisionId],[root]);
   assert.equal(fs.existsSync(output),false);
+  fs.writeFileSync(path.join(root,'unrelated-large.bin'),Buffer.alloc(17*1024*1024,4));
   const binary=path.join(root,'brief.docx');
   const document=await runTool('write_document',{path:binary,content:'# Reviewable draft'},{workspaceRoots:[root],reviewCodeChanges:false});
   assert.equal(document.ok,true,document.error||document.content);
   assert.ok(fs.existsSync(binary));
-  assert.deepEqual(document.codeChanges,[],'binary documents are delivered in the isolated copy but cannot use text revision undo');
+  assert.equal(document.codeChanges.length,1);
+  assert.equal(document.codeChanges[0].binary,true);
+  assert.ok(document.codeChanges[0].revisionId,document.codeChanges[0].revertUnavailable);
+  versions.revert([document.codeChanges[0].revisionId],[root]);
+  assert.equal(fs.existsSync(binary),false);
 });

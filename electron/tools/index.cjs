@@ -211,11 +211,12 @@ async function executeTool(name, args, ctx) {
     journal.saveJob(execution.runId, execution.callId, { fingerprint, name, status: 'started', at: Date.now() });
   }
   try {
-    const before = ['run_command','claude_code','write_document','project_doc_write','project_memory_write','skill_write'].includes(name) ? codeAudit.snapshot(merged.workspaceRoots) : null;
+    const before = name==='write_document' ? codeAudit.snapshotTargets([input.path],merged.workspaceRoots)
+      : ['run_command','claude_code','project_doc_write','project_memory_write','skill_write'].includes(name) ? codeAudit.snapshot(merged.workspaceRoots) : null;
     let res;
     try { res = (await handler(input, merged)) || fail(name + ' 没有返回结果'); }
     catch (error) { res = fail(error); }
-    if (before) Object.assign(res, codeAudit.compare(before,codeAudit.snapshot(merged.workspaceRoots)));
+    if (before) Object.assign(res, codeAudit.compare(before,name==='write_document'?codeAudit.snapshotTargets([input.path],merged.workspaceRoots):codeAudit.snapshot(merged.workspaceRoots)));
 
     const outputPaths = [res.filePath, ...(Array.isArray(input.output_files) ? input.output_files : [])].filter(Boolean);
     const inputPaths = ['read_file', 'read_document'].includes(name) && input.path ? [input.path] : [];
