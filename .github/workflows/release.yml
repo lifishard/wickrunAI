@@ -5,6 +5,10 @@ on:
     tags: ['v*']
   workflow_dispatch:
     inputs:
+      release_tag:
+        description: 从现有不可变版本标签构建（留空使用当前 ref）
+        type: string
+        default: ''
       dry_run:
         description: 只构建不发布（发布时请选择版本标签）
         type: boolean
@@ -14,7 +18,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ inputs.release_tag && format('refs/tags/{0}', inputs.release_tag) || github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -36,10 +40,21 @@ jobs:
             args: --linux
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.release_tag && format('refs/tags/{0}', inputs.release_tag) || github.ref }}
       - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
+      - name: 统一临时目录的真实路径
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const os = require('node:os');
+          const temp = fs.realpathSync.native(os.tmpdir());
+          fs.appendFileSync(process.env.GITHUB_ENV, ['TMPDIR', 'TMP', 'TEMP'].map(key => `${key}=${temp}`).join('\n') + '\n');
+          NODE
       - name: 安装依赖
         run: npm ci
       - name: 类型检查和测试
@@ -83,10 +98,12 @@ jobs:
     name: 验证并发布三平台安装包
     needs: build
     # CI dispatches a verified, immutable version tag after main passes checks.
-    if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch' && !inputs.dry_run && startsWith(github.ref, 'refs/tags/v'))
+    if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch' && !inputs.dry_run && (startsWith(github.ref, 'refs/tags/v') || startsWith(inputs.release_tag, 'v')))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.release_tag && format('refs/tags/{0}', inputs.release_tag) || github.ref }}
       - uses: actions/setup-node@v6
         with:
           node-version: 22
@@ -96,7 +113,24 @@ jobs:
           merge-multiple: true
           path: release-assets
       - name: 核对八个安装包、生成校验文件并公开 Release
-        run: node scripts/publish-release.mjs release-assets
+        shell: bash
+        run: |
+          version=$(node -p "require('./package.json').version")
+          expected_ref="refs/tags/v${version}"
+          if [[ "$SOURCE_REF" != "$expected_ref" && "$SOURCE_REF" != "v${version}" ]]; then
+            echo "::error::发布必须使用与 package.json 一致的不可变版本标签"
+            exit 1
+          fi
+          source_commit=$(git rev-parse HEAD)
+          tag_commit=$(git rev-parse "${expected_ref}^{commit}")
+          if [[ "$source_commit" != "$tag_commit" ]]; then
+            echo "::error::构建源码与版本标签不一致"
+            exit 1
+          fi
+          export GITHUB_REF="$expected_ref"
+          export GITHUB_SHA="$source_commit"
+          node scripts/publish-release.mjs release-assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
+          SOURCE_REF: ${{ inputs.release_tag || github.ref }}
