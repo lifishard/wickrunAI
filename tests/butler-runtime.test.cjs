@@ -20,8 +20,9 @@ function setup(options={}) {
   const {ButlerRuntime}=load(path.join(base,'butler-runtime.ts'));
   const runtime=new ButlerRuntime({storage:()=>noopStorage,account:async()=>account,host:()=>options.host!==false,now:()=>now,model,
     collector:options.collector??(async()=>({sources:{}}))});
-  runtime.configure({settings:()=>settings,conversations:()=>conversations,skills:()=>skills,onSettings:s=>{settings=s;},onSkills:s=>{skills=s;},...options.work});
-  return {runtime,db,calls,domain,settings:()=>settings,setAccount:id=>{account=id;},advance:ms=>{now+=ms;},load,conversations};
+  const config={settings:()=>settings,conversations:()=>conversations,skills:()=>skills,onSettings:s=>{settings=s;},onSkills:s=>{skills=s;},...options.work};
+  runtime.configure(config);
+  return {runtime,db,calls,domain,settings:()=>settings,setRoutine:enabled=>{settings={...settings,butler:{...settings.butler,proactive:{...settings.butler.proactive,allowRoutineExecution:enabled}}};runtime.configure(config);},setAccount:id=>{account=id;},advance:ms=>{now+=ms;},load,conversations};
 }
 async function settle(runtime){for(let i=0;i<80;i++){await new Promise(r=>setImmediate(r));if(!runtime.getSnapshot().busy)return;}throw Error('runtime did not settle');}
 
@@ -137,6 +138,40 @@ test('autonomous routine work starts for a proposed goal and respects its daily 
  status='completed';await f.runtime.tick();
  const brain=f.runtime.getSnapshot().brain;brain.goals.push({...brain.goals[0],id:'second-goal',title:'Another useful artifact'});f.db.set('wickrun:butler:brain:v1',JSON.stringify(brain));await f.runtime.reload();f.advance(40000);await f.runtime.tick();await settle(f.runtime);
  assert.equal(started.length,1);assert.equal(f.runtime.getSnapshot().brain.jobs.filter(j=>j.kind==='work').length,1);
+});
+
+test('disabling routine execution stops automatic Work without pausing manual Work',{timeout:5000},async()=>{
+ const controls=[];const f=setup({prefs:{allowRoutineExecution:true,allowResearch:false},work:{startWork:async()=> 'auto-work',controlWork:async(id,command)=>controls.push({id,command}),workState:()=>({status:'running'})}});
+ await f.runtime.tick();await settle(f.runtime);f.advance(40000);await f.runtime.tick();await settle(f.runtime);
+ assert.ok(f.runtime.getSnapshot().brain.jobs.some(job=>job.kind==='work'&&job.automatic));
+ f.setRoutine(false);await new Promise(r=>setImmediate(r));
+ assert.deepEqual(controls.map(c=>c.command.kind),['pause']);
+ const manual=setup({work:{startWork:async()=> 'manual-work',controlWork:async(id,command)=>controls.push({id,command}),workState:()=>({status:'running'})}});
+ await manual.runtime.tick();await settle(manual.runtime);const goal=manual.runtime.getSnapshot().brain.goals[0];
+ await manual.runtime.action({kind:'review-goal',goalId:goal.id,decision:'confirm'});
+ await manual.runtime.action({kind:'run-work',goalId:goal.id});manual.advance(40000);await manual.runtime.tick();await settle(manual.runtime);
+ assert.ok(manual.runtime.getSnapshot().brain.jobs.some(job=>job.kind==='work'&&!job.automatic&&job.status==='running'));
+ const before=controls.length;manual.setRoutine(false);await new Promise(r=>setImmediate(r));assert.equal(controls.length,before);
+});
+
+test('disabling routine execution during Work creation cancels the just-created run',{timeout:5000},async()=>{
+ let resolveStart,entered;const started=new Promise(r=>{entered=r;}),controls=[];
+ const f=setup({prefs:{allowRoutineExecution:true,allowResearch:false},work:{startWork:async()=>{entered();return await new Promise(r=>{resolveStart=r;});},controlWork:async(id,command)=>controls.push({id,command})}});
+ await f.runtime.tick();await settle(f.runtime);f.advance(40000);await f.runtime.tick();await started;
+ f.setRoutine(false);resolveStart('late-work');await settle(f.runtime);
+ assert.deepEqual(controls.map(c=>[c.id,c.command.kind]),[['late-work','pause']]);
+ assert.equal(f.runtime.getSnapshot().brain.jobs.find(job=>job.kind==='work').status,'failed');
+});
+
+test('pausing Butler during manual Work creation stops the just-created run',{timeout:5000},async()=>{
+ let resolveStart,entered;const started=new Promise(r=>{entered=r;}),controls=[];
+ const f=setup({work:{startWork:async()=>{entered();return await new Promise(r=>{resolveStart=r;});},controlWork:async(id,command)=>controls.push({id,command})}});
+ await f.runtime.tick();await settle(f.runtime);const goal=f.runtime.getSnapshot().brain.goals[0];
+ await f.runtime.action({kind:'review-goal',goalId:goal.id,decision:'confirm'});
+ await f.runtime.action({kind:'run-work',goalId:goal.id});f.advance(40000);await f.runtime.tick();await started;
+ await f.runtime.action({kind:'pause'});resolveStart('late-manual-work');await settle(f.runtime);
+ assert.deepEqual(controls.map(c=>[c.id,c.command.kind]),[['late-manual-work','pause']]);
+ assert.equal(f.runtime.getSnapshot().brain.jobs.find(job=>job.kind==='work').status,'failed');
 });
 
 test('failed analysis resumes its local checkpoint without synchronizing the session to the brain',async()=>{

@@ -52,6 +52,10 @@ export class ButlerRuntime {
     const prefs=this.prefs();
     if(!prefs.enabled||prefs.paused||prefs.hostDeviceId!==this.local.deviceId)this.control?.abort();
     if(!prefs.enabled||prefs.paused||prefs.hostDeviceId!==this.local.deviceId)this.stopWork();
+    if(!prefs.allowRoutineExecution){
+      if(this.snapshot.brain.jobs?.some(job=>job.id===this.activeJobId&&job.kind==='work'&&job.automatic))this.control?.abort();
+      this.stopWork(undefined,true);
+    }
     if(!prefs.enabled||prefs.paused||prefs.externalUnderstanding!=='redacted-context')this.captureControl?.abort();
   }
   getSnapshot=()=>this.snapshot;
@@ -298,9 +302,9 @@ export class ButlerRuntime {
       const goal=goals.find(g=>g.status==='confirmed'||g.status==='corrected');if(goal)this.queue('research',goal.id);
     }
   }
-  private stopWork(goalId?:string) {
+  private stopWork(goalId?:string,automaticOnly=false) {
     if(!this.io.host())return;
-    for(const job of this.snapshot.brain.jobs??[])if(job.kind==='work'&&job.conversationId&&(!goalId||job.goalId===goalId)&&['running','waiting'].includes(job.status))
+    for(const job of this.snapshot.brain.jobs??[])if(job.kind==='work'&&job.conversationId&&(!automaticOnly||job.automatic)&&(!goalId||job.goalId===goalId)&&['running','waiting'].includes(job.status))
       void this.config?.controlWork?.(job.conversationId,{id:'stop-'+job.id,kind:'pause',createdAt:this.io.now()}).catch(error=>this.emit({error:String(error)}));
   }
   private async syncWorkJobs() {
@@ -371,6 +375,10 @@ export class ButlerRuntime {
         if(!goal||!this.config?.startWork)throw Error('执行电脑尚未提供 Work，或目标已不存在。');
         if(job.automatic&&!this.prefs().allowRoutineExecution)throw Error('主动执行已关闭；任务保留，未继续操作。');
         const conversationId=await this.config.startWork(job,butlerWorkPrompt(modelBrain,goal,{autonomous:job.automatic===true}));
+        if(control.signal.aborted||!this.prefs().enabled||this.prefs().paused||(job.automatic&&!this.prefs().allowRoutineExecution)){
+          await this.config.controlWork?.(conversationId,{id:'stop-'+job.id,kind:'pause',createdAt:this.io.now()});
+          throw Error('主动执行已关闭；已停止刚创建的 Work 任务。');
+        }
         this.patchJob(job.id,{status:'running',conversationId});
         this.audit('work','已交给 Work 执行','使用原有任务引擎、记忆、上下文整理、路由接力和工具权限。需要确认时会等待用户处理。');
       }
