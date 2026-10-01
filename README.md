@@ -6,7 +6,7 @@
 
 **Every AI model you own, in one app — and when one fails, the next one takes over mid-task.**
 
-Open or closed, paid or free. Bring your own keys; they never leave your machine.
+Open or closed, paid or free. Bring your own keys, choose whether to sync, and keep credentials out of shared content.
 
 [![Version](https://img.shields.io/badge/version-4.0.0-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
@@ -86,11 +86,19 @@ Use an API key from a model provider, or connect an official client you already 
 
 The interface reads in Simplified Chinese, Traditional Chinese, and English, switchable from the top right. Most reference documents under `docs/` are in Chinese; the concept pages linked above are in English.
 
-## 4.0 Shared workspaces and collaboration
+## 4.0.0 — Cross-account collaboration
 
-Share a file, folder, conversation, project, or workflow with a link, an email invitation, or a personal or company space. Each person gets a server-checked role: view, comment, or edit. Changes keep their author and revision history; concurrent edits preserve the unsaved draft so it can be reviewed instead of silently overwritten. Shared conversations show who sent each message, and group AI replies use the selected model without acquiring anyone else's tools or credentials.
+This major update adds a shared workspace for people using different wickrunAI accounts. Share files and folders, join the same conversation, maintain project instructions together, or jointly edit a workflow and inspect its published execution history.
 
-You can copy permitted content into your own workspace. Copies receive new identities and use your own model connection; imported workflows and schedules start disabled. A workspace connection allows a deliberate handoff of a goal, summary, and selected text files. Opening a handoff creates an unsent local draft, so the receiving account decides what to run. Private Butler goals, observations, memory, permissions, logs, and their derived conversations stay outside sharing. Android can open a pasted share link, comment, chat, copy content, and inspect workflows; executing a local workflow still requires the desktop app. See [sharing and collaboration](docs/SHARING_COLLABORATION.md) for permissions and limits.
+- **Choose who can do what.** Grant viewer, commenter, or editor access through a link, verified email invitations, or personal and company spaces. Children inherit their parent’s access. Guests can view public links; guest comments require the owner to enable them. Changes, versions, and messages retain their author and time.
+- **Work together with your own models.** Human messages appear on the left and AI replies on the right with the generating account and model. Private and shared annotations stay outside AI requests and memory. Concurrent messages are preserved; conflicting edits keep your draft.
+- **Transfer files up to 100 MB.** Shared uploads and downloads use bounded chunks and store file versions by reference. Document attachments also accept 100 MB; large extracted text shows a clearly marked preview instead of putting the whole file into a model request. Image and media inputs retain their separate model limits.
+- **Change simple settings beside your message.** Click native AI effort levels and the Streaming / Non-streaming control directly in the composer. Adjust mapping opens the current conversation’s thinking settings. The right panel groups response and thinking options together.
+- **Connect independent teams and Agents.** Both sides accept a connection before handing over a goal, summary, and explicitly selected text files. Each side keeps its own workflow, tools, and model settings. Received work opens as a draft; copied Agents and routines start disabled.
+- **Keep personal data personal.** Personal Butler goals, memory, signals, tasks, logs, and derived conversations cannot enter sharing. Company administrators only manage their shared space. Sharing excludes credentials and tool permissions.
+- **Keep this computer’s history when signing in.** The first desktop account continues the existing local conversations, project memory, model setup, and workflows. Later accounts remain isolated. The empty-workspace first-login issue in 3.0.1 recovers when the original data remains and the new local account has no work to overwrite.
+
+Personal and company spaces are currently free, with individual monthly and company seat billing reserved for future use. Google sign-in is available; the common wickrunAI identity model supports other providers, while Apple setup is still pending. This release requires matching Windows, macOS, Linux, and Android preview packages. See [sharing and handoffs](docs/SHARING_COLLABORATION.md) and the [4.0.0 release notes](docs/releases/v4.0.0.md).
 
 ## 2.10 Exporting a conversation
 
@@ -192,7 +200,7 @@ Open **[Download wickrunAI](https://wickrunai.com/download)** to choose an opera
 | [Linux](https://wickrunai.com/download?platform=linux) | Intel / AMD · x64 | [AppImage](https://wickrunai.com/download/linux/x64/appimage) · [Debian / Ubuntu DEB](https://wickrunai.com/download/linux/x64/deb) |
 | [Android](https://wickrunai.com/download?platform=android) | Phones and tablets | [Preview APK](https://wickrunai.com/download/android/universal/apk) |
 
-Android is a debug-signed engineering preview. Device acceptance and large file export remain pending; account sync is available. **Before installing 4.0.0 over the published 3.0.0 Android preview, back up your phone data, uninstall the old app yourself, then install 4.0.0.** The signing certificates differ, so an in-place update is unavailable; uninstalling erases any local data you did not back up. The 4.0.0 APK must be attached to the matching release for the Android download link to work. See [GitHub Releases](https://github.com/lifishard/wickrunAI/releases) for release notes, checksums, and older versions.
+Android is a debug-signed engineering preview. Physical device acceptance remains pending; shared files use the Android system save picker and account sync is available. **Before installing 4.0.0 over the published 3.0.0 Android preview, back up your phone data, uninstall the old app yourself, then install 4.0.0.** The signing certificates differ, so an in-place update is unavailable; uninstalling erases any local data you did not back up. The 4.0.0 APK must be attached to the matching release for the Android download link to work. See [GitHub Releases](https://github.com/lifishard/wickrunAI/releases) for release notes, checksums, and older versions.
 
 The packages are not code-signed, so Windows and macOS may warn about the publisher. Verify a download against `SHA256SUMS.txt` in the Release, or build from source as described below.
 

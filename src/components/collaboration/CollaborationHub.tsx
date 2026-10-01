@@ -3,17 +3,19 @@ import type { AppSettings } from '../../types';
 import { useT } from '../../lib/i18n';
 import { collaborationCall, publishSharedSeed, shareLink, sharedLinkToken, type SharedItem, type SharedSpace, type SharedConnection, type SharedSeed } from '../../lib/shared-resources';
 import SharedWorkflowEditor from './SharedWorkflowEditor';
+import { uploadSharedFile, downloadSharedFile, type FileTransferProgress } from '../../lib/shared-files';
+import { saveSharedBlob } from '../../native/files';
 import './CollaborationHub.css';
 
 type Role = 'viewer' | 'commenter' | 'editor';
 type Opened = { item: SharedItem; role: Role | 'owner'|'admin'; comments: SharedComment[]; events: SharedEvent[]; children?: SharedItem[]; permissions?: { read: boolean; annotatePrivate: boolean; annotateShared: boolean; edit: boolean; postMessage: boolean; manageSharing: boolean } };
-type Anchor = { kind: 'resource' | 'message' | 'text' | 'node'; messageId?: string; nodeId?: string; quote?: string; start?: number; end?: number };
+type Anchor = { kind: 'resource' | 'message' | 'text' | 'node'; messageId?: string; nodeId?: string; quote?: string; start?: number; end?: number; field?:string; entryId?:string };
 type SharedComment = { id: string; authorId: string; authorName?: string; body: string; visibility?: 'private' | 'shared'; anchor?: Anchor; createdAt?: number; at?: number };
 type SharedEvent = { id: string; authorId?: string; authorName?: string; actorId?: string; actorName?: string; action?: string; text?: string; body?: string; kind?: string; createdAt?: number; at?: number };
 type HistoryEntry = { id: string; actorId: string; actorName?: string; at: number; action: string; revision: number; title: string; payload: Record<string, unknown> };
 type HubState = { user?: { id: string; email?: string; name?: string } | null; items: SharedItem[]; spaces: SharedSpace[]; connections: SharedConnection[] };
 type Tab = 'items' | 'spaces' | 'connections';
-type Props = { settings: AppSettings; seeds: SharedSeed[]; onClose: () => void; onImport?: (item: SharedItem, token?:string) => Promise<string|void>; onHandoff?: (receipt:Record<string,unknown>,target?:SharedItem)=>Promise<void>; onGenerate?: (item: SharedItem, prompt: string, signal: AbortSignal) => Promise<string> };
+type Props = { settings: AppSettings; seeds: SharedSeed[]; onClose: () => void; onImport?: (item: SharedItem, token?:string) => Promise<string|void>; onHandoff?: (receipt:Record<string,unknown>,target:SharedItem|undefined,connection:SharedConnection)=>Promise<void>; onGenerate?: (item: SharedItem, prompt: string, signal: AbortSignal) => Promise<string> };
 
 const kinds = ['file', 'folder', 'conversation', 'project', 'workflow'] as const;
 const kindNames: Record<string, string> = { file: '文件', folder: '文件夹', conversation: '对话', project: '项目', workflow: '工作流' };
@@ -90,6 +92,7 @@ export default function CollaborationHub({ settings, seeds, onClose, onImport, o
   const [error, setError] = React.useState('');
   const [notice, setNotice] = React.useState('');
   const [busy, setBusy] = React.useState(false);
+  const [transferProgress,setTransferProgress]=React.useState<FileTransferProgress|null>(null);
   const [newKind, setNewKind] = React.useState<SharedItem['kind']>('file');
   const [newTitle, setNewTitle] = React.useState('');
   const [createWithinCurrent,setCreateWithinCurrent]=React.useState(false);
@@ -131,12 +134,13 @@ export default function CollaborationHub({ settings, seeds, onClose, onImport, o
   const [selectedConnectionId, setSelectedConnectionId] = React.useState('');
   const live = React.useRef(true);
   const generation = React.useRef<AbortController | null>(null);
+  const fileTransfer=React.useRef<AbortController|null>(null);
   const openedRef = React.useRef<Opened | null>(null);
   const dirtyRef = React.useRef(false);
   const handoffRequest=React.useRef<{content:string;key:string}|null>(null);
   React.useEffect(() => { openedRef.current = opened; }, [opened]);
   React.useEffect(() => { dirtyRef.current = dirty; }, [dirty]);
-  React.useEffect(() => {live.current=true;return () => { live.current = false; generation.current?.abort(); };}, []);
+  React.useEffect(() => {live.current=true;return () => { live.current = false; generation.current?.abort();fileTransfer.current?.abort(); };}, []);
 
   const run = async (work: () => Promise<void>) => { setBusy(true); setError(''); setNotice(''); try { await work(); } catch (e) { setError(errText(e)); } finally { if (live.current) setBusy(false); } };
   const refreshState = React.useCallback(async () => { const next = await collaborationCall<HubState>('state'); if (live.current) setState(next); }, []);
@@ -207,28 +211,44 @@ export default function CollaborationHub({ settings, seeds, onClose, onImport, o
     await open(result.item.id); await refreshState(); setCreatedLink(result.token ? shareLink(result.token) : ''); setNotice(t('访问设置已保存。'));
   };
   const upload = async (file: File) => {
-    if (file.size > 5 * 1024 * 1024) throw new Error(t('文件不能超过 5 MB。'));
-    const base64 = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onerror = () => reject(reader.error); reader.onload = () => resolve(String(reader.result).split(',')[1] ?? ''); reader.readAsDataURL(file); });
-    patchPayload({ name: file.name, mime: file.type || 'application/octet-stream', size: file.size, data: base64 });
+    if(!item||!canEdit)return;
+    const controller=new AbortController();fileTransfer.current=controller;
+    try {
+      const result=await uploadSharedFile(item.id,file,{token:token??undefined,signal:controller.signal,onProgress:value=>{if(live.current)setTransferProgress(value);}});
+      if(live.current){patchPayload(result);setNotice(t('文件已上传，请保存修改。'));}
+    }finally{fileTransfer.current=null;if(live.current)setTransferProgress(null);}
   };
-  const download = () => {
-    if (!item) return;
-    const data = getString(item.payload, 'data');
-    const text = getString(item.payload, 'text');
-    const bytes = data ? Uint8Array.from(atob(data), c => c.charCodeAt(0)) : new TextEncoder().encode(text);
-    const url = URL.createObjectURL(new Blob([bytes], { type: getString(item.payload, 'mime') || 'text/plain' }));
-    const link = document.createElement('a'); link.href = url; link.download = getString(item.payload, 'name') || item.title; link.click(); window.setTimeout(() => URL.revokeObjectURL(url), 3000);
+  const download = async (historical?:HistoryEntry) => {
+    if(!item)return;
+    const scope={itemId:item.id,...(token?{token}:{})};
+    const current=await collaborationCall<Opened>('get',scope);
+    let source=current.item;
+    if(historical){
+      const latest=await collaborationCall<{history:HistoryEntry[]}>('getHistory',scope);
+      const version=latest.history.find(entry=>entry.id===historical.id);if(!version)throw Error(t('历史版本已不可访问。'));
+      source={...current.item,title:version.title,payload:version.payload};
+    }
+    const controller=new AbortController();fileTransfer.current=controller;
+    try{
+      const blob=await downloadSharedFile(source,{token:token??undefined,signal:controller.signal,historyId:historical?.id,onProgress:value=>{if(live.current)setTransferProgress(value);}});
+      if(!live.current)return;
+      const name=getString(source.payload,'name')||source.title;
+      if(!(await saveSharedBlob(blob,{name,mime:getString(source.payload,'mime'),sha256:getString(source.payload,'sha256')||undefined,signal:controller.signal}))){
+        const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=name;link.click();window.setTimeout(()=>URL.revokeObjectURL(url),3000);
+      }
+    }finally{fileTransfer.current=null;if(live.current)setTransferProgress(null);}
   };
   const copyLink = async () => { if (!createdLink) return; await navigator.clipboard.writeText(createdLink); setNotice(t('链接已复制。')); };
   const captureSelection = () => {
     const active=document.activeElement;
     const input=active instanceof HTMLTextAreaElement||active instanceof HTMLInputElement?active:null;
     const selection = window.getSelection();
-    const quote=input?input.value.slice(input.selectionStart??0,input.selectionEnd??0).trim():selection?.toString().trim();
-    if (!quote) { setNotice(t('先选中一段文字。')); return; }
+    const quote=input?input.value.slice(input.selectionStart??0,input.selectionEnd??0):selection?.toString();
+    if (!quote?.trim()) { setNotice(t('先选中一段文字。')); return; }
     const node = selection?.anchorNode?.parentElement?.closest('[data-message-id]');
     const messageId = node?.getAttribute('data-message-id') || undefined;
-    setCommentAnchor({ kind: 'text', quote: quote.slice(0, 1000), ...(messageId ? { messageId } : {}),...(input?{start:input.selectionStart??0,end:Math.min(input.selectionEnd??0,(input.selectionStart??0)+1000)}:{}) });
+    if(input&&!input.dataset.shareField&&item?.kind!=='file'){setNotice(t('请选择共享内容中的文字。'));return;}
+    setCommentAnchor({ kind: 'text', quote: quote.slice(0, 1000), ...(messageId ? { messageId } : {}),...(input?{start:input.selectionStart??0,end:Math.min(input.selectionEnd??0,(input.selectionStart??0)+1000),...(input.dataset.shareField?{field:input.dataset.shareField}:{}),...(input.dataset.shareEntry?{entryId:input.dataset.shareEntry}:{})}:{}) });
     setNotice(t('已选中注释位置。'));
   };
   const submitComment = async () => {
@@ -299,6 +319,7 @@ export default function CollaborationHub({ settings, seeds, onClose, onImport, o
     </nav>
     {error && <div className="share-alert" role="alert">{error}<button className="btn sm ghost" onClick={() => setError('')}>{t('关闭')}</button></div>}
     {notice && <p className="share-notice" role="status">{notice}</p>}
+    {transferProgress&&<div className="share-file-progress" role="status"><span>{t(transferProgress.direction==='upload'?'正在上传文件':'正在下载文件')} · {Math.round(transferProgress.total?transferProgress.done/transferProgress.total*100:0)}%</span><progress value={transferProgress.done} max={Math.max(1,transferProgress.total)}/><button className="btn sm ghost" onClick={()=>fileTransfer.current?.abort()}>{t('取消传输')}</button></div>}
     {!state.user && <p className="share-signin">{t('未登录者可查看公开内容；发言、编辑和共享需要登录。')}{typeof window!=='undefined'&&window.snc?<button className="btn sm" onClick={onClose}>{t('返回工作区登录')}</button>:<a className="btn sm" href="/api/auth/google?next=%2Fshare">{t('使用 Google 登录')}</a>}</p>}
     <form className="share-open-link share-actions" onSubmit={e=>{e.preventDefault();void run(async()=>{const nextToken=linkTokenFromInput(linkInput);if(!nextToken)throw Error(t('共享链接无效。'));await open(undefined,nextToken);setToken(nextToken);setTab('items');setSpaceId('');setLinkInput('');setCreatedLink('');});}}>
       <input aria-label={t('打开共享链接')} value={linkInput} onChange={e=>setLinkInput(e.target.value)} placeholder={t('粘贴共享链接')}/><button className="btn" disabled={busy||!linkInput.trim()}>{t('打开链接')}</button>
@@ -317,15 +338,15 @@ export default function CollaborationHub({ settings, seeds, onClose, onImport, o
           <button className="btn primary" disabled={busy} type="submit">{t('创建')}</button></form>}
       </aside>
       <main className="share-main">{!item ? <div className="share-empty"><h2>{t('选择一项内容')}</h2><p>{t('可以创建共享副本，也可以打开别人发来的链接。')}</p></div> : <>
-        <div className="share-detail-head"><div><small>{t(kindNames[item.kind] ?? item.kind)} · {t(role === 'owner' ? '所有者' : role==='admin'?'空间管理员':roleNames[role])}</small><h2>{item.title}</h2><p>{t('更新于')} {timestamp(item.updatedAt)}</p></div><div className="share-actions">{signedIn && onImport && item.kind!=='file'&&<button className="btn" onClick={() => void run(async () => { const message=await onImport(item,token??undefined);await refreshState();setNotice(message||t('已复制到我的工作区。')); })}>{t('复制到我的工作区')}</button>}{item.kind === 'file' && <button className="btn" onClick={download}>{t('下载')}</button>}</div></div>
+        <div className="share-detail-head"><div><small>{t(kindNames[item.kind] ?? item.kind)} · {t(role === 'owner' ? '所有者' : role==='admin'?'空间管理员':roleNames[role])}</small><h2>{item.title}</h2><p>{t('更新于')} {timestamp(item.updatedAt)}</p></div><div className="share-actions">{signedIn && onImport && item.kind!=='file'&&<button className="btn" onClick={() => void run(async () => { const message=await onImport(item,token??undefined);await refreshState();setNotice(message||t('已复制到我的工作区。')); })}>{t('复制到我的工作区')}</button>}{item.kind === 'file' && <button className="btn" disabled={busy} onClick={()=>void run(()=>download())}>{t('下载')}</button>}</div></div>
         {item.parentId&&<p className="share-muted">{t('访问权限继承上一级内容。')} <button className="btn sm ghost" onClick={()=>openItem(item.parentId!)}>{t('上一级')}</button></p>}
         {Boolean(opened.children?.length)&&<section className="share-panel"><h3>{t('包含的内容')}</h3><div className="share-cards">{opened.children?.map(child=><button className="share-card" key={child.id} onClick={()=>openItem(child.id)}><small>{t(kindNames[child.kind])}</small><strong>{child.title}</strong></button>)}</div></section>}
         {conflict && <div className="share-conflict" role="alert"><p>{t('这项内容有新版本。你未保存的修改仍在这里。')}</p><button className="btn" onClick={() => { if (pendingRemote) applyOpen(pendingRemote); }}>{t('载入新版本')}</button><button className="btn ghost" onClick={() => { setConflict(false); setPendingRemote(null); }}>{t('继续编辑草稿')}</button></div>}
         <div className="share-detail-tabs"><a href="#share-content">{t('内容')}</a><a href="#share-comments">{t('讨论')}</a>{canManageSharing && <a href="#share-access">{t('访问权限')}</a>}</div>
         <section id="share-content" className="share-panel"><h3>{t('内容')}</h3>{canEdit && <Field label={t('名称')}><input value={title} onChange={e => { setTitle(e.target.value); setDirty(true); }} /></Field>}
-          {item.kind === 'file' && <><p className="share-muted">{getString(payload, 'name') || item.title} · {getString(payload, 'mime') || 'text/plain'} · {String(payload.size ?? 0)} B</p>{canEdit && <Field label={t('上传文件（最多 5 MB）')}><input type="file" onChange={e => { const file = e.target.files?.[0]; if (file) void run(() => upload(file)); }} /></Field>}{!getString(payload, 'data') && <Field label={t('文件内容')}><textarea rows={12} value={getString(payload, 'text')} onChange={e => patchPayload({ ...payload, text: e.target.value, size: new Blob([e.target.value]).size })} readOnly={!canEdit} /></Field>}{getString(payload, 'data') && <p className="share-muted">{t('二进制文件可以下载或重新上传。')}</p>}</>}
-          {item.kind === 'folder' && <Field label={t('文件夹说明')}><textarea rows={8} value={getString(payload, 'description')} onChange={e => patchPayload({ ...payload, description: e.target.value })} readOnly={!canEdit} /></Field>}
-          {item.kind === 'conversation' && <><Field label={t('对话说明')}><textarea rows={4} value={getString(payload, 'instructions')} onChange={e => patchPayload({ ...payload, instructions: e.target.value })} readOnly={!canEdit} /></Field>
+          {item.kind === 'file' && <><p className="share-muted">{getString(payload, 'name') || item.title} · {getString(payload, 'mime') || 'text/plain'} · {String(payload.size ?? 0)} B</p>{canEdit && <Field label={t('上传文件（最多 100 MB）')}><input type="file" disabled={busy} onChange={e => { const file = e.target.files?.[0]; e.target.value=''; if (file) void run(() => upload(file)); }} /></Field>}{!getString(payload, 'data') && !getString(payload,'blobId') && <Field label={t('文件内容')}><textarea rows={12} value={getString(payload, 'text')} onChange={e => patchPayload({ ...payload, text: e.target.value, size: new Blob([e.target.value]).size })} readOnly={!canEdit} /></Field>}{Boolean(getString(payload, 'data') || getString(payload,'blobId')) && <p className="share-muted">{t('二进制文件可以下载或重新上传。')}</p>}</>}
+          {item.kind === 'folder' && <Field label={t('文件夹说明')}><textarea data-share-field="description" rows={8} value={getString(payload, 'description')} onChange={e => patchPayload({ ...payload, description: e.target.value })} readOnly={!canEdit} /></Field>}
+          {item.kind === 'conversation' && <><Field label={t('对话说明')}><textarea data-share-field="instructions" rows={4} value={getString(payload, 'instructions')} onChange={e => patchPayload({ ...payload, instructions: e.target.value })} readOnly={!canEdit} /></Field>
             <Thread key={item.id} item={{ ...item, payload }} role={canPost ? 'editor' : 'viewer'} disabled={busy||dirty||conflict} onSend={async(content,id)=>{
               setBusy(true);try{const result=await collaborationCall<Opened>('postMessage',{itemId:item.id,...(token?{token}:{}),message:{id,role:'user',content}});applyOpen(result);await refreshState();}finally{if(live.current)setBusy(false);}
             }} />
@@ -341,7 +362,7 @@ export default function CollaborationHub({ settings, seeds, onClose, onImport, o
               } finally { generation.current = null; }
             })}>{t('生成回复')}</button>{generation.current && <button className="btn ghost" onClick={() => generation.current?.abort()}>{t('停止生成')}</button>}</div></div>}
           </>}
-          {item.kind === 'project' && <><Field label={t('项目说明')}><textarea rows={6} value={getString(payload, 'instructions')} onChange={e => patchPayload({ ...payload, instructions: e.target.value })} readOnly={!canEdit} /></Field>{(['docs', 'prompts'] as const).map(key => <section className="share-entries" key={key}><h4>{t(key === 'docs' ? '文档' : '提示词')}</h4>{getArray(payload, key).map((entry, index) => <div className="share-entry" key={String(entry.id ?? index)}><input aria-label={t('名称')} value={String(entry.name ?? '')} readOnly={!canEdit} onChange={e => patchPayload({ ...payload, [key]: getArray(payload, key).map((v, i) => i === index ? { ...v, name: e.target.value } : v) })} /><textarea aria-label={t('内容')} rows={4} value={String(entry[key === 'docs' ? 'content' : 'text'] ?? '')} readOnly={!canEdit} onChange={e => patchPayload({ ...payload, [key]: getArray(payload, key).map((v, i) => i === index ? { ...v, [key === 'docs' ? 'content' : 'text']: e.target.value } : v) })} />{canEdit && <button className="btn sm ghost" onClick={() => patchPayload({ ...payload, [key]: getArray(payload, key).filter((_, i) => i !== index) })}>{t('移除')}</button>}</div>)}{canEdit && <button className="btn sm" onClick={() => patchPayload({ ...payload, [key]: [...getArray(payload, key), { id: crypto.randomUUID(), name: '', [key === 'docs' ? 'content' : 'text']: '' }] })}>{t('新增')}</button>}</section>)}</>}
+          {item.kind === 'project' && <><Field label={t('项目说明')}><textarea data-share-field="instructions" rows={6} value={getString(payload, 'instructions')} onChange={e => patchPayload({ ...payload, instructions: e.target.value })} readOnly={!canEdit} /></Field>{(['docs', 'prompts'] as const).map(key => <section className="share-entries" key={key}><h4>{t(key === 'docs' ? '文档' : '提示词')}</h4>{getArray(payload, key).map((entry, index) => <div className="share-entry" key={String(entry.id ?? index)}><input aria-label={t('名称')} value={String(entry.name ?? '')} readOnly={!canEdit} onChange={e => patchPayload({ ...payload, [key]: getArray(payload, key).map((v, i) => i === index ? { ...v, name: e.target.value } : v) })} /><textarea data-share-field={key === 'docs' ? 'doc' : 'prompt'} data-share-entry={String(entry.id ?? '')} aria-label={t('内容')} rows={4} value={String(entry[key === 'docs' ? 'content' : 'text'] ?? '')} readOnly={!canEdit} onChange={e => patchPayload({ ...payload, [key]: getArray(payload, key).map((v, i) => i === index ? { ...v, [key === 'docs' ? 'content' : 'text']: e.target.value } : v) })} />{canEdit && <button className="btn sm ghost" onClick={() => patchPayload({ ...payload, [key]: getArray(payload, key).filter((_, i) => i !== index) })}>{t('移除')}</button>}</div>)}{canEdit && <button className="btn sm" onClick={() => patchPayload({ ...payload, [key]: [...getArray(payload, key), { id: crypto.randomUUID(), name: '', [key === 'docs' ? 'content' : 'text']: '' }] })}>{t('新增')}</button>}</section>)}</>}
           {item.kind === 'workflow' && <SharedWorkflowEditor payload={payload} onChange={patchPayload} readOnly={!canEdit} />}
           {canEdit && dirty && <div className="share-actions"><button className="btn primary" disabled={busy || conflict} onClick={() => void run(async () => { await save(); })}>{t('保存修改')}</button><button className="btn ghost" onClick={() => { setTitle(item.title); setPayload(structuredClone(item.payload)); setDirty(false); }}>{t('放弃草稿')}</button></div>}
         </section>
@@ -370,7 +391,7 @@ export default function CollaborationHub({ settings, seeds, onClose, onImport, o
           {policyVisibility === 'link' && <><label className="share-visibility"><input type="checkbox" checked={requireSignIn} onChange={e => { setRequireSignIn(e.target.checked); if (e.target.checked) setAllowGuestComments(false); }} />{t('查看也需要登录')}</label><label className="share-visibility"><input type="checkbox" checked={allowGuestComments} disabled={requireSignIn} onChange={e => setAllowGuestComments(e.target.checked)} />{t('允许未登录访客发表评论')}</label></>}
           <div className="share-actions"><button className="btn primary" disabled={busy} onClick={() => void run(savePolicy)}>{t('保存访问设置')}</button>{createdLink && <button className="btn" onClick={() => void run(copyLink)}>{t('复制链接')}</button>}{item.policy.visibility === 'link' && <button className="btn ghost" disabled={busy} onClick={() => void run(async () => { const next = await collaborationCall<{ item: SharedItem; token?: string }>('setPolicy', { itemId: item.id, expectedRevision: item.revision, visibility: 'link', linkRole: policyLinkRole, invites: item.policy.invites, teamRole: item.policy.teamRole, requireSignIn: item.policy.requireSignIn, allowGuestComments: item.policy.allowGuestComments, rotate: true }); await open(next.item.id); setCreatedLink(next.token ? shareLink(next.token) : ''); })}>{t('更新链接')}</button>}{item.policy.visibility !== 'private' && <button className="btn ghost" disabled={busy} onClick={() => void run(async () => { const next = await collaborationCall<{ item: SharedItem }>('setPolicy', { itemId: item.id, expectedRevision: item.revision, visibility: 'private', linkRole: 'viewer', invites: [], requireSignIn: true, allowGuestComments: false }); await open(next.item.id); setCreatedLink(''); await refreshState(); })}>{t('停止共享')}</button>}</div>{createdLink && <output className="share-link">{createdLink}</output>}<p className="share-muted">{t('链接只在创建或更新时显示，请及时复制。')}</p>
         </section>}
-        <section className="share-panel share-history"><h3>{t('变更记录')}</h3>{opened.events.map(e => <p key={e.id}><time>{timestamp(e.at)}</time> · {e.actorName || e.actorId || e.authorName || e.authorId} · {e.action || e.kind || e.text}</p>)}<h4>{t('历史版本')}</h4><div className="share-history-versions">{history.map(h => <button key={h.id} className={`btn sm ${historyRevision === h.revision ? 'primary' : ''}`} onClick={() => setHistoryRevision(historyRevision === h.revision ? null : h.revision)}>{t('版本')} {h.revision} · {timestamp(h.at)} · {h.actorName || h.actorId}</button>)}</div>{historyRevision !== null && history.find(h => h.revision === historyRevision) && <HistoryPreview entry={history.find(h => h.revision === historyRevision)!} kind={item.kind} />}</section>
+        <section className="share-panel share-history"><h3>{t('变更记录')}</h3>{opened.events.map(e => <p key={e.id}><time>{timestamp(e.at)}</time> · {e.actorName || e.actorId || e.authorName || e.authorId} · {e.action || e.kind || e.text}</p>)}<h4>{t('历史版本')}</h4><div className="share-history-versions">{history.map(h => <button key={h.id} className={`btn sm ${historyRevision === h.revision ? 'primary' : ''}`} onClick={() => setHistoryRevision(historyRevision === h.revision ? null : h.revision)}>{t('版本')} {h.revision} · {timestamp(h.at)} · {h.actorName || h.actorId}</button>)}</div>{historyRevision !== null && history.find(h => h.revision === historyRevision) && <><HistoryPreview entry={history.find(h => h.revision === historyRevision)!} kind={item.kind} />{item.kind==='file'&&<button className="btn sm" disabled={busy} onClick={()=>void run(()=>download(history.find(h=>h.revision===historyRevision)!))}>{t('下载此版本')}</button>}</>}</section>
       </>}</main>
     </div>}
 
@@ -403,7 +424,7 @@ export default function CollaborationHub({ settings, seeds, onClose, onImport, o
           {!!handoffFileOptions.length&&<fieldset><legend>{t('选择随交接发送的文本文件')}</legend>{handoffFileOptions.map(f=><label className="share-visibility" key={f.id}><input type="checkbox" checked={handoffFiles.includes(f.id)} onChange={e=>setHandoffFiles(all=>e.target.checked?[...all,f.id]:all.filter(id=>id!==f.id))}/>{getString(f.payload,'name')||f.title}</label>)}</fieldset>}
           <button className="btn primary" disabled={busy||!handoffGoal.trim()||handoffFiles.length>20} onClick={()=>void run(sendHandoff)}>{t('发送交接')}</button>
         </div>}
-        <h4>{t('交接记录')}</h4>{!handoffs.length&&<p className="share-muted">{t('还没有可查看的交接记录。')}</p>}{handoffs.map((receipt,index)=>{const data=(receipt.payload??{}) as Record<string,unknown>;return <article className="share-comment" key={String(receipt.id??index)}><div><strong>{String(receipt.actorName??receipt.actorId??t('成员'))}</strong><time>{timestamp(Number(receipt.createdAt))}</time></div><h4>{getString(data,'goal')}</h4><p>{getString(data,'summary')}</p>{getArray(data,'artifacts').map((file,i)=><details key={i}><summary>{getString(file,'name')}</summary><pre>{getString(file,'text')}</pre></details>)}{onHandoff&&selectedConnection.permissions?.readReceipts&&<button className="btn sm" disabled={busy} onClick={()=>void run(async()=>{const latest=await collaborationCall<{receipts:Record<string,unknown>[]}>('listHandoffs',{connectionId:selectedConnection.id});const verified=latest.receipts.find(r=>r.id===receipt.id);if(!verified)throw Error(t('交接记录已不可访问。'));await onHandoff(verified,connectionTargetItem);})}>{t('打开为我的草稿')}</button>}</article>;})}
+        <h4>{t('交接记录')}</h4>{!handoffs.length&&<p className="share-muted">{t('还没有可查看的交接记录。')}</p>}{handoffs.map((receipt,index)=>{const data=(receipt.payload??{}) as Record<string,unknown>;return <article className="share-comment" key={String(receipt.id??index)}><div><strong>{String(receipt.actorName??receipt.actorId??t('成员'))}</strong><time>{timestamp(Number(receipt.createdAt))}</time></div><h4>{getString(data,'goal')}</h4><p>{getString(data,'summary')}</p>{getArray(data,'artifacts').map((file,i)=><details key={i}><summary>{getString(file,'name')}</summary><pre>{getString(file,'text')}</pre></details>)}{onHandoff&&selectedConnection.permissions?.readReceipts&&<button className="btn sm" disabled={busy} onClick={()=>void run(async()=>{const latest=await collaborationCall<{receipts:Record<string,unknown>[]}>('listHandoffs',{connectionId:selectedConnection.id});const verified=latest.receipts.find(r=>r.id===receipt.id);if(!verified)throw Error(t('交接记录已不可访问。'));await onHandoff(verified,connectionTargetItem,selectedConnection);})}>{t('打开为我的草稿')}</button>}</article>;})}
       </section>}
       {signedIn && <form className="share-panel" onSubmit={e=>{e.preventDefault();void run(async()=>{
         const target=targetToken?await collaborationCall<Opened>('openLink',{token:targetToken}):null;

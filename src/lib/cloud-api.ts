@@ -18,6 +18,9 @@ export const cloudBridge = (): CloudBridge | null => {
 export class CloudApiError extends Error { constructor(message: string, public status: number) { super(message); } }
 let webAccountId: string | null = null;
 export function configureWebCloudAccount(id:string|null) { webAccountId=id; }
+export async function cloudAccountIdentity():Promise<string|null> {
+  const native=cloudBridge();return native?(await native.cloudState()).user?.id??null:webAccountId;
+}
 export async function cloudCall<T>(action: string, input: Record<string, unknown> = {}): Promise<T> {
   const native = cloudBridge();
   if (native) return await native.cloudCall(action, input) as T;

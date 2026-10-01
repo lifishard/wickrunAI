@@ -43,6 +43,7 @@ export default function SharedWorkflowEditor({payload,onChange,readOnly}:{payloa
     if(!node)return;const id=crypto.randomUUID();changeGraph({...graph,nodes:[...graph.nodes,{...structuredClone(node),id,x:node.x+40,y:node.y+50}]});setSelection({type:'node',id});
   };
   return <div className="shared-workflow-editor">
+    <label className="share-field"><span>{t('工作流说明')}</span><textarea data-share-field="description" rows={3} readOnly={readOnly} value={words(payload.description)} onChange={e=>write({...payload,description:e.target.value})}/></label>
     <section className="shared-workflow-inspector"><h4>{t('执行上限')}</h4>{(['maxSteps','maxMinutes','maxTokens'] as const).map(key=><label key={key}>{t({maxSteps:'总步骤上限',maxMinutes:'总时间上限（分钟）',maxTokens:'总用量上限（Token）'}[key])}<input type="number" min={1} disabled={readOnly} value={graph[key]} onChange={e=>changeGraph({...graph,[key]:Math.max(1,Number(e.target.value))})}/></label>)}</section>
     <div className="share-actions"><label>{t('新增步骤')} <select disabled={readOnly} value={newKind} onChange={e=>setNewKind(e.target.value as NodeKind)}>{Object.entries(nodeLabels).map(([kind,label])=><option key={kind} value={kind}>{t(label)}</option>)}</select></label>{!readOnly&&<button className="btn sm" onClick={()=>addNode()}>{t('添加步骤')}</button>}</div>
     <div className="shared-workflow-canvas"><WorkflowCanvas nodes={graph.nodes.map(n=>({...n,subtitle:n.instructions?.slice(0,70)}))} edges={graph.edges} viewport={viewport} selection={selection}
@@ -51,7 +52,7 @@ export default function SharedWorkflowEditor({payload,onChange,readOnly}:{payloa
       onDeleteSelection={remove} onDuplicateSelection={duplicate} onUndo={()=>{}} onRedo={()=>{}} canUndo={false} canRedo={false}/></div>
     {node&&<section className="shared-workflow-inspector"><h4>{t('步骤设置')}</h4>
       <label>{t('步骤名称')}<input readOnly={readOnly} value={node.title} onChange={e=>changeNode({title:e.target.value})}/></label>
-      <label>{t('步骤说明')}<textarea readOnly={readOnly} rows={4} value={node.instructions} onChange={e=>changeNode({instructions:e.target.value})}/></label>
+      <label>{t('步骤说明')}<textarea data-share-field="node" data-share-entry={node.id} readOnly={readOnly} rows={4} value={node.instructions} onChange={e=>changeNode({instructions:e.target.value})}/></label>
       <label>{t('输出 / 验收要求')}<textarea readOnly={readOnly} rows={3} value={node.outputRequirement} onChange={e=>changeNode({outputRequirement:e.target.value})}/></label>
       {['agent','review','handoff','approval'].includes(node.type)&&<label>{t('负责的 Agent')}<select disabled={readOnly} value={node.memberId??''} onChange={e=>changeNode({memberId:e.target.value||undefined})}><option value="">{t('请选择')}</option>{agents.map(a=><option key={words(a.id)} value={words(a.id)}>{words(a.name)}</option>)}</select></label>}
       {node.type==='review'&&<label>{t('复核范围')}<select disabled={readOnly} value={node.reviewMode??'files'} onChange={e=>changeNode({reviewMode:e.target.value})}><option value="files">{t('读取文件复核')}</option><option value="text">{t('仅复核文本')}</option></select></label>}

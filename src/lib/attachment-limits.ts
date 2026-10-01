@@ -9,7 +9,7 @@
 export const MIB = 1024 * 1024;
 
 export const ATTACHMENT_LIMITS = Object.freeze({
-  textBytes: 25 * MIB,
+  textBytes: 100 * MIB,
   imageBytes: 20 * MIB,
   audioBytes: 12 * MIB,
   videoBytes: 12 * MIB,

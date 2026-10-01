@@ -17,6 +17,7 @@ import type { Skill } from '../lib/skills';
 import type { ProjectPrompt } from '../lib/projects';
 import { matchSkills, slashQuery } from '../lib/skills';
 import EffortPicker from './EffortPicker';
+import NativeEffortPicker from './NativeEffortPicker';
 import ModelPicker from './ModelPicker';
 import ClientConnections from './ClientConnections';
 import {CLIENT_LABELS} from '../lib/connections';
@@ -78,6 +79,7 @@ export default function Composer(props: {
   onSendNow?: (text:string)=>boolean;
   onSendQueuedNow?: (index:number)=>void;
   stream: boolean;
+  onStream: (stream: boolean) => void;
   toolCount: number;
 
   attachments: Attachment[];
@@ -337,9 +339,12 @@ export default function Composer(props: {
             {props.barControls}
 
             {props.contextPreview ? <ContextMeter preview={props.contextPreview} draft={contextDraft} /> : null}
-            {!props.stream ? <span className="chip">{t('非流式')}</span> : null}
 
-            {props.client ? <span className="chip" title={t('在模型选择器中调整官方客户端提供的思考强度')}>{props.client.effort || t('官方默认强度')}</span> : <EffortPicker
+</>;
+  const quickControls = <>
+            <button className="btn sm ghost stream-btn" type="button" aria-label={t('响应方式：{mode}，点击切换', { mode: t(props.stream ? '流式' : '非流式') })} aria-pressed={props.stream} title={t('只影响下一条消息')} onClick={() => props.onStream(!props.stream)}>{t(props.stream ? '流式' : '非流式')}</button>
+
+            {props.client ? props.client.kind === 'claude-desktop' ? null : <NativeEffortPicker selection={props.client} settings={props.connectionSettings} onSelect={props.onClient} /> : <EffortPicker
               level={props.effortLevel}
               onLevel={props.onEffortLevel}
               model={props.model}
@@ -348,8 +353,7 @@ export default function Composer(props: {
               manual={props.effortManual}
               onOpenMappings={props.onOpenMappings}
             />}
-
-</>;
+  </>;
   return (
     <div className={`composer-wrap composer-${props.layout === 'home' ? 'home' : 'conversation'}`}>
       <div className="composer">
@@ -472,6 +476,7 @@ export default function Composer(props: {
           {compact && moreOpen ? <div className="composer-options" id={optionsId} role="group" aria-label={t('输入设置')}>
             {secondaryControls}
           </div> : null}
+          {compact ? <div className="composer-quick-controls" role="group" aria-label={t('发送与思考')}>{quickControls}</div> : null}
           <div className="composer-bar">
             {/* ---- 左下角 ---- */}
             <div className="menu-anchor" ref={plusRef}>
@@ -568,7 +573,7 @@ export default function Composer(props: {
               onManageRouteGroups={props.onManageRouteGroups}
             />
 
-            {!compact ? secondaryControls : <button className="btn sm ghost composer-more" aria-expanded={moreOpen} aria-controls={optionsId}
+            {!compact ? <>{secondaryControls}{quickControls}</> : <button className="btn sm ghost composer-more" aria-expanded={moreOpen} aria-controls={optionsId}
               title={t(current.desc)} aria-label={`${t('更多')} · ${t(current.desc)}`} onClick={() => setMoreOpen(value => !value)}>{phone ? <MobileIcon name="more"/> : <Icon name="more" size={17}/>}<span className="composer-action-label">{t('更多')}</span></button>}
             <span className="spacer" />
 

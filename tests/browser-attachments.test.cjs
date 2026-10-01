@@ -20,7 +20,7 @@ test('browser text attachments retain content and share the desktop limits', asy
 test('selection size and unsupported formats fail before reading any content', async () => {
   let reads = 0;
   const file = (name, size) => ({ name, size, type: '', text: async () => { reads++; return 'unexpected'; } });
-  await assert.rejects(readBrowserAttachments([file('large.txt', ATTACHMENT_LIMITS.textBytes + 1)], 'file'), /25MB/);
+  await assert.rejects(readBrowserAttachments([file('large.txt', ATTACHMENT_LIMITS.textBytes + 1)], 'file'), /100MB/);
   await assert.rejects(readBrowserAttachments(Array.from({ length: 5 }, () => file('part.txt', ATTACHMENT_LIMITS.textBytes)), 'file'), /100MB/);
   await assert.rejects(readBrowserAttachments([file('ok.txt', 1), file('program.exe', 1)], 'file'), /支持的文本/);
   assert.equal(reads, 0);

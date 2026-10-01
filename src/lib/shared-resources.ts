@@ -21,13 +21,13 @@ export interface SharedConnection {
   sourceAgentId?:string;targetAgentId?:string;initiatedBy?:string;createdAt:number;acceptedAt?:number;
   permissions?:{accept:boolean;reject:boolean;revoke:boolean;send:boolean;readReceipts:boolean};
 }
-export interface SharedComment {id:string;authorId:string;authorName?:string;body:string;createdAt:number;at?:number;visibility?:'private'|'shared';anchor?:{kind:'resource'|'message'|'text'|'node';messageId?:string;nodeId?:string;quote?:string;start?:number;end?:number}}
+export interface SharedComment {id:string;authorId:string;authorName?:string;body:string;createdAt:number;at?:number;visibility?:'private'|'shared';anchor?:{kind:'resource'|'message'|'text'|'node';messageId?:string;nodeId?:string;quote?:string;start?:number;end?:number;field?:string;entryId?:string}}
 export interface SharedEvent {id:string;actorId?:string;actorName?:string;authorId?:string;authorName?:string;at:number;kind?:string;action?:string;revision?:number;text?:string}
 export interface SharedVersion {id:string;actorId:string;actorName:string;at:number;action:string;revision:number;title:string;payload:Record<string,unknown>}
 export interface SharedState {user:CloudUser|null;items:SharedItem[];spaces:SharedSpace[];connections:SharedConnection[]}
 export interface SharedView {item:SharedItem;role:SharedRole|'owner'|'admin';comments:SharedComment[];events:SharedEvent[];children?:SharedItem[];permissions?:{read:boolean;annotatePrivate:boolean;annotateShared:boolean;edit:boolean;postMessage:boolean;manageSharing:boolean}}
 export interface SharedSeed {kind:SharedKind;title:string;sourceId?:string;parentSourceId?:string;payload:Record<string,unknown>}
-export const SHARED_FILE_MAX_BYTES=5*1024*1024;
+export const SHARED_FILE_MAX_BYTES=100*1024*1024;
 
 export async function collaborationCall<T>(operation:string,input:Record<string,unknown>={}):Promise<T> {
   return cloudCall<T>('collaboration',{operation,input});

@@ -11,6 +11,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(SncHttpPlugin.class);
         registerPlugin(WickrunSecretsPlugin.class);
         registerPlugin(WickrunAccountPlugin.class);
+        registerPlugin(WickrunFilesPlugin.class);
         registerPlugin(WickrunContextPlugin.class);
         super.onCreate(savedInstanceState);
         WickrunContextStore.acceptShare(this, getIntent());
