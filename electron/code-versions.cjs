@@ -5,7 +5,7 @@ const {guardPath}=require('./tools/common.cjs');
 const digest=value=>value===null?null:crypto.createHash('sha256').update(value).digest('hex');
 const key=p=>process.platform==='win32'?path.resolve(p).toLowerCase():path.resolve(p);
 function identity(p){let probe=p;while(!fs.existsSync(probe)){const parent=path.dirname(probe);if(parent===probe)throw Error('文件路径无法解析');probe=parent;}return key(path.join(fs.realpathSync(probe),path.relative(probe,p)));}
-function current(p){try{const s=fs.lstatSync(p);if(!s.isFile()||s.isSymbolicLink()||s.nlink>1||s.size>16*1024*1024)throw Error('目标不再是可回退的普通文件');return fs.readFileSync(p);}catch(e){if(e.code==='ENOENT')return null;throw e;}}
+function current(p){try{const s=fs.lstatSync(p);if(!s.isFile()||s.isSymbolicLink()||s.nlink>1||s.size>16*1024*1024)throw Error('目标不再是可回退的普通文件');const bytes=fs.readFileSync(p);if(bytes.length>16*1024*1024)throw Error('目标不再是可回退的普通文件');return bytes;}catch(e){if(e.code==='ENOENT')return null;throw e;}}
 function createCodeVersions(root,{replace=fs.renameSync.bind(fs)}={}){
   const blobs=path.join(root,'blobs');
   const db=createDurableJson(path.join(root,'versions.json'),{initial:()=>({version:1,entries:{},transaction:null}),validate:d=>{if(d?.version!==1||!d.entries||typeof d.entries!=='object')throw Error('代码版本记录损坏');}});

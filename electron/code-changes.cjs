@@ -105,6 +105,7 @@ function snapshotContent(p){
   if(!stat.isFile()||stat.isSymbolicLink()||stat.nlink>1)throw Error('仅支持普通文件');
   if(stat.size>MAX_SNAPSHOT_BYTES)throw Error('文件超过 16 MB 的版本记录上限');
   const bytes=fs.readFileSync(p);
+  if(bytes.length>MAX_SNAPSHOT_BYTES)throw Error('文件超过 16 MB 的版本记录上限');
   const text=bytes.toString('utf8');
   return bytes.length<=MAX_BYTES&&!bytes.includes(0)&&Buffer.from(text,'utf8').equals(bytes)?text:bytes;
 }
