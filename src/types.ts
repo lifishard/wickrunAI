@@ -704,6 +704,8 @@ export interface ChatStreamHandlers {
  * 回调一律放 ChatStreamHandlers，那个对象留在渲染进程里，不过 IPC。
  */
 export interface ChatRequestInit {
+  /** Private on-device observations are never copied into diagnostic request logs. */
+  privateInput?: boolean;
   requestId: string;
   url: string;
   headers: Record<string, string>;

@@ -18,7 +18,8 @@ export interface Exchange {
 }
 const RAW_CAP = 256_000;
 const exchanges: Exchange[] = [];
-export function beginExchange(init: { requestId?: string; runId?: string; round?: number; attempt?: number; purpose?: string; url: string; body: unknown; stream: boolean }): void {
+export function beginExchange(init: { privateInput?:boolean;requestId?: string; runId?: string; round?: number; attempt?: number; purpose?: string; url: string; body: unknown; stream: boolean }): void {
+  if(init.privateInput)return;
   exchanges.push({ ...init, requestId: init.requestId || `request-${Date.now()}`, at: Date.now(), request: init.body, raw: '', truncated: false });
   if (exchanges.length > 40) exchanges.shift();
 }

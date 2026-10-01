@@ -55,6 +55,7 @@ interface NativeEvent {
 }
 
 interface ElectronBridge extends CloudBridge {
+  butlerSources?(action:string,input?:Record<string,unknown>):Promise<import('./butler-runtime').ButlerCollectorState>;
   codeVersion?(action:'details'|'file'|'preview'|'keep'|'revert',ids:string[],path?:string):Promise<{
     entries?:{id:string;status:'applied'|'kept'|'reverting'|'reverted'}[];
     files?:import('../types').CodeChange[];warning?:string;recovering?:boolean;alreadyReverted?:boolean;

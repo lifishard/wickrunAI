@@ -1,0 +1,247 @@
+import type { AppSettings, Conversation } from '../types';
+import type { Skill } from './skills';
+import { bodyHash, slugify } from './skills';
+import { cloudBridge, cloudCall, type CloudStatus } from './cloud-api';
+import { desktop, getTransport } from './transport';
+import { uid } from './store';
+import { runButlerModel, type ButlerModelResult } from './butler-model';
+import { butlerClock, dueButlerBrief, parseButlerAnalysis } from './butler-policy';
+import { DEFAULT_BUTLER_PREFERENCES, BUTLER_SOURCES, emptyButlerBrain, projectButlerBrainForSync, projectButlerSignal, addGoalProposal, addButlerBrief,
+  modelSafeSummary, reviewGoal, reviewSkillProposal, revokeButlerSource,
+  type ButlerBrainState, type ButlerProactivePreferences, type ButlerRuntimeSnapshot, type ButlerRuntimeAction, type ButlerSignal, type ButlerJob, type ButlerSource } from './proactive-butler';
+
+export const BUTLER_BRAIN_KEY='wickrun:butler:brain:v1';
+const LOCAL_KEY='wickrun:butler:device:v1';
+interface Config { settings:()=>AppSettings; conversations:()=>Conversation[]; skills:()=>Skill[]; onSettings:(value:AppSettings)=>void; onSkills:(value:Skill[])=>void }
+interface LocalState {deviceId:string;consent:Partial<Record<ButlerSource,boolean>>;day:string;spent:number;analyzed:string;done:string[]}
+export interface ButlerCollectorState {sources:ButlerRuntimeSnapshot['sources'];signals?:Omit<ButlerSignal,'accountId'|'modelSafe'>[];contexts?:{id:string;source:ButlerSource;sourceLabel:string;observedAt:number;text:string}[];deviceName?:string}
+interface Services {
+  storage:()=>{kvGet:(key:string)=>Promise<string|null>;kvSet:(key:string,value:string)=>Promise<void>};
+  account:()=>Promise<string>;host:()=>boolean;now:()=>number;
+  model:typeof runButlerModel;
+  collector:(action:string,input?:Record<string,unknown>)=>Promise<ButlerCollectorState>;
+}
+const services:Services={storage:getTransport,account:async()=>{const bridge=cloudBridge();return bridge?(await bridge.cloudState()).user?.id??'guest':(await cloudCall<CloudStatus>('status')).user?.id??'guest';},
+  host:()=>Boolean(desktop()),now:Date.now,model:runButlerModel,
+  collector:async(action,input)=>{const bridge=desktop();if(!bridge?.butlerSources) return {sources:{}};return bridge.butlerSources(action,input);}};
+
+/** Only the selected desktop executes. Phones contribute evidence, queue work, and control it. */
+export class ButlerRuntime {
+  private config?:Config;
+  private listeners=new Set<()=>void>();
+  private snapshot:ButlerRuntimeSnapshot={brain:emptyButlerBrain('guest'),host:{status:'unavailable'},busy:false,sources:{wickrun:{available:true,consented:true}}};
+  private local:LocalState={deviceId:'',consent:{},day:'',spent:0,analyzed:'',done:[]};
+  private loaded=false;private loading?:Promise<void>;private control?:AbortController;private ticking=false;private nextAttempt=0;private lastHeartbeat=0;
+  private saveChain=Promise.resolve();
+  constructor(private io:Services=services) {}
+  configure(config:Config) {
+    this.config=config;
+    const prefs=this.prefs();
+    if(!prefs.enabled||prefs.paused||prefs.hostDeviceId!==this.local.deviceId)this.control?.abort();
+  }
+  getSnapshot=()=>this.snapshot;
+  subscribe=(fn:()=>void)=>{this.listeners.add(fn);return()=>{this.listeners.delete(fn);};};
+  private emit(patch:Partial<ButlerRuntimeSnapshot>={}) {this.snapshot={...this.snapshot,...patch};for(const listener of this.listeners)listener();}
+  private prefs():ButlerProactivePreferences {return {...DEFAULT_BUTLER_PREFERENCES,...this.config?.settings().butler?.proactive};}
+  private setPrefs(patch:Partial<ButlerProactivePreferences>) {if(!this.config)return;const settings=this.config.settings();this.config.onSettings({...settings,butler:{...settings.butler,proactive:{...this.prefs(),...patch}}});}
+  private async save() {
+    const brain=JSON.stringify(this.snapshot.brain),local=JSON.stringify(this.local),storage=this.io.storage();
+    this.saveChain=this.saveChain.catch(()=>{}).then(async()=>{await storage.kvSet(BUTLER_BRAIN_KEY,brain);await storage.kvSet(LOCAL_KEY,local);});
+    await this.saveChain;
+    if(typeof window!=='undefined')window.dispatchEvent(new Event('wickrun:butler-change'));
+    this.emit();
+  }
+  async load() {
+    if(this.loaded)return;
+    if(this.loading)return this.loading;
+    this.loading=(async()=>{
+      const storage=this.io.storage(),account=await this.io.account();
+      let brain=emptyButlerBrain(account);
+      try {const raw=JSON.parse(await storage.kvGet(BUTLER_BRAIN_KEY)??'null');if(raw?.schema===1&&raw.accountId===account)brain=projectButlerBrainForSync(raw);}catch{/* Ignore damaged Butler data; ordinary conversations remain intact. */}
+      try {const raw=JSON.parse(await storage.kvGet(LOCAL_KEY)??'null');if(raw&&typeof raw.deviceId==='string')this.local={...this.local,...raw};}catch{/* Start with no external grants. */}
+      this.local.deviceId ||= uid('device');
+      this.emit({brain,deviceId:this.local.deviceId});
+      this.loaded=true;
+      await this.refreshSources();
+      await this.save();
+    })().finally(()=>{this.loading=undefined;});
+    return this.loading;
+  }
+  async reload() {
+    await this.load();
+    const raw=JSON.parse(await this.io.storage().kvGet(BUTLER_BRAIN_KEY)??'null');
+    if(raw?.accountId===this.snapshot.brain.accountId) {
+      this.emit({brain:projectButlerBrainForSync(raw)});
+      if(!this.prefs().enabled||this.prefs().paused||this.prefs().hostDeviceId!==this.local.deviceId)this.control?.abort();
+      this.refreshHost();
+    }
+  }
+  private refreshHost() {
+    const selected=this.prefs().hostDeviceId,host=this.snapshot.brain.hosts?.find(h=>h.id===selected),here=selected===this.local.deviceId&&this.io.host();
+    this.emit({host:{deviceId:selected,deviceName:host?.name,status:here?'local':!selected?'unavailable':host&&this.io.now()-host.lastSeenAt<120000?'connected':'offline',lastSeenAt:host?.lastSeenAt}});
+  }
+  private async refreshSources() {
+    const prefs=this.prefs();
+    const result=await this.io.collector('status').catch(()=>({sources:{}} as ButlerCollectorState));
+    this.emit({sources:Object.fromEntries(BUTLER_SOURCES.map(source=>[source,source==='wickrun'?{available:true,consented:true}:
+      {...result.sources[source],available:result.sources[source]?.available??source==='share',consented:this.local.consent[source]===true&&result.sources[source]?.consented!==false}]))});
+    if(!prefs.enabled||prefs.paused)await this.io.collector('suspend',{suspended:true}).catch(()=>{});
+    this.refreshHost();
+  }
+  private ingestInternal() {
+    if(!this.config||!this.prefs().sources.wickrun)return;
+    const brain=this.snapshot.brain,known=new Set(brain.signals.map(s=>s.id));
+    const signals:ButlerSignal[]=[];
+    for(const conv of this.config.conversations().slice().sort((a,b)=>b.updatedAt-a.updatedAt).slice(0,30)) {
+      for(const message of conv.messages.filter(m=>m.role==='user'&&!m.contextKind).slice(-8)) {
+        const id='wickrun:'+bodyHash(`${conv.id}:${message.id}`);if(known.has(id))continue;
+        const summary=modelSafeSummary(message.content,240);
+        if(!summary||summary.includes('[REDACTED]'))continue;
+        const signal=projectButlerSignal({id,accountId:brain.accountId,source:'wickrun',sourceLabel:'wickrunAI 对话',sourceRef:conv.id,
+          topic:modelSafeSummary(conv.title,80)||'用户提问',intent:'用户主动提出的需求',summary,observedAt:message.createdAt,confidence:'high',basis:'user-stated'},this.prefs().sources,this.local.consent);
+        if(signal)signals.push(signal);
+      }
+    }
+    if(signals.length)this.emit({brain:{...brain,signals:[...brain.signals,...signals].slice(-500),updatedAt:this.io.now()}});
+  }
+  private async ingestExternal() {
+    const prefs=this.prefs();
+    await this.io.collector('suspend',{suspended:!prefs.enabled||prefs.paused,sources:prefs.sources});
+    const result=await this.io.collector('poll');
+    const brain=this.snapshot.brain,known=new Set(brain.signals.map(s=>s.id));
+    const signals=(result.signals??[]).map(s=>projectButlerSignal({...s,accountId:brain.accountId},prefs.sources,this.local.consent)).filter((s):s is ButlerSignal=>!!s&&!known.has(s.id));
+    if(signals.length)this.emit({brain:{...brain,signals:[...brain.signals,...signals].slice(-500),updatedAt:this.io.now()}});
+  }
+  private queue(kind:ButlerJob['kind'],goalId?:string,period?:ButlerJob['period'],id=uid('butler-job')) {
+    const brain=this.snapshot.brain,jobs=brain.jobs??[];
+    if(jobs.some(j=>j.id===id||(['queued','running'].includes(j.status)&&j.kind===kind&&j.goalId===goalId&&j.period===period)))return;
+    const now=this.io.now();
+    this.emit({brain:{...brain,jobs:[...jobs,{id,accountId:brain.accountId,kind,goalId,period,status:'queued' as const,createdAt:now,updatedAt:now}].slice(-100),updatedAt:now}});
+  }
+  private patchJob(id:string,patch:Partial<ButlerJob>) {const brain=this.snapshot.brain;this.emit({brain:{...brain,jobs:brain.jobs?.map(j=>j.id===id?{...j,...patch,updatedAt:this.io.now()}:j),updatedAt:this.io.now()}});}
+  private async request(prompt:string,research:boolean,control:AbortController):Promise<ButlerModelResult> {
+    const prefs=this.prefs(),day=butlerClock(this.io.now(),prefs.timezone).day;
+    if(this.local.day!==day){this.local.day=day;this.local.spent=0;}
+    const remaining=Math.max(0,Math.min(500000,prefs.maxTokensPerDay)-this.local.spent),reserved=Math.min(8000,remaining);
+    if(reserved<2000)throw Error('管家今日预算已用完；未再发送模型请求。');
+    // Charge before dispatch; abort/crash/unknown usage must never reopen the budget.
+    this.local.spent+=reserved;await this.save();
+    const result=await this.io.model(this.config!.settings(),prefs,prompt,research,reserved,control.signal,s=>this.emit({error:s||undefined}));
+    if(control.signal.aborted)throw new DOMException('Aborted','AbortError');
+    if(result.tokens>0)this.local.spent=Math.max(0,this.local.spent-reserved+result.tokens);
+    await this.save();return result;
+  }
+  private async analyze(control:AbortController) {
+    const brain=this.snapshot.brain,signals=brain.signals.slice(-35);
+    if(!signals.length)throw Error('还没有可分析的需求记录。先开始一段对话，或授权一个外部来源。');
+    const result=await this.request(JSON.stringify({task:'从观察中推断深层需求。不能仅模仿浏览动作。区分用户明说与行为推测，跨来源找共同目的；金融内容只做信息研究。尊重已否定目标。只返回 JSON，不要输出工具：{goals:[{title,hypothesis,evidenceIds,confidence:low|medium|high}],skills:[{name,description,body,evidenceIds}]}。最多各3项，skills是复用流程草案，不含账户、密码、交易命令。没有新证据可返回空数组。',
+      signals,existingGoals:brain.goals.slice(-30),reviewedSkills:brain.skillProposals.filter(s=>s.status==='accepted').slice(-8).map(s=>({name:s.name,body:s.body}))}),false,control);
+    const parsed=parseButlerAnalysis(result.text);
+    let next=this.snapshot.brain;
+    for(const goal of parsed.goals)next=addGoalProposal(next,{...goal,id:uid('goal')},this.io.now());
+    for(const skill of parsed.skills) {
+      if(next.skillProposals.some(s=>s.name===skill.name)||!skill.evidenceIds.every(id=>next.signals.some(s=>s.id===id)))continue;
+      const body=modelSafeSummary(skill.body,2000);if(body.includes('[REDACTED]'))continue;
+      next={...next,skillProposals:[...next.skillProposals,{...skill,name:modelSafeSummary(skill.name,60),description:modelSafeSummary(skill.description,160),body,
+        id:uid('learned-skill'),accountId:next.accountId,status:'proposed',createdAt:this.io.now()}],updatedAt:this.io.now()};
+    }
+    this.local.analyzed=bodyHash(signals.map(s=>s.id).join('|'));this.emit({brain:next});
+  }
+  private async research(goalId:string,control:AbortController) {
+    const brain=this.snapshot.brain,goal=brain.goals.find(g=>g.id===goalId&&g.status!=='dismissed');
+    if(!goal)throw Error('该目标已删除或否定。');
+    if(!this.prefs().allowResearch)throw Error('尚未开启公开资料研究。');
+    const result=await this.request(JSON.stringify({task:'为此需求检索公开来源并产出可使用的研究简报。AI skills需求列出名称、适用场景和真实来源链接；投资需求给出有日期的资料、条件式进出场原则和不确定性，绝不下单或保证收益。不要与外部人联系。每项说明与需求的关系，引用本轮来源。',goal:{title:goal.title,hypothesis:goal.userCorrection??goal.hypothesis},date:new Date(this.io.now()).toISOString()}),true,control);
+    const now=this.io.now(),evidenceIds=goal.evidenceIds;
+    const items=[{id:uid('finding'),kind:'finding' as const,title:goal.title,summary:modelSafeSummary(result.text,500),goalId,evidenceIds},
+      ...result.sources.filter(s=>s.url?.startsWith('https:')).slice(0,8).map(source=>({id:uid('source'),kind:'finding' as const,title:modelSafeSummary(source.title,100),
+        summary:modelSafeSummary(source.snippet??'本次检索来源，阅读原文核实适用条件。',500),goalId,evidenceIds,result:{kind:'url' as const,id:uid('link'),url:source.url}}))];
+    // Native answers may contain URLs; without source evidence they stay unverified prose.
+    this.emit({brain:addButlerBrief(this.snapshot.brain,{id:uid('research'),accountId:brain.accountId,period:'evening',createdAt:now,items})});
+  }
+  private async brief(period:'morning'|'evening',control:AbortController) {
+    if(!this.snapshot.brain.goals.length)await this.analyze(control);
+    const brain=this.snapshot.brain,goals=brain.goals.filter(g=>g.status!=='dismissed').slice(-8);
+    const items=goals.map(g=>({id:uid('brief-item'),kind:(g.status==='proposed'?'suggestion':'progress') as 'suggestion'|'progress',title:g.title,
+      summary:period==='morning'?`今日可准备：${g.userCorrection??g.hypothesis}。${g.status==='proposed'?'这是待确认的需求推测。':'已记录你的确认；公开资料研究按所选权限执行。'}`:
+        `${g.userCorrection??g.hypothesis}。已整理相关证据，可在目标卡片确认、纠正或继续研究。`,goalId:g.id,evidenceIds:g.evidenceIds}));
+    this.emit({brain:addButlerBrief(brain,{id:uid('brief'),accountId:brain.accountId,period,createdAt:this.io.now(),items})});
+    if(this.prefs().allowResearch&&this.prefs().allowRoutineExecution) {
+      const goal=goals.find(g=>g.status==='confirmed'||g.status==='corrected');if(goal)this.queue('research',goal.id);
+    }
+  }
+  async tick() {
+    if(this.ticking||!this.config)return;this.ticking=true;
+    try {
+      await this.load();const prefs=this.prefs();
+      if(!prefs.enabled||prefs.paused){this.control?.abort();await this.io.collector('suspend',{suspended:true});return;}
+      this.ingestInternal();await this.ingestExternal();
+      this.refreshHost();
+      const isHost=this.io.host()&&prefs.hostDeviceId===this.local.deviceId;
+      if(!isHost){await this.save();return;}
+      const now=this.io.now();
+      if(now-this.lastHeartbeat>45000){this.lastHeartbeat=now;const brain=this.snapshot.brain;this.emit({brain:{...brain,hosts:[...(brain.hosts??[]).filter(h=>h.id!==this.local.deviceId),{id:this.local.deviceId,accountId:brain.accountId,name:'常开电脑',lastSeenAt:now}],updatedAt:now}});}
+      // A interrupted read-only job is marked retryable; never silently replay a completed one.
+      for(const job of this.snapshot.brain.jobs??[])if(job.status==='running'&&!this.control&&now-job.updatedAt>300000)this.patchJob(job.id,{status:'failed',error:'上次运行已中断，可重新提交。'});
+      if(now>=this.nextAttempt&&!this.control) {
+        const fingerprint=bodyHash(this.snapshot.brain.signals.slice(-35).map(s=>s.id).join('|'));
+        if(this.snapshot.brain.signals.length&&fingerprint!==this.local.analyzed)this.queue('analyze');
+        const due=dueButlerBrief(prefs,now,this.local.done);
+        if(due){this.queue('brief',undefined,due.period,`daily:${due.key}`);this.local.done=[...this.local.done,due.key].slice(-90);}
+        const job=this.snapshot.brain.jobs?.find(j=>j.status==='queued');
+        if(job)void this.execute(job);
+      }
+      await this.save();
+    }catch(error){this.emit({error:String(error instanceof Error?error.message:error)});this.nextAttempt=this.io.now()+300000;}
+    finally{this.ticking=false;}
+  }
+  private async execute(job:ButlerJob) {
+    if(this.control)return;const control=new AbortController();this.control=control;
+    this.patchJob(job.id,{status:'running',error:undefined});this.emit({busy:true,error:undefined});
+    try {await this.save();
+      if(job.kind==='analyze')await this.analyze(control);
+      else if(job.kind==='research')await this.research(job.goalId??'',control);
+      else await this.brief(job.period??'evening',control);
+      if(control.signal.aborted)throw Error('已暂停；未继续执行。');
+      this.patchJob(job.id,{status:'completed'});
+      this.nextAttempt=this.io.now()+30000;
+    }catch(error){const message=control.signal.aborted?'已暂停；可重新提交。':String(error instanceof Error?error.message:error);this.patchJob(job.id,{status:'failed',error:modelSafeSummary(message,240)});this.emit({error:message});this.nextAttempt=this.io.now()+300000;}
+    finally {this.control=undefined;this.emit({busy:false});await this.save().catch(e=>this.emit({error:String(e)}));}
+  }
+  action=async(action:ButlerRuntimeAction):Promise<void>=>{
+    await this.load();
+    if(action.kind==='pause'||action.kind==='turn-off') {
+      this.control?.abort();this.setPrefs(action.kind==='pause'?{paused:true}:{enabled:false,paused:true});
+      await this.io.collector('suspend',{suspended:true});
+      for(const job of this.snapshot.brain.jobs??[])if(job.status==='queued')this.patchJob(job.id,{status:'failed',error:'用户已暂停待执行任务。'});
+    }else if(action.kind==='resume'){this.setPrefs({enabled:true,paused:false});this.nextAttempt=0;}
+    else if(action.kind==='refresh') {await this.refreshSources();const bridge=desktop();if(bridge){const nativeClients=await Promise.all(['codex','claude','grok','kimi','claude-desktop'].map(kind=>bridge.conversationClientCheck(kind as 'codex').catch(()=>null)));this.emit({nativeClients:nativeClients.filter((x):x is NonNullable<typeof x>=>!!x)});}}
+    else if(action.kind==='select-host'){if(action.deviceId===this.local.deviceId&&!this.io.host())throw Error('请在常开电脑的桌面版选择执行主机。');this.setPrefs({hostDeviceId:action.deviceId});this.refreshHost();}
+    else if(action.kind==='set-device-consent'){
+      if(action.source==='wickrun')return;
+      await this.io.collector('consent',{source:action.source,consented:action.consented});this.local.consent[action.source]=action.consented;
+      if(!action.consented){this.control?.abort();this.emit({brain:revokeButlerSource(this.snapshot.brain,action.source)});}
+      await this.refreshSources();
+    }else if(action.kind==='configure-source'){await this.io.collector('configure',{source:action.source,allowlist:action.allowlist});await this.refreshSources();}
+    else if(action.kind==='install-browser-extension'){await this.io.collector('install-browser-extension');}
+    else if(action.kind==='import-link') {if(!this.local.consent.share||!this.prefs().sources.share)throw Error('请先授权分享来源。');await this.io.collector('import-link',{url:action.url});await this.ingestExternal();}
+    else if(action.kind==='review-goal')this.emit({brain:reviewGoal(this.snapshot.brain,action.goalId,action.decision,action.correction)});
+    else if(action.kind==='review-skill') {
+      const old=this.snapshot.brain.skillProposals.find(p=>p.id===action.proposalId&&p.status==='proposed');
+      const next=reviewSkillProposal(this.snapshot.brain,action.proposalId,action.decision);
+      if(old&&action.decision==='accept'&&next!==this.snapshot.brain&&this.config&&!this.config.skills().some(s=>s.id===old.id))this.config.onSkills([...this.config.skills(),{id:old.id,name:slugify(old.name),description:old.description,body:old.body,source:'wickrunAI 管家 · 已审阅',enabled:false,installedAt:this.io.now(),uses:0}]);
+      this.emit({brain:next});
+    }else {
+      if(!this.prefs().enabled||this.prefs().paused)throw Error('请先开启或恢复管家。');
+      if(!this.prefs().hostDeviceId)throw Error('请先选择同账户的常开电脑。');
+      if(action.kind==='analyze-now'){this.ingestInternal();this.queue('analyze');}
+      if(action.kind==='run-research')this.queue('research',action.goalId);
+      if(action.kind==='generate-brief')this.queue('brief',undefined,action.period);
+      this.nextAttempt=0;
+    }
+    await this.save();
+    void this.tick();
+  };
+  stop(){this.control?.abort();void this.io.collector('suspend',{suspended:true}).catch(()=>{});}
+}
+export const butlerRuntime=new ButlerRuntime();

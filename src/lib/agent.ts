@@ -90,6 +90,7 @@ export interface AgentEvents {
 }
 
 export interface RunAgentArgs {
+  privateInput?: boolean;
   roleCatalog?: import('./office').AgentRole[];
   autoProbe?: boolean;
   /** Trusted task goal supplied by an orchestrator, without protocol and permission help text. */
@@ -561,7 +562,7 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
         state.contextSnapshot = { ...snapshot(body,cfg,args.profile,cap,state.compactions?.length), phase: 'compacting' };
         await save(); events.onNotice('正在整理较早上下文，原始记录保留，可随时暂停');
         try {
-          await transport.chat({ requestId, runId: state.runId, purpose: 'compaction', round: state.round,
+          await transport.chat({ privateInput:args.privateInput, requestId, runId: state.runId, purpose: 'compaction', round: state.round,
             url: endpoint(args.profile.baseUrl,'chat/completions'), headers: buildHeaders(args.apiKey,args.profile), body, stream: cfg.stream, timeoutMs: args.timeoutMs,
             paceKey: quotaKey(args.profile), paceTokens: input+reserve, paceInput: input, paceOutput: reserve,
             paceTpm: cap.tpm, paceItpm: cap.itpm, paceOtpm: cap.otpm, cachedInputCounts: cap.cachedInputCounts,
@@ -961,7 +962,7 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
           const lightRephraseWatch=lightRephraseStagnationWatchdog();
           let loopDetected=false;
           lightRephraseHint=undefined;
-          await transport.chat({ requestId, runId: state.runId, round: state.round, attempt: attempts,
+          await transport.chat({ privateInput:args.privateInput, requestId, runId: state.runId, round: state.round, attempt: attempts,
             purpose: final ? 'final' : 'agent', url: endpoint(args.profile.baseUrl, 'chat/completions'),
             headers: buildHeaders(args.apiKey, args.profile), body, stream: cfg.stream, timeoutMs: args.timeoutMs,
             ...paceFields(args.profile, cap, learned, bodyTokens, outputAllowance),
