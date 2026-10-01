@@ -23,7 +23,6 @@ import {CLIENT_LABELS} from '../lib/connections';
 import ContextMeter, { type ContextPreview } from './ContextMeter';
 import { compatibilityRoute } from '../lib/compatibility-cache';
 import CompatibilityStatus from './CompatibilityStatus';
-import {validateAttachmentSize,validateAttachmentBatch} from '../lib/attachment-limits';
 import { useT } from '../lib/i18n';
 import { isCompositionKey } from '../lib/composer-keyboard';
 import Icon from './Icon';
@@ -84,7 +83,7 @@ export default function Composer(props: {
   attachments: Attachment[];
   onAddAttachments: (mode: 'file' | 'image') => void;
   onAddMedia?: () => void;
-  onPasteImage: (dataUrl: string, name: string, mime: string, size: number) => void;
+  onPasteFiles: (files: File[]) => void;
   onRemoveAttachment: (id: string) => void;
   onPickWorkspace: () => void;
   workspaceCount: number;
@@ -150,7 +149,6 @@ export default function Composer(props: {
     window.addEventListener('wickrun:prompt', fill);
     return () => window.removeEventListener('wickrun:prompt', fill);
   }, []);
-  const [attachmentError,setAttachmentError]=React.useState('');
   // Keep keystrokes local; synchronizing every key repaints and saves the entire conversation.
   const draftSink = React.useRef(props.onDraftChange);
   const composing = React.useRef(false);
@@ -280,34 +278,21 @@ export default function Composer(props: {
     }
   }
 
-  /** 剪贴板里有图就直接变成附件；截图工具、网页右键复制图片都走这条 */
+  /** Clipboard files follow the same validated import path as picker and drop. */
   function onPaste(e: ClipboardEvent) {
     const items = e.clipboardData?.items;
     if (!items) return;
-    const images: File[] = [];
+    const files: File[] = [];
     for (let i = 0; i < items.length; i++) {
       const it = items[i];
-      if (it.kind === 'file' && it.type.startsWith('image/')) {
+      if (it.kind === 'file') {
         const f = it.getAsFile();
-        if (f) images.push(f);
+        if (f) files.push(f);
       }
     }
-    if (!images.length) return;
-
-    e.preventDefault(); // 别让它同时把文件名之类的文本也粘进来
-    const error=images.map(f=>validateAttachmentSize('image',f.size,f.name)).find(Boolean)||validateAttachmentBatch([...props.attachments,...images].reduce((n,f)=>n+f.size,0));
-    setAttachmentError(error || '');
-    if(error)return;
-    for (const f of images) {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const url = String(reader.result ?? '');
-        if (!url.startsWith('data:')) return;
-        const name = f.name && f.name !== 'image.png' ? f.name : `${t('粘贴的图片')}-${Date.now()}.png`;
-        props.onPasteImage(url, name, f.type, f.size);
-      };
-      reader.readAsDataURL(f);
-    }
+    if (!files.length) return;
+    e.preventDefault();
+    props.onPasteFiles(files);
   }
 
   const current = APPROVAL_OPTIONS.find((o) => o.value === props.approvalMode) ?? APPROVAL_OPTIONS[0];
@@ -480,7 +465,6 @@ export default function Composer(props: {
 
           {props.controls}
           {props.contextPreview&&!props.client&&<CompatibilityStatus profile={props.contextPreview.profile} model={props.model}/>}
-          {attachmentError?<p role="alert" className="hint">{attachmentError}</p>:null}
           <MarkdownInput ref={ref} value={text} disabled={props.disabled}
             placeholder={props.disabled ? (props.disabledReason ?? t('请先完成配置')) : props.busy ? t('还在生成，现在输入会排到队尾…') : t(phone ? '发消息…' : '问点什么…（图片可以直接粘贴）')}
             onChange={setText} onCaret={setCaret} onKeyDown={onKeyDown} onPaste={onPaste} />
@@ -507,7 +491,6 @@ export default function Composer(props: {
                 <AnchoredPopover anchorRef={plusRef} onClose={() => setPlusOpen(false)} className="popup" label={t('添加附件与工作目录')}>
                   <button
                     className="popup-item"
-                    disabled={!props.canPickLocal}
                     onClick={() => {
                       setPlusOpen(false);
                       props.onPickWorkspace();
@@ -534,7 +517,7 @@ export default function Composer(props: {
                     <span className="popup-icon">📄</span>
                     <span>
                       <strong>{t('添加文件')}</strong>
-                      <small>{t('文本和代码，内容直接进这轮对话')}</small>
+                      <small>{t('文本、PDF 和 Office 文档，提取内容进这轮对话')}</small>
                     </span>
                   </button>
                   <button

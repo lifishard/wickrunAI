@@ -6,7 +6,7 @@ export interface ClientStatus { kind:ClientKind; status:'missing'|'installed'|'l
  * route：wickrunAI 里登记的某条 API 路由，经本机大脑代理转换协议。extras 是按思考强度映射算好的请求字段。
  */
 export interface ClientBrain { source:'config'|'subscription'|'route'; profileId?:string; extras?:Record<string,unknown>; outputField?:'max_tokens'|'max_completion_tokens'|'none' }
-export interface ClientSelection { kind:ClientKind; model:string; effort?:string; brain?:ClientBrain }
+export interface ClientSelection { kind:ClientKind; model:string; effort?:string; brain?:ClientBrain; /** Restrict a Butler automatic run to its isolated workspace. */ butlerAutonomous?:boolean }
 export interface BrainGlobalStatus { applied:{claude:string|null;codex:string|null}; claude:{profileId:string;model:string;baseUrl:string}|null; codex:{profileId:string;model:string;baseUrl:string}|null; port?:number }
 export const BRAIN_CLIENTS: ClientKind[] = ['claude','codex'];
 export interface ClientTurnResult { codeChanges?: import('../types').CodeChange[]; codeAuditWarnings?: string[]; status:string; text:string; reasoning?:string; error?:string; sessionId?:string; }

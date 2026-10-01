@@ -6,6 +6,7 @@ import { DEFAULT_BUTLER_PREFERENCES, emptyButlerBrain, type ButlerProactivePrefe
   type ButlerSource } from '../../lib/proactive-butler';
 import type { AppSettings } from '../../types';
 import Icon from '../Icon';
+import { DEFAULT_BUTLER_PRIVACY, type ButlerPrivacyPolicy, type ButlerSensitiveCategory, type ButlerSensitiveMode } from '../../lib/butler-privacy';
 import './ProactiveButlerPanel.css';
 
 const SOURCE_LABEL:Record<ButlerSource,string>={wickrun:'wickrunAI 对话与任务',browser:'浏览器活动',desktop:'电脑应用活动',android:'Android 活动',integration:'已连接应用',share:'主动分享的链接'};
@@ -35,8 +36,10 @@ export default function ProactiveButlerPanel({settings,onSettings,controller,onO
   const [corrections,setCorrections]=React.useState<Record<string,string>>({});
   const [link,setLink]=React.useState('');
   const [sourceScope,setSourceScope]=React.useState<Partial<Record<ButlerSource,string>>>({});
+  const [sourceDeny,setSourceDeny]=React.useState<Partial<Record<ButlerSource,string>>>({});
   const [setupOpen,setSetupOpen]=React.useState(false);
   const [need,setNeed]=React.useState('');
+  const [workInputs,setWorkInputs]=React.useState<Record<string,string>>({});
   const availableGroups=(settings.routeGroups??[]).filter(g=>g.routes.length>0);
   const latestBriefs=[...snapshot.brain.briefs].sort((a,b)=>b.createdAt-a.createdAt).slice(0,4);
   const goals=[...snapshot.brain.goals].filter(g=>g.status!=='dismissed').sort((a,b)=>b.updatedAt-a.updatedAt).slice(0,12);
@@ -59,8 +62,9 @@ export default function ProactiveButlerPanel({settings,onSettings,controller,onO
       setWorking(true);setError('');
       try{
         const allowlist=(sourceScope[source]??snapshot.sources[source]?.allowlist?.join(',')??'').split(',').map(s=>s.trim()).filter(Boolean);
-        if(on && ['browser','desktop','integration'].includes(source) && !allowlist.length)throw Error(t('先填写允许的站点、应用或连接范围。'));
-        if(on)await controller.action({kind:'configure-source',source,allowlist});
+        const denylist=(sourceDeny[source]??snapshot.sources[source]?.denylist?.join(',')??'').split(',').map(s=>s.trim()).filter(Boolean);
+        if(on && ['browser','desktop','android','integration'].includes(source) && !allowlist.length)throw Error(t('先填写允许的站点、应用或连接范围。'));
+        if(on)await controller.action({kind:'configure-source',source,allowlist,denylist});
         await controller.action({kind:'set-device-consent',source,consented:on});
       }
       catch(e){setError(String(e));setWorking(false);return;}
@@ -109,18 +113,23 @@ export default function ProactiveButlerPanel({settings,onSettings,controller,onO
       <section className="proactive-card"><h3>{t('活动来源')}</h3><p>{t('先开总开关，再单独选择来源。未接通的来源不会假装正在收集。')}</p>
         {(['wickrun',...EXTERNAL] as ButlerSource[]).map(source=>{
           const cap=snapshot.sources[source],external=source!=='wickrun';
-          const scoped=['browser','desktop','integration'].includes(source);
+          const scoped=['browser','desktop','android','integration'].includes(source);
           const allowlist=(sourceScope[source]??cap?.allowlist?.join(',')??'').split(',').map(s=>s.trim()).filter(Boolean);
+          const denylist=(sourceDeny[source]??cap?.denylist?.join(',')??'').split(',').map(s=>s.trim()).filter(Boolean);
           return <div className="proactive-source-block" key={source}>
             <label className="proactive-source"><input type="checkbox" checked={!!pref.sources[source]}
               disabled={!canEdit||working||(external&&!cap?.available)} onChange={e=>void toggleSource(source,e.target.checked)}/>
               <span><strong>{t(SOURCE_LABEL[source])}</strong><small>{external?cap?.available?(cap.consented?t('本机已同意'):t('需要本机同意')):t(cap?.note||'此设备尚未提供该来源'):t('应用内来源')}</small></span></label>
-            {cap?.available&&scoped&&<div className="proactive-scope"><label className="team-field"><span>{t(source==='browser'?'允许的域名（逗号分隔）':source==='desktop'?'允许的应用进程名（逗号分隔）':'允许的连接（逗号分隔）')}</span><input value={sourceScope[source]??cap.allowlist?.join(', ')??''} disabled={!canEdit||working} placeholder={source==='browser'?'example.com, docs.example.org':source==='desktop'?'chrome.exe, code.exe':''} onChange={e=>setSourceScope(s=>({...s,[source]:e.target.value}))}/></label><button className="btn sm ghost" disabled={!controller||working||!allowlist.length} onClick={()=>void act({kind:'configure-source',source,allowlist})}>{t('保存范围')}</button><small>{t('只采集列出的范围。关闭来源会撤销本机同意。')}</small></div>}
+            {cap?.available&&scoped&&<div className="proactive-scope"><label className="team-field"><span>{t(source==='browser'?'允许的域名（逗号分隔）':source==='desktop'?'允许的应用进程名（逗号分隔）':source==='android'?'允许的应用包名（逗号分隔）':'允许的连接（逗号分隔）')}</span><input value={sourceScope[source]??cap.allowlist?.join(', ')??''} disabled={!canEdit||working} placeholder={source==='browser'?'example.com, docs.example.org':source==='desktop'?'chrome.exe, code.exe':''} onChange={e=>setSourceScope(s=>({...s,[source]:e.target.value}))}/></label>
+              <label className="team-field"><span>{t('禁止采集名单（逗号分隔，优先于允许名单）')}</span><input value={sourceDeny[source]??cap.denylist?.join(', ')??''} disabled={!canEdit||working} onChange={e=>setSourceDeny(s=>({...s,[source]:e.target.value}))}/></label>
+              {['desktop','android'].includes(source)&&<details><summary>{t('从本机应用选择')}</summary><button className="btn sm ghost" disabled={working} onClick={()=>void act({kind:'list-source-apps'})}>{t('刷新应用列表')}</button>{cap.apps?.map(app=><label className="proactive-app-rule" key={app.id}><span>{app.name}<small>{app.id!==app.name?app.id:''}</small></span><select aria-label={app.name} value={denylist.includes(app.id)?'deny':allowlist.includes(app.id)?'allow':'off'} disabled={working} onChange={e=>{setSourceScope(s=>({...s,[source]:[...allowlist.filter(x=>x!==app.id),...(e.target.value==='allow'?[app.id]:[])].join(', ')}));setSourceDeny(s=>({...s,[source]:[...denylist.filter(x=>x!==app.id),...(e.target.value==='deny'?[app.id]:[])].join(', ')}));}}><option value="off">{t('不采集')}</option><option value="allow">{t('允许采集')}</option><option value="deny">{t('加入黑名单')}</option></select></label>)}</details>}
+              <button className="btn sm ghost" disabled={!controller||working} onClick={()=>void act({kind:'configure-source',source,allowlist,denylist})}>{t('保存范围')}</button><small>{t('只采集允许名单内的应用，黑名单始终优先。保存新范围会清除该来源的旧线索。')}</small></div>}
           </div>;
         })}
         {snapshot.canHost&&snapshot.sources.browser?.available&&<><button className="btn sm ghost" disabled={working||!controller} onClick={()=>void act({kind:'install-browser-extension'})}><Icon name="link"/>{t('安装浏览器扩展')}</button><p className="hint">{t('打开扩展文件夹后，在 Chrome 或 Edge 扩展管理中开启开发者模式，选择“加载已解压的扩展程序”，选中该文件夹。')}</p></>}
         <p className="hint">{t('只理解授权范围内的可见文字；未实现视频、声音或屏幕录制识别。Android 需另行开启系统授权；仅使用已接通的来源。')}</p>
       </section>
+      {snapshot.privacy&&<ButlerPrivacySettings policy={snapshot.privacy} background={snapshot.background} working={working} onSave={policy=>act({kind:'configure-privacy',policy})} onBackground={()=>act({kind:'open-background-settings'})}/>}
       <section className="proactive-card"><h3>{t('执行电脑与模型')}</h3><p>{t('手机可查看与发起任务；定时工作由同一账号下选定的常开电脑运行。')}</p>
         <div className="proactive-host"><strong>{snapshot.host.deviceName||t('尚未选择执行电脑')}</strong><span>{t(snapshot.host.status==='local'?'当前设备':snapshot.host.status==='connected'?'已连接':snapshot.host.status==='offline'?'离线':'不可用')}{snapshot.host.lastSeenAt?` · ${new Date(snapshot.host.lastSeenAt).toLocaleString()}`:''}</span></div>
         {snapshot.canHost&&snapshot.deviceId&&snapshot.host.deviceId!==snapshot.deviceId&&<button className="btn sm" disabled={working||!controller} onClick={()=>void act({kind:'select-host',deviceId:snapshot.deviceId!})}><Icon name="monitor"/>{t('将本机设为执行电脑')}</button>}
@@ -135,12 +144,20 @@ export default function ProactiveButlerPanel({settings,onSettings,controller,onO
         <div className="proactive-times"><label className="team-field"><span>{t('早晨')}</span><input type="time" value={pref.morning} disabled={!canEdit} onChange={e=>change({morning:e.target.value})}/></label><label className="team-field"><span>{t('晚上')}</span><input type="time" value={pref.evening} disabled={!canEdit||pref.cadence==='daily'} onChange={e=>change({evening:e.target.value})}/></label></div>
         <label className="team-field"><span>{t('时区')}</span><input value={pref.timezone} disabled={!canEdit} onChange={e=>change({timezone:e.target.value})}/></label>
         <label className="team-check"><input type="checkbox" checked={pref.allowResearch} disabled={!canEdit} onChange={e=>change({allowResearch:e.target.checked})}/>{t('允许在既有权限内主动研究')}</label>
-        <label className="team-check"><input type="checkbox" checked={pref.allowRoutineExecution} disabled={!canEdit} onChange={e=>change({allowRoutineExecution:e.target.checked})}/>{t('允许低风险例行任务按现有权限执行')}</label>
+        <label className="team-check"><input type="checkbox" checked={pref.allowRoutineExecution} disabled={!canEdit} onChange={e=>change({allowRoutineExecution:e.target.checked})}/>{t('允许主动准备可撤销成果，无需逐项确认')}</label>
+        <label className="team-field"><span>{t('每日主动 Work 任务上限')}</span><input type="number" min="1" max="10" value={pref.maxWorkPerDay??3} disabled={!canEdit} onChange={e=>change({maxWorkPerDay:Math.min(10,Math.max(1,Number(e.target.value)||3))})}/></label><p className="hint">{t('推测的需求也可先在独立工作区制作文件；原目录不会自动更新。执行过程可中断，已记录修改可在会话中回退。对外发送、发布、付款等另需确认。Work 使用普通任务预算，不计入上方的管家理解预算。')}</p>
       </section>
     </div>
     </details>
     {error&&<p role="alert" className="proactive-error">{error}</p>}{snapshot.error&&<p role="alert" className="proactive-error">{snapshot.error}</p>}
-    {!!jobs.length&&<section className="proactive-jobs" aria-label={t('最近任务')}><h3>{t('最近任务')}</h3>{jobs.map(job=><div key={job.id} className="proactive-job"><span>{t(job.kind==='analyze'?'分析目标':job.kind==='research'?'研究目标':'生成简报')}</span><strong>{t(job.status==='queued'?'已排队，等待执行电脑':job.status==='running'?'执行中':job.status==='completed'?'已完成':'失败')}</strong>{job.error&&<small role="alert">{job.error}</small>}</div>)}</section>}
+    {!!jobs.length&&<section className="proactive-jobs" aria-label={t('最近任务')}><h3>{t('最近任务')}</h3>{jobs.map(job=><div key={job.id} className="proactive-job"><span>{t(job.kind==='analyze'?'分析目标':job.kind==='research'?'研究目标':job.kind==='work'?'Work 执行':'生成简报')}</span><strong>{t(job.status==='queued'?'已排队，等待执行电脑':job.status==='running'?'执行中':job.status==='waiting'?'需要处理':job.status==='completed'?'已完成':'失败')}</strong>{job.error&&<small role="alert">{job.error}</small>}
+      {job.summary&&<p>{job.summary}</p>}
+      {job.status==='failed'&&job.kind!=='work'&&<button className="btn sm" disabled={working||inactive} onClick={()=>void act({kind:'retry-job',jobId:job.id})}><Icon name="retry"/>{t('重试')}</button>}
+      {job.kind==='work'&&job.conversationId&&<div className="proactive-work-controls">{result({kind:'conversation',id:job.conversationId})}
+        {job.status==='running'?<button className="btn sm" disabled={working||inactive} onClick={()=>void act({kind:'work-command',jobId:job.id,command:'pause'})}><Icon name="pause"/>{t('暂停任务')}</button>:job.status!=='completed'&&<button className="btn sm" disabled={working||inactive} onClick={()=>void act({kind:'work-command',jobId:job.id,command:'resume'})}><Icon name="play"/>{t('继续任务')}</button>}
+        <details className="proactive-detail"><summary>{t('补充要求与查看说明')}</summary><p>{t('补充要求会进入原 Work 会话，保留上下文。敏感操作仍须在执行设备确认。产物和完整记录完成同步后可在会话中查看。')}</p><label className="team-field"><span>{t('给执行任务补充要求')}</span><textarea value={workInputs[job.id]??''} onChange={e=>setWorkInputs(values=>({...values,[job.id]:e.target.value}))}/></label><button className="btn" disabled={working||inactive||!workInputs[job.id]?.trim()} onClick={()=>void act({kind:'work-command',jobId:job.id,command:'message',text:workInputs[job.id]}).then(ok=>{if(ok)setWorkInputs(values=>({...values,[job.id]:''}));})}><Icon name="enter"/>{t('发送补充')}</button></details>
+      </div>}
+    </div>)}</section>}
     <div className="proactive-section-head"><h3>{t('待核对的目标')}</h3><div className="team-actions"><button className="btn sm" disabled={working||snapshot.busy||inactive||!controller} onClick={()=>void act({kind:'analyze-now'})}>{t('现在分析')}</button><button className="btn sm ghost" disabled={working||!controller} onClick={()=>void act({kind:'refresh'})}>{t('刷新')}</button></div></div>
     {goals.length?goals.map(goal=><article className="proactive-card proactive-goal" key={goal.id}>
       <div className="proactive-card-top"><h4>{goal.title}</h4><span>{t(goal.status==='proposed'?'待你确认':goal.status==='confirmed'?'已确认':'已纠正')}</span></div>
@@ -149,6 +166,7 @@ export default function ProactiveButlerPanel({settings,onSettings,controller,onO
         {goal.status==='proposed'&&<button className="btn" disabled={working||!controller} onClick={()=>void act({kind:'review-goal',goalId:goal.id,decision:'confirm'})}>{t('是我的需求')}</button>}
         <button className="btn ghost" disabled={working||!controller} onClick={()=>void act({kind:'feedback',targetKind:'goal',targetId:goal.id,rating:'not-my-need'})}>{t('不是我的需求')}</button>
         <button className="btn ghost" disabled={working||inactive||!controller} onClick={()=>void act({kind:'run-research',goalId:goal.id})}>{t('继续研究')}</button>
+        {goal.status!=='proposed'&&<button className="btn primary" disabled={working||inactive||!controller} onClick={()=>void act({kind:'run-work',goalId:goal.id})}><Icon name="play"/>{t('执行这个需求')}</button>}
       </div>
       <details className="proactive-detail"><summary>{t('为什么这样判断 · 纠正目标')}</summary>
         <p>{t('判断依据：')}{goal.hypothesis}</p><p>{t('把握程度：')}{t(goal.confidence==='high'?'较有把握':goal.confidence==='medium'?'部分依据':'线索较弱')}</p>
@@ -172,11 +190,25 @@ export default function ProactiveButlerPanel({settings,onSettings,controller,onO
         <div className="proactive-primary-actions"><button className="btn" disabled={working||!controller} onClick={()=>void adoptSkill(proposal.id)}>{t('采用方法')}</button><button className="btn ghost" disabled={working||!controller} onClick={()=>void act({kind:'review-skill',proposalId:proposal.id,decision:'dismiss'})}>{t('忽略')}</button></div>{feedback('skill',proposal.id)}</article>)}
     </details>
     <details className="proactive-detail proactive-transparency"><summary>{t('管家做了什么 · 行动记录')}</summary>
-      <p>{t('计划、完成、失败和受阻分别记录。后台只做需求理解与公开研究；财务、消息发送和商业谈判需要另外的具体授权。')}</p>
+      <p>{t('计划、完成、失败和受阻分别记录。需求理解和研究可交给 Work 继续执行；Work 沿用现有工具、上下文、预算和审批。财务、消息发送和商业谈判需要另外的具体授权。')}</p>
       {[...(snapshot.brain.audit??[])].reverse().slice(0,80).map(entry=><article key={entry.id} className="proactive-audit"><div><strong>{entry.title}</strong><span>{t(entry.status==='planned'?'计划 / 已发起':entry.status==='completed'?'已完成':entry.status==='blocked'?'待授权':'失败')}</span></div><p>{entry.detail}</p><small>{new Date(entry.at).toLocaleString()}{entry.model?' · '+entry.model:''}</small></article>)}
       {snapshot.brain.goals.filter(goal=>goal.status==='dismissed').map(goal=><p key={goal.id}>{t('已排除的需求：')}{goal.title}</p>)}
     </details>
     {snapshot.sources.share?.available&&<form className="proactive-link" onSubmit={e=>{e.preventDefault();if(link.trim())void act({kind:'import-link',url:link.trim()}).then(ok=>{if(ok)setLink('');});}}><label className="team-field"><span>{t('主动分享链接作为线索')}</span><input type="url" value={link} onChange={e=>setLink(e.target.value)} placeholder="https://"/></label><button className="btn sm" disabled={!link.trim()||working||inactive}><Icon name="link"/>{t('加入线索')}</button></form>}
+  </section>;
+}
+
+function ButlerPrivacySettings({policy,background,working,onSave,onBackground}:{policy:ButlerPrivacyPolicy;background:ButlerRuntimeSnapshot['background'];working:boolean;onSave:(policy:ButlerPrivacyPolicy)=>Promise<unknown>;onBackground:()=>Promise<unknown>}) {
+  const t=useT(),[draft,setDraft]=React.useState(policy),[excluded,setExcluded]=React.useState(policy.excludedTerms.join('\n')),[encrypted,setEncrypted]=React.useState(policy.encryptedOnlyTerms.join('\n'));
+  const signature=JSON.stringify(policy);
+  React.useEffect(()=>{setDraft(policy);setExcluded(policy.excludedTerms.join('\n'));setEncrypted(policy.encryptedOnlyTerms.join('\n'));},[signature]);
+  const parse=(text:string)=>text.split(/[\n,，]/).map(s=>s.trim()).filter(Boolean).slice(0,40);
+  return <section className="proactive-card"><h3>{t('敏感内容与后台运行')}</h3><p>{t('这些规则只保存在当前采集设备。密码、密钥和可编辑输入始终排除；仅加密保存的内容不会进入模型或账号脑。')}</p>
+    <label className="team-field"><span>{t('不得接触的关键词（每行一个）')}</span><textarea value={excluded} onChange={e=>setExcluded(e.target.value)}/></label>
+    <label className="team-field"><span>{t('仅在本机加密保存的关键词（每行一个）')}</span><textarea value={encrypted} onChange={e=>setEncrypted(e.target.value)}/></label>
+    {(Object.keys(DEFAULT_BUTLER_PRIVACY.categories) as ButlerSensitiveCategory[]).map(category=><label className="team-field" key={category}><span>{t(category==='contact'?'联系方式':category==='financial'?'账户与财务敏感信息':'病历与医疗信息')}</span><select value={draft.categories[category]} onChange={e=>setDraft({...draft,categories:{...draft.categories,[category]:e.target.value as ButlerSensitiveMode}})}><option value="exclude">{t('不采集，不保存')}</option><option value="encrypt-only">{t('仅本机加密，不交给模型')}</option><option value="redact">{t('遮蔽匹配内容后理解')}</option></select></label>)}
+    <p className="hint">{policy.note}</p><p className="hint">{t('规则基于关键词与格式匹配，不能识别所有敏感内容。保存后会停止当前管家任务并清除旧线索，按新规则重新提取；已有文件和会话保留。')}</p><button className="btn" disabled={working} onClick={()=>void onSave({...draft,excludedTerms:parse(excluded),encryptedOnlyTerms:parse(encrypted)})}><Icon name="shield"/>{t('保存敏感规则')}</button>
+    {background?.supported&&<><p>{t(background.unrestricted?'系统已允许不受电池优化限制':'后台可能受电池优化限制')}</p><p className="hint">{background.note}</p><button className="btn" disabled={working} onClick={()=>void onBackground()}>{t('设置后台运行权限')}</button></>}
   </section>;
 }
 

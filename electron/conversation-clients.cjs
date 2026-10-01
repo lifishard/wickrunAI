@@ -219,13 +219,22 @@ function createConversationClients({ userData, getSettings, store, openExternal,
     if(prior){if(prior.result)return prior.result;throw Error('此调用已派发但结果未确认，请先核实，不会重复执行。');}
     const images=normalizeImages(args.images).map(image=>image.dataUrl);
     if(active.has(args.runId))throw Error('当前会话正在执行');
-    const settings=getSettings(), work=record.config.toolsEnabled===true;
+    const settings=getSettings(), autonomous=selection.butlerAutonomous===true;
+    // Claude's CLI has no enforceable file/command sandbox here; automatic
+    // Butler runs use its tool-free answer mode and surface a draft in chat.
+    const readOnlyFallback=autonomous&&selection.kind==='claude';
+    const work=record.config.toolsEnabled===true&&!readOnlyFallback;
     // 逐项修改前确认：只有 Grok 能做到——它每处改动都带完整内容来申请，批准前能算出差异给用户看。
     // 其他客户端自己直接写文件，拦不下来，只能拒绝进入工作模式（界面会先弹说明）
     const review=work && settings.tools?.reviewCodeChanges === true;
+    if(review&&autonomous)throw Error('已开启逐项修改前确认；自动 Work 不能跳过这项设置，请改用手动执行。');
     if(review && selection.kind!=='grok')throw Error(reviewRefusal(selection.kind));
     const reviewed=new Map(), reviewNotes=[];
     let cwd=scratch;
+    if(autonomous){
+      const isolated=deps.workspaceForRun?.(record);
+      if(!isolated||!args.cwd||fs.realpathSync(isolated)!==fs.realpathSync(args.cwd))throw Error('自动 Work 必须使用已创建的独立工作区。');
+    }
     if(work && args.cwd){
       const requested=fs.realpathSync(args.cwd);
       const isolated=deps.workspaceForRun?.(record);
@@ -246,8 +255,14 @@ function createConversationClients({ userData, getSettings, store, openExternal,
     const onApproval=event=>{
       if(!work || controller.signal.aborted)return Promise.resolve('decline');
       let scopedPaths, preview;
+      if(autonomous&&selection.kind==='codex'){
+        // The workspace sandbox permits ordinary edits. Requests for wider
+        // authority are declined rather than routed to an approval card.
+        try{store.saveJob(args.runId,'rejected-'+randomUUID(),{at:Date.now(),requestId:args.requestId,event,status:'rejected',reason:'自动 Work 不批准额外的本机权限'});}catch{controller.abort();}
+        return Promise.resolve('decline');
+      }
       if(acpKind(selection.kind)){
-        const scope=validateWorkPermission(event,cwd,selection.kind,scratchDir);
+        const scope=autonomous?validateKimiWorkPermission(event,cwd,workMessages(selection.kind)):validateWorkPermission(event,cwd,selection.kind,scratchDir);
         const reject=message=>{
           if(review)reviewNotes.push(message);
           try { store.saveJob(args.runId,'rejected-'+randomUUID(),{at:Date.now(),requestId:args.requestId,event,status:'rejected',reason:message}); }
@@ -274,6 +289,13 @@ function createConversationClients({ userData, getSettings, store, openExternal,
         if(scope.approvalClass)event={...event,approvalClass:scope.approvalClass};
         if(scope.requiresExplicitApproval)event={...event,requiresExplicitApproval:true,execution:{cwd,scope:'host'}};
       }
+      if(autonomous&&acpKind(selection.kind)){
+        // ACP permission requests are granted once, only for verified edits in
+        // this isolated directory. Execute/fetch/unknown operations are denied.
+        try{store.saveJob(args.runId,'automatic-'+randomUUID(),{at:Date.now(),requestId:args.requestId,event,scopedPaths,approved:true});}
+        catch{controller.abort();return Promise.resolve('decline');}
+        return Promise.resolve('accept');
+      }
       return new Promise(resolve=>{
         const id=randomUUID();
         const finish=approved=>{if(!approvals.has(id))return;approvals.delete(id);clearTimeout(timer);controller.signal.removeEventListener('abort',stop);
@@ -295,15 +317,15 @@ function createConversationClients({ userData, getSettings, store, openExternal,
       if(selection.kind==='codex'){
         job.client=codex(binary,{turnTimeoutMs:Math.min(3600000,Math.max(10000,(record.config.runtime?.maxMinutes || 30)*60000)),...(brainSession?{brain:codexBrain(brainSession)}:{})});
         let partial='',lastSave=0;
-        const raw=await job.client.run({prompt:args.prompt,images,model:selection.model==='default'?undefined:selection.model,effort:selection.effort||undefined,cwd,sandbox:work?'workspaceWrite':'readOnly',signal:controller.signal,onApproval,isolateTools:true,
+        const raw=await job.client.run({prompt:args.prompt,images,model:selection.model==='default'?undefined:selection.model,effort:selection.effort||undefined,cwd,sandbox:work?'workspaceWrite':'readOnly',signal:controller.signal,onApproval,isolateTools:true,butlerAutonomous:autonomous,
           onEvent:event=>{if(event.type==='thread/ready')store.saveJob(args.runId,jobId,{status:'running',threadId:event.threadId,at:Date.now(),kind:selection.kind,cwd});
             if(event.type==='item/agentMessage/delta' && typeof event.delta==='string'){partial=(partial+event.delta).slice(-2000000);if(Date.now()-lastSave>500){store.saveJob(args.runId,jobId,{status:'running',partial,at:Date.now(),kind:selection.kind,cwd});lastSave=Date.now();}notify({type:'delta',requestId:args.requestId,text:event.delta});}}});
         result={status:raw.status,text:raw.text,error:raw.error,sessionId:raw.threadId};
       }else if(selection.kind==='claude'){
         // 大脑路由的模型和思考强度由代理会话决定，不再用 --model / --effort 叠一层
         const extra=brainSession?'':[selection.model==='default'?'':`--model ${selection.model}`,selection.effort?`--effort ${selection.effort}`:''].filter(Boolean).join(' ');
-        const raw=await (deps.claudeCode || claudeCode)({prompt:args.prompt,images,cwd},{workspaceRoots:[cwd],claudeBin:binary,claudeExtraArgs:extra,...(brainSession?{brainEnv:claudeBrainEnv(brainSession)}:brain.source==='subscription'?{subscription:true}:{}),claudeTimeoutMs:Math.min(3600000,(record.config.runtime?.maxMinutes || 10)*60000),signal:controller.signal,chatOnly:!work});
-        result={status:raw.uncertain?'unknown':raw.ok?'completed':'failed',text:raw.content||'',error:raw.error,sessionId:raw.execution?.sessionId};
+        const raw=await (deps.claudeCode || claudeCode)({prompt:readOnlyFallback?'本次自动任务仅可给出只读草稿，不能创建或修改文件。请在回复中明确这一限制。\n\n'+args.prompt:args.prompt,images,cwd},{workspaceRoots:[cwd],claudeBin:binary,claudeExtraArgs:extra,...(brainSession?{brainEnv:claudeBrainEnv(brainSession)}:brain.source==='subscription'?{subscription:true}:{}),claudeTimeoutMs:Math.min(3600000,(record.config.runtime?.maxMinutes || 10)*60000),signal:controller.signal,chatOnly:!work});
+        result={status:raw.uncertain?'unknown':raw.ok?'completed':'failed',text:readOnlyFallback?'Claude 自动任务仅提供只读草稿；当前客户端未生成文件。\n'+(raw.content||''):raw.content||'',error:raw.error,sessionId:raw.execution?.sessionId};
       }else{
         job.client=acp(binary, selection.kind, cwd, scratchDir ? {env:{...(deps.env || process.env),TEMP:scratchDir,TMP:scratchDir,TMPDIR:scratchDir}} : {});
         let partial='',reasoning='',lastSave=0;

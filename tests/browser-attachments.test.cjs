@@ -22,7 +22,7 @@ test('selection size and unsupported formats fail before reading any content', a
   const file = (name, size) => ({ name, size, type: '', text: async () => { reads++; return 'unexpected'; } });
   await assert.rejects(readBrowserAttachments([file('large.txt', ATTACHMENT_LIMITS.textBytes + 1)], 'file'), /25MB/);
   await assert.rejects(readBrowserAttachments(Array.from({ length: 5 }, () => file('part.txt', ATTACHMENT_LIMITS.textBytes)), 'file'), /100MB/);
-  await assert.rejects(readBrowserAttachments([file('ok.txt', 1), file('document.pdf', 1)], 'file'), /PDF/);
+  await assert.rejects(readBrowserAttachments([file('ok.txt', 1), file('program.exe', 1)], 'file'), /支持的文本/);
   assert.equal(reads, 0);
 });
 

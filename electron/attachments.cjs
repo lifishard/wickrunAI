@@ -4,6 +4,7 @@
  */
 const fs = require('node:fs');
 const path = require('node:path');
+const { extractDocument } = require('./attachment-documents.cjs');
 
 const TEXT_EXT = new Set([
   '.ics', '.ical', '.txt', '.md', '.markdown', '.rst', '.log', '.csv', '.tsv', '.json', '.jsonl',
@@ -48,7 +49,7 @@ function validateAttachmentBatch(totalBytes) {
   return `本次附件合计 ${(totalBytes / MIB).toFixed(1)}MB，超过 ${limitLabel(MAX_BATCH)} 总上限。请分批添加。`;
 }
 
-function readOne(p) {
+async function readOne(p) {
   const name = path.basename(p);
   const ext = path.extname(p).toLowerCase();
   let size = 0;
@@ -77,6 +78,13 @@ function readOne(p) {
   const looksText = TEXT_EXT.has(ext) || TEXT_EXT.has(name.toLowerCase()) || ext === '';
   const buf = fs.readFileSync(p);
 
+  try {
+    const document = await extractDocument(name, buf);
+    if (document !== null) return { kind: 'text', name, mime: 'text/plain', size, text: document };
+  } catch (error) {
+    return { error: `${name} 无法导入：${error.message}` };
+  }
+
   // 出现 NUL 字节基本就是二进制，别硬塞给模型
   if (!looksText || buf.includes(0)) {
     return { error: `${name} 不是文本也不是支持的图片格式，带不进对话。` };
@@ -91,7 +99,7 @@ function readOne(p) {
   };
 }
 
-function readFiles(paths) {
+async function readFiles(paths) {
   const out = [];
   let batchBytes = 0;
   for (const p of paths || []) {
@@ -108,7 +116,7 @@ function readFiles(paths) {
       });
       continue;
     }
-    const r = readOne(p);
+    const r = await readOne(p);
     out.push(Object.assign({ path: p }, r));
     if (!r.error) batchBytes += size;
   }

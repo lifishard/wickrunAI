@@ -93,6 +93,8 @@ import { MemoryCandidateCard } from './components/ProjectMemoryPanel';
 import { teamRuntime } from './lib/team-runtime';
 import { butlerRuntime } from './lib/butler-runtime';
 import { butlerClock } from './lib/butler-policy';
+import { butlerWorkConfig } from './lib/butler-work';
+import { projectButlerBrainForSync, type ButlerJob, type ButlerWorkCommand } from './lib/proactive-butler';
 import { conversationQueue, nextQueuedIndex, type QueuedInput } from './lib/run-queue';
 import { teamNotifications } from './lib/team-notify';
 import { I18nProvider, LOCALES, setActiveLocale, translate, type Locale } from './lib/i18n';
@@ -108,7 +110,7 @@ import {
 } from './lib/schedule';
 import AnswerBlock from './components/AnswerBlock';
 import ConversationControls from './components/ConversationControls';
-import {validateAttachmentSize,validateAttachmentBatch} from './lib/attachment-limits';
+import {validateAttachmentBatch} from './lib/attachment-limits';
 import ActivityPanel, { hasActivity } from './components/ActivityPanel';
 import SelectionActions from './components/SelectionActions';
 import Composer from './components/Composer';
@@ -431,7 +433,7 @@ export default function App() {
   React.useEffect(()=>{
     if(!settings||!bootReady)return;
     butlerRuntime.configure({settings:()=>settingsRef.current!,conversations:()=>quitSnapshot.current.conversations,skills:()=>quitSnapshot.current.skills,
-      onSettings:value=>{settingsRef.current=value;setSettings(value);},onSkills:setSkills});
+      onSettings:value=>{settingsRef.current=value;setSettings(value);},onSkills:setSkills,startWork:startButlerWork,controlWork:controlButlerWork,workState:butlerWorkState});
     void butlerRuntime.tick();
   },[settings,bootReady]);
   React.useEffect(()=>{
@@ -753,13 +755,20 @@ export default function App() {
     toast.show(t('已删除手动模型 {id}', { id }));
   }
 
-  function addPastedImage(dataUrl: string, name: string, mime: string, size: number) {
-    const error=validateAttachmentSize('image',size,name)||validateAttachmentBatch(attachments.reduce((n,a)=>n+a.size,0)+size);
-    if(error){toast.show(error,5000);return;}
-    setAttachments((prev) => [
-      ...prev,
-      { id: uid('a'), kind: 'image', name, mime, size, dataUrl },
-    ]);
+  async function addBrowserFiles(files: File[]) {
+    if (!files.length) return;
+    const batchError=validateAttachmentBatch(attachments.reduce((sum,item)=>sum+item.size,0)+files.reduce((sum,file)=>sum+file.size,0));
+    if(batchError){toast.show(batchError,5000);return;}
+    let importBrowserFile:typeof import('./lib/attachment-import').importBrowserFile;
+    try{({importBrowserFile}=await import('./lib/attachment-import'));}
+    catch(error){toast.show(`附件读取组件未能打开：${error instanceof Error?error.message:String(error)}`,5000);return;}
+    const added:Attachment[]=[],errors:string[]=[];
+    for(const file of files){
+      try{added.push({id:uid('a'),...await importBrowserFile(file)});}
+      catch(error){errors.push(`${file.name}: ${error instanceof Error?error.message:String(error)}`);}
+    }
+    if(added.length)setAttachments(previous=>[...previous,...added]);
+    if(errors.length)toast.show(errors[0],5000);
   }
 
   function setConfig(patch: Partial<GenerationConfig>) {
@@ -915,6 +924,51 @@ export default function App() {
       const waiting=blockedOnRoots.current.get(c.id);
       return {id:c.id,title:c.title||'新对话',mode:c.config.toolsEnabled?'work':'chat',status:c.workspaceError?'blocked':waiting?'waiting_workspace':runningRef.current.has(c.id)?'running':queueRef.current.some(q=>q.conversationId===c.id)?'queued':state?.status??(last?'completed':'draft'),isolated:Boolean(c.workspace),roots:c.workspace?[c.workspace.isolatedRoot]:claimedRoots(c.id),blockedBy:waiting?holdersOf(c.id,waiting):[],progress:(last?.notice||last?.content||'').slice(-1600)};
     });
+  }
+  async function startButlerWork(job:ButlerJob,prompt:string):Promise<string>{
+    const current=settingsRef.current;if(!current?.butler?.proactive)throw Error('管家设置不可用。');
+    if(!desktop())throw Error('请在同账号的执行电脑处理后台 Work。');
+    const input=parseConversationRequest({mode:'work',title:t('管家 · ')+(butlerRuntime.getSnapshot().brain.goals.find(g=>g.id===job.goalId)?.title??'执行需求').slice(0,65),prompt,start:false,request_key:job.id});
+    const result=await createRequestedConversation(input,job.id,null,false);
+    if(!result.ok)throw Error(result.error??'Work 会话创建失败。');
+    const id=JSON.parse(result.content).id as string;
+    const existing=conversationsRef.current.find(c=>c.id===id);if(!existing)throw Error('Work 会话未保存。');
+    if(existing.messages.length||queueRef.current.some(q=>q.conversationId===id))return id;
+    if(job.automatic&&!existing.workspace)throw Error('主动执行需要独立工作区；请先在桌面设置可复制的工作目录。');
+    const selected=butlerWorkConfig(current,current.butler.proactive,{autonomous:job.automatic===true});
+    flushSync(()=>setConversations(all=>all.map(c=>c.id===id?{...c,...selected}:c)));
+    await saveConversationsNow(conversationsRef.current);
+    if(!settingsRef.current?.butler?.proactive?.enabled||settingsRef.current.butler.proactive.paused)throw Error('管家已暂停，Work 草稿已保存。');
+    setQueue(all=>all.some(q=>q.conversationId===id)?all:[...all,{text:prompt,attachments:[],quotes:[],quoteOnly:false,conversationId:id,toolsEnabled:true,preserveComposer:true}]);
+    return id;
+  }
+  async function controlButlerWork(conversationId:string,command:ButlerWorkCommand):Promise<void>{
+    const conv=conversationsRef.current.find(c=>c.id===conversationId);if(!conv)return;
+    if(command.kind==='pause'){
+      abortRun(conversationId);setQueue(all=>all.filter(q=>q.conversationId!==conversationId));return;
+    }
+    if(command.kind==='message'){
+      if(!command.text||conv.coordinationMessages?.some(m=>m.id===command.id))return;
+      flushSync(()=>updateConv(conversationId,c=>({...c,coordinationMessages:[...(c.coordinationMessages??[]),{id:command.id,fromId:'butler-user',fromTitle:'用户通过管家补充',text:command.text!,at:command.createdAt}]})));
+      await saveConversationsNow(conversationsRef.current);return;
+    }
+    if(runningRef.current.has(conversationId)||startingRef.current.has(conversationId))return;
+    const answer=[...conv.messages].reverse().find(m=>m.role==='assistant');
+    const question=[...conv.messages].reverse().find(m=>m.role==='user'&&!m.contextKind)?.content??conv.draft;
+    if(!question)return;
+    if(answer?.runState){await sendRef.current(question,undefined,answer.runState,{text:question,attachments:[],quotes:[],quoteOnly:false,conversationId,toolsEnabled:true,preserveComposer:true});}
+    else if(!conv.messages.length&&!queueRef.current.some(q=>q.conversationId===conversationId))setQueue(all=>[...all,{text:question,attachments:[],quotes:[],quoteOnly:false,conversationId,toolsEnabled:true,preserveComposer:true}]);
+  }
+  function butlerWorkState(conversationId:string):{status:ButlerJob['status'];summary?:string;error?:string}{
+    const conv=conversationsRef.current.find(c=>c.id===conversationId);if(!conv)return {status:'waiting',error:'执行会话暂未同步到此电脑。'};
+    if(conv.workspaceError)return {status:'waiting',error:conv.workspaceError};
+    const last=[...conv.messages].reverse().find(m=>m.role==='assistant'),state=last?.runState;
+    if(state?.waitKind==='approval'||state?.waitKind==='question')return {status:'waiting',summary:state.reason??'请在执行电脑确认待处理操作。'};
+    if(runningRef.current.has(conversationId)||startingRef.current.has(conversationId)||queueRef.current.some(q=>q.conversationId===conversationId))return {status:'running',summary:last?.content?.slice(-800)};
+    if(last?.error)return {status:'failed',error:last.error,summary:last.content?.slice(-800)};
+    if(state&&state.status!=='completed')return {status:'waiting',summary:state.reason??'任务已暂停，执行记录已保存。'};
+    if(last&&!last.pending)return {status:'completed',summary:last.content?.slice(-800)};
+    return {status:'waiting',summary:'Work 草稿已保存，尚未开始。'};
   }
   async function coordinateTasks(sourceId:string,input:Record<string,unknown>,key:string):Promise<ToolResult>{
     const source=conversationsRef.current.find(c=>c.id===sourceId);if(!source)throw Error('来源会话不存在。');
@@ -1448,6 +1502,8 @@ export default function App() {
         }).catch(error=>{startingRef.current.delete(convId);reportSaveError(error);});
         return true;
       };
+      const autonomousButler=butlerRuntime.getSnapshot().brain.jobs?.some(job=>job.conversationId===convId&&job.automatic)===true;
+      if(autonomousButler&&!conv.workspace)throw Error('主动管家任务缺少独立工作区，已阻止执行。');
       const handle = runConnectedAgent({
         requestId,
         createConversation: (input,key) => createRequestedConversation(input,key,convId),
@@ -1465,10 +1521,11 @@ export default function App() {
           return {profile:structuredClone(workerProfile),apiKey:workerKey || '',models:[...(settings.cachedModels[profileId] || []),...(settings.customModels[profileId] || [])]};
         },
         history,
+        sourceTexts:butlerRuntime.getSnapshot().brain.jobs?.some(job=>job.conversationId===convId)?[{id:'butler-brain',text:JSON.stringify(projectButlerBrainForSync(butlerRuntime.getSnapshot().brain))}]:undefined,
         autoRetry: settings.autoRetry ?? 2,
         profileName: profile.name,
         // 传函数而不是快照：中途拿到的授权要对后面的工具调用立刻生效
-        toolCtx: () => conv.workspace ? {...toolContextOf(settings,conv.projectId??null),conversationId:conv.id,workspaceRoots:[conv.workspace.isolatedRoot],grants:{extraRoots:[],admin:false,screen:false}} : toolContextOf(settings, conv.projectId ?? null, grantsRef.current),
+        toolCtx: () => conv.workspace ? {...toolContextOf(settings,conv.projectId??null),...(autonomousButler?{reviewCodeChanges:false,postReviewCodeChanges:true}:{}),conversationId:conv.id,workspaceRoots:[conv.workspace.isolatedRoot],grants:{extraRoots:[],admin:false,screen:false}} : toolContextOf(settings, conv.projectId ?? null, grantsRef.current),
         effortMappings: settings.effortMappings,
         resume: resumeFrom,
         compactBeforeRun,
@@ -2150,7 +2207,7 @@ export default function App() {
       attachments={attachments}
       onAddAttachments={(m) => void addAttachments(m)}
       onAddMedia={() => setMediaOpen(true)}
-      onPasteImage={addPastedImage}
+      onPasteFiles={files=>void addBrowserFiles(files)}
       onRemoveAttachment={(id) => setAttachments((p) => p.filter((a) => a.id !== id))}
       onPickWorkspace={() => void pickWorkspace()}
       workspaceCount={settings.tools.workspaceRoots.length}
@@ -2209,7 +2266,8 @@ export default function App() {
 
   return (
     <I18nProvider locale={settings.locale ?? 'zh-Hans'}>
-    <div className="app">
+    <div className="app" onDragOver={event=>{if(Array.from(event.dataTransfer.types).includes('Files'))event.preventDefault();}}
+      onDrop={event=>{if(!event.dataTransfer.files.length)return;event.preventDefault();event.stopPropagation();void addBrowserFiles(Array.from(event.dataTransfer.files));}}>
       {!sidebarHidden ? (
       <aside
         className={`sidebar${sidebarOpen ? ' open' : ''}`}

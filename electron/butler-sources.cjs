@@ -5,7 +5,8 @@ const path=require('node:path');
 const http=require('node:http');
 const crypto=require('node:crypto');
 const os=require('node:os');
-const {desktopSourceStatus,readForegroundText,cleanAllowlist}=require('./butler-desktop-source.cjs');
+const {desktopSourceStatus,readForegroundText,cleanAllowlist,listSourceApps}=require('./butler-desktop-source.cjs');
+const {normalizePolicy,privacyDecision,redactByPolicy,encryptedStorage}=require('./butler-privacy.cjs');
 
 const MAX_AGE=24*60*60*1000,MAX_RECORDS=500,MAX_PENDING=100;
 const SOURCES=['browser','desktop','android','integration','share'];
@@ -108,7 +109,7 @@ function manifest(port,allowlist){return {manifest_version:3,name:'wickrunAI But
   permissions:[],host_permissions:[...allowlist.map(x=>`https://${x}/*`),`http://127.0.0.1:${port}/*`],
   background:{service_worker:'background.js'},content_scripts:allowlist.map(x=>({matches:[`https://${x}/*`],js:['content.js'],run_at:'document_idle',all_frames:false}))};}
 
-function createButlerSources({userData,openPath,desktopCapturer,platform=process.platform,env=process.env,readDesktop=readForegroundText,
+function createButlerSources({userData,openPath,safeStorage,desktopCapturer,platform=process.platform,env=process.env,readDesktop=readForegroundText,
   desktopStatus=desktopSourceStatus,now=()=>Date.now()}={}){
   if(typeof userData!=='string'||!userData)throw Error('userData is required');
   const dir=path.join(userData,'butler-local');fs.mkdirSync(dir,{recursive:true,mode:0o700});
@@ -117,28 +118,36 @@ function createButlerSources({userData,openPath,desktopCapturer,platform=process
   const config={consent:{browser:false,desktop:false,android:false,integration:false,share:false,...initial.consent},
     allowlist:{browser:domainAllowlist(initial.allowlist?.browser),desktop:cleanAllowlist(initial.allowlist?.desktop),
       integration:[],android:[],share:[]},port:Number.isInteger(initial.port)?initial.port:0,
+    denylist:{browser:domainAllowlist(initial.denylist?.browser),desktop:cleanAllowlist(initial.denylist?.desktop)},
+    privacy:normalizePolicy(initial.privacy),
     token:typeof initial.token==='string'&&initial.token.length>=32?initial.token:crypto.randomBytes(32).toString('hex')};
-  let raw=readJson(rawFile,[]);if(!Array.isArray(raw))raw=[];
-  const prune=()=>{raw=raw.filter(r=>r&&typeof r.at==='number'&&r.at>=now()-MAX_AGE).slice(-MAX_RECORDS);safeWrite(rawFile,raw);};
+  const vault=encryptedStorage(safeStorage);
+  const savedEnvelope=readJson(rawFile,[]);let lockedVault=savedEnvelope?.encrypted===true&&!vault.available();
+  let raw=vault.decode(savedEnvelope);if(!Array.isArray(raw))raw=[];
+  const prune=()=>{raw=raw.filter(r=>r&&typeof r.at==='number'&&r.at>=now()-MAX_AGE&&privacyDecision(`${r.title||''} ${r.text||''} ${r.pathHint||''}`,config.privacy)!=='exclude').slice(-MAX_RECORDS);
+    if(vault.available())safeWrite(rawFile,vault.encode(raw));else {raw=[];if(!lockedVault)safeWrite(rawFile,{version:1,encrypted:true,unavailable:true});}};
   prune();safeWrite(configFile,config);
-  let suspended=true,mode='local-topics',enabled={},server=null,closed=false,lastError='';
+  let suspended=true,mode='local-topics',enabled={},server=null,closed=false,lastError='',apps=[];
   const desktopCapability=desktopStatus({platform,env});
   const persist=()=>safeWrite(configFile,config);
   const status=()=>{
     const installed=fs.existsSync(path.join(extensionDir,'manifest.json'));
     const sources={
-      browser:{available:true,consented:config.consent.browser,allowlist:[...config.allowlist.browser],note:installed?'扩展已生成；更新范围后请在浏览器扩展页重新加载。':'需先设置域名并手动安装本地扩展。'},
-      desktop:{available:desktopCapability.available,consented:config.consent.desktop,allowlist:[...config.allowlist.desktop],note:lastError?`${desktopCapability.note} 最近读取失败：${lastError}`:desktopCapability.note},
+      browser:{available:vault.available(),consented:config.consent.browser,allowlist:[...config.allowlist.browser],denylist:[...config.denylist.browser],note:installed?'扩展已生成；更新范围后请在浏览器扩展页重新加载。':'需先设置域名并手动安装本地扩展。'},
+      desktop:{available:desktopCapability.available&&vault.available(),consented:config.consent.desktop,allowlist:[...config.allowlist.desktop],denylist:[...config.denylist.desktop],apps,note:lastError?`${desktopCapability.note} 最近读取失败：${lastError}`:desktopCapability.note},
       android:{available:false,consented:false,note:'Android 主动分享入口尚未接入此设备。'},
       integration:{available:false,consented:false,note:'未提供已连接应用的采集器。'},
-      share:{available:true,consented:config.consent.share,note:'仅解析用户提交的公开 HTTPS 链接；不读取网页正文或视频。'},
+      share:{available:vault.available(),consented:config.consent.share,note:'仅解析用户提交的公开 HTTPS 链接；不读取网页正文或视频。'},
     };
-    return {sources,deviceName:os.hostname()};
+    return {sources,deviceName:os.hostname(),privacy:{...config.privacy,encryptedStorage:vault.available(),note:vault.available()?'原始活动由系统密钥加密保存在本机；仅加密项目不会交给模型或账号脑。':'系统密钥不可用；外部活动采集已停用，不会退回明文保存。'}};
   };
   const accept=(event)=>{
+    if(!vault.available())return false;
+    const decision=privacyDecision(`${event.title||''} ${event.text||''} ${event.pathHint||''}`,config.privacy);
+    if(decision==='exclude')return false;
     const id=`${event.source}:${digest(JSON.stringify([event.source,event.url||event.processName||'',event.title||'',event.text||'',event.pathHint||'']))}`;
     if(raw.some(r=>r.id===id))return false;
-    raw.push({...event,id});prune();return true;
+    raw.push({...event,id,encryptedOnly:decision==='encrypt-only'});prune();return true;
   };
   const validOrigin=origin=>/^chrome-extension:\/\/[a-p]{32}$/.test(origin||'');
   async function ensureServer(){
@@ -154,7 +163,7 @@ function createButlerSources({userData,openPath,desktopCapturer,platform=process
       req.on('end',()=>{try{
         if(body.length>12000)throw Error('too large');
         const data=JSON.parse(body),url=publicUrl(data.url,{allowQuery:true});
-        if(!url||!config.allowlist.browser.includes(url.hostname)||BLOCKED_PATH.test(url.pathname)||
+        if(!url||!config.allowlist.browser.includes(url.hostname)||config.denylist.browser.includes(url.hostname)||BLOCKED_PATH.test(url.pathname)||
           [...url.searchParams.keys()].some(key=>/(?:token|key|password|secret|session|auth|code|state)/i.test(key))||
           typeof data.title!=='string'||typeof data.text!=='string'||!data.text.trim()||
           SECRET.test(data.text)||SECRET.test(data.title))throw Error('out of scope');
@@ -174,22 +183,24 @@ function createButlerSources({userData,openPath,desktopCapturer,platform=process
   function writeExtension(){
     if(!config.allowlist.browser.length)throw Error('先填写允许的完整域名');
     fs.mkdirSync(extensionDir,{recursive:true,mode:0o700});
-    fs.writeFileSync(path.join(extensionDir,'manifest.json'),JSON.stringify(manifest(config.port,config.allowlist.browser),null,2));
-    fs.writeFileSync(path.join(extensionDir,'background.js'),browserBackgroundScript(config.port,config.token,config.allowlist.browser));
+    const allowed=config.allowlist.browser.filter(host=>!config.denylist.browser.includes(host));
+    fs.writeFileSync(path.join(extensionDir,'manifest.json'),JSON.stringify(manifest(config.port,allowed),null,2));
+    fs.writeFileSync(path.join(extensionDir,'background.js'),browserBackgroundScript(config.port,config.token,allowed));
     fs.writeFileSync(path.join(extensionDir,'content.js'),browserContentScript());
     return extensionDir;
   }
   async function poll(){
-    if(sourceAllowed('desktop',config,suspended,enabled)){
-      try{const result=await readDesktop({allowlist:config.allowlist.desktop,platform,env});lastError='';
-        if(result?.text && config.allowlist.desktop.some(name=>name.toLowerCase()===String(result.processName).toLowerCase()) &&
+    if(vault.available()&&sourceAllowed('desktop',config,suspended,enabled)){
+      const allowed=config.allowlist.desktop.filter(name=>!config.denylist.desktop.some(denied=>denied.toLowerCase()===name.toLowerCase()));
+      try{const result=await readDesktop({allowlist:allowed,platform,env});lastError='';
+        if(result?.text && allowed.some(name=>name.toLowerCase()===String(result.processName).toLowerCase()) &&
           !SECRET.test(result.text) && !SECRET.test(result.title||''))accept({source:'desktop',at:now(),title:result.title,text:result.text.slice(0,8000),processName:result.processName});
       }catch(error){lastError=String(error instanceof Error?error.message:error).replace(/[\r\n]+/g,' ').slice(0,180);}
     }
-    const batch=raw.filter(r=>!r.ackedAt&&sourceAllowed(r.source,config,suspended,enabled)).slice(0,MAX_PENDING);
+    const batch=raw.filter(r=>!r.ackedAt&&!r.encryptedOnly&&privacyDecision(`${r.title||''} ${r.text||''} ${r.pathHint||''}`,config.privacy)==='redact'&&sourceAllowed(r.source,config,suspended,enabled)).slice(0,MAX_PENDING);
     const signals=signalsFor(batch);
     const contexts=mode==='redacted-context'?batch.map(r=>({id:r.id,source:r.source,sourceLabel:SOURCE_LABEL[r.source],observedAt:r.at,
-      text:redactExcerpt(`${r.title||''} ${r.text||''}`)})).filter(c=>c.text).slice(-20):[];
+      text:redactExcerpt(redactByPolicy(`${r.title||''} ${r.text||''}`,config.privacy))})).filter(c=>c.text).slice(-20):[];
     return {...status(),signals,recordIds:batch.map(r=>r.id),...(contexts.length?{contexts}:{})};
   }
   async function action(name,input={}){
@@ -197,24 +208,29 @@ function createButlerSources({userData,openPath,desktopCapturer,platform=process
     if(!['status','close'].includes(name))await ensureServer();
     switch(name){
       case 'status':await ensureServer();return status();
+      case 'list-source-apps':apps=await listSourceApps({platform});return status();
       case 'configure':case 'configure-source':{
         const source=input.source;if(!SOURCES.includes(source))throw Error('unknown source');
-        if(source==='browser')config.allowlist.browser=domainAllowlist(input.allowlist);
-        else if(source==='desktop')config.allowlist.desktop=cleanAllowlist(input.allowlist);
+        if(source==='browser'){config.allowlist.browser=domainAllowlist(input.allowlist);config.denylist.browser=domainAllowlist(input.denylist??config.denylist.browser);}
+        else if(source==='desktop'){config.allowlist.desktop=cleanAllowlist(input.allowlist);config.denylist.desktop=cleanAllowlist(input.denylist??config.denylist.desktop);}
         else if(source==='integration')throw Error('integration collector unavailable');
         else if((input.allowlist||[]).length)throw Error('source does not accept an allowlist');
-        if(source==='browser')raw=raw.filter(r=>r.source!=='browser'||(publicUrl(r.url,{allowQuery:true})&&config.allowlist.browser.includes(new URL(r.url).hostname)));
-        if(source==='desktop')raw=raw.filter(r=>r.source!=='desktop'||config.allowlist.desktop.some(name=>name.toLowerCase()===String(r.processName).toLowerCase()));
+        if(source==='browser')raw=raw.filter(r=>r.source!=='browser'||(publicUrl(r.url,{allowQuery:true})&&config.allowlist.browser.includes(new URL(r.url).hostname)&&!config.denylist.browser.includes(new URL(r.url).hostname)));
+        if(source==='desktop')raw=raw.filter(r=>r.source!=='desktop'||config.allowlist.desktop.some(name=>name.toLowerCase()===String(r.processName).toLowerCase())&&!config.denylist.desktop.some(name=>name.toLowerCase()===String(r.processName).toLowerCase()));
         if(['browser','desktop'].includes(source)){if(!config.allowlist[source].length)config.consent[source]=false;prune();}
         persist();if(source==='browser'&&fs.existsSync(extensionDir)&&config.allowlist.browser.length)writeExtension();return status();
       }
       case 'consent':case 'set-device-consent':{
         const source=input.source;if(!SOURCES.includes(source)||['android','integration'].includes(source))throw Error('source unavailable');
         if(input.consented&&['browser','desktop'].includes(source)&&!config.allowlist[source].length)throw Error('explicit allowlist required');
+        if(input.consented&&!vault.available())throw Error('系统加密存储不可用，无法开启采集。');
         config.consent[source]=input.consented===true;
-        if(!config.consent[source]){raw=raw.filter(r=>r.source!==source);prune();
+        if(!config.consent[source]){lockedVault=false;raw=raw.filter(r=>r.source!==source);prune();
           if(source==='browser'){config.token=crypto.randomBytes(32).toString('hex');if(fs.existsSync(extensionDir)&&config.allowlist.browser.length)writeExtension();}}
         persist();return status();
+      }
+      case 'configure-privacy':{
+        config.privacy=normalizePolicy(input.policy);lockedVault=false;prune();persist();return status();
       }
       case 'suspend':{
         suspended=input.suspended!==false;

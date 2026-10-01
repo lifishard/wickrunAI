@@ -52,6 +52,19 @@ test('conversation isolation disables external integrations and Chat command too
   terminal(f.send);assert.equal((await result).status,'completed');f.client.close();
 });
 
+test('autonomous Codex Work keeps file patches in its workspace sandbox but removes shell tools',async()=>{
+  const f=fixture({'config/read':(request,send)=>send({id:request.id,result:{config:{mcp_servers:{custom:{command:'fixture'}},plugins:{}}}})});
+  const pending=f.client.run({prompt:'Create a draft',sandbox:'workspaceWrite',isolateTools:true,butlerAutonomous:true});await ready();
+  const config=f.messages.find(m=>m.method==='thread/start').params.config;
+  const turn=f.messages.find(m=>m.method==='turn/start').params;
+  assert.equal(config['features.shell_tool'],false);assert.equal(config['features.unified_exec'],false);
+  assert.notEqual(config['features.apply_patch_freeform'],false);
+  assert.equal(config.mcp_servers.custom.enabled,false);
+  assert.deepEqual(turn.sandboxPolicy.writableRoots,[path.resolve('.')]);
+  assert.equal(turn.sandboxPolicy.networkAccess,false);
+  terminal(f.send);assert.equal((await pending).status,'completed');f.client.close();
+});
+
 test('conversation isolation fails before model dispatch if effective tool configuration cannot be verified',async()=>{
   const f=fixture();const result=await f.client.run({prompt:'Discuss only',isolateTools:true});assert.equal(result.status,'failed');
   assert.ok(!f.messages.some(m=>m.method==='turn/start'));f.client.close();

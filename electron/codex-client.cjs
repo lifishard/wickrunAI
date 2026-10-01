@@ -223,6 +223,7 @@ function createCodexClient({ binary, cwd, spawn = nativeSpawn, env = process.env
           isolatedConfig.mcp_servers=Object.fromEntries(Object.entries(effective.config.mcp_servers || {}).map(([name,value])=>[name,{...omitNull(value),enabled:false}]));
           isolatedConfig.plugins=Object.fromEntries(Object.entries(effective.config.plugins || {}).map(([name,value])=>[name,{...omitNull(value),enabled:false}]));
           if(sandbox==='readOnly')Object.assign(isolatedConfig,{'features.shell_tool':false,'features.unified_exec':false,'features.apply_patch_freeform':false});
+          else if(options.butlerAutonomous)Object.assign(isolatedConfig,{'features.shell_tool':false,'features.unified_exec':false});
         }
         const config = { cwd: project, modelProvider: providerId, approvalPolicy: 'untrusted', approvalsReviewer: 'user', sandbox: sandbox === 'readOnly' ? 'read-only' : 'workspace-write', ...(options.model ? { model: options.model } : {}),...(isolatedConfig?{config:isolatedConfig}:{}) };
         const thread = await request(state.threadId ? 'thread/resume' : 'thread/start', { ...config, ...(state.threadId ? { threadId: state.threadId } : {}) });
