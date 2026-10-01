@@ -8,7 +8,9 @@
 
 Open or closed, paid or free. Bring your own keys, choose whether to sync, and keep credentials out of shared content.
 
-[![Version](https://img.shields.io/badge/version-4.0.0-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
+[![Version](https://img.shields.io/badge/version-4.0.1-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
+
+[4.0.1 — 分层同步、加密与共享群聊](docs/releases/v4.0.1.md)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-lightgrey)](#install)
 [![CI](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml/badge.svg)](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml)
