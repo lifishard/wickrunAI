@@ -1,4 +1,7 @@
 import ArtifactImage from './ArtifactImage';
+import ArtifactMedia from './ArtifactMedia';
+import { formatBytes } from '../lib/format-bytes';
+import { uploadToCloud, type UploadProgress } from '../lib/cloud-media';
 import React from 'react';
 import { useT } from '../lib/i18n';
 import type { Artifact } from '../types';
@@ -27,12 +30,13 @@ const ICON: Record<string, string> = {
   text: '📄',
   code: '📄',
   other: '📄',
+  video: '🎬',
+  audio: '🎧',
+  image: '🖼',
+  binary: '📦',
 };
 
-function formatArtifactSize(size: number | undefined): string {
-  if (size === undefined) return '';
-  return size < 1024 ? `${size} B` : `${(size / 1024).toFixed(1)} KB`;
-}
+const formatArtifactSize = formatBytes;
 
 function artifactStatus(a: Artifact): { compact: string; full: string } {
   if (!a.path) return { compact: '对话内', full: '文件内容在对话中，可保存' };
@@ -45,6 +49,8 @@ function FileCard({ artifact: a, onOpen, onSaved }: { artifact: Artifact; onOpen
   const bridge = desktop();
   const [error, setError] = React.useState('');
   const [working, setWorking] = React.useState(false);
+  const [upload, setUpload] = React.useState<UploadProgress | null>(null);
+  const [uploaded, setUploaded] = React.useState(false);
   const action = async (fn: () => Promise<void>) => {
     setError(''); setWorking(true);
     try { await fn(); } catch (err) { setError(err instanceof Error ? err.message : String(err)); }
@@ -88,6 +94,9 @@ function FileCard({ artifact: a, onOpen, onSaved }: { artifact: Artifact; onOpen
           <button type="button" className="btn sm" disabled={working} onClick={() => void action(() => bridge.revealPath(a.path!))}>{t('在文件夹中显示')}</button>
         </> : null}
         {(bridge?.saveArtifact || a.text !== undefined) ? <button type="button" className="btn sm" disabled={working} onClick={() => void action(save)}>{a.path ? '另存为' : '保存文件'}</button> : null}
+        {a.path && bridge?.cloudMedia && ['video', 'audio', 'image', 'binary', 'pdf', 'docx', 'xlsx', 'other'].includes(a.type) ? <button type="button" className="btn sm" disabled={working || !!upload}
+          onClick={() => void action(async () => { setUploaded(false); setUpload({ sent: 0, total: a.size ?? 0 }); try { await uploadToCloud(a.path!, setUpload); setUploaded(true); } finally { setUpload(null); } })}>
+          {upload ? `上传中 ${upload.total ? Math.floor(upload.sent / upload.total * 100) : 0}%` : uploaded ? '已上传到云端' : '上传到云端'}</button> : null}
       </div>
       {error ? <div className="artifact-file-error" role="alert">{error}</div> : null}
     </div>
@@ -182,7 +191,7 @@ export default function ArtifactPanel(props: { artifact: Artifact; onClose: () =
       <div className="artifact-panel-body">
         {err ? <div className="picker-error">{err}</div> : null}
 
-        {a.size&&a.size>(editable?1024*1024:25*1024*1024) ? <p>文件已保存。较大文件请另存为，或使用默认程序打开。</p> : a.type==='image' && a.path ? <ArtifactImage path={a.path} name={a.name}/> : editable ? <ArtifactTextEditor key={a.path} path={a.path!} markdown={a.type === 'markdown'} busy={props.busy} onRequestEdit={props.onRequestEdit} onPropose={props.onPropose} /> : documentPreview ? <React.Suspense fallback={<div className="empty">正在加载预览…</div>}><ArtifactDocument key={a.path} path={a.path!} type={a.type} busy={props.busy} onPropose={props.onPropose} /></React.Suspense> : binaryLike ? (
+        {(a.type==='video'||a.type==='audio')&&a.path ? <ArtifactMedia path={a.path} name={a.name} type={a.type}/> : a.size&&a.size>(editable?1024*1024:25*1024*1024)&&a.type!=='image' ? <p>文件已保存（{formatBytes(a.size)}）。较大文件请另存为，或使用默认程序打开。</p> : a.type==='image' && a.path ? <ArtifactImage path={a.path} name={a.name}/> : editable ? <ArtifactTextEditor key={a.path} path={a.path!} markdown={a.type === 'markdown'} busy={props.busy} onRequestEdit={props.onRequestEdit} onPropose={props.onPropose} /> : documentPreview ? <React.Suspense fallback={<div className="empty">正在加载预览…</div>}><ArtifactDocument key={a.path} path={a.path!} type={a.type} busy={props.busy} onPropose={props.onPropose} /></React.Suspense> : binaryLike ? (
           <div className="empty" style={{ lineHeight: 1.9 }}>
             {a.type} {t('不在应用里预览。')}
             <br />
@@ -223,6 +232,7 @@ export default function ArtifactPanel(props: { artifact: Artifact; onClose: () =
                 <button className="btn sm" onClick={() => void bridge.revealPath(a.path!).catch((e) => setErr(String(e)))}>
                   {t('在文件夹中显示')}
                 </button>
+                {bridge.saveArtifact ? <button className="btn sm" onClick={() => void bridge.saveArtifact(a.name, undefined, a.path).catch((e) => setErr(String(e)))}>{t('另存为')}</button> : null}
                 <button className="btn sm primary" onClick={() => void bridge.openPath(a.path!).then((e) => { if (e) setErr(e); }).catch((e) => setErr(String(e)))}>
                   {t('用默认程序打开')}
                 </button>

@@ -10,6 +10,7 @@ import type {
   RunRecord,
   FileRecord,
 } from '../types';
+import type { MediaPart } from './media-parts';
 import {
   createStreamConsumer,
   createToolCallAccumulator,
@@ -48,7 +49,7 @@ import {
 
 interface NativeEvent {
   requestId: string;
-  type: 'chunk' | 'body' | 'done' | 'error' | 'raw' | 'response';
+  type: 'chunk' | 'body' | 'done' | 'error' | 'raw' | 'response' | 'media-progress';
   data?: unknown;
   /** type === 'error' 时的上游 HTTP 状态码 */
   status?: number;
@@ -126,6 +127,9 @@ interface ElectronBridge extends CloudBridge {
   verifyFiles(paths: string[], roots: string[]): Promise<{ files: FileRecord[]; errors: { path: string; error: string }[] }>;
   saveArtifact(name: string, text?: string, sourcePath?: string): Promise<FileRecord | null>;
   artifactDocument(p: string): Promise<Uint8Array>;
+  saveGeneratedMedia(parts: MediaPart[]): Promise<{ files: { path: string; name: string; size: number; modifiedAt: number }[]; errors: { name: string; error: string }[] }>;
+  cloudMedia(action: 'upload' | 'cancel' | 'status' | 'list' | 'downloadUrl' | 'remove' | 'get', input?: Record<string, unknown>): Promise<any>;
+  mediaUrl(p: string): Promise<{ url: string; name: string; size: number; kind: 'video' | 'audio' | 'image' | 'file'; mime: string }>;
   readSharedFile(p: string): Promise<Uint8Array>;
   artifactWordPreview(p: string): Promise<Uint8Array>;
   artifactBinary(action: 'read' | 'save' | 'restore', input: { path: string; expectedHash?: string; bytes?: Uint8Array; version?: string }): Promise<import('./office-edit').BinarySnapshot>;
@@ -385,7 +389,15 @@ function wireHandlers(h: ChatStreamHandlers, init?: ChatRequestInit) {
   const acc = createToolCallAccumulator();
   // 最后一个 finish_reason 说了算：多 choice 或带 usage 的收尾包可能各带一个
   let stopReason: string | null = null;
+  // 有些网关会在收尾包里把整条消息重发一遍，同一张图要去重
+  const media = new Map<string, MediaPart>();
   const consumer = createStreamConsumer({
+    onMedia: (parts) => {
+      for (const part of parts) {
+        const key = part.url ?? `${part.mime}:${part.base64?.length}:${part.base64?.slice(0, 48)}:${part.base64?.slice(-48)}`;
+        if (media.size < 20 && !media.has(key)) media.set(key, part);
+      }
+    },
     onError: (message, status) => h.onError(message, status),
     onContent: (s) => h.onContent(s),
     onReasoning: (s) => h.onReasoning(s),
@@ -416,6 +428,7 @@ function wireHandlers(h: ChatStreamHandlers, init?: ChatRequestInit) {
       consumer.end();
       const calls = acc.result();
       if (calls.length) h.onToolCalls(calls);
+      if (media.size) h.onMedia?.([...media.values()]);
       // 先报「为什么停」再报 onDone —— 上层要先拿到原因才能决定这轮算不算结束
       h.onStop?.({ reason: stopReason, droppedCalls: acc.droppedCount() });
       h.onDone();

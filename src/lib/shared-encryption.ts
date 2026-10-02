@@ -82,12 +82,12 @@ export class SharedEncryptionClient {
         const stamped={...m,authorId:m.authorId??mine.accountId};return {...stamped,content:await this.seal(item.id,`message:${m.id}`,m.content,item.encryption,bundle,msgMetadata(stamped))};
       }))};
     }
-    return {ciphertext:await this.seal(item.id,'payload',payload,item.encryption,bundle),...(item.kind==='file'&&payload.blobId?{blobId:payload.blobId,sha256:payload.sha256,size:payload.size,chunkSize:payload.chunkSize,name:'encrypted',mime:'application/octet-stream'}:{}),...(item.kind==='workflow'?{agentIds:(payload.agents??[]).map((a:Data)=>a.id)}:{})};
+    return {ciphertext:await this.seal(item.id,'payload',payload,item.encryption,bundle),...(item.kind==='file'&&payload.blobId?{blobId:payload.blobId,sha256:payload.sha256,size:payload.size,chunkSize:payload.chunkSize,...(payload.storage?{storage:payload.storage}:{}),name:'encrypted',mime:'application/octet-stream'}:{}),...(item.kind==='workflow'?{agentIds:(payload.agents??[]).map((a:Data)=>a.id)}:{})};
   }
   private async decodePayload(item:Data,payload:Data,bundle:Bundle){
     if(item.kind==='conversation')return {...payload,...(payload.instructions!==undefined?{instructions:await this.unseal(item.id,'instructions',payload.instructions,bundle)}:{}),messages:await Promise.all((payload.messages??[]).map(async(m:Data)=>({...m,content:await this.unseal(item.id,`message:${m.id}`,m.content,bundle,msgMetadata(m))})))};
     const decoded=await this.unseal(item.id,'payload',payload.ciphertext,bundle);
-    if(item.kind==='file'&&decoded.blobId&&['blobId','sha256','size','chunkSize'].some(k=>decoded[k]!==payload[k]))throw Error('加密文件信息不匹配。');
+    if(item.kind==='file'&&decoded.blobId&&['blobId','sha256','size','chunkSize','storage'].some(k=>decoded[k]!==payload[k]))throw Error('加密文件信息不匹配。');
     if(item.kind==='workflow'&&!same((decoded.agents??[]).map((a:Data)=>a.id),payload.agentIds))throw Error('加密工作流的成员信息不匹配。');
     return decoded;
   }
@@ -216,6 +216,8 @@ export class SharedEncryptionClient {
     }
     return await this.raw<T>(operation,input);
   }
+  /** Whether files in this item are sealed on the device, decided before the file is read. */
+  async isEncrypted(itemId:string,token?:string){return Boolean((await this.fresh(itemId,token)).item.encryption);}
   async encryptFile(itemId:string,bytes:Uint8Array,token?:string){
     const view=await this.fresh(itemId,token);if(!view.item.encryption)return null;
     const manifest=view.item.encryption,bundle=await this.openBundle(itemId,manifest);

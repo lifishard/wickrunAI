@@ -40,6 +40,32 @@ function createRunStore(root, { io = fs } = {}) {
       try { io.unlinkSync(tmp); } catch { /* no unfinished temp */ }
     }
   }
+  // Progress checkpoints are written many times per turn and may carry
+  // megabytes of partial output. They never block the main process: the write
+  // is asynchronous and skips fsync. The record is still replaced by an atomic
+  // rename, so a reader always sees one complete version. Dispatch and
+  // terminal records keep using the synchronous, fsynced atomic() above, and
+  // the caller must finish any pending progress write before writing them.
+  const RETRYABLE = new Set(['EPERM', 'EBUSY', 'EACCES']);
+  async function atomicProgress(file, value) {
+    const fsp = io.promises;
+    if (!fsp?.writeFile || !fsp?.rename) { atomic(file, value); return; }
+    await fsp.mkdir(path.dirname(file), { recursive: true });
+    const tmp = `${file}.progress.tmp`;
+    await fsp.writeFile(tmp, JSON.stringify(value), { mode: 0o600 });
+    for (let attempt = 0; ; attempt += 1) {
+      try { await fsp.rename(tmp, file); return; }
+      catch (error) {
+        // Windows can briefly refuse a rename over a file that a virus scanner
+        // or indexer is reading. Retry a few times before giving up.
+        if (process.platform !== 'win32' || !RETRYABLE.has(error.code) || attempt >= 4) {
+          try { await fsp.unlink(tmp); } catch { /* nothing left to remove */ }
+          throw error;
+        }
+        await new Promise(resolve => setTimeout(resolve, 10 * 2 ** attempt));
+      }
+    }
+  }
   function read(file) {
     for (const p of [file, `${file}.prev`]) {
       try { return JSON.parse(io.readFileSync(p, 'utf8')); } catch { /* try the last committed record */ }
@@ -76,6 +102,8 @@ function createRunStore(root, { io = fs } = {}) {
     remove(id) { atomic(location('runs', id), { id, deleted: true }); runDisposition.set(id, 'deleted'); },
     job(runId, callId) { return read(location('jobs', `${runId}:${callId}`)); },
     saveJob(runId, callId, value) { atomic(location('jobs', `${runId}:${callId}`), value); },
+    /** Asynchronous, non-fsynced checkpoint of a running job; see atomicProgress. */
+    saveJobProgress(runId, callId, value) { return atomicProgress(location('jobs', `${runId}:${callId}`), value); },
     // 按「做了什么」索引的一层，跨模型、跨轮次都指向同一条记录
     op(runId, opKey) { return read(location('ops', `${runId}:${opKey}`)); },
     saveOp(runId, opKey, value) { atomic(location('ops', `${runId}:${opKey}`), value); },

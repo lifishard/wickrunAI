@@ -15,9 +15,10 @@ import {
   type EffortStyle,
 } from '../lib/effort';
 import { Field, Modal, Segmented, Switch } from './ui';
+const CloudFiles = React.lazy(() => import('./CloudFiles'));
 import RouteGroupsSettings from './RouteGroupsSettings';
 
-type Tab = 'keys' | 'routes' | 'tools' | 'effort' | 'remote' | 'sync' | 'look';
+type Tab = 'keys' | 'routes' | 'tools' | 'effort' | 'remote' | 'sync' | 'cloudfiles' | 'look';
 
 const TAB_LABEL: Record<Tab, string> = {
   keys: 'API 凭据',
@@ -26,6 +27,7 @@ const TAB_LABEL: Record<Tab, string> = {
   effort: '思考强度',
   remote: '遥控',
   sync: '同步',
+  cloudfiles: '云文件',
   look: '外观',
 };
 
@@ -1175,6 +1177,7 @@ export default function SettingsDialog(props: {
         {tab === 'effort' ? EffortTab() : null}
         {tab === 'remote' ? <RemoteTab settings={s} onChange={props.onChange} /> : null}
         {tab === 'sync' ? <SyncTab settings={s} onChange={props.onChange} /> : null}
+        {tab === 'cloudfiles' ? <React.Suspense fallback={null}><CloudFiles /></React.Suspense> : null}
         {tab === 'look' ? <>{LookTab()}<UpdatePanel/></> : null}
       </div>
     </Modal>

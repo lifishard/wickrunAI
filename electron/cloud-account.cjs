@@ -55,6 +55,7 @@ function createCloudAccount({ app, safeStorage, openExternal, fetcher = fetch })
       const message = typeof detail === 'string' ? detail : detail && typeof detail === 'object' && typeof detail.message === 'string' ? detail.message : null;
       const error = new Error(message || `Cloud request failed (${response.status}).`);
       error.status = response.status;
+      if (data && typeof data.code === 'string') error.code = data.code;
       throw error;
     }
     if (!data || typeof data !== 'object') throw new Error('Invalid cloud response.');
@@ -64,6 +65,12 @@ function createCloudAccount({ app, safeStorage, openExternal, fetcher = fetch })
     activeId: active,
     basePath: base,
     signedIn: () => Boolean(active),
+    /** 云文件库（主进程内部用）：渲染进程不能指定地址或令牌 */
+    async media(operation, input = {}) {
+      if (!active) throw new Error('请先登录云账号，再使用云文件。');
+      if (typeof operation !== 'string' || !/^[a-zA-Z]{2,20}$/.test(operation)) throw new Error('Unsupported media operation.');
+      return request('/api/media', 'POST', { operation, input });
+    },
     /** 任务中继（主进程内部用，不经 IPC）：只允许 /api/cloud/relay/ 下的接口 */
     async relay(urlPath, method = 'GET', body) {
       if (!active) throw new Error('Sign in to access your cloud account.');

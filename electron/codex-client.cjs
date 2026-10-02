@@ -3,6 +3,7 @@ const { normalizeImages } = require('./client-images.cjs');
 const { spawn: nativeSpawn } = require('node:child_process');
 const path = require('node:path');
 const { StringDecoder } = require('node:string_decoder');
+const { killProcessTree } = require('./process-tree.cjs');
 
 // Only the official CLI owns subscription credentials. Never forward API keys,
 // proxy/provider overrides, NODE_OPTIONS, or a caller-supplied CODEX_HOME.
@@ -11,7 +12,7 @@ function subscriptionEnvironment(source = process.env) {
   return { ...Object.fromEntries(Object.entries(source).filter(([key]) => allowed.test(key))), NO_COLOR: '1' };
 }
 
-function createCodexClient({ binary, cwd, spawn = nativeSpawn, env = process.env, brain = null, requestTimeoutMs = 30000, turnTimeoutMs = 30 * 60 * 1000, cancelTimeoutMs = 5000, approvalTimeoutMs = 5 * 60 * 1000 } = {}) {
+function createCodexClient({ binary, cwd, spawn = nativeSpawn, env = process.env, brain = null, requestTimeoutMs = 30000, turnTimeoutMs = 30 * 60 * 1000, cancelTimeoutMs = 5000, approvalTimeoutMs = 5 * 60 * 1000, killTree = killProcessTree } = {}) {
   if (!binary || !path.isAbsolute(binary) || /\.(cmd|bat|ps1|js)$/i.test(binary) || (process.platform === 'win32' && !/\.exe$/i.test(binary))) throw Error('Configure the official native Codex executable using an absolute path.');
   if (!cwd || !path.isAbsolute(cwd)) throw Error('Codex requires an absolute project directory.');
   let child, handshake, dead = false, nextId = 1, active = null, buffer = '';
@@ -43,7 +44,7 @@ function createCodexClient({ binary, cwd, spawn = nativeSpawn, env = process.env
     for (const request of pending.values()) { clearTimeout(request.timer); request.reject(Error(reason)); }
     pending.clear();
     finish('unknown', reason);
-    try { child?.kill(); } catch { /* already exited */ }
+    killTree(child); // the agent's own children must not outlive the turn
   }
   function request(method, params = {}) {
     return new Promise((resolve, reject) => {
@@ -152,7 +153,7 @@ function createCodexClient({ binary, cwd, spawn = nativeSpawn, env = process.env
   function start() {
     if (handshake) return handshake;
     handshake = (async () => {
-      child = spawn(binary, launchArgs, { cwd, env: safeEnv, shell: false, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+      child = spawn(binary, launchArgs, { cwd, env: safeEnv, shell: false, windowsHide: true, detached: process.platform !== 'win32', stdio: ['pipe', 'pipe', 'pipe'] });
       child.on('error', () => disconnect('The official Codex process could not start.'));
       child.on('close', code => disconnect(`Codex process exited (${code ?? 'unknown'}); no matching terminal event was received.`));
       child.stdin.on('error', () => disconnect('Codex input stream closed.'));

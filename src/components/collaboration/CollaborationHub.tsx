@@ -3,7 +3,7 @@ import type { AppSettings } from '../../types';
 import { useT } from '../../lib/i18n';
 import { collaborationCall, publishSharedSeed, shareLink, sharedLinkToken, type SharedItem, type SharedSpace, type SharedConnection, type SharedSeed } from '../../lib/shared-resources';
 import SharedWorkflowEditor from './SharedWorkflowEditor';
-import { uploadSharedFile, downloadSharedFile, type FileTransferProgress } from '../../lib/shared-files';
+import { uploadSharedFile, downloadSharedFile, sharedFileLink, type FileTransferProgress } from '../../lib/shared-files';
 import { sharedMessageIdentity,sharedMessageGroups } from '../../lib/message-identity';
 import './CollaborationHub.css';
 
@@ -275,6 +275,13 @@ export default function CollaborationHub({ initialSource,onOpenSidebar,onAccount
     }
     const controller=new AbortController();fileTransfer.current=controller;
     try{
+      if(source.payload.storage==='r2'&&!source.payload.fileEncryption){
+        // Saved straight from storage, so a multi-gigabyte file never has to fit in memory.
+        const link=await sharedFileLink(source,{token:token??undefined,signal:controller.signal,historyId:historical?.id});
+        if(!live.current)return;
+        const a=document.createElement('a');a.href=link.url;a.download=link.name;a.rel='noopener';document.body.appendChild(a);a.click();a.remove();
+        return;
+      }
       const blob=await downloadSharedFile(source,{token:token??undefined,signal:controller.signal,historyId:historical?.id,onProgress:value=>{if(live.current)setTransferProgress(value);}});
       if(!live.current)return;
       const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=getString(source.payload,'name')||source.title;link.click();window.setTimeout(()=>URL.revokeObjectURL(url),3000);
@@ -368,7 +375,7 @@ export default function CollaborationHub({ initialSource,onOpenSidebar,onAccount
     </form></details>
     {pendingAI&&<div className="share-conflict"><p>{t('助手回复已生成，但尚未保存到群聊。')}</p><pre>{pendingAI.message.content}</pre><button className="btn" disabled={busy} onClick={()=>void run(async()=>{const result=await collaborationCall<Opened>('postMessage',{itemId:pendingAI.itemId,...(pendingAI.token?{token:pendingAI.token}:{}),message:pendingAI.message});if(item?.id===pendingAI.itemId)applyOpen(result);setPendingAI(null);await refreshState();})}>{t('重试保存回复')}</button><button className="btn ghost" onClick={()=>setPendingAI(null)}>{t('放弃这条回复')}</button></div>}
 
-    {state.storage&&<details className="share-storage"><summary>{t('共享文件空间')} · {(state.storage.usedBytes/1024/1024).toFixed(1)} MB / {(state.storage.limitBytes/1024/1024/1024).toFixed(0)} GB</summary><progress aria-label={t('已用文件空间')} value={state.storage.usedBytes} max={state.storage.limitBytes}/><p>{t('群文件计入上传者额度，历史版本也占用空间。付费扩容尚未开放。')}</p></details>}
+    {state.storage&&<details className="share-storage"><summary>{t('云存储空间（共享文件 + 云文件库）')} · {(state.storage.usedBytes/1024/1024).toFixed(1)} MB / {(state.storage.limitBytes/1024/1024/1024).toFixed(0)} GB</summary><progress aria-label={t('已用文件空间')} value={state.storage.usedBytes} max={state.storage.limitBytes}/><p>{t('共享文件与云文件库共用同一份额度，计入上传者，历史版本也占用空间。付费扩容尚未开放。')}</p></details>}
     {tab === 'items' && <div className="share-layout">
       <aside className="share-rail"><div className="share-rail-head"><h2>{t('共享内容')}</h2>{item&&<button className="btn sm ghost only-narrow" onClick={()=>setShowList(false)}>{t('返回内容')}</button>}<button className="btn sm" onClick={() => void run(refreshState)}>{t('刷新')}</button></div>
         <Field label={t('空间')}><select value={spaceId} onChange={e => setSpaceId(e.target.value)}><option value="">{t('全部空间')}</option>{state.spaces.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></Field>
@@ -388,7 +395,7 @@ export default function CollaborationHub({ initialSource,onOpenSidebar,onAccount
         {conflict && <div className="share-conflict" role="alert"><p>{t('这项内容有新版本。你未保存的修改仍在这里。')}</p><button className="btn" onClick={() => { if (pendingRemote) applyOpen(pendingRemote); }}>{t('载入新版本')}</button><button className="btn ghost" onClick={() => { setConflict(false); setPendingRemote(null); }}>{t('继续编辑草稿')}</button></div>}
         <div className="share-detail-tabs"><a href="#share-content">{t('内容')}</a><a href="#share-comments">{t('讨论')}</a>{canManageSharing && <a href="#share-access">{t('访问权限')}</a>}</div>
         <section id="share-content" className="share-panel">{item.kind!=='conversation'&&<h3>{t('内容')}</h3>}{canEdit && item.kind!=='conversation' && <Field label={t('名称')}><input value={title} onChange={e => { setTitle(e.target.value); setDirty(true); }} /></Field>}
-          {item.kind === 'file' && <><p className="share-muted">{getString(payload, 'name') || item.title} · {getString(payload, 'mime') || 'text/plain'} · {String(payload.size ?? 0)} B</p>{canEdit && <Field label={t('上传文件（最多 100 MB）')}><input type="file" disabled={busy} onChange={e => { const file = e.target.files?.[0]; e.target.value=''; if (file) void run(() => upload(file)); }} /></Field>}{!getString(payload, 'data') && !getString(payload,'blobId') && <Field label={t('文件内容')}><textarea rows={12} value={getString(payload, 'text')} onChange={e => patchPayload({ ...payload, text: e.target.value, size: new Blob([e.target.value]).size })} readOnly={!canEdit} /></Field>}{Boolean(getString(payload, 'data') || getString(payload,'blobId')) && <p className="share-muted">{t('二进制文件可以下载或重新上传。')}</p>}</>}
+          {item.kind === 'file' && <><p className="share-muted">{getString(payload, 'name') || item.title} · {getString(payload, 'mime') || 'text/plain'} · {String(payload.size ?? 0)} B</p>{canEdit && <Field label={t('上传文件（最多 5 GB，加密项目 100 MB）')}><input type="file" disabled={busy} onChange={e => { const file = e.target.files?.[0]; e.target.value=''; if (file) void run(() => upload(file)); }} /></Field>}{!getString(payload, 'data') && !getString(payload,'blobId') && <Field label={t('文件内容')}><textarea rows={12} value={getString(payload, 'text')} onChange={e => patchPayload({ ...payload, text: e.target.value, size: new Blob([e.target.value]).size })} readOnly={!canEdit} /></Field>}{Boolean(getString(payload, 'data') || getString(payload,'blobId')) && <p className="share-muted">{t('二进制文件可以下载或重新上传。')}</p>}</>}
           {item.kind === 'folder' && <Field label={t('文件夹说明')}><textarea data-share-field="description" rows={8} value={getString(payload, 'description')} onChange={e => patchPayload({ ...payload, description: e.target.value })} readOnly={!canEdit} /></Field>}
           {item.kind === 'conversation' && <><details className="share-conversation-settings"><summary>{t('对话设置')}</summary>{canEdit&&<Field label={t('名称')}><input value={title} onChange={e=>{setTitle(e.target.value);setDirty(true);}}/></Field>}<Field label={t('对话说明')}><textarea data-share-field="instructions" rows={4} value={getString(payload, 'instructions')} onChange={e => patchPayload({ ...payload, instructions: e.target.value })} readOnly={!canEdit} /></Field></details>
             <Thread key={item.id} item={{ ...item, payload }} settings={settings} canGenerate={Boolean(onGenerate)} onStop={generating?()=>generation.current?.abort():undefined} role={canPost ? 'editor' : 'viewer'} disabled={busy||dirty||conflict} viewerId={state.user?.id} comments={opened.comments} onAnnotate={canComment?(id)=>{setEditingCommentId('');setCommentAnchor({kind:'message',messageId:id});setCommentVisibility(canSharedComment?'shared':'private');document.getElementById('share-comments')?.scrollIntoView({block:'start'});}:undefined} onSend={async(content,id,replyTo,choice)=>{

@@ -9,6 +9,9 @@ const { readClaudeConnection, describeConnection } = require('./claude-connectio
 const { guardPath } = require('./tools/common.cjs');
 const { normalizeImages } = require('./client-images.cjs');
 const { cleanBrain, claudeBrainEnv, codexBrain } = require('./brain-config.cjs');
+const { appendTail, createCheckpointWriter, createEventBatcher } = require('./client-progress.cjs');
+const { killProcessTree } = require('./process-tree.cjs');
+const { detectOutputFiles } = require('./media-files.cjs');
 
 const GROK_FALLBACK_MODELS = [
   { id: 'grok-4.6', label: 'Grok 4.6', efforts: ['low', 'medium', 'high', 'xhigh'], defaultEffort: 'high' },
@@ -153,7 +156,7 @@ function createConversationClients({ userData, getSettings, store, openExternal,
         const configIssue=gateway && gateway.state!=='ready' ? `Claude Code 自己配置的本机网关 ${connection.baseUrl} 需要检查：${String(gateway.message||'').replace(/[。.]$/,'')}` : null;
         const loggedIn = await new Promise(resolve => {
           const child=(deps.spawn || spawn)(binary,['--setting-sources','','--settings','{"disableAllHooks":true}','auth','status'],{cwd:scratch,env:{...subscriptionEnvironment(),...connection.env},shell:false,windowsHide:true,stdio:['ignore','ignore','ignore']});
-          const timer=setTimeout(()=>{child.kill();resolve(false);},15000);
+          const timer=setTimeout(()=>{killProcessTree(child,{platform:deps.platform});resolve(false);},15000);
           child.on('error',()=>{clearTimeout(timer);resolve(false);});child.on('close',code=>{clearTimeout(timer);resolve(code===0);});
         });
         const source=connectionInfo.type==='custom_api'?`自定义 API：${connection.baseUrl}`:connectionInfo.type==='api_key'?'API 凭据':'Claude 账号登录';
@@ -179,7 +182,7 @@ function createConversationClients({ userData, getSettings, store, openExternal,
       try {
         child=(deps.spawn || spawn)(binary,['login'],{cwd:scratch,env:safeEnvironment(deps.env || process.env),shell:false,windowsHide:true,stdio:['ignore','ignore','ignore']});
       } catch { throw Error('无法发起官方登录，请检查 Grok 客户端。'); }
-      const closer={close(){ try { child.kill(); } catch { /* already exited */ } }};
+      const closer={close(){ killProcessTree(child,{platform:deps.platform}); }};
       logins.set(kind,closer);
       child.on?.('error',()=>{ if(logins.get(kind)===closer){ closer.close(); logins.delete(kind); } });
       const timer=setTimeout(()=>{if(logins.get(kind)===closer){closer.close();logins.delete(kind);}},10*60*1000);timer.unref?.();
@@ -244,6 +247,9 @@ function createConversationClients({ userData, getSettings, store, openExternal,
       if(!fs.statSync(requested).isDirectory())throw Error('工作目录无效');cwd=requested;
     }
     const codeAudit=require('./code-changes.cjs'), before=work ? codeAudit.snapshot([cwd]) : null;
+    const startedAt=Date.now();
+    // Whatever model made them, videos, audio and large images are found by file metadata only.
+    const outputs=()=>{if(!work)return {};try{const found=detectOutputFiles([cwd,scratchDir],startedAt);return found.files.length?{outputFiles:found.files,...(found.truncated?{outputFilesTruncated:true}:{})}:{};}catch{return {};}};
     let scratchDir;
     if(work && selection.kind==='grok') {
       const scratchBase=path.join(scratch,'grok-work');fs.mkdirSync(scratchBase,{recursive:true});
@@ -308,8 +314,18 @@ function createConversationClients({ userData, getSettings, store, openExternal,
           try{store.saveJob(args.runId,'approval-'+id,{at:Date.now(),requestId:args.requestId,event,...(scopedPaths?{scopedPaths}:{}),approved:permitted});resolve(permitted?'accept':'decline');}catch{controller.abort();resolve('decline');}};
         const stop=()=>finish(false),timer=selection.kind==='grok'?null:setTimeout(stop,180000);
         approvals.set(id,{requestId:args.requestId,finish});controller.signal.addEventListener('abort',stop,{once:true});
-        try{store.saveJob(args.runId,'approval-'+id,{at:Date.now(),requestId:args.requestId,event,status:'waiting'});notify({type:'approval',requestId:args.requestId,id,event});}catch{finish(false);controller.abort();}
+        try{store.saveJob(args.runId,'approval-'+id,{at:Date.now(),requestId:args.requestId,event,status:'waiting'});progress?.flush();notify({type:'approval',requestId:args.requestId,id,event});}catch{finish(false);controller.abort();}
       });
+    };
+    // Streaming progress for native clients: coalesced checkpoints and renderer
+    // events, so a turn that emits thousands of events cannot stall the window.
+    let progress=null;
+    const progressSession=snapshot=>{
+      const checkpoints=createCheckpointWriter({snapshot,onError:()=>controller.abort(),
+        write:value=>store.saveJobProgress?store.saveJobProgress(args.runId,jobId,value):store.saveJob(args.runId,jobId,value)});
+      const events=createEventBatcher({emit:notify});
+      return {touch:()=>checkpoints.touch(),send:message=>events.push(message),flush:()=>events.flush(),
+        async settle(){events.flush();await checkpoints.close();}};
     };
     try {
       store.saveJob(args.runId,jobId,{status:'dispatched',at:Date.now(),kind:selection.kind,cwd,...(scratchDir?{scratchDir}:{}),...(brain.source!=='config'?{brain:{source:brain.source,profileId:brain.profileId}}:{})});
@@ -317,10 +333,12 @@ function createConversationClients({ userData, getSettings, store, openExternal,
       let result;
       if(selection.kind==='codex'){
         job.client=codex(binary,{turnTimeoutMs:Math.min(3600000,Math.max(10000,(record.config.runtime?.maxMinutes || 30)*60000)),...(brainSession?{brain:codexBrain(brainSession)}:{})});
-        let partial='',lastSave=0;
+        let partial='';
+        progress=progressSession(()=>({status:'running',partial,at:Date.now(),kind:selection.kind,cwd}));
         const raw=await job.client.run({prompt:args.prompt,images,model:selection.model==='default'?undefined:selection.model,effort:selection.effort||undefined,cwd,sandbox:work?'workspaceWrite':'readOnly',signal:controller.signal,onApproval,isolateTools:true,butlerAutonomous:autonomous,
           onEvent:event=>{if(event.type==='thread/ready')store.saveJob(args.runId,jobId,{status:'running',threadId:event.threadId,at:Date.now(),kind:selection.kind,cwd});
-            if(event.type==='item/agentMessage/delta' && typeof event.delta==='string'){partial=(partial+event.delta).slice(-2000000);if(Date.now()-lastSave>500){store.saveJob(args.runId,jobId,{status:'running',partial,at:Date.now(),kind:selection.kind,cwd});lastSave=Date.now();}notify({type:'delta',requestId:args.requestId,text:event.delta});}}});
+            if(event.type==='item/agentMessage/delta' && typeof event.delta==='string'){partial=appendTail(partial,event.delta,2000000);progress.touch();progress.send({type:'delta',requestId:args.requestId,text:event.delta});}}});
+        await progress.settle();
         result={status:raw.status,text:raw.text,error:raw.error,sessionId:raw.threadId};
       }else if(selection.kind==='claude'){
         // 大脑路由的模型和思考强度由代理会话决定，不再用 --model / --effort 叠一层
@@ -328,43 +346,47 @@ function createConversationClients({ userData, getSettings, store, openExternal,
         const raw=await (deps.claudeCode || claudeCode)({prompt:readOnlyFallback?'本次自动任务仅可给出只读草稿，不能创建或修改文件。请在回复中明确这一限制。\n\n'+args.prompt:args.prompt,images,cwd},{workspaceRoots:[cwd],claudeBin:binary,claudeExtraArgs:extra,...(brainSession?{brainEnv:claudeBrainEnv(brainSession)}:brain.source==='subscription'?{subscription:true}:{}),claudeTimeoutMs:Math.min(3600000,(record.config.runtime?.maxMinutes || 10)*60000),signal:controller.signal,chatOnly:!work});
         result={status:raw.uncertain?'unknown':raw.ok?'completed':'failed',text:readOnlyFallback?'Claude 自动任务仅提供只读草稿；当前客户端未生成文件。\n'+(raw.content||''):raw.content||'',error:raw.error,sessionId:raw.execution?.sessionId};
       }else{
-        job.client=acp(binary, selection.kind, cwd, scratchDir ? {env:{...(deps.env || process.env),TEMP:scratchDir,TMP:scratchDir,TMPDIR:scratchDir}} : {});
-        let partial='',reasoning='',lastSave=0;
+        // Grok can be quiet for a long time while a tool runs, but a turn that has
+        // produced nothing at all for this long is stuck, not thinking. Stop
+        // waiting, keep the progress and let the user decide how to continue.
+        const idleMs=Math.max(5,Number(record.config.runtime?.idleMinutes)||15)*60000;
+        job.client=acp(binary, selection.kind, cwd, {...(scratchDir ? {env:{...(deps.env || process.env),TEMP:scratchDir,TMP:scratchDir,TMPDIR:scratchDir}} : {}),...(selection.kind==='grok'?{idleTimeoutMs:idleMs}:{})});
+        let partial='',reasoning='';
         const activity=new Map();
+        progress=progressSession(()=>({status:'running',partial,reasoning,activity:[...activity.values()],at:Date.now(),kind:selection.kind,cwd,...(scratchDir?{scratchDir}:{})}));
         const onEvent=event=>{
           if(['reasoning','activity','plan','waiting'].includes(event?.type)){
-            if(event.type==='reasoning')reasoning=(reasoning+(event.delta||'')).slice(-200000);
+            if(event.type==='reasoning')reasoning=appendTail(reasoning,event.delta||'',200000);
             if(event.type==='activity' && event.toolCall?.toolCallId){
               activity.set(event.toolCall.toolCallId,event.toolCall);
               if(activity.size>100)activity.delete(activity.keys().next().value);
             }
-            if(event.type!=='waiting' && (event.type!=='reasoning'||Date.now()-lastSave>500)){
-              store.saveJob(args.runId,jobId,{status:'running',partial,reasoning,activity:[...activity.values()],at:Date.now(),kind:selection.kind,cwd,...(scratchDir?{scratchDir}:{})});lastSave=Date.now();
-            }
-            notify({type:event.type,requestId:args.requestId,...(event.type==='reasoning'?{text:event.delta}:{event})});
+            if(event.type!=='waiting')progress.touch();
+            progress.send({type:event.type,requestId:args.requestId,...(event.type==='reasoning'?{text:event.delta||''}:{event})});
             return;
           }
           if(event?.type!=='text' || typeof event.delta!=='string' || !event.delta)return;
-          partial=(partial+event.delta).slice(-2000000);
-          if(Date.now()-lastSave>500){
-            store.saveJob(args.runId,jobId,{status:'running',partial,reasoning,activity:[...activity.values()],at:Date.now(),kind:selection.kind,cwd,...(scratchDir?{scratchDir}:{})});
-            lastSave=Date.now();
-          }
-          notify({type:'delta',requestId:args.requestId,text:event.delta});
+          partial=appendTail(partial,event.delta,2000000);
+          progress.touch();
+          progress.send({type:'delta',requestId:args.requestId,text:event.delta});
         };
         const scopePrompt=scratchDir ? `Host execution scope for this turn: project directory ${JSON.stringify(cwd)}; dedicated temporary directory ${JSON.stringify(scratchDir)}. Put temporary scripts, screenshots, logs and verification helpers in that dedicated temporary directory (also set as TEMP, TMP and TMPDIR), not in the user's general temporary folder or an old turn's temporary folder. File edits outside these two directories are rejected. These are file-tool boundaries, not an OS sandbox for commands. Preserve successful work and continue unfinished steps.\n\n` : '';
         result=await job.client.run({prompt:scopePrompt+args.prompt,images,model:selection.model==='default'?undefined:selection.model,effort:selection.effort && selection.effort!=='default'?selection.effort:undefined,mode:work?'work':'chat',signal:controller.signal,onEvent,onApproval});
+        await progress.settle();
+        if(selection.kind==='grok' && result?.status==='unknown' && /timed out/i.test(result.error||''))result.error=`${result.error}\nGrok 已连续 ${Math.round(idleMs/60000)} 分钟没有任何动态，已停止等待。已有输出和进度已保留；请核实产物后选择继续或重试。`;
         if(acpWorkCapabilityFailure){
           const terminalFailure=['unknown','failed','cancelled'].includes(result?.status);
           result={...result,status:terminalFailure?result.status:'permission_required',error:terminalFailure&&result.error?`${result.error}\n另有请求被拒绝：${acpWorkCapabilityFailure}`:acpWorkCapabilityFailure};
         }
       }
       if(before)Object.assign(result,codeAudit.compare(before,codeAudit.snapshot([cwd])));
+      Object.assign(result,outputs());
       if(review)result.codeAuditWarnings=[...new Set([...(result.codeAuditWarnings||[]),...reviewNotes,...reviewMismatch(reviewed,result.codeChanges||[],codeAudit)])];
       store.saveJob(args.runId,jobId,{status:result.status,result,at:Date.now(),kind:selection.kind,cwd,...(scratchDir?{scratchDir}:{})});return result;
     }catch(error){
+      await progress?.settle();
       const saved=store.job(args.runId,jobId);
-      const result={status:'unknown',text:saved?.partial||'',error:String(error.message||error),...(before?codeAudit.compare(before,codeAudit.snapshot([cwd])):{})};
+      const result={status:'unknown',text:saved?.partial||'',error:String(error.message||error),...(before?codeAudit.compare(before,codeAudit.snapshot([cwd])):{}),...outputs()};
       store.saveJob(args.runId,jobId,{status:result.status,result,at:Date.now(),kind:selection.kind,cwd});
       return result;
     }finally{controller.abort();job.client?.close();active.delete(args.runId);if(brainSession)deps.brainProxy.closeSession(brainSession.token);}

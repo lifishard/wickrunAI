@@ -13,8 +13,11 @@ import type { Artifact, ToolStep } from '../types';
  * ------------------------------------------------------------------ */
 
 const TYPE_BY_EXT: Record<string, string> = {
-  '.zip':'binary', '.pptx':'binary',
-  '.png':'image', '.jpg':'image', '.jpeg':'image', '.webp':'image', '.gif':'image',
+  '.zip':'binary', '.pptx':'binary', '.7z':'binary', '.tar':'binary', '.gz':'binary',
+  '.png':'image', '.jpg':'image', '.jpeg':'image', '.webp':'image', '.gif':'image', '.avif':'image', '.bmp':'image',
+  // 视频和音频不分是哪个模型生成的：只要落成了文件，就能播放和下载
+  '.mp4':'video', '.m4v':'video', '.webm':'video', '.mov':'video', '.ogv':'video', '.mkv':'video', '.avi':'video',
+  '.mp3':'audio', '.wav':'audio', '.m4a':'audio', '.aac':'audio', '.ogg':'audio', '.oga':'audio', '.opus':'audio', '.flac':'audio',
   '.html': 'html',
   '.htm': 'html',
   '.svg': 'svg',
@@ -40,6 +43,11 @@ export function typeOfPath(p: string): string {
 export function baseName(p: string): string {
   const parts = p.split(/[\\/]/);
   return parts[parts.length - 1] || p;
+}
+
+/** 视频、音频和图片按流式播放，不会整份读进内存 */
+export function isMediaType(type: string): boolean {
+  return type === 'video' || type === 'audio' || type === 'image';
 }
 
 /** 这个产物能不能在应用里直接预览 */
@@ -124,7 +132,7 @@ export function collectArtifacts(content: string, steps: ToolStep[]): Artifact[]
 /** Candidates only; callers must verify these paths before showing a file as delivered. */
 export function filePathsInText(text: string): string[] {
   const found = new Set<string>();
-  const ext = '(?:ics|ical|pdf|docx|xlsx|csv|tsv|json|txt|md|html|svg|png|jpg|zip)';
+  const ext = '(?:ics|ical|pdf|docx|xlsx|pptx|csv|tsv|json|txt|md|html|svg|png|jpe?g|gif|webp|avif|zip|7z|mp4|m4v|webm|mov|mkv|avi|mp3|wav|m4a|aac|ogg|opus|flac)';
   const windows = new RegExp('[A-Za-z]:[\\\\/][^\\r\\n<>"`|?*]*?\\.' + ext + '(?=$|[\\s`"<>）)\\]，。；;])', 'gi');
   for (const m of text.matchAll(windows)) found.add(m[0]);
   for (const m of text.matchAll(/(?:`|\]\(|\")((?:\/(?:Users|home|tmp|mnt|var)\/)[^`"\r\n]+)(?:`|\)|")/g)) {

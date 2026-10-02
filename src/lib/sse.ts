@@ -1,4 +1,5 @@
 import type { ToolCall, Usage } from '../types';
+import { extractMediaParts, type MediaPart } from './media-parts';
 
 export interface ToolCallDelta {
   index: number;
@@ -20,6 +21,8 @@ export interface NormalizedDelta {
    * 流被掐断 —— 这几种情况在界面上必须长得不一样，否则全都表现为「答完了」。
    */
   finishReason: string | null;
+  /** 图片、语音、视频：不论上游用哪种格式返回，都归成同一个形状 */
+  media?: MediaPart[];
 }
 
 /**
@@ -147,7 +150,11 @@ export function normalizeDelta(input: unknown): NormalizedDelta {
   if (usage) out.usage = usage;
 
   const choices = root.choices;
-  if (!Array.isArray(choices) || choices.length === 0) return out;
+  if (!Array.isArray(choices) || choices.length === 0) {
+    const media = extractMediaParts(undefined, root);
+    if (media.length) out.media = media;
+    return out;
+  }
 
   const c = choices[0] as Record<string, unknown>;
   // 字段名各家不一样：OpenAI 是 finish_reason，Anthropic 兼容层常写 stop_reason
@@ -163,6 +170,8 @@ export function normalizeDelta(input: unknown): NormalizedDelta {
   }
 
   const h = holder as Record<string, unknown>;
+  const media = extractMediaParts(h);
+  if (media.length) out.media = media;
   out.content += textOf(h.content);
   out.reasoning += textOf(h.reasoning_content ?? h.reasoning ?? h.thinking);
   out.toolCalls = pickToolCalls(h);
@@ -249,6 +258,7 @@ export function createStreamConsumer(h: {
   onReasoning(s: string): void;
   onToolCallDelta(d: ToolCallDelta[]): void;
   onUsage(u: Usage): void;
+  onMedia?(parts: MediaPart[]): void;
   onFinishReason?(reason: string): void;
   onError?(message: string, status?: number): void;
 }) {
@@ -275,6 +285,7 @@ export function createStreamConsumer(h: {
     if (d.content) h.onContent(d.content);
     if (d.toolCalls.length) h.onToolCallDelta(d.toolCalls);
     if (d.usage) h.onUsage(d.usage);
+    if (d.media?.length) h.onMedia?.(d.media);
     if (d.finishReason) h.onFinishReason?.(d.finishReason);
   }
 

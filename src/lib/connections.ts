@@ -9,7 +9,7 @@ export interface ClientBrain { source:'config'|'subscription'|'route'; profileId
 export interface ClientSelection { kind:ClientKind; model:string; effort?:string; brain?:ClientBrain; /** Restrict a Butler automatic run to its isolated workspace. */ butlerAutonomous?:boolean }
 export interface BrainGlobalStatus { applied:{claude:string|null;codex:string|null}; claude:{profileId:string;model:string;baseUrl:string}|null; codex:{profileId:string;model:string;baseUrl:string}|null; port?:number }
 export const BRAIN_CLIENTS: ClientKind[] = ['claude','codex'];
-export interface ClientTurnResult { codeChanges?: import('../types').CodeChange[]; codeAuditWarnings?: string[]; status:string; text:string; reasoning?:string; error?:string; sessionId?:string; }
+export interface ClientTurnResult { codeChanges?: import('../types').CodeChange[]; codeAuditWarnings?: string[]; outputFiles?: { path:string; name:string; size:number; modifiedAt:number }[]; outputFilesTruncated?: boolean; status:string; text:string; reasoning?:string; error?:string; sessionId?:string; }
 export const CLIENT_LABELS: Record<ClientKind, string> = {
   codex: 'ChatGPT · Codex',
   claude: 'Claude Code',

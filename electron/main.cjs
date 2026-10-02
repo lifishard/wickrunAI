@@ -1,7 +1,7 @@
 'use strict';
 
 const path = require('node:path');
-const { app, BrowserWindow, ipcMain, shell, Menu, nativeTheme, dialog, Notification, powerMonitor, safeStorage, Tray, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, Menu, nativeTheme, dialog, Notification, powerMonitor, safeStorage, Tray, nativeImage, protocol } = require('electron');
 require('./app-identity.cjs').configureIdentity(app);
 const cloudAccount = require('./cloud-account.cjs').createCloudAccount({ app, safeStorage, openExternal: url => shell.openExternal(url) });
 const store = require('./store.cjs');
@@ -16,6 +16,27 @@ const { runtimeStore } = require('./run-store.cjs');
 const { runtimeVersions, reconcileRuns } = require('./code-versions.cjs');
 const { sendClientEvent } = require('./client-events.cjs');
 const { verifyFiles } = require('./file-records.cjs');
+const { createMediaTokens, fileResponse } = require('./media-files.cjs');
+
+// Local videos, audio and large images are streamed to the window by byte
+// range instead of being read into memory. The window never names a path: it
+// receives an unguessable handle from snc:mediaUrl, issued only for files
+// inside the authorised work folders.
+protocol.registerSchemesAsPrivileged([{ scheme: 'wickrun-media', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }]);
+const mediaRoots = () => {
+  const fromSettings = JSON.parse(store.kvGet('snc:settings:v1') || '{}').tools?.workspaceRoots ?? [];
+  const data = app.getPath('userData');
+  return [...fromSettings, path.join(data, 'team-files'), path.join(data, 'conversation-clients'), path.join(data, 'generated-media')];
+};
+const mediaTokens = createMediaTokens({ roots: mediaRoots });
+function serveMedia(request) {
+  const url = new URL(request.url);
+  const file = url.hostname === 'f' ? mediaTokens.resolve(url.pathname.split('/')[1]) : null;
+  if (!file) return new Response('Not found', { status: 404 });
+  const result = fileResponse(file, request.headers.get('range'));
+  const body = result.body ? require('node:stream').Readable.toWeb(result.body) : null;
+  return new Response(body, { status: result.status, headers: result.headers });
+}
 
 const DEV_URL = process.env.SNC_DEV_URL || '';
 const isDev = Boolean(DEV_URL);
@@ -508,8 +529,9 @@ function registerIpc() {
     const chosen = await dialog.showSaveDialog(mainWindow, { defaultPath: path.join(app.getPath('downloads'), path.basename(name || 'output.txt')) });
     if (chosen.canceled || !chosen.filePath) return null;
     const fs = require('node:fs');
-    if (sourcePath) fs.copyFileSync(sourcePath, chosen.filePath);
-    else fs.writeFileSync(chosen.filePath, String(text ?? ''), 'utf8');
+    // A finished video can be gigabytes; copy it off the main thread.
+    if (sourcePath) await fs.promises.copyFile(sourcePath, chosen.filePath);
+    else await fs.promises.writeFile(chosen.filePath, String(text ?? ''), 'utf8');
     return verifyFiles([chosen.filePath], [path.dirname(chosen.filePath)]).files[0];
   });
   ipcMain.handle('snc:chat', handleChat);
@@ -606,6 +628,41 @@ function registerIpc() {
     dataAvailable();
   };
   ipcMain.handle('snc:artifactDocument', (e, p) => { artifactSender(e); return artifacts.readDocument(p); });
+  const generatedMedia = require('./generated-media.cjs').createGeneratedMedia({ dir: path.join(app.getPath('userData'), 'generated-media') });
+  ipcMain.handle('snc:saveGeneratedMedia', async (e, parts) => {
+    artifactSender(e);
+    if (!Array.isArray(parts) || parts.length > 20) throw Error('生成的媒体数量无效');
+    const clean = parts.map(p => ({ kind: ['image', 'audio', 'video'].includes(p?.kind) ? p.kind : 'image',
+      mime: typeof p?.mime === 'string' ? p.mime.slice(0, 100) : undefined, name: typeof p?.name === 'string' ? p.name.slice(0, 80) : undefined,
+      base64: typeof p?.base64 === 'string' ? p.base64 : undefined, url: typeof p?.url === 'string' ? p.url.slice(0, 4000) : undefined }));
+    return generatedMedia.save(clean);
+  });
+  // Cloud file library: only the main process talks to the server, and only for files inside the authorised folders.
+  const mediaUploader = require('./media-upload.cjs').createMediaUploader({ call: (operation, input) => cloudAccount.media(operation, input) });
+  const mediaUploads = new Map();
+  ipcMain.handle('snc:cloudMedia', async (e, { action, input } = {}) => {
+    artifactSender(e);
+    if (action === 'upload') {
+      const { inspectFile } = require('./file-records.cjs');
+      const file = inspectFile(input?.path, mediaRoots());
+      const requestId = typeof input?.requestId === 'string' ? input.requestId.slice(0, 80) : null;
+      if (requestId && mediaUploads.has(requestId)) throw Error('这个文件正在上传。');
+      const controller = new AbortController();
+      if (requestId) mediaUploads.set(requestId, controller);
+      try {
+        return await mediaUploader.upload({ filePath: file.path, name: file.name, source: 'desktop', signal: controller.signal,
+          onProgress: progress => { if (requestId && !e.sender.isDestroyed()) e.sender.send('snc:event', { requestId, type: 'media-progress', data: progress }); } });
+      } finally { if (requestId) mediaUploads.delete(requestId); }
+    }
+    if (action === 'cancel') { mediaUploads.get(input?.requestId)?.abort(); return { ok: true }; }
+    if (!['status', 'list', 'downloadUrl', 'remove', 'get'].includes(action)) throw Error('不支持的云文件操作');
+    return cloudAccount.media(action, input ?? {});
+  });
+  ipcMain.handle('snc:mediaUrl', (e, p) => {
+    artifactSender(e);
+    const issued = mediaTokens.issue(p);
+    return { url: `wickrun-media://f/${issued.token}/${encodeURIComponent(issued.name)}`, name: issued.name, size: issued.size, kind: issued.kind, mime: issued.mime };
+  });
   ipcMain.handle('snc:readSharedFile', (e, p) => { artifactSender(e); return require('./shared-file-read.cjs').readSharedFile(p); });
   ipcMain.handle('snc:artifactWordPreview', (e, p) => { artifactSender(e); return require('./office-preview.cjs').previewWord(p); });
   ipcMain.handle('snc:artifactBinary', (e, { action, input }) => {
@@ -684,6 +741,7 @@ if (!app.requestSingleInstanceLock()) {
   app.setAppUserModelId('dev.anyai.desktop');
 
   app.whenReady().then(async () => {
+    protocol.handle('wickrun-media', serveMedia);
     registerIpc();
     if(!storageStartupError){
       void chromeLaunch.restore().catch(error=>console.error('Chrome connection restore:',error.message));

@@ -27,6 +27,8 @@ import { TOOL_BY_NAME, availableTools } from './tools/registry';
 import type { EffortMapping } from './effort';
 import { backoffMs, classifyError, stopReasonInfo } from './errors';
 import { getTransport } from './transport';
+import { mediaLinksInText, type MediaPart } from './media-parts';
+import { saveGeneratedMedia } from './generated-media';
 import { uid } from './store';
 import { composeSystem } from './system';
 import { checkWire, type WireProblem } from './wirecheck';
@@ -891,7 +893,7 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
         const final = state.phase === 'final';
         let attempts = 0;
         const recoveryStarted = Date.now();
-        let resultContent = '', resultReasoning = '', calls: ToolCall[] = [];
+        let resultContent = '', resultReasoning = '', calls: ToolCall[] = [], generatedMedia: MediaPart[] = [];
         let stop: StopInfo = { reason: null, droppedCalls: 0 };
         let requestSucceeded = false;
         let lightRephraseHint:string|undefined;
@@ -943,7 +945,7 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
           }
           const reserved = bodyTokens + outputAllowance;
           if (budgetExceeded(reserved)) { await finishPause(`剩余阶段预算不足以发送下一轮（这一轮约需 ${reserved} tokens，这一段还剩 ${Math.max(0,policy.maxTokens-((state.spentTokens ?? 0)-startingTokens))}）；接着跑会开启下一阶段预算`); return; }
-          resultContent = ''; resultReasoning = ''; calls = []; stop = { reason: null, droppedCalls: 0 };
+          resultContent = ''; resultReasoning = ''; calls = []; stop = { reason: null, droppedCalls: 0 }; generatedMedia = [];
           const failure: { message?: string; status?: number } = {};
           let usage: Usage | undefined;
           let responseHeaders: Record<string, string> = {};
@@ -980,6 +982,7 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
             onToolCalls(c) { calls = c; },
             onStop(s) { stop = s; },
             onUsage(u) { usage = u; },
+            onMedia(parts) { generatedMedia = parts; },
             onResponse(status, headers) {
               dispatched = true;
               stat.httpStatus=status;
@@ -1076,6 +1079,12 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
         state.content = (state.content ?? '')+resultContent;
         state.reasoning = (state.reasoning ?? '')+resultReasoning;
         state.status = 'running'; state.nextRetryAt = undefined;
+        // Pictures, audio and videos the model returned become files to view, play and save.
+        // This is the same for every model and gateway; a failure is shown, never swallowed.
+        {
+          const step = await saveGeneratedMedia(transport, [...generatedMedia, ...mediaLinksInText(resultContent)], `generated-${state.runId}-${state.round}`);
+          if (step) { state.steps!.push(step); events.onStep(step); }
+        }
         if (calls.length && !final) {
           state.working.push({ id: uid('m'), role: 'assistant', content: resultContent,
             toolCalls: calls, createdAt: Date.now() });

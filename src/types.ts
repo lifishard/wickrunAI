@@ -688,6 +688,8 @@ export interface ChatStreamHandlers {
   onReasoning(delta: string): void;
   onToolCalls(calls: ToolCall[]): void;
   onUsage(usage: Usage): void;
+  /** 模型返回的图片、语音、视频（整轮收齐、去重后回调一次）；不关心的调用方可以不实现 */
+  onMedia?(parts: import('./lib/media-parts').MediaPart[]): void;
   /** 可选：不关心为什么停的调用方可以不实现 */
   onStop?(info: StopInfo): void;
   /**

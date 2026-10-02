@@ -169,6 +169,14 @@ ${JSON.stringify(transcript)}`;
         const step:ToolStep={id,callId:id,name:'native_code_changes',args:{},status:result.status==='completed'?'ok':'error',summary:'本机客户端代码改动',startedAt:Date.now(),codeChanges:result.codeChanges,codeAuditWarnings:result.codeAuditWarnings};
         state.steps=state.steps!.filter(s=>s.id!==id).concat(step);events.onStep(step);await save();
       }
+      // Videos, audio and other deliverables the client wrote show up as files to play and save,
+      // including when the turn ended early: what exists on disk is what the person can use.
+      if(result.outputFiles?.length){
+        const id=nativeRequestId+'-output-files',now=Date.now();
+        const step:ToolStep={id,callId:id,name:'native_output_files',args:{},status:'ok',summary:result.outputFilesTruncated?'本机客户端生成的文件（仅列出一部分）':'本机客户端生成的文件',startedAt:now,
+          files:result.outputFiles.map(f=>({path:f.path,name:f.name,size:f.size,direction:'output' as const,verifiedAt:now,modifiedAt:f.modifiedAt}))};
+        state.steps=state.steps!.filter(s=>s.id!==id).concat(step);events.onStep(step);await save();
+      }
       if(result.reasoning)state.reasoning=result.reasoning;
       recovered=null;
       if(cancelled)throw Error('已暂停并保存当前执行现场；尚未确认的本机操作需要核实');

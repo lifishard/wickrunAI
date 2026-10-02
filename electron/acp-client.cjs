@@ -4,6 +4,8 @@ const { normalizeImages } = require('./client-images.cjs');
 const { spawn: nativeSpawn } = require('node:child_process');
 const path = require('node:path');
 const { StringDecoder } = require('node:string_decoder');
+const { killProcessTree } = require('./process-tree.cjs');
+const { appendTail } = require('./client-progress.cjs');
 
 const ACP_PROTOCOL_VERSION = 1;
 const MAX_OUTPUT_BYTES = 2 * 1000 * 1000;
@@ -266,6 +268,7 @@ function createAcpClient({
   cancelTimeoutMs = DEFAULT_CANCEL_TIMEOUT_MS,
   idleTimeoutMs = null,
   platform = process.platform,
+  killTree = killProcessTree,
 } = {}) {
   // Validate against the host platform by default. An injectable platform is
   // useful for offline tests and does not change the public contract.
@@ -349,7 +352,8 @@ function createAcpClient({
     dead = true;
     clearPending();
     settleActive('unknown', reason);
-    try { child?.kill(); } catch { /* already exited */ }
+    // End the whole tree: children the agent started must not outlive the turn.
+    killTree(child, { platform });
   }
 
   function request(method, params = {}, { timeoutMs = requestTimeout, onId = null, kind = method } = {}) {
@@ -617,7 +621,7 @@ function createAcpClient({
           for (const delta of textBlocks(update)) emitText(active, delta);
         } else if (update.sessionUpdate === 'agent_thought_chunk' && label === 'Grok ACP') {
           for (const delta of textBlocks(update)) {
-            active.reasoning = (active.reasoning + delta).slice(-200000);
+            active.reasoning = appendTail(active.reasoning, delta, 200000);
             emitProgress(active, { type: 'reasoning', delta });
           }
         } else if (update.sessionUpdate === 'tool_call' || update.sessionUpdate === 'tool_call_update') {
@@ -718,6 +722,8 @@ function createAcpClient({
           env: safeEnv,
           shell: false,
           windowsHide: true,
+          // Own process group, so the whole group can be stopped on POSIX.
+          detached: platform !== 'win32',
           stdio: ['pipe', 'pipe', 'pipe'],
         });
         attachChild(processObject);
