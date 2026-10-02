@@ -109,3 +109,13 @@ test('saving from the renderer never replaces stored context with an empty summa
   store.remove('a');
   await assert.rejects(runs.saveRun({...loaded,id:'a'}),/不在本机/);
 });
+
+test('overlapping progress writes to one job never corrupt it or leave temporary files',async t=>{
+  for(let round=0;round<40;round++){
+    const dir=tmp(t),store=createRunStore(dir,{io:{...fs,promises:fs.promises}});
+    await Promise.allSettled(Array.from({length:25},(_,i)=>store.saveJobProgress('r','j',{status:'running',partial:'p'.repeat(1000*(i+1)),i})));
+    const saved=store.job('r','j');
+    assert.ok(saved,'round '+round+' left a readable record');assert.equal(saved.partial.length,1000*(saved.i+1));
+    assert.deepEqual(fs.readdirSync(path.join(dir,'jobs')).filter(n=>n.endsWith('.tmp')),[]);
+  }
+});

@@ -72,11 +72,13 @@ function createRunStore(root, { io = fs } = {}) {
   // terminal records keep using the synchronous, fsynced atomic() above, and
   // the caller must finish any pending progress write before writing them.
   const RETRYABLE = new Set(['EPERM', 'EBUSY', 'EACCES']);
+  let progressSeq = 0;
   async function atomicProgress(file, value) {
     const fsp = io.promises;
     if (!fsp?.writeFile || !fsp?.rename) { atomic(file, value); return; }
     await fsp.mkdir(path.dirname(file), { recursive: true });
-    const tmp = `${file}.progress.tmp`;
+    // A name per write: two overlapping writers must never share (and truncate) one temporary file.
+    const tmp = `${file}.progress.${process.pid}.${progressSeq++}.tmp`;
     await fsp.writeFile(tmp, JSON.stringify(value), { mode: 0o600 });
     for (let attempt = 0; ; attempt += 1) {
       try { await fsp.rename(tmp, file); return; }
