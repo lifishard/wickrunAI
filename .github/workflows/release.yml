@@ -94,76 +94,24 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  # Android is built and signed by CI with its own key (see android-build.yml). It never
+  # blocks the desktop release: publish below runs when the three desktop builds succeed
+  # and attaches the APK only if this job succeeded.
   android:
-    name: Android preview APK
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          ref: ${{ inputs.release_tag && format('refs/tags/{0}', inputs.release_tag) || github.ref }}
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 22
-      - name: 读取同版本 Android 的固定源码与签名
-        id: android-source
-        run: node scripts/android-release-source.mjs
-      - uses: actions/checkout@v6
-        with:
-          ref: ${{ steps.android-source.outputs.commit }}
-          path: android-source
-      - name: 验证 Android 不可变标签
-        working-directory: android-source
-        env:
-          ANDROID_SOURCE_TAG: ${{ steps.android-source.outputs.tag }}
-          ANDROID_SOURCE_COMMIT: ${{ steps.android-source.outputs.commit }}
-        run: |
-          git fetch --depth=1 origin "refs/tags/$ANDROID_SOURCE_TAG:refs/tags/$ANDROID_SOURCE_TAG"
-          test "$(git rev-parse "$ANDROID_SOURCE_TAG^{commit}")" = "$ANDROID_SOURCE_COMMIT"
-      - name: 检查固定源码的 Android 客户端
-        working-directory: android-source
-        run: |
-          npm ci
-          npm run typecheck
-          npm test
-      - name: 读取本机固定签名的候选 APK（密钥保留本机）
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_REPO: ${{ github.repository }}
-          ANDROID_SOURCE_TAG: ${{ steps.android-source.outputs.tag }}
-          ANDROID_VERSION: ${{ steps.android-source.outputs.version }}
-        run: |
-          mkdir -p signed-android
-          gh release download "$ANDROID_SOURCE_TAG" --pattern "wickrunAI-${ANDROID_VERSION}-android-preview.apk" --dir signed-android
-      - name: 验证真实 APK 版本、源码、签名和校验值
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Match the stable tools used to verify the locally signed candidate.
-          # Do not let new runner SDKs silently change the verifier output format.
-          tools="$ANDROID_HOME/build-tools/35.0.0"
-          apksigner="$tools/apksigner"
-          aapt="$tools/aapt"
-          test -x "$apksigner"
-          test -x "$aapt"
-          version=$(node -p 'require("./package.json").version')
-          "$apksigner" verify --verbose --print-certs "signed-android/wickrunAI-${version}-android-preview.apk"
-          node scripts/verify-android-release.mjs android-source release "$apksigner" "$aapt" "signed-android/wickrunAI-${version}-android-preview.apk"
-      - uses: actions/upload-artifact@v6
-        with:
-          name: packages-Android
-          path: |
-            release/*-android-preview.apk
-            release/android-signature.txt
-            release/android-build-info.json
-          if-no-files-found: error
-          retention-days: 14
+    name: Android
+    uses: ./.github/workflows/android-build.yml
+    with:
+      ref: ${{ inputs.release_tag && format('refs/tags/{0}', inputs.release_tag) || github.ref }}
+    secrets: inherit
+    permissions:
+      contents: write
 
   publish:
-    name: 验证并发布四平台安装包
+    name: 验证并发布安装包
     needs: [build, android]
     # CI dispatches a verified, immutable version tag after main passes checks.
-    if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch' && !inputs.dry_run && (startsWith(github.ref, 'refs/tags/v') || startsWith(inputs.release_tag, 'v')))
+    # A failed Android job must not stop the desktop release, hence !cancelled().
+    if: ${{ !cancelled() && needs.build.result == 'success' && ((github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch' && !inputs.dry_run && (startsWith(github.ref, 'refs/tags/v') || startsWith(inputs.release_tag, 'v')))) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -177,7 +125,7 @@ jobs:
           pattern: packages-*
           merge-multiple: true
           path: release-assets
-      - name: 核对九个安装包、生成校验文件并公开 Release
+      - name: 核对八个桌面安装包（及完整的 Android 预览版，如有）、生成校验文件并公开 Release
         shell: bash
         run: |
           version=$(node -p "require('./package.json').version")

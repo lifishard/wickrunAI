@@ -1,0 +1,106 @@
+name: Android build
+
+# Reusable: builds the Android preview from the pinned native source and signs it
+# with the key kept in the ANDROID_SIGNING_BUNDLE secret. Called by Release (so the
+# APK ships with the desktop release when it succeeds) and by Release Android (to
+# attach it to an already published release).
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: 构建所用的 wickrunAI 源码引用（版本标签）
+        type: string
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  android:
+    name: Android preview APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: 读取同版本 Android 的固定源码与签名证书
+        id: android-source
+        run: node scripts/android-release-source.mjs
+      - name: 确认签名密钥已存入 Secrets
+        env:
+          ANDROID_SIGNING_BUNDLE: ${{ secrets.ANDROID_SIGNING_BUNDLE }}
+        run: |
+          if [ -z "$ANDROID_SIGNING_BUNDLE" ]; then
+            echo "::error::未配置 ANDROID_SIGNING_BUNDLE：在仓库 Settings → Secrets and variables → Actions 添加后，运行 Release Android 即可补发 Android 预览版。"
+            exit 1
+          fi
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.android-source.outputs.commit }}
+          path: android-source
+      - name: 固定 Android 源码标签（不存在则按固定提交创建，已存在必须指向同一提交）
+        working-directory: android-source
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          ANDROID_SOURCE_TAG: ${{ steps.android-source.outputs.tag }}
+          ANDROID_SOURCE_COMMIT: ${{ steps.android-source.outputs.commit }}
+        run: |
+          set -euo pipefail
+          if ! git ls-remote --exit-code --tags origin "refs/tags/$ANDROID_SOURCE_TAG" >/dev/null 2>&1; then
+            gh api --method POST "repos/$GH_REPO/git/refs" -f "ref=refs/tags/$ANDROID_SOURCE_TAG" -f "sha=$ANDROID_SOURCE_COMMIT" >/dev/null
+          fi
+          git fetch --depth=1 origin "refs/tags/$ANDROID_SOURCE_TAG:refs/tags/$ANDROID_SOURCE_TAG"
+          test "$(git rev-parse "$ANDROID_SOURCE_TAG^{commit}")" = "$ANDROID_SOURCE_COMMIT"
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: 检查固定源码的 Android 客户端
+        working-directory: android-source
+        run: |
+          npm ci
+          npm run typecheck
+          npm test
+      - name: 用 CI 持有的密钥构建并签名
+        shell: bash
+        env:
+          ANDROID_SIGNING_BUNDLE: ${{ secrets.ANDROID_SIGNING_BUNDLE }}
+        run: |
+          set -euo pipefail
+          umask 077
+          field() { node -e 'const b=JSON.parse(Buffer.from(process.env.ANDROID_SIGNING_BUNDLE,"base64").toString());process.stdout.write(String(b[process.argv[1]]??""))' "$1"; }
+          keydir=$(mktemp -d "$RUNNER_TEMP/wickrun-android.XXXXXX")
+          trap 'rm -rf "$keydir"' EXIT
+          field keystoreBase64 | base64 --decode > "$keydir/release.p12"
+          export ANDROID_KEYSTORE_PATH="$keydir/release.p12"
+          export ANDROID_KEYSTORE_PASSWORD="$(field storePassword)"
+          export ANDROID_KEY_ALIAS="$(field keyAlias)"
+          export ANDROID_KEY_PASSWORD="$(field keyPassword)"
+          echo "::add-mask::$ANDROID_KEYSTORE_PASSWORD"
+          echo "::add-mask::$ANDROID_KEY_PASSWORD"
+          unset ANDROID_SIGNING_BUNDLE
+          (cd android-source && npm run android:release)
+          mkdir -p signed-android
+          cp android-source/android/app/build/outputs/apk/release/app-release.apk signed-android/app-release.apk
+      - name: 验证真实 APK 版本、源码和签名证书
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Pin the SDK tools so a new runner image cannot change the verifier output.
+          tools="$ANDROID_HOME/build-tools/35.0.0"
+          test -x "$tools/apksigner"
+          test -x "$tools/aapt"
+          node scripts/verify-android-release.mjs android-source release "$tools/apksigner" "$tools/aapt" signed-android/app-release.apk
+      - uses: actions/upload-artifact@v6
+        with:
+          name: packages-Android
+          path: |
+            release/*-android-preview.apk
+            release/android-signature.txt
+            release/android-build-info.json
+          if-no-files-found: error
+          retention-days: 14

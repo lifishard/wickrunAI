@@ -8,9 +8,9 @@
 
 开源的、闭源的，付费的、免费的，都能调度。Key 自己带，云同步由你选择，共享内容不会传递你的凭据。
 
-[![Version](https://img.shields.io/badge/version-4.0.2-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
+[![Version](https://img.shields.io/badge/version-4.0.3-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
 
-[4.0.2 — 稳定第三方客户端、视频与大文件输出、云文件库](docs/releases/v4.0.2.md)
+[4.0.3 — 启动提速、稳定第三方客户端、视频与大文件输出、云文件库、Android 改由 CI 签名](docs/releases/v4.0.3.md)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-lightgrey)](#安装)
 [![CI](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml/badge.svg)](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml)

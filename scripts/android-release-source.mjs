@@ -7,8 +7,8 @@ export function readAndroidReleaseSource(rootDir = '.') {
   const source = JSON.parse(fs.readFileSync(path.join(rootDir, 'config/android-release-source.json'), 'utf8'));
   const tagPrefix = `android-source-v${version}`;
   const matchingTag = source.tag === tagPrefix || typeof source.tag === 'string' && source.tag.startsWith(tagPrefix + '-r') && /^[1-9][0-9]*$/.test(source.tag.slice(tagPrefix.length + 2));
-  if (source.version !== version || !matchingTag || !/^[a-f0-9]{40}$/.test(source.commit || '') || !/^[a-f0-9]{64}$/.test(source.certificateSha256 || '') || !/^[a-f0-9]{64}$/.test(source.apkSha256 || '') || source.applicationId !== 'dev.anyai.app')
-    throw new Error('Android source must pin the matching version, immutable commit, tag, application and signed APK');
+  if (source.version !== version || !matchingTag || !/^[a-f0-9]{40}$/.test(source.commit || '') || !/^[a-f0-9]{64}$/.test(source.certificateSha256 || '') || source.applicationId !== 'dev.anyai.app')
+    throw new Error('Android source must pin the matching version, immutable commit, tag, application and signing certificate');
   return source;
 }
 

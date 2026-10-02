@@ -1,0 +1,59 @@
+name: Release Android
+
+# Builds and signs the Android preview for an existing version tag and attaches it to
+# that version's Release (it must already be published). Use it after adding or fixing the
+# ANDROID_SIGNING_BUNDLE secret when the Android job of the original Release failed.
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 要补发 Android 预览版的版本标签，例如 v4.0.3
+        type: string
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-android-${{ inputs.release_tag }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    uses: ./.github/workflows/android-build.yml
+    with:
+      ref: refs/tags/${{ inputs.release_tag }}
+    secrets: inherit
+    permissions:
+      contents: write
+
+  attach:
+    name: 附加到 Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: refs/tags/${{ inputs.release_tag }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v7
+        with:
+          name: packages-Android
+          path: release-assets
+      - name: 校验并附加
+        shell: bash
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [[ "$RELEASE_TAG" != "v${version}" ]]; then
+            echo "::error::版本标签与 package.json 不一致"
+            exit 1
+          fi
+          export GITHUB_REF="refs/tags/${RELEASE_TAG}"
+          export GITHUB_SHA="$(git rev-parse HEAD)"
+          node scripts/publish-release.mjs release-assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
