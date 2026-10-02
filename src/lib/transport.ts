@@ -122,6 +122,8 @@ interface ElectronBridge extends CloudBridge {
   clientApprove(id:string,approved:boolean):Promise<void>;
   runSave(record: RunRecord): Promise<void>;
   runList(): Promise<RunRecord[]>;
+  /** One complete run record with its model context, or null when it no longer exists. */
+  runGet(id: string): Promise<RunRecord | null>;
   runRemove(id: string): Promise<void>;
   exchanges(runId?: string): Promise<Exchange[]>;
   verifyFiles(paths: string[], roots: string[]): Promise<{ files: FileRecord[]; errors: { path: string; error: string }[] }>;

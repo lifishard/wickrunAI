@@ -76,6 +76,7 @@ contextBridge.exposeInMainWorld('snc', {
   clientApprove: (id,approved) => ipcRenderer.invoke('snc:clientApprove',{id,approved}),
   runSave: (record) => ipcRenderer.invoke('snc:runSave', record),
   runList: () => ipcRenderer.invoke('snc:runList'),
+  runGet: (id) => ipcRenderer.invoke('snc:runGet', id),
   saveAnalysisExport: (name, bytes) => ipcRenderer.invoke('snc:saveAnalysisExport',{name,bytes}),
   runRemove: (id) => ipcRenderer.invoke('snc:runRemove', id),
   exchanges: (runId) => ipcRenderer.invoke('snc:exchanges', runId),

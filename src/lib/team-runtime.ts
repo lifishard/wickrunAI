@@ -9,7 +9,7 @@ import { observeTeamRun } from './team-observations';
 import { loadSkills, skillSystemBlock, type Skill } from './skills';
 import { projectSystemBlock, type Project } from './projects';
 import { recallFrom } from './recall';
-import { loadRuns } from './runs';
+import { listRunRecords } from './runs';
 import { observationSnapshot } from './observations';
 import { limitKey, mergeLearnedLimit, type LearnedLimit } from './limits';
 import { nextRoute, resolveFailover, type RouteRef } from './failover';
@@ -745,7 +745,7 @@ export class TeamRuntime {
     onLearnLimit:value=>learn(profile!.id,member.model,profile!.baseUrl,value),
     limits:{get:(profileId,model,baseUrl)=>this.settings()?.modelLimits?.[routeKeyOf(profileId,model,baseUrl)],learn},
     // 默认零关联：成员想不起来时才显式查，而且只查同一个项目
-    recallTasks:async(query,limit)=>recallFrom(await loadRuns(),await observationSnapshot(),{query,limit,projectId}),toolCtx:()=>({...toolContextOf(settings,projectId),teamExecution:{projectId,runId,attemptId,memberId:member.id,fileSessionId},workspaceRoots:roots,grants:teamGrants(this.project(projectId).runs.find(x=>x.id===runId)??{},member.id)}),effortMappings:settings.effortMappings,extraSystem:[projectSystemBlock(this.projects().find(x=>x.id===projectId)??null,'',{memory:false}),
+    recallTasks:async(query,limit)=>recallFrom(await listRunRecords(),await observationSnapshot(),{query,limit,projectId}),toolCtx:()=>({...toolContextOf(settings,projectId),teamExecution:{projectId,runId,attemptId,memberId:member.id,fileSessionId},workspaceRoots:roots,grants:teamGrants(this.project(projectId).runs.find(x=>x.id===runId)??{},member.id)}),effortMappings:settings.effortMappings,extraSystem:[projectSystemBlock(this.projects().find(x=>x.id===projectId)??null,'',{memory:false}),
     `你是项目成员 ${member.name}。\n${member.instructions}\n${memories}\n${node.type==='review'?reviewInstructions:''}`,
     skillSystemBlock(chosen)].filter(Boolean).join('\n\n'),timeoutMs:settings.requestTimeoutMs,canRunHostTools:true,autoRetry:settings.autoRetry,confirm,grantAccess,events:{
     onContentDelta(text){output+=text;},onContentReplace(text,thought){outputHistory=preserveOutput(outputHistory,{content:output,reasoning},{content:text,reasoning:thought});output=text;reasoning=thought;},onReasoningDelta(text){reasoning+=text;},onSources(){},onRound(){},

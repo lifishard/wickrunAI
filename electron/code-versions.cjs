@@ -69,22 +69,38 @@ function runtimeVersions(){if(singleton)return singleton;const app=require('elec
 function archive(change,before,after,modes){try{const store=runtimeVersions();if(!store)return {...change,revertUnavailable:'当前执行环境没有本机版本存储'};return {...change,revisionId:store.record(change,before,after,modes)};}catch(error){return {...change,revertUnavailable:`快照未保存，不能自动回退：${error.message}`};}}
 // The durable ledger also invalidates saved execution checkpoints after a revert.
 // Re-run on load so a crash between restoring files and updating chat is recoverable.
+/** Returns true when the record was rewritten because some recorded changes were reverted. */
+function applyRevertedChanges(record,versions){
+  const state=record.state,changes=(state.steps??[]).flatMap(s=>s.codeChanges??[]).filter(c=>c.revisionId&&c.status!=='reverted');
+  if(!changes.length)return false;
+  const reverted=new Set();for(const c of changes){try{if(versions.summary([c.revisionId]).entries[0].status==='reverted')reverted.add(c.revisionId);}catch{/* imported records may have no local snapshots */}}
+  if(!reverted.size)return false;
+  const paths=new Set(changes.filter(c=>reverted.has(c.revisionId)).map(c=>key(c.path)));
+  const note={id:'code-revert-'+crypto.randomUUID(),role:'user',content:'用户已回退以下已记录的代码改动。原交付结论和验证已失效；后续任务必须重新读取文件并验证，不要自动重做已回退的修改。\n'+[...paths].join('\n'),createdAt:Date.now()};
+  state.steps=state.steps.map(s=>({...s,codeChanges:s.codeChanges?.map(c=>reverted.has(c.revisionId)?{...c,status:'reverted'}:c),files:s.files?.filter(f=>!paths.has(key(f.path))),filePath:s.filePath&&paths.has(key(s.filePath))?undefined:s.filePath}));
+  for(const r of state.requirements??[]){if(r.verification){r.verificationHistory=[...(r.verificationHistory??[]),r.verification];delete r.verification;}}
+  state.delivery=undefined;state.status='paused';state.reason='代码改动已回退，需要重新检查项目';state.at=Date.now();state.replanPending=true;
+  state.pendingInputMessages=[...(state.pendingInputMessages??[]),note];state.working.push(note);
+  state.content=(state.content??'')+'\n\n【代码版本已回退】此前交付与验证结果需要重新检查。';
+  return true;
+}
 function reconcileRuns(journal,versions){
   const records=journal.list();if(!versions)return records;
-  for(const record of records){
-    const state=record.state,changes=(state.steps??[]).flatMap(s=>s.codeChanges??[]).filter(c=>c.revisionId&&c.status!=='reverted');
-    if(!changes.length)continue;
-    const reverted=new Set();for(const c of changes){try{if(versions.summary([c.revisionId]).entries[0].status==='reverted')reverted.add(c.revisionId);}catch{/* imported records may have no local snapshots */}}
-    if(!reverted.size)continue;
-    const paths=new Set(changes.filter(c=>reverted.has(c.revisionId)).map(c=>key(c.path)));
-    const note={id:'code-revert-'+crypto.randomUUID(),role:'user',content:'用户已回退以下已记录的代码改动。原交付结论和验证已失效；后续任务必须重新读取文件并验证，不要自动重做已回退的修改。\n'+[...paths].join('\n'),createdAt:Date.now()};
-    state.steps=state.steps.map(s=>({...s,codeChanges:s.codeChanges?.map(c=>reverted.has(c.revisionId)?{...c,status:'reverted'}:c),files:s.files?.filter(f=>!paths.has(key(f.path))),filePath:s.filePath&&paths.has(key(s.filePath))?undefined:s.filePath}));
-    for(const r of state.requirements??[]){if(r.verification){r.verificationHistory=[...(r.verificationHistory??[]),r.verification];delete r.verification;}}
-    state.delivery=undefined;state.status='paused';state.reason='代码改动已回退，需要重新检查项目';state.at=Date.now();state.replanPending=true;
-    state.pendingInputMessages=[...(state.pendingInputMessages??[]),note];state.working.push(note);
-    state.content=(state.content??'')+'\n\n【代码版本已回退】此前交付与验证结果需要重新检查。';
-    journal.save(record);
+  for(const record of records)if(applyRevertedChanges(record,versions))journal.save(record);
+  return records;
+}
+/**
+ * Startup variant: the renderer only receives run summaries (no model context),
+ * so a record is loaded in full only when a revert actually has to rewrite it.
+ */
+async function reconcileRunSummaries(journal,versions){
+  const records=await journal.listSummaries();if(!versions)return records;
+  for(let i=0;i<records.length;i++){
+    const summary=records[i];
+    if(!(summary.state.steps??[]).some(s=>s.codeChanges?.some(c=>c.revisionId&&c.status!=='reverted')))continue;
+    const full=journal.get(summary.id);if(!full)continue;
+    if(applyRevertedChanges(full,versions)){journal.save(full);records[i]=journal.summaryOf(full);}
   }
   return records;
 }
-module.exports={createCodeVersions,runtimeVersions,archive,reconcileRuns};
+module.exports={createCodeVersions,runtimeVersions,archive,reconcileRuns,reconcileRunSummaries};

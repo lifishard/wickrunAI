@@ -9,7 +9,7 @@ import { buildRequestBody } from '../lib/paramSchema';
 import { buildWire } from '../lib/agent';
 import { conversationMemory, withHandoffArchive } from '../lib/handoff';
 import { memoryInstructions } from '../lib/context-memory';
-import { runRecord } from '../lib/runs';
+import { runRecord, runsRevision } from '../lib/runs';
 
 export interface ContextPreview {
   handoffSourceRunId?: string;
@@ -44,7 +44,7 @@ export default function ContextMeter({ preview, draft }: { preview: ContextPrevi
       const body = prepareBody(buildRequestBody(preview.config,buildWire(memory.history,preview.config,extra),tools,preview.mappings),preview.config,cap);
       return { value:snapshot(body,preview.config,preview.profile,cap) };
     } catch (e) { return { error:e instanceof Error ? e.message : String(e) }; }
-  },[open,preview,deferredDraft]);
+  },[open,preview,deferredDraft,runsRevision()]);
   const s = result.value;
   const ratio = s?.contextWindow ? Math.min(100,s.inputTokens/s.contextWindow*100) : 0;
   const reserved = s?.contextWindow ? Math.min(100,ratio+s.outputReserve/s.contextWindow*100) : 0;

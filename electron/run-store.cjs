@@ -3,6 +3,31 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 
+/**
+ * Fields that only the model-context machinery needs. They make up ~95% of a
+ * run file (a long coding run carries several MB of archived context) and are
+ * never needed to list tasks or render a conversation, so the renderer
+ * receives records without them and asks for the full record on demand.
+ */
+const HEAVY_STATE_FIELDS = ['working', 'contextArchive', 'contextArchiveSteps', 'compactions'];
+function summaryOf(record) {
+  const state = { ...record.state };
+  for (const field of HEAVY_STATE_FIELDS) delete state[field];
+  state.working = [];
+  state.slim = true;
+  return { ...record, state };
+}
+/** A slim record must never replace a full one: restore the heavy fields from the stored record. */
+function mergeHeavy(slim, full) {
+  const state = { ...slim.state };
+  delete state.slim;
+  for (const field of HEAVY_STATE_FIELDS) {
+    if (full.state[field] === undefined) delete state[field];
+    else state[field] = full.state[field];
+  }
+  return { ...slim, state };
+}
+
 /** Separate durable task records: writing a chat bubble is not a checkpoint. */
 function createRunStore(root, { io = fs } = {}) {
   const hash = (id) => crypto.createHash('sha256').update(String(id)).digest('hex');
@@ -81,12 +106,68 @@ function createRunStore(root, { io = fs } = {}) {
     }
     return [...names].map((name) => path.join(dir, name));
   }
+  const summaryLocation = (id) => location('run-summaries', id);
+  const stat = (file) => { try { const s = io.statSync(file); return { size: s.size, mtimeMs: s.mtimeMs }; } catch { return null; } };
+  /** The summary remembers which run file it was built from, so any change to that file is noticed exactly. */
+  function writeSummary(record, source = location('runs', record.id)) {
+    // Best effort: a missing or stale summary is rebuilt from the full record.
+    try {
+      const sourceStat = stat(source);
+      if (!sourceStat) return;
+      const file = summaryLocation(record.id);
+      io.mkdirSync(path.dirname(file), { recursive: true });
+      const tmp = `${file}.tmp`;
+      io.writeFileSync(tmp, JSON.stringify({ ...summaryOf(record), sourceStat }), { mode: 0o600 });
+      io.renameSync(tmp, file);
+    } catch { /* rebuilt on next list */ }
+  }
+  function dropSummary(id) { try { io.unlinkSync(summaryLocation(id)); } catch { /* none */ } }
   return {
+    summaryOf,
+    /** One complete record (with model context), or null when absent or deleted. */
+    get(id) {
+      const record = read(location('runs', id));
+      return record?.id && !record.deleted && record.state ? record : null;
+    },
+    /**
+     * Run summaries for the renderer: the same records as list() without the
+     * model context. Served from small per-run summary files; a summary older
+     * than its run file is rebuilt, so the first start after an upgrade (or a
+     * restored backup) is correct and later starts read ~10 MB instead of GBs.
+     */
+    async listSummaries() {
+      const fsp = io.promises, out = [];
+      for (const file of committedFiles(path.join(root, 'runs'))) {
+        const id = path.basename(file, '.json');
+        const source = stat(file) ? file : `${file}.prev`, current = stat(source);
+        if (!current) continue;
+        try {
+          const cached = JSON.parse(await fsp.readFile(path.join(root, 'run-summaries', `${id}.json`), 'utf8'));
+          if (cached?.id && cached.state?.slim && cached.sourceStat?.size === current.size && cached.sourceStat?.mtimeMs === current.mtimeMs) {
+            delete cached.sourceStat;
+            out.push(cached);
+            continue;
+          }
+        } catch { /* missing or unreadable: rebuild below */ }
+        const record = read(file);
+        // Let the event loop breathe between large parses while rebuilding.
+        await new Promise((resolve) => setImmediate(resolve));
+        if (!record?.id || record.deleted || !record.state) continue;
+        writeSummary(record, source);
+        out.push(summaryOf(record));
+      }
+      return out;
+    },
     save(record) {
       if (!record?.id || !record.conversationId || !record.answerId || !Array.isArray(record.state?.working)) {
         throw new Error('执行记录不完整，已暂停以避免丢失进度');
       }
       const runFile = location('runs', record.id);
+      if (record.state.slim) {
+        const stored = read(runFile);
+        if (!stored?.state) throw new Error('执行记录的完整内容已不在本机，无法保存摘要');
+        record = mergeHeavy(record, stored);
+      }
       let disposition = runDisposition.get(record.id);
       if (disposition === undefined) {
         disposition = read(runFile)?.deleted ? 'deleted' : 'active';
@@ -94,12 +175,13 @@ function createRunStore(root, { io = fs } = {}) {
       }
       if (disposition === 'deleted') return;
       atomic(runFile, record);
+      writeSummary(record);
     },
     list() {
       const dir = path.join(root, 'runs');
       return committedFiles(dir).map((file) => read(file)).filter((r) => r?.id && !r.deleted);
     },
-    remove(id) { atomic(location('runs', id), { id, deleted: true }); runDisposition.set(id, 'deleted'); },
+    remove(id) { atomic(location('runs', id), { id, deleted: true }); dropSummary(id); runDisposition.set(id, 'deleted'); },
     job(runId, callId) { return read(location('jobs', `${runId}:${callId}`)); },
     saveJob(runId, callId, value) { atomic(location('jobs', `${runId}:${callId}`), value); },
     /** Asynchronous, non-fsynced checkpoint of a running job; see atomicProgress. */
@@ -136,4 +218,4 @@ function runtimeStore() {
   if (!cached) cached = createRunStore(path.join(require('electron').app.getPath('userData'), 'runtime-v2'));
   return cached;
 }
-module.exports = { createRunStore, runtimeStore };
+module.exports = { createRunStore, runtimeStore, summaryOf, HEAVY_STATE_FIELDS };

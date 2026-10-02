@@ -13,7 +13,7 @@ const chromeLaunch = require('./chrome-launch.cjs');
 const skillFolder = require('./skill-folder.cjs');
 const attachments = require('./attachments.cjs');
 const { runtimeStore } = require('./run-store.cjs');
-const { runtimeVersions, reconcileRuns } = require('./code-versions.cjs');
+const { runtimeVersions, reconcileRuns, reconcileRunSummaries } = require('./code-versions.cjs');
 const { sendClientEvent } = require('./client-events.cjs');
 const { verifyFiles } = require('./file-records.cjs');
 const { createMediaTokens, fileResponse } = require('./media-files.cjs');
@@ -502,8 +502,10 @@ function registerIpc() {
   ipcMain.handle('snc:collaborationUpdate', (_e, {revision,project}) => {dataAvailable();return collaboration.update(revision,project);});
   ipcMain.handle('snc:collaborationClaim', (_e, {projectId,runId}) => {dataAvailable();return collaboration.claim(projectId,runId);});
   ipcMain.handle('snc:runSave', (_e, record) => {dataAvailable();const result=runtimeStore().save(record);if(['running','waiting'].includes(record.state?.status))activeRunIds.add(record.id);else activeRunIds.delete(record.id);return result;});
-  ipcMain.handle('snc:runList', () => {dataAvailable();return reconcileRuns(runtimeStore(),runtimeVersions());});
-  ipcMain.handle('snc:codeVersion', (_e,{action,ids,path:filePath}) => {
+  // The renderer gets run summaries only (no model context); a run's full record is fetched by id when its conversation is opened.
+  ipcMain.handle('snc:runList', async () => {dataAvailable();return reconcileRunSummaries(runtimeStore(),runtimeVersions());});
+  ipcMain.handle('snc:runGet', (_e, id) => {dataAvailable();if(typeof id!=='string'||!id)throw Error('执行记录编号无效');return runtimeStore().get(id);});
+  ipcMain.handle('snc:codeVersion', async (_e,{action,ids,path:filePath}) => {
     dataAvailable();const versions=runtimeVersions();
     if(action==='details')return versions.details(ids);
     if(action==='file')return versions.file(ids,filePath);
@@ -512,7 +514,7 @@ function registerIpc() {
     if(activeRunIds.size||Object.values(collaboration.read().projects).some(p=>p.runs.some(r=>['running','pausing','waiting_approval','waiting_user'].includes(r.status))))throw Error('还有未结束的任务，请先暂停任务再审阅版本');
     const roots=JSON.parse(store.kvGet('snc:settings:v1')||'{}').tools?.workspaceRoots??[];
     const result=action==='keep'?versions.keep(ids):action==='preview'?versions.preview(ids,roots):versions.revert(ids,roots);
-    if(action==='revert')reconcileRuns(runtimeStore(),versions);
+    if(action==='revert')await reconcileRunSummaries(runtimeStore(),versions);
     return result;
   });
   ipcMain.handle('snc:runRemove', (_e, id) => {dataAvailable();activeRunIds.delete(id);return runtimeStore().remove(id);});

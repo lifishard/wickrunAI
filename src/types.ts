@@ -442,6 +442,8 @@ export interface RunState {
   harness?: import('./lib/harness').HarnessCheckpoint;
   subagents?: import('./lib/subagents').SubagentJob[];
   contextHandoff?: { id: string; at: number; inputTokens: number };
+  /** Desktop run summaries omit working/contextArchive/contextArchiveSteps/compactions; read the full record before resuming. */
+  slim?: boolean;
   contextArchive?: ChatMessage[];
   contextArchiveSteps?: ToolStep[];
   handoff?: HandoffInfo;

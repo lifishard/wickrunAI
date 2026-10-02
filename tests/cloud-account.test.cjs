@@ -64,7 +64,7 @@ test('guest import exposes only selected data and imports keys without overwriti
   });
   fs.writeFileSync(path.join(f.base,'cloud-accounts.json'),JSON.stringify({active:'alice',accounts:{alice:{user,token:Buffer.from('encrypted:'+token).toString('base64')}}}));
   fs.writeFileSync(path.join(f.base,'store.json'),JSON.stringify({kv:{'snc:settings:v1':JSON.stringify({keyProfiles:[{id:'existing'},{id:'new'}]}),'snc:projects:v1':'[]','private-device-data':'hidden'},secrets:{existing:{enc:false,v:'old-key'},new:{enc:true,v:Buffer.from('encrypted:import-key').toString('base64')}}}));
-  const account=f.create();const data=account.guestData();assert.equal(data['private-device-data'],undefined);assert(!JSON.stringify(data).includes('import-key'));
+  const account=f.create();const data=await account.guestData();assert.equal(data['private-device-data'],undefined);assert(!JSON.stringify(data).includes('import-key'));
   await account.call('importGuestKeys');assert.equal(uploaded.length,1);assert(uploaded[0].url.endsWith('/new'));assert.equal(uploaded[0].body.value,'import-key');
   await assert.rejects(account.call('keyGet',{id:'../../other'}),/Unsupported/);
 });

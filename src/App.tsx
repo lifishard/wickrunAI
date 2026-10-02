@@ -47,7 +47,7 @@ import { validateUserAnswers, type UserQuestionAnswers } from './lib/user-questi
 import { SEED_MODELS, buildHeaders, endpoint, fetchModels, previewBody } from './lib/api';
 import { PROBE_SPACING_MS, probe400, probeHistory, type ProbeStep } from './lib/probe400';
 import { formatExchange, failedExchange, exchangeOf, importExchanges } from './lib/wiretap';
-import { loadRuns, saveRun, recoverConversations, pauseOrphanedPending, forgetRuns, runRecord,conversationsForStorage } from './lib/runs';
+import { loadRuns, listRunRecords, saveRun, recoverConversations, pauseOrphanedPending, forgetRuns, runRecord,conversationsForStorage, prepareConversationRuns, fullRunState, restoreRunStates } from './lib/runs';
 import { localProgress } from './lib/task-context';
 import { conversationMemory, createContextHandoff, withHandoffArchive } from './lib/handoff';
 import { capabilities, outputReserve, quotaKey, routeKey, workingBudget } from './lib/adaptive';
@@ -408,6 +408,18 @@ export default function App() {
     return () => { cancelled = true; };
   }, [bootAttempt]);
 
+  // Startup reads run summaries only. The model context of the visible conversation is read in the background.
+  React.useEffect(() => {
+    if (!bootReady || !activeId) return;
+    const target = conversationsRef.current.find((c) => c.id === activeId);
+    if (!target) return;
+    let alive = true;
+    void prepareConversationRuns(target).then(() => {
+      if (alive) setConversations((all) => all.map((c) => (c.id === activeId ? restoreRunStates(c) : c)));
+    }).catch((error) => { if (alive) toast.show(t('执行记录读取失败：{error}', { error: String(error) }), 6000); });
+    return () => { alive = false; };
+  }, [activeId, bootReady]);
+
   React.useEffect(() => {
     if (settings && bootReady) void saveSettings(settings).catch(reportSaveError);
     if (settings) setRemoteConfig(settings.remote);
@@ -628,10 +640,12 @@ export default function App() {
     setConversations((prev) => prev.map((c) => (c.id === id ? fn(c) : c)));
   }
 
-  function openContextHandoff(msg: ChatMessage) {
+  async function openContextHandoff(msg: ChatMessage) {
     if (!active) return;
-    const state = msg.runState ?? runRecord(msg.taskId ?? '')?.state;
+    let state = msg.runState ?? runRecord(msg.taskId ?? '')?.state;
     if (!state) { toast.show(t('没有可交接的执行记录')); return; }
+    try { state = await fullRunState(state); }
+    catch (error) { toast.show(String(error instanceof Error ? error.message : error)); return; }
     const next = createContextHandoff(active, state, uid('handoff'));
     setConversations(all => [next, ...all]);
     setActiveId(next.id);
@@ -1365,6 +1379,15 @@ export default function App() {
       if (!apiKey) { finishPreparing(true); toast.show(t('这份凭据还没填 API Key')); setSettingsOpen(true); return; }
       // 没有会话就现开一个；排队条目带着会话 id，指向哪个会话就在哪个会话里跑
       const conv = targetConversation ?? newConversationForSend!;
+      // Startup only reads run summaries; read this conversation's model context before building the request.
+      try {
+        await prepareConversationRuns(conv);
+        if (resumeFrom?.slim) resumeFrom = await fullRunState(resumeFrom);
+      } catch (error) {
+        finishPreparing(true);
+        toast.show(String(error instanceof Error ? error.message : error), 6000);
+        return;
+      }
       if(conv.workspaceError&&(queuedInput?.toolsEnabled??conv.config.toolsEnabled)){finishPreparing(true);toast.show('独立工作区未准备好，任务未执行。请修正目录后重新创建 Work 会话。',6000);return;}
       const roleCatalog=localizeRoles(libraryRoles(settings.officeLibrary,conv.projectId?teamRuntime.project(conv.projectId).office?.customRoles:undefined),locale);
       const cfg = withRequestedDelegation(queuedInput?.toolsEnabled===undefined?conv.config:{...conv.config,toolsEnabled:queuedInput.toolsEnabled},text,roleCatalog,profile.id);
@@ -1590,7 +1613,7 @@ export default function App() {
         },
         skills: turnSkills,
         // 默认零关联：只在模型显式调用时才查，而且只查同一个项目
-        recallTasks: async (query, limit) => recallFrom(await loadRuns(), await observationSnapshot(),
+        recallTasks: async (query, limit) => recallFrom(await listRunRecords(), await observationSnapshot(),
           { query, limit, projectId: conv!.projectId ?? null, excludeConversationId: conv!.id }),
         extraSystem: [
           roleSystem(cfg.agentRole),
@@ -2565,7 +2588,7 @@ export default function App() {
         )}
       </main>
 
-      {codeChangesOpen && settings.tools.showCodeChanges !== false && !teamVisible && !sharingOpen && !configOpen && !openArtifact ? <CodeChangesPanel key={`code-changes-${active?.id}`} messages={msgs} busy={runningRef.current.size>0||startingRef.current.size>0||Object.values(teamRuntime.data?.projects??{}).some(p=>p.runs.some(r=>['running','pausing','waiting_approval','waiting_user'].includes(r.status)))} onReverted={async()=>{const records=await loadRuns();setConversations(all=>recoverConversations(all,records));setOpenArtifact(null);}} onClose={()=>setCodeChangesOpen(false)}/> : null}
+      {codeChangesOpen && settings.tools.showCodeChanges !== false && !teamVisible && !sharingOpen && !configOpen && !openArtifact ? <CodeChangesPanel key={`code-changes-${active?.id}`} messages={msgs} busy={runningRef.current.size>0||startingRef.current.size>0||Object.values(teamRuntime.data?.projects??{}).some(p=>p.runs.some(r=>['running','pausing','waiting_approval','waiting_user'].includes(r.status)))} onReverted={async()=>{const records=await loadRuns();setConversations(all=>recoverConversations(all,records));if(active)await prepareConversationRuns(active);setConversations(all=>all.map(c=>c.id===active?.id?restoreRunStates(c):c));setOpenArtifact(null);}} onClose={()=>setCodeChangesOpen(false)}/> : null}
       {activityOpen && !teamVisible && !sharingOpen && !configOpen && !openArtifact ? <ActivityPanel key={`activity-${active?.id}`} messages={msgs} onHide={() => setActivityOpen(false)} /> : null}
 
       {openArtifact && !teamVisible && !sharingOpen ? (

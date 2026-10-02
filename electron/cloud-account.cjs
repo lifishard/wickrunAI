@@ -152,13 +152,14 @@ function createCloudAccount({ app, safeStorage, openExternal, fetcher = fetch })
       }
       throw new Error('Unsupported cloud operation.');
     },
-    guestData() {
+    async guestData() {
       const file = path.join(base, 'store.json');
       let data;
       try { data = JSON.parse(fs.readFileSync(file,'utf8')); } catch (error) { if(error.code==='ENOENT') data = {}; else throw error; }
       const names = ['snc:conversations:v1','snc:projects:v1','snc:skills:v1','snc:tasks:v1','snc:settings:v1','anyai:observations:v1'];
       const result = Object.fromEntries(names.filter(name=>typeof data.kv?.[name]==='string').map(name=>[name,data.kv[name]]));
-      const archives = require('./run-store.cjs').createRunStore(path.join(base,'runtime-v2')).list().map(record=>({id:'run:'+record.id,title:record.title||record.question.content.slice(0,80),kind:'chat',updatedAt:record.state.at,text:JSON.stringify({question:record.question.content,result:record.state.content,reasoning:record.state.reasoning,status:record.state.status,steps:record.state.steps,usage:record.state.usage},null,2)}));
+      const runStore = require('./run-store.cjs').createRunStore(path.join(base,'runtime-v2')), summaries = runStore.listSummaries ? await runStore.listSummaries() : runStore.list();
+      const archives = summaries.map(record=>({id:'run:'+record.id,title:record.title||record.question.content.slice(0,80),kind:'chat',updatedAt:record.state.at,text:JSON.stringify({question:record.question.content,result:record.state.content,reasoning:record.state.reasoning,status:record.state.status,steps:record.state.steps,usage:record.state.usage},null,2)}));
       // Read the guest document without claiming or recovering its running jobs.
       let teams = {projects:{}};
       try { teams = JSON.parse(fs.readFileSync(path.join(base,'collaboration-v1.json'),'utf8')); } catch(error) { if(error.code!=='ENOENT')throw error; }
