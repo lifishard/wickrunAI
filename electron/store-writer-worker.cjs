@@ -11,6 +11,11 @@ const hash = (text) => crypto.createHash('sha256').update(text).digest('hex');
 let state;
 let loadedHash;
 let failed;
+// Size and modification time of the file as this worker last read or wrote it.
+// Re-reading and hashing a 100 MB store before every save only to learn that
+// nothing else touched it was most of the cost of a save.
+let loadedStat;
+const statOf = () => { try { const s = fs.statSync(file); return `${s.size}:${s.mtimeMs}`; } catch { return undefined; } };
 
 function validate(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value) ||
@@ -38,6 +43,7 @@ function load() {
     throw new Error(`数据读取失败，原文件已保留：${file} (${error.message})`);
   }
   loadedHash = hash(raw);
+  loadedStat = statOf();
   const expected = workerData.expectedHash;
   if (expected!==undefined && loadedHash!==expected) {
     const error = new Error('数据文件在写入线程启动前被其他程序改动，已停止覆盖；请重新读取后合并修改。');
@@ -63,10 +69,10 @@ function checkExternalChange() {
     }
     return;
   }
-  let current;
-  try { current = hash(fs.readFileSync(file, 'utf8')); }
-  catch (error) { throw error; }
-  if (current !== loadedHash) {
+  if (loadedStat !== undefined && statOf() === loadedStat) return;
+  const current = hash(fs.readFileSync(file, 'utf8'));
+  if (current === loadedHash) { loadedStat = statOf(); return; }
+  {
     const error = new Error('数据文件被其他程序改动，已停止覆盖；请重新读取后合并修改。');
     error.code = 'EXTERNAL_CHANGE';
     throw error;
@@ -84,20 +90,23 @@ function atomicWrite(text) {
     fs.fsyncSync(fd);
     fs.closeSync(fd);
     fd = undefined;
-    if (fs.existsSync(file)) {
-      const prevTmp = tmp + '.prev';
-      fs.copyFileSync(file, prevTmp);
-      const backupFd = fs.openSync(prevTmp, 'r+');
-      try { fs.fsyncSync(backupFd); } finally { fs.closeSync(backupFd); }
-      renameWithRetry(prevTmp, file + '.prev');
+    // The committed file becomes the backup by rename instead of a full copy:
+    // copying and syncing a 100 MB file on every save made each save take
+    // seconds. If the process stops between the two renames, startup restores
+    // the main file from .prev (see store.cjs).
+    let rotated = false;
+    if (fs.existsSync(file)) { renameWithRetry(file, file + '.prev'); rotated = true; }
+    try { renameWithRetry(tmp, file); }
+    catch (error) {
+      if (rotated && !fs.existsSync(file)) { try { renameWithRetry(file + '.prev', file); } catch { /* .prev is restored at startup */ } }
+      throw error;
     }
-    renameWithRetry(tmp, file);
   } finally {
     if (fd !== undefined) fs.closeSync(fd);
     try { fs.unlinkSync(tmp); } catch { /* no unfinished temporary file */ }
-    try { fs.unlinkSync(tmp + '.prev'); } catch { /* no unfinished backup temporary file */ }
   }
   loadedHash = hash(text);
+  loadedStat = statOf();
 }
 
 function mutate(message) {
@@ -106,6 +115,8 @@ function mutate(message) {
   if (!bucket || typeof message.key !== 'string' || !message.key) throw new Error('存储键无效');
   const had = Object.prototype.hasOwnProperty.call(bucket, message.key);
   const previous = bucket[message.key];
+  // Saving the same value again (autosave, then save-before-quit) needs no write.
+  if (message.delete ? !had : had && (typeof message.value === 'string' ? previous === message.value : JSON.stringify(previous) === JSON.stringify(message.value))) return;
   try {
     if (message.delete) delete bucket[message.key];
     else bucket[message.key] = message.value;

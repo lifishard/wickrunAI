@@ -90,7 +90,10 @@ function read() {
     try{raw=fs.readFileSync(target,'utf8');}
     catch(error){
       if(error.code!=='ENOENT')throw error;
-      if(fs.existsSync(target+'.prev'))throw Error('主数据文件缺失，已有备份；请恢复备份后重试。');
+      // A save renames the committed file to .prev before moving the new one in.
+      // Stopping between those two renames leaves only .prev: that is the last
+      // committed state, so restore it instead of refusing to start.
+      if(fs.existsSync(target+'.prev')){fs.copyFileSync(target+'.prev',target);return read();}
       cache={kv:{},secrets:{}};cacheFingerprint=null;return cache;
     }
     const value=JSON.parse(raw);validateStore(value);
@@ -125,6 +128,7 @@ module.exports = {
   },
   async kvSet(key, value) {
     const current = read();
+    if (current.kv[key] === value) return;
     try {
       await durableWriter().mutate({ scope: 'kv', key, value });
       if (cache === current) current.kv[key] = value;

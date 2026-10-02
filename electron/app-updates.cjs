@@ -15,7 +15,7 @@ function createAppUpdates({updater,packaged,platform=process.platform,env=proces
  updater.on('update-not-available',()=>set({status:'current',checkedAt:Date.now(),error:null}));
  updater.on('update-available',info=>set({status:'available',version:info.version,error:null,checkedAt:Date.now()}));
  updater.on('download-progress',p=>set({status:'downloading',percent:Math.min(100,Math.max(0,p.percent||0))}));
- updater.on('update-downloaded',info=>{set({status:'downloaded',version:info.version,percent:100,error:null});updater.autoInstallOnAppQuit=state.enabled&&mode==='automatic';notify('更新已下载，正常退出应用时安装。关闭窗口会继续在后台运行。');});
+ updater.on('update-downloaded',info=>{set({status:'downloaded',version:info.version,percent:100,error:null});updater.autoInstallOnAppQuit=state.enabled&&mode==='automatic';notify(`新版本 ${info.version} 已下载。可在设置里点「保存并重启安装」，或从托盘图标选择「退出灯芯AI」时自动安装。`);});
  updater.on('error',error=>set({status:'error',error:String(error.message||error).slice(0,500)}));
  async function check(){
   if(mode==='development')return {...state};if(pending)return pending;

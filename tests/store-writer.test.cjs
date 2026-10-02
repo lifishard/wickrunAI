@@ -112,3 +112,20 @@ test('renames refused briefly on Windows are retried; other errors fail at once'
   held=failing(['EPERM']);
   assert.throws(()=>renameWithRetry('a','b',{fs:held.fs,platform:'linux',wait:()=>{}}),/EPERM/);
 });
+
+test('saving an unchanged value does not rewrite the store; the backup is the previous file',async t=>{
+  const file=fixture(t);
+  const writer=createStoreWriter(file);t.after(()=>writer.close());
+  await writer.mutate({scope:'kv',key:'conversations',value:'v1'});
+  await writer.mutate({scope:'kv',key:'conversations',value:'v2'});
+  assert.equal(JSON.parse(fs.readFileSync(file+'.prev','utf8')).kv.conversations,'v1');
+  const before=fs.statSync(file);
+  await new Promise(r=>setTimeout(r,20));
+  await writer.mutate({scope:'kv',key:'conversations',value:'v2'});
+  await writer.mutate({scope:'kv',key:'missing',delete:true});
+  assert.equal(fs.statSync(file).mtimeMs,before.mtimeMs);
+  assert.equal(JSON.parse(fs.readFileSync(file+'.prev','utf8')).kv.conversations,'v1');
+  // An external edit is still detected after skipped writes.
+  fs.writeFileSync(file,JSON.stringify({kv:{conversations:'external!'},secrets:{}}));
+  await assert.rejects(writer.mutate({scope:'kv',key:'conversations',value:'v3'}),/其他程序/);
+});

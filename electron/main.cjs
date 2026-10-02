@@ -53,7 +53,7 @@ async function prepareRendererQuit(){
  await new Promise((resolve,reject)=>{
   const cleanup=()=>{clearTimeout(timer);ipcMain.removeListener('snc:quitPrepared',listener);};
   const listener=(e,response)=>{if(e.sender!==sender||e.senderFrame!==sender.mainFrame||response?.id!==id)return;cleanup();response.error?reject(Error(response.error)):resolve();};
-  const timer=setTimeout(()=>{cleanup();reject(Error('保存界面记录超时，未安装更新。'));},10000);
+  const timer=setTimeout(()=>{cleanup();reject(Error('保存界面记录超时，未安装更新。'));},30000);
   ipcMain.on('snc:quitPrepared',listener);sender.send('snc:prepareQuit',id);
  });
 }
@@ -811,7 +811,9 @@ if (!app.requestSingleInstanceLock()) {
         await store.flush();quitFlushed=true;app.quit();
       }catch(error){
         quitFlushing=false;
-        const result=await dialog.showMessageBox({type:'error',title:'尚有记录未保存',message:'保存记录失败，应用尚未退出。',detail:String(error.message||error),buttons:['重试保存','退出，仅保留已保存记录'],defaultId:0,cancelId:0});
+        // Show the dialog on top of the window: hidden behind other apps it left the app running with no visible way out.
+        const owner=mainWindow&&!mainWindow.isDestroyed()?mainWindow:null;if(owner){owner.show();owner.focus();}
+        const result=await (owner?dialog.showMessageBox(owner,{type:'error',title:'尚有记录未保存',message:'保存记录失败，应用尚未退出。',detail:String(error.message||error),buttons:['重试保存','退出，仅保留已保存记录'],defaultId:0,cancelId:0}):dialog.showMessageBox({type:'error',title:'尚有记录未保存',message:'保存记录失败，应用尚未退出。',detail:String(error.message||error),buttons:['重试保存','退出，仅保留已保存记录'],defaultId:0,cancelId:0}));
         if(result.response===1){quitFlushed=true;app.quit();}else app.quit();
       }
     })();
