@@ -10,6 +10,10 @@ Since 4.0.3 the Android preview is built and signed by CI, not on the developer'
 
 Release rules: the native source is a separate line (tag `android-source-vX.Y.Z[-rN]`, created by CI from the pinned commit if missing, never moved). `.github/workflows/android-build.yml` builds, signs and verifies the APK. Android never blocks the desktop release: the three desktop builds are required, and the APK is attached only if complete and matching the pinned certificate; otherwise the Release notes say it is missing and `release-android.yml` (or re-running the failed job) attaches it later without touching published desktop files. Every version bump needs `config/android-release-source.json` and the Android line updated to the same version.
 
+## README release sections
+
+The README home page lists only highlights and major updates, each in the 4.0.0 section format (one intro paragraph, bold-led bullets, a closing paragraph linking the release notes). Small patch releases go only in `docs/releases/vX.Y.Z.md`, never as a README section. Release notes link to other files with full URLs so they work on the GitHub Release page.
+
 ## Shell commands in tests
 
 The development machine is Windows, so tests run under `cmd.exe`. Some verification runs elsewhere under `sh`. A test that shells out must use a command that behaves the same in both: prefer `node -e "..."`. POSIX-only syntax silently changes meaning under `cmd.exe` rather than failing loudly. `echo x; exit 1` is one `echo` there, exit code 0, so a test expecting a failure passes on Linux and misreports on Windows. Keep command output ASCII when a test asserts on it; non-ASCII has to survive the command line and the pipe, and that is a separate failure with the same symptom.
