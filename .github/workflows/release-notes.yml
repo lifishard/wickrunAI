@@ -1,0 +1,33 @@
+name: Release Notes
+
+# Refreshes a published Release's text from docs/releases/<tag>.md on main.
+# Only the notes change; assets are never touched.
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 要更新说明的版本标签，例如 v4.0.3
+        type: string
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  notes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: 用仓库里的发布说明更新 Release 正文
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::版本标签格式不正确"; exit 1; }
+          notes="docs/releases/${RELEASE_TAG}.md"
+          test -f "$notes" || { echo "::error::找不到 $notes"; exit 1; }
+          gh release view "$RELEASE_TAG" >/dev/null
+          gh release edit "$RELEASE_TAG" --notes-file "$notes"

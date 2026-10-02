@@ -9,8 +9,6 @@
 Open or closed, paid or free. Bring your own keys; cloud sync is optional, and sharing never transfers your credentials.
 
 [![Version](https://img.shields.io/badge/version-4.0.3-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
-
-[4.0.3 — 启动提速、稳定第三方客户端、视频与大文件输出、云文件库、Android 改由 CI 签名](docs/releases/v4.0.3.md)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-lightgrey)](#install)
 [![CI](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml/badge.svg)](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml)
@@ -22,6 +20,28 @@ Open or closed, paid or free. Bring your own keys; cloud sync is optional, and s
 </div>
 
 ---
+
+## 4.0.3 — Faster startup, steadier local clients, and cloud files
+
+This update folds in the unpublished 4.0.2 work: long tasks through official clients no longer freeze the window, videos and large files from any model become playable files, and a private cloud file library joins shared files on object storage. The Android preview is now built and signed by the release pipeline.
+
+- **Open in seconds, even with a long history.** Startup reads a small summary of each past task instead of every task's full model context, which could reach hundreds of megabytes. The full context loads only for the conversation you open, continue, or hand off.
+- **Long client tasks stay responsive.** Grok, Kimi, Codex, and similar clients batch their progress writes and interface updates; no text or tool status is dropped. Stopping a conversation ends the client's whole process tree, and Grok stops waiting after 15 quiet minutes (adjustable) while keeping its output.
+- **Videos, audio, and large files from any model.** Files a client writes in the workspace, and media returned by API models, appear under this turn's files even if the task fails partway. Playback streams from disk with seeking, so multi-GB videos use about as much memory as small files.
+- **Cloud files and larger shared files.** Settings → Cloud files holds your own uploads with playback and download (1 GB free, 10 GB paid, up to 5 GB per file). New shared-file uploads use the same storage and allowance, still checked against each share's permissions; end-to-end encrypted shares keep their 100 MB limit.
+- **Android preview signed by CI, never blocking desktop.** The APK is built from a pinned source tag and signed with a key held by the release pipeline; any other certificate is refused. Desktop packages publish once their builds pass, and a late APK is attached to the same release.
+
+Cloud files are not end-to-end encrypted, and the shared group-chat limits are unchanged. Desktop 4.0.2 features have not yet reached the Android line. See the [4.0.3 release notes](docs/releases/v4.0.3.md).
+
+**Android 4.0.1 migration:** 4.0.3 uses a new signing key, so it cannot install over 4.0.1 or earlier previews. Back up the data you need, uninstall, then install 4.0.3; later releases update in place.
+
+## 4.0.1 — Layered sync, encryption, and shared group chats
+
+- **Sync that scales.** Text conversations, Butler needs, and project listings sync in verified chunks with resumable uploads; attachments pass through a cache of up to seven days. The old 10 MB whole-snapshot failure is gone.
+- **Optional end-to-end encryption.** New devices are approved by an unlocked device or a recovery key you keep. New shared content is encrypted by default, with keys rotated when members leave.
+- **Shared groups.** Create groups, share one resource to several groups, reply to specific messages, and call a model only when you choose one.
+
+See the [4.0.1 release notes](docs/releases/v4.0.1.md).
 
 ## 4.0.0 — Cross-account collaboration
 
@@ -50,6 +70,18 @@ the saved progress carries over.
 ```
 
 Three routes, two handovers, one task, nobody watching. The order is a list **you** wrote — the program walks it, it does not decide for you which of your routes is the cheap one. [How it decides](docs/llm-failover.md).
+
+## 3.0.0 — Proactive Butler
+
+Once you turn it on, the Butler gathers need signals from conversations and approved device activity, analyzes and researches them on an always-on computer you choose, and writes morning and evening briefs. Goals and skills it proposes wait for your review; a guess never becomes your decision on its own.
+
+- **One place for today.** Today's Butler shows signals, inferred goals, briefs, skill drafts, source status, and activity. Confirm, correct, or reject a goal, and mark results as useful, disliked, or not your need.
+- **Your model, your computer, your limits.** Pick a route group or connected subscription client, a daily usage cap, schedule, time zone, and the desktop that runs it. Phones can view and add needs; nothing runs in the cloud while that computer is offline.
+- **Sources you approve one by one.** A local browser extension reads only allowed domains; Windows, macOS, and Linux read approved app text within system limits; Android uses accessibility text and share. Raw captures stay on the device and are encrypted at rest.
+- **Privacy rules first.** Per-device deny lists and excluded words win over allow lists; authentication content is dropped, contacts and financial fields are masked, and health content is excluded by default.
+- **Optional daily execution.** Suitable goals can start in a separate Work workspace that produces reviewable files, drafts, or prototypes, once per goal and within a daily count.
+
+The Butler never places orders, sends messages, or operates your accounts, and it does not read full app or site histories. It is off by default after updating. See the [3.0.0 release notes](docs/releases/v3.0.0.md) and [how the Butler works](docs/PROACTIVE_BUTLER.md).
 
 ## 2.20.3 Desktop interactions
 
