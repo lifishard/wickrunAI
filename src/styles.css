@@ -1183,13 +1183,15 @@ input[type='range'] {
   display: none;
 }
 
+/* !important: `.btn:has(> svg)` sets display with higher specificity, which
+   used to show the narrow-screen menu button next to the wide-screen one. */
 .only-narrow {
-  display: none;
+  display: none !important;
 }
 
 @media (max-width: 860px) {
   .only-narrow {
-    display: inline-flex;
+    display: inline-flex !important;
   }
 
   .sidebar {
@@ -2481,7 +2483,7 @@ kbd {
   /* 窄屏侧栏是抽屉，宽度由 CSS 控制，把手和折叠按钮都没意义 */
   .resizer,
   .wide-only {
-    display: none;
+    display: none !important;
   }
   .sidebar {
     width: min(300px, 86vw) !important;
@@ -3109,3 +3111,6 @@ kbd {
 
 /* Shared navigation stays with the conversation sidebar. */
 .web-nav{padding:4px 10px;display:grid;gap:2px}.web-nav button{display:flex;align-items:center;gap:10px;min-height:38px;padding:8px 10px;border:0;border-radius:7px;background:transparent;color:var(--fg-dim);text-align:left;font:inherit;font-size:13px}.web-nav button[aria-current]{background:var(--accent-soft);color:var(--accent)}.web-nav button:hover{background:var(--bg-hover)}.web-recent-label{padding:10px 14px;font-size:12px;color:var(--fg-dim)}.workspace-mode-select{width:100%;min-height:32px;padding:5px 9px;background:var(--bg);color:var(--fg);font:inherit;font-size:12px;border:1px solid var(--border);border-radius:7px}
+
+.btn.icon-only { padding: 5px 7px; }
+.share-topbar .share-reveal { margin-right: 4px; }

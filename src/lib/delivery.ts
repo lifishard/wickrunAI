@@ -1,5 +1,6 @@
 import { reconcileProgress, qualityLoop, progressHistory, validProgressEvidence } from './task-progress';
 import { citableHint } from './harness';
+import { containsLoosely, TEXT_DELIVERABLE } from './delivery-match';
 import type { AcceptanceCheck, DeliveryReport, DeliveryRequirement, RecoveryInfo, RequirementVerification, RunState, ToolResult } from '../types';
 
 export function addRunInput(state:RunState,message:{id:string;content:string;createdAt:number}):RunState {
@@ -66,7 +67,7 @@ export function updateRequirements(state: RunState, args: Record<string,unknown>
 export async function verifyRequirements(state: RunState, args: Record<string,unknown>, inspect: (check: AcceptanceCheck) => Promise<ToolResult>): Promise<ToolResult> {
   try {
     if (!Array.isArray(args.ids) || !args.ids.length || args.ids.length > 20 || args.ids.some(id => typeof id !== 'string' || !state.requirements?.some(r => r.id === id))) throw new Error('ids 必须引用已有要求');
-    const next = structuredClone(state.requirements ?? []), results: {id:string;verification:RequirementVerification}[] = [];
+    const next = structuredClone(state.requirements ?? []), results: {id:string;verification:RequirementVerification}[] = [], skipped: {id:string;reason:string}[] = [];
     for (const id of [...new Set(args.ids as string[])]) {
       const r = next.find(r => r.id === id)!;
       let v: RequirementVerification;
@@ -78,8 +79,23 @@ export async function verifyRequirements(state: RunState, args: Record<string,un
         if (!review || !['passed','failed','unverifiable'].includes(review.status ?? '') || typeof review.detail !== 'string' || review.detail.length < 8 || review.detail.length > 1600 || (review.status !== 'unverifiable' && !valid)) throw new Error(`要求 ${id} 的模型复核需要具体覆盖说明，以及已有证据的编号：成功工具步骤的 id/callId，或 text: 加上你可见回答里的原文片段。unverifiable 表示这一条交回用户判断、不计入完成，不要用它绕过证据。${citableHint(state)}`);
         v = {revision:r.revision,status:review.status as RequirementVerification['status'],method:'model',detail:review.detail,evidence:valid ? evidence! : [],at:Date.now()};
       } else if (r.check.kind === 'answer_contains') {
-        const missing = r.check.contains!.filter(s => !(state.content ?? '').includes(s));
-        v = {revision:r.revision,status:missing.length ? 'failed':'passed',method:'program',detail:missing.length ? `答案缺少指定原文：${missing.join('、')}`:'已匹配指定原文；仅证明字面覆盖，不证明内容正确或任务完整',evidence:['answer'],at:Date.now()};
+        // The deliverable is the visible answer plus the text files this run produced
+        // (reports, scripts, subtitles, pages). A phrase written into the delivered file
+        // counts the same as one written into the reply.
+        const answer = state.content ?? '', outputs = textOutputs(state);
+        if (!answer.trim() && !outputs.length) { skipped.push({id,reason:'还没有回答或产出文件可供检查'}); continue; }
+        let missing = r.check.contains!.filter(s => !containsLoosely(answer, s));
+        const where: string[] = missing.length < r.check.contains!.length ? ['answer'] : [];
+        for (const file of outputs) {
+          if (!missing.length) break;
+          const found = await findInFile(inspect, file, missing);
+          if (found.length) { where.push(file); missing = missing.filter(s => !found.includes(s)); }
+        }
+        const scope = outputs.length ? `回答和 ${outputs.length} 个产出文件` : '回答';
+        v = {revision:r.revision,status:missing.length ? 'failed':'passed',method:'program',
+          detail:missing.length ? `${scope}中都未找到：${missing.join('、')}（已忽略大小写、空白、引号样式和 Markdown 标记）`
+            : `已在${where.map(w => w === 'answer' ? '回答' : w.split(/[\\/]/).pop()).join('、')}中找到全部指定内容；仅证明字面出现，不证明内容正确或任务完整`,
+          evidence:where.length ? where : ['answer'],at:Date.now()};
       } else {
         const result = await inspect(r.check);
         let data: {status?:string;detail?:string} = {};
@@ -96,8 +112,24 @@ export async function verifyRequirements(state: RunState, args: Record<string,un
       if(m.status!=='blocked')m.history=progressHistory(m,stalled);
       m.status='blocked';m.note=stalled;m.updatedAt=Date.now();
     }
-    return {ok:true,content:JSON.stringify(results),summary:`已核验 ${results.length} 项：${results.filter(r => r.verification.status === 'passed').length} 项通过`};
+    return {ok:true,content:JSON.stringify(skipped.length ? [...results,...skipped.map(s => ({id:s.id,skipped:s.reason}))] : results),
+      summary:`已核验 ${results.length} 项：${results.filter(r => r.verification.status === 'passed').length} 项通过${skipped.length ? `；${skipped.length} 项尚无产出，暂不判定` : ''}`};
   } catch(e) { return error(e); }
+}
+
+/** Text files written by this run, newest last, deduplicated; capped so a huge run cannot stall the check. */
+export function textOutputs(state: RunState): string[] {
+  const paths = (state.steps ?? []).filter(s => s.status === 'ok').flatMap(s => s.files ?? [])
+    .filter(f => f.direction === 'output' && TEXT_DELIVERABLE.test(f.path)).map(f => f.path);
+  return [...new Set(paths)].slice(-20);
+}
+
+async function findInFile(inspect: (check: AcceptanceCheck) => Promise<ToolResult>, path: string, phrases: string[]): Promise<string[]> {
+  try {
+    const result = await inspect({kind:'file_find',path,contains:phrases});
+    const data = JSON.parse(result.content) as {found?: unknown};
+    return Array.isArray(data.found) ? phrases.filter(p => (data.found as unknown[]).includes(p)) : [];
+  } catch { return []; }
 }
 
 export function deliveryReport(state: RunState): DeliveryReport {

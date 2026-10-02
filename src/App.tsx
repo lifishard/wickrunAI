@@ -2419,7 +2419,7 @@ export default function App() {
           ) : null}
           <span className="page-title" title={active ? conversationTitle(active.title, t) : undefined}>{active ? conversationTitle(active.title, t) : t('新对话')}</span>
           <span className="spacer" />
-          <button className="btn sm" onClick={()=>{setShareSource(active?{kind:'conversation',sourceId:active.id}:undefined);setSharingOpen(true);}}>{t(active?'分享':'群组与共享')}</button>
+          <button className="btn sm ghost icon-only" title={t(active?'分享':'群组与共享')} aria-label={t(active?'分享':'群组与共享')} onClick={()=>{setShareSource(active?{kind:'conversation',sourceId:active.id}:undefined);setSharingOpen(true);}}><Icon name="share" size={18}/></button>
           <CloudSyncControl local={{settings,conversations,projects,skills,tasks}}
             blocked={Object.values(runs).some(Boolean)||Object.values(teamRuntime.data?.projects??{}).some(p=>p.runs.some(r=>['running','waiting_approval','waiting_user'].includes(r.status)))}
             isBlocked={()=>runningRef.current.size>0||startingRef.current.size>0||Object.values(teamRuntime.data?.projects??{}).some(p=>p.runs.some(r=>['running','pausing','waiting_approval','waiting_user'].includes(r.status)))}
@@ -2789,7 +2789,7 @@ export default function App() {
         onAnnotate={saveAnnotation} /> : null}
       {coordinationOpen&&active&&<React.Suspense fallback={<div className="empty">{t('正在打开任务协调…')}</div>}><ConversationCoordination key={active.id} active={active} tasks={taskSummaries(active.id)} busy={runningRef.current.size>0||startingRef.current.size>0||Object.values(teamRuntime.data?.projects??{}).some(p=>p.runs.some(r=>['running','pausing','waiting_approval','waiting_user'].includes(r.status)))} onClose={()=>setCoordinationOpen(false)} onOpen={id=>{setActiveId(id);setCoordinationOpen(false);}} onMessage={async(id,text)=>{await coordinateTasks(active.id,{action:'message',conversation_id:id,text,request_key:uid('message')},'manual');}} onMerged={async()=>{flushSync(()=>updateConv(active.id,c=>({...c,workspaceError:'文件已应用到原目录。后续修改请新建 Work 副本。'})));await saveConversationsNow(conversationsRef.current);}}/></React.Suspense>}
       <Toast message={toast.message} />
-      {sharingOpen&&<React.Suspense fallback={<div className="empty">{t('正在打开共享与协作…')}</div>}><CollaborationHub onAccount={()=>{setSharingOpen(false);setTeamVisible(false);requestAnimationFrame(()=>window.dispatchEvent(new Event('wickrun:open-account')));}} initialSource={shareSource} onOpenSidebar={()=>{setSidebarHidden(false);setSidebarOpen(true);}} settings={{...settings,defaultConfig:config??settings.defaultConfig}}
+      {sharingOpen&&<React.Suspense fallback={<div className="empty">{t('正在打开共享与协作…')}</div>}><CollaborationHub onAccount={()=>{setSharingOpen(false);setTeamVisible(false);requestAnimationFrame(()=>window.dispatchEvent(new Event('wickrun:open-account')));}} initialSource={shareSource} sidebarHidden={sidebarHidden} onOpenSidebar={()=>{setSidebarHidden(false);setSidebarOpen(true);}} settings={{...settings,defaultConfig:config??settings.defaultConfig}}
         seeds={sharedSeeds(conversations,projects,teamRuntime.data,(butlerRuntime.getSnapshot().brain.jobs??[]).flatMap(job=>job.conversationId?[job.conversationId]:[]))}
         onClose={()=>setSharingOpen(false)}
         onImport={async(item,token)=>{

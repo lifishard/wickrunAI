@@ -199,3 +199,39 @@ test('file_contains 让「改了某个文本文件」这类交付能程序核验
   fs2.rmSync(dir,{recursive:true,force:true});
 });
 
+
+test('answer checks also search the text files this run produced, with formatting tolerated',async t=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'anyai-deliverable-'));t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
+  const script=path.join(dir,'promo.md'),video=path.join(dir,'cut.mp4');
+  fs.writeFileSync(script,'# Promo\n\n**North star:** Automated   routing\nShots 1, 3, 5, and 8 only.\n“Quota” handover\n');
+  fs.writeFileSync(video,'not text');
+  const s=state();
+  s.working[0].content='Put "Automated routing" and "Shots 1, 3, 5, and 8 only." in the script; end card says wickrunai.com';
+  d.updateRequirements(s,{requirements:[{id:'lines',title:'Lines',sourceId:'u1',sourceQuote:'Automated routing',check:{kind:'answer_contains',contains:['Automated routing','Shots 1, 3, 5, and 8 only.','"Quota" handover']}},
+    {id:'site',title:'Site',sourceId:'u1',sourceQuote:'wickrunai.com',check:{kind:'answer_contains',contains:['wickrunai.com']}}]});
+  const inspect=check=>Promise.resolve(native.inspectDeliverable(check,{workspaceRoots:[dir]}));
+  // Nothing delivered yet (a paused run): no verdict instead of a red failure.
+  const pending=await d.verifyRequirements(s,{ids:['lines','site']},inspect);
+  assert.equal(pending.ok,true);assert.equal(s.requirements[0].verification,undefined);assert.equal(d.deliveryReport(s).status,'unchecked');
+  s.content='Done — see the attached script.';
+  s.steps.push({id:'out',callId:'out',name:'native_output_files',status:'ok',files:[{path:script,name:'promo.md',direction:'output'},{path:video,name:'cut.mp4',direction:'output'}]});
+  await d.verifyRequirements(s,{ids:['lines','site']},inspect);
+  const [lines,site]=s.requirements;
+  assert.equal(lines.verification.status,'passed');assert.deepEqual(lines.verification.evidence,[script]);
+  assert.match(lines.verification.detail,/promo\.md/);
+  assert.equal(site.verification.status,'failed');assert.match(site.verification.detail,/回答和 1 个产出文件中都未找到：wickrunai\.com/);
+  // Wording still has to match: a different number is not tolerated.
+  const match=loaderMatch();assert.equal(match.containsLoosely('Shots 1, 3, 5 and 8','Shots 1, 3, 5, and 8'),false);
+  assert.equal(match.containsLoosely('**Automated**\n routing','automated routing'),true);
+  assert.equal(native.normalizeForMatch('“A”  — **b**'),match.normalizeForMatch('“A”  — **b**'));
+});
+function loaderMatch(){return loader()(path.resolve(__dirname,'../src/lib/delivery-match.ts'));}
+
+test('file_contains tolerates line wrapping and Markdown markers but not different words',async t=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'anyai-file-contains-'));t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
+  const f=path.join(dir,'README.md');fs.writeFileSync(f,'The **saved progress**\ncarries over.');
+  const ok=JSON.parse(native.inspectDeliverable({kind:'file_contains',path:f,contains:['saved progress carries over']},{workspaceRoots:[dir]}).content);
+  assert.equal(ok.status,'passed');
+  const bad=JSON.parse(native.inspectDeliverable({kind:'file_contains',path:f,contains:['saved progress carried over']},{workspaceRoots:[dir]}).content);
+  assert.equal(bad.status,'failed');
+});

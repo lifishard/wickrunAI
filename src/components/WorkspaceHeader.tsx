@@ -29,7 +29,10 @@ export default function WorkspaceHeader({ team, platform, projects, projectId, o
         {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
       </select>
     </label>
-    <select className="workspace-mode-select" aria-label={t('工作区切换')} value={team?'team':'chat'} onChange={e=>onMode(e.target.value==='team')}><option value="chat">{t('对话')}</option><option value="team">{t('Agent 团队')}</option></select>
+    <div className="workspace-mode pill-switch" role="group" aria-label={t('工作区切换')}>
+      <button aria-pressed={!team} onClick={() => onMode(false)}>{t('对话')}</button>
+      <button aria-pressed={team} onClick={() => onMode(true)}>{t('Agent 团队')}</button>
+    </div>
     {(onButler||onDiscussButler)&&<details className="workspace-assistant"><summary>{t('管家')}</summary>{onButler&&<button className="btn block ghost" onClick={onButler}>{t('今日管家')}</button>}{onDiscussButler&&<button className="btn block ghost" onClick={onDiscussButler}>{t('找管家 · 说说想做什么')}</button>}</details>}
   </div>;
 }

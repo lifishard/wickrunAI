@@ -1,3 +1,4 @@
+import Icon from '../Icon';
 import React from 'react';
 import type { AppSettings } from '../../types';
 import { useT } from '../../lib/i18n';
@@ -16,7 +17,7 @@ type HistoryEntry = { id: string; actorId: string; actorName?: string; at: numbe
 type HubState = { user?: { id: string; email?: string; name?: string } | null; items: SharedItem[]; spaces: SharedSpace[]; connections: SharedConnection[]; storage?:{usedBytes:number;limitBytes:number;availableBytes:number;plan:string;includesHistory:boolean}|null };
 type Tab = 'items' | 'spaces' | 'connections';
 type ModelChoice={profileId:string;model:string};
-type Props = { initialSource?:{kind:SharedItem['kind'];sourceId:string};onOpenSidebar?:()=>void;onAccount?:()=>void; settings: AppSettings; seeds: SharedSeed[]; onClose: () => void; onImport?: (item: SharedItem, token?:string) => Promise<string|void>; onHandoff?: (receipt:Record<string,unknown>,target:SharedItem|undefined,connection:SharedConnection)=>Promise<void>; onGenerate?: (item: SharedItem, prompt: string, signal: AbortSignal, choice:ModelChoice) => Promise<string> };
+type Props = { initialSource?:{kind:SharedItem['kind'];sourceId:string};onOpenSidebar?:()=>void;sidebarHidden?:boolean;onAccount?:()=>void; settings: AppSettings; seeds: SharedSeed[]; onClose: () => void; onImport?: (item: SharedItem, token?:string) => Promise<string|void>; onHandoff?: (receipt:Record<string,unknown>,target:SharedItem|undefined,connection:SharedConnection)=>Promise<void>; onGenerate?: (item: SharedItem, prompt: string, signal: AbortSignal, choice:ModelChoice) => Promise<string> };
 
 const kinds = ['file', 'folder', 'conversation', 'project', 'workflow'] as const;
 const kindNames: Record<string, string> = { file: '文件', folder: '文件夹', conversation: '对话', project: '项目', workflow: '工作流' };
@@ -104,7 +105,7 @@ function Thread({ item, role, disabled, onSend, viewerId,onAnnotate,comments,set
   </section>;
 }
 
-export default function CollaborationHub({ initialSource,onOpenSidebar,onAccount,settings, seeds, onClose, onImport, onHandoff, onGenerate }: Props) {
+export default function CollaborationHub({ initialSource,onOpenSidebar,sidebarHidden,onAccount,settings, seeds, onClose, onImport, onHandoff, onGenerate }: Props) {
   const [showList,setShowList]=React.useState(false);
   const t = useT();
   const appliedSource=React.useRef('');
@@ -362,7 +363,7 @@ export default function CollaborationHub({ initialSource,onOpenSidebar,onAccount
   },[tab,busy,selectedConnectionId,selectedConnection?.permissions?.readReceipts,refreshState]);
 
   return <div className={`share-hub ${item?(showList?'share-show-list':'share-show-item'):''}`} role="region" aria-label={t('共享与协作')}>
-    <header className="share-topbar">{onOpenSidebar&&<button className="btn sm ghost only-narrow" onClick={onOpenSidebar}>{t('展开侧栏')}</button>}<div><h1>{t('群组与共享')}</h1></div>{onAccount&&<button className="btn ghost" onClick={onAccount}>{t('账号与加密')}</button>}<button className="btn ghost" onClick={onClose} aria-label={t('关闭')}>{t('关闭')}</button></header>
+    <header className="share-topbar">{onOpenSidebar&&<button className="btn sm ghost only-narrow share-reveal" title={t('展开侧栏')} aria-label={t('展开侧栏')} onClick={onOpenSidebar}><Icon name="menu" size={18}/></button>}{onOpenSidebar&&sidebarHidden&&<button className="btn sm ghost wide-only share-reveal" title={t('展开侧栏（Ctrl+B）')} aria-label={t('展开侧栏（Ctrl+B）')} onClick={onOpenSidebar}><Icon name="menu" size={18}/></button>}<div><h1>{t('群组与共享')}</h1></div>{onAccount&&<button className="btn ghost" onClick={onAccount}>{t('账号与加密')}</button>}<button className="btn ghost" onClick={onClose} aria-label={t('关闭')}><Icon name="close" size={16}/>{t('关闭')}</button></header>
     <nav className="share-tabs" aria-label={t('协作页面')}>
       {([['items', '共享内容'], ['spaces', '空间与成员'], ['connections', '工作交接']] as const).map(([id, label]) => <button key={id} onClick={() => setTab(id)} aria-current={tab === id ? 'page' : undefined}>{t(label)}</button>)}
     </nav>

@@ -1,5 +1,6 @@
 'use strict';
 
+const windowHealth = require('./window-health.cjs');
 const path = require('node:path');
 const { app, BrowserWindow, ipcMain, shell, Menu, nativeTheme, dialog, Notification, powerMonitor, safeStorage, Tray, nativeImage, protocol } = require('electron');
 require('./app-identity.cjs').configureIdentity(app);
@@ -141,6 +142,12 @@ function rememberBounds(win) {
   }, 400);
 }
 
+let windowLogger;
+function windowLog() {
+  windowLogger ||= windowHealth.createLog(path.join(app.getPath('userData'), 'logs'));
+  return windowLogger;
+}
+
 function createWindow() {
   const saved = savedBounds();
   mainWindow = new BrowserWindow({
@@ -163,6 +170,8 @@ function createWindow() {
       backgroundThrottling: false,
     },
   });
+
+  windowHealth.watchWindow(mainWindow, { log: windowLog() });
 
   mainWindow.once('ready-to-show', () => {
     if (saved?.maximized) mainWindow.maximize();
@@ -735,6 +744,7 @@ function registerIpc() {
  * 生命周期
  * ------------------------------------------------------------------ */
 
+windowHealth.configureCompositing(app);
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
@@ -743,6 +753,7 @@ if (!app.requestSingleInstanceLock()) {
   app.setAppUserModelId('dev.anyai.desktop');
 
   app.whenReady().then(async () => {
+    windowHealth.watchGpu(app, { log: windowLog(), windows: () => [mainWindow] });
     protocol.handle('wickrun-media', serveMedia);
     registerIpc();
     if(!storageStartupError){

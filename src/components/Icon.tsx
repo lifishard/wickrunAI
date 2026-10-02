@@ -8,7 +8,7 @@ export type IconName =
   | 'bolt' | 'circleHalf' | 'lock' | 'thumbsUp' | 'thumbsDown' | 'check'
   | 'checkCircle' | 'info' | 'list' | 'play' | 'brain' | 'shield'
   | 'calendar' | 'link' | 'monitor' | 'sun' | 'moon'
-  | 'arrowUp' | 'arrowDown' | 'arrowRight' | 'sidebarCollapse';
+  | 'arrowUp' | 'arrowDown' | 'arrowRight' | 'sidebarCollapse' | 'share';
 
 type Props = Omit<SVGProps<SVGSVGElement>, 'name'> & { name: IconName; size?: number };
 
@@ -19,7 +19,8 @@ export default function Icon({ name, size = 18, ...props }: Props) {
     enter: <><path d="M20 4v8a4 4 0 0 1-4 4H5" /><path d="m9 12-4 4 4 4" /></>,
     close: <path d="M18 6 6 18M6 6l12 12" />,
     plus: <path d="M12 5v14M5 12h14" />,
-    settings: <><path d="M12 3.5a2 2 0 0 1 2 1.4l.4 1.2 1.2.7 1.2-.3a2 2 0 0 1 2.2 1l1 1.8a2 2 0 0 1-.3 2.4l-.9.9v1.4l.9.9a2 2 0 0 1 .3 2.4l-1 1.8a2 2 0 0 1-2.2 1l-1.2-.3-1.2.7-.4 1.2a2 2 0 0 1-2 1.4h-2a2 2 0 0 1-2-1.4l-.4-1.2-1.2-.7-1.2.3a2 2 0 0 1-2.2-1l-1-1.8a2 2 0 0 1 .3-2.4l.9-.9v-1.4l-.9-.9a2 2 0 0 1-.3-2.4l1-1.8a2 2 0 0 1 2.2-1l1.2.3 1.2-.7.4-1.2a2 2 0 0 1 2-1.4z" /><circle cx="12" cy="12" r="3" /></>,
+    settings: <><path d="M10.54 4.34 L10.80 1.87 A10.2 10.2 0 0 1 13.20 1.87 L13.46 4.34 A7.8 7.8 0 0 1 16.38 5.55 L18.31 3.99 A10.2 10.2 0 0 1 20.01 5.69 L18.45 7.62 A7.8 7.8 0 0 1 19.66 10.54 L22.13 10.80 A10.2 10.2 0 0 1 22.13 13.20 L19.66 13.46 A7.8 7.8 0 0 1 18.45 16.38 L20.01 18.31 A10.2 10.2 0 0 1 18.31 20.01 L16.38 18.45 A7.8 7.8 0 0 1 13.46 19.66 L13.20 22.13 A10.2 10.2 0 0 1 10.80 22.13 L10.54 19.66 A7.8 7.8 0 0 1 7.62 18.45 L5.69 20.01 A10.2 10.2 0 0 1 3.99 18.31 L5.55 16.38 A7.8 7.8 0 0 1 4.34 13.46 L1.87 13.20 A10.2 10.2 0 0 1 1.87 10.80 L4.34 10.54 A7.8 7.8 0 0 1 5.55 7.62 L3.99 5.69 A10.2 10.2 0 0 1 5.69 3.99 L7.62 5.55 A7.8 7.8 0 0 1 10.54 4.34Z" /><circle cx="12" cy="12" r="3" /></>,
+    share: <><circle cx="18" cy="5" r="2.6" /><circle cx="6" cy="12" r="2.6" /><circle cx="18" cy="19" r="2.6" /><path d="m8.3 13.3 7.4 4.4M15.7 6.3l-7.4 4.4" /></>,
     fork: <><circle cx="6" cy="5" r="2" /><circle cx="18" cy="6" r="2" /><circle cx="18" cy="18" r="2" /><path d="M6 7v6a5 5 0 0 0 5 5h5M8 5h8" /></>,
     retry: <><path d="M20 11a8 8 0 1 0-2.2 6" /><path d="M20 4v7h-7" /></>,
     edit: <><path d="M4 20h4l11-11-4-4L4 16v4zM13 7l4 4" /></>,

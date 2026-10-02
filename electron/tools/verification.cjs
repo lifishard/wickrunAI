@@ -3,11 +3,24 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { guardPath } = require('./common.cjs');
 
+/** Same normalization as src/lib/delivery-match.ts: formatting differences are not missing content. */
+function normalizeForMatch(text) {
+  return String(text).normalize('NFKC')
+    .replace(/[\u2018\u2019\u201A\u201B\u2032]/g, "'")
+    .replace(/[\u201C\u201D\u201E\u201F\u2033]/g, '"')
+    .replace(/[\u2010-\u2015\u2212]/g, '-')
+    .replace(/[*_`~]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+const containsLoosely = (raw, s) => { const n = normalizeForMatch(s); return n.length > 0 && normalizeForMatch(raw).includes(n); };
+
 /** Only deterministic, read-only claims. Never infer semantic completeness from a file. */
 function inspectDeliverable(args, ctx) {
   const respond = (status, detail) => ({ok:true,content:JSON.stringify({status,detail}),summary:detail});
   try {
-    if (!['file_exists','file_contains','json','ics'].includes(args.kind)) return respond('unverifiable','不支持这项程序检查');
+    if (!['file_exists','file_contains','file_find','json','ics'].includes(args.kind)) return respond('unverifiable','不支持这项程序检查');
     if (typeof args.path !== 'string' || !path.isAbsolute(args.path)) return respond('unverifiable','文件检查需要绝对路径');
     const p = guardPath(args.path,ctx.workspaceRoots);
     const stat = fs.statSync(p);
@@ -15,6 +28,12 @@ function inspectDeliverable(args, ctx) {
     if (args.kind === 'file_exists') return respond('passed',`文件存在，${stat.size} 字节；尚未检查内容正确性或完整性`);
     if (stat.size > 8*1024*1024) return respond('unverifiable','文件超过 8MB 检查上限；未读取或推断内容');
     const raw = fs.readFileSync(p,'utf8').replace(/^\uFEFF/,'');
+    // Which of the phrases a produced file contains; used to check a deliverable that is a file, not the reply.
+    if (args.kind === 'file_find') {
+      const phrases = Array.isArray(args.contains) ? args.contains.filter(s => typeof s === 'string') : [];
+      const found = phrases.filter(s => containsLoosely(raw, s));
+      return {ok:true,content:JSON.stringify({status:'passed',found,detail:`找到 ${found.length}/${phrases.length} 段`}),summary:`找到 ${found.length}/${phrases.length} 段`};
+    }
     /*
      * 文本文件的字面检查。
      *
@@ -26,10 +45,10 @@ function inspectDeliverable(args, ctx) {
      */
     if (args.kind === 'file_contains') {
       if (!Array.isArray(args.contains) || !args.contains.length) return respond('unverifiable','文本包含检查需要 contains');
-      const missing = args.contains.filter(s => typeof s !== 'string' || !raw.includes(s));
+      const missing = args.contains.filter(s => typeof s !== 'string' || !containsLoosely(raw, s));
       return respond(missing.length ? 'failed':'passed', missing.length
         ? `文件缺少指定内容：${missing.join('、')}`
-        : `文件包含全部 ${args.contains.length} 段指定内容；仅证明字面出现，不证明语义正确或上下文合适`);
+        : `文件包含全部 ${args.contains.length} 段指定内容（已忽略大小写、空白、引号样式和 Markdown 标记）；仅证明字面出现，不证明语义正确或上下文合适`);
     }
     const problems = [];
     if (args.kind === 'json') {
@@ -70,4 +89,4 @@ function recoverExactWrite(args, ctx) {
     return {ok:true,content:'已只读核实：目标文件字节与本次写入内容完全一致；未再次写入。',summary:'已核实中断前的文件写入',filePath:p};
   } catch { return null; }
 }
-module.exports = {inspectDeliverable,recoverExactWrite};
+module.exports = {inspectDeliverable,recoverExactWrite,normalizeForMatch};
