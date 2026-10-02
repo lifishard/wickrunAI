@@ -8,7 +8,7 @@
 
 开源的、闭源的，付费的、免费的，都能调度。Key 自己带，云同步由你选择，共享内容不会传递你的凭据。
 
-[![Version](https://img.shields.io/badge/version-4.0.3-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
+[![Version](https://img.shields.io/badge/version-4.0.4-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-lightgrey)](#安装)
 [![CI](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml/badge.svg)](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml)
@@ -20,6 +20,13 @@
 </div>
 
 ---
+
+## 4.0.4 — 保存失败后能自行恢复
+
+- **一次保存被拒，不再导致之后都存不了。** Windows 上杀毒软件或索引服务可能在替换数据文件时短暂占用它。现在会自动重试替换；即使某次仍然失败，下一次保存也会重新尝试，不会一直失败到重启。
+- **“保存并重启安装”恢复可用。** 安装更新前要先保存，此前被这个卡住的失败挡住，更新已下载却报 EPERM 错误。
+
+详见 [4.0.4 发布说明](docs/releases/v4.0.4.md)。
 
 ## 4.0.3 — 启动提速、稳定第三方客户端与云文件库
 

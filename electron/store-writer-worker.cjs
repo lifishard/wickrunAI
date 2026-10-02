@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { parentPort, workerData } = require('node:worker_threads');
+const { renameWithRetry } = require('./fs-retry.cjs');
 
 const file = workerData.file;
 const hash = (text) => crypto.createHash('sha256').update(text).digest('hex');
@@ -88,9 +89,9 @@ function atomicWrite(text) {
       fs.copyFileSync(file, prevTmp);
       const backupFd = fs.openSync(prevTmp, 'r+');
       try { fs.fsyncSync(backupFd); } finally { fs.closeSync(backupFd); }
-      fs.renameSync(prevTmp, file + '.prev');
+      renameWithRetry(prevTmp, file + '.prev');
     }
-    fs.renameSync(tmp, file);
+    renameWithRetry(tmp, file);
   } finally {
     if (fd !== undefined) fs.closeSync(fd);
     try { fs.unlinkSync(tmp); } catch { /* no unfinished temporary file */ }
@@ -139,7 +140,11 @@ parentPort.on('message', (message) => {
     mutate(message);
     parentPort.postMessage({ type: 'ok', id: message.id });
   } catch (error) {
-    failed = error;
+    // Only a change made by another program stops all further writes: writing
+    // would overwrite it. A failed write (disk full, file held by a scanner)
+    // rejects this mutation, leaves memory equal to the file, and the next
+    // mutation tries again; it must not keep the app unable to save until restart.
+    if (error?.code === 'EXTERNAL_CHANGE') failed = error;
     parentPort.postMessage({ type: 'error', id: message.id, error: wireError(error) });
   }
 });

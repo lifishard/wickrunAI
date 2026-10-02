@@ -8,7 +8,7 @@
 
 Open or closed, paid or free. Bring your own keys; cloud sync is optional, and sharing never transfers your credentials.
 
-[![Version](https://img.shields.io/badge/version-4.0.3-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
+[![Version](https://img.shields.io/badge/version-4.0.4-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-lightgrey)](#install)
 [![CI](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml/badge.svg)](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml)
@@ -20,6 +20,13 @@ Open or closed, paid or free. Bring your own keys; cloud sync is optional, and s
 </div>
 
 ---
+
+## 4.0.4 — Saving recovers by itself
+
+- **A refused save no longer stops all saving.** On Windows, an antivirus or indexer can briefly hold the data file while it is being replaced. The app now retries that replacement, and if one save still fails, the next save tries again instead of every later save failing until restart.
+- **Save and restart to install works again.** The update button saves first; it was blocked by that stuck failure and showed an EPERM error even though the update had downloaded.
+
+See the [4.0.4 release notes](docs/releases/v4.0.4.md).
 
 ## 4.0.3 — Faster startup, steadier local clients, and cloud files
 

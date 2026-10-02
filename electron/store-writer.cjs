@@ -61,7 +61,9 @@ function createStoreWriter(file, { workerPath = path.join(__dirname, 'store-writ
         if (message.type === 'ok') entry.resolve();
         else {
           const error = errorFromWire(message.error);
-          rejectPending(error);
+          // An external change poisons the writer (see the worker); any other
+          // failure belongs to this mutation only and later writes still run.
+          if (error.code === 'EXTERNAL_CHANGE') rejectPending(error);
           entry.reject(error);
         }
       });

@@ -83,3 +83,32 @@ test('store facade returns cached keys while async mutations commit through the 
   assert.equal(store.secretGet('token'), 'secret');
   assert.deepEqual(Object.keys(JSON.parse(fs.readFileSync(file, 'utf8')).kv).sort(), ['one', 'two']);
 });
+
+test('a failed write rejects only that mutation; the next save still works',async t=>{
+  const file=fixture(t);
+  const writer=createStoreWriter(file);t.after(()=>writer.close());
+  await writer.mutate({scope:'kv',key:'kept',value:'1'});
+  // Block the backup rotation so the next write fails the way a held file does.
+  fs.rmSync(file+'.prev',{force:true});fs.mkdirSync(file+'.prev');fs.writeFileSync(path.join(file+'.prev','x'),'x');
+  await assert.rejects(writer.mutate({scope:'kv',key:'failed',value:'2'}));
+  assert.equal(JSON.parse(fs.readFileSync(file,'utf8')).kv.failed,undefined);
+  fs.rmSync(file+'.prev',{recursive:true,force:true});
+  await writer.mutate({scope:'kv',key:'later',value:'3'});
+  await writer.flush();
+  assert.deepEqual(JSON.parse(fs.readFileSync(file,'utf8')).kv,{kept:'1',later:'3'});
+  assert.deepEqual(fs.readdirSync(path.dirname(file)).filter(n=>n.endsWith('.tmp')),[]);
+});
+
+test('renames refused briefly on Windows are retried; other errors fail at once',()=>{
+  const {renameWithRetry}=require('../electron/fs-retry.cjs');
+  const failing=(codes)=>{let calls=0;return {calls:()=>calls,fs:{renameSync(){const code=codes[calls++];if(code){const e=new Error(code);e.code=code;throw e;}}}};};
+  let held=failing(['EPERM','EBUSY','EACCES']);
+  assert.equal(renameWithRetry('a','b',{fs:held.fs,platform:'win32',wait:()=>{}}),3);
+  held=failing(Array(20).fill('EPERM'));
+  assert.throws(()=>renameWithRetry('a','b',{fs:held.fs,platform:'win32',delays:[1,1],wait:()=>{}}),/EPERM/);
+  assert.equal(held.calls(),3);
+  held=failing(['ENOSPC']);
+  assert.throws(()=>renameWithRetry('a','b',{fs:held.fs,platform:'win32',wait:()=>{}}),/ENOSPC/);
+  held=failing(['EPERM']);
+  assert.throws(()=>renameWithRetry('a','b',{fs:held.fs,platform:'linux',wait:()=>{}}),/EPERM/);
+});
