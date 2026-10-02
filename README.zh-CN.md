@@ -8,9 +8,9 @@
 
 开源的、闭源的，付费的、免费的，都能调度。Key 自己带，只留在你本机。
 
-[![Version](https://img.shields.io/badge/version-4.0.1-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
+[![Version](https://img.shields.io/badge/version-4.0.3-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
 
-[4.0.1 — 分层同步、加密与共享群聊](docs/releases/v4.0.1.md)
+[4.0.3 — 启动提速、Android 预览版改由 CI 签名](docs/releases/v4.0.3.md)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-lightgrey)](#安装)
 [![CI](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml/badge.svg)](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml)
