@@ -8,7 +8,7 @@
 
 Open or closed, paid or free. Bring your own keys, choose whether to sync, and keep credentials out of shared content.
 
-[![Version](https://img.shields.io/badge/version-4.1.2-1f6feb)](https://github.com/lifishard/wickrunAI-releases/releases)
+[![Version](https://img.shields.io/badge/version-4.1.3-1f6feb)](https://github.com/lifishard/wickrunAI-releases/releases)
 
 [4.0.3 — 启动提速、Android 预览版改由 CI 签名](docs/releases/v4.0.3.md)
 [![License: Proprietary](https://img.shields.io/badge/License-Proprietary-lightgrey.svg)](LICENSE)
