@@ -8,10 +8,10 @@
 
 Open or closed, paid or free. Bring your own keys, choose whether to sync, and keep credentials out of shared content.
 
-[![Version](https://img.shields.io/badge/version-4.1.0-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
+[![Version](https://img.shields.io/badge/version-4.1.1-1f6feb)](https://github.com/lifishard/wickrunAI-releases/releases)
 
 [4.0.3 — 启动提速、Android 预览版改由 CI 签名](docs/releases/v4.0.3.md)
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![License: Proprietary](https://img.shields.io/badge/License-Proprietary-lightgrey.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-lightgrey)](#install)
 [![CI](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml/badge.svg)](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml)
 
@@ -270,7 +270,7 @@ Connecting to a provider requires your own account and credentials with that pro
 
 ## License
 
-[Apache License 2.0](LICENSE). Keep the [NOTICE](NOTICE) file when you redistribute.
+From 4.1.1, wickrunAI is proprietary software that you may use free of charge under the [wickrunAI Software License](LICENSE). Versions 4.1.0 and earlier were released under the Apache License 2.0, and copies obtained under it remain under it. Open-source components keep their own licenses; see [NOTICE](NOTICE) and [THIRD_PARTY_LICENSES.txt](public/THIRD_PARTY_LICENSES.txt).
 
 
 ## Google account and cloud sync

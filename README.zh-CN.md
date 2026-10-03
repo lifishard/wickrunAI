@@ -8,10 +8,10 @@
 
 开源的、闭源的，付费的、免费的，都能调度。Key 自己带，只留在你本机。
 
-[![Version](https://img.shields.io/badge/version-4.1.0-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
+[![Version](https://img.shields.io/badge/version-4.1.1-1f6feb)](https://github.com/lifishard/wickrunAI-releases/releases)
 
 [4.0.3 — 启动提速、Android 预览版改由 CI 签名](docs/releases/v4.0.3.md)
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![License: Proprietary](https://img.shields.io/badge/License-Proprietary-lightgrey.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-lightgrey)](#安装)
 [![CI](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml/badge.svg)](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml)
 
@@ -272,7 +272,7 @@ wickrunAI 是独立服务，与 Anthropic、OpenAI、Google、xAI、商汤、月
 
 ## License
 
-[Apache License 2.0](LICENSE). 分发时请保留 [NOTICE](NOTICE)。
+自 4.1.1 起，wickrunAI 为专有软件，可按 [wickrunAI 软件许可](LICENSE) 免费使用。4.1.0 及更早版本以 Apache License 2.0 发布，依该许可取得的副本仍适用 Apache-2.0。开源组件按各自许可证授权，见 [NOTICE](NOTICE) 与 [THIRD_PARTY_LICENSES.txt](public/THIRD_PARTY_LICENSES.txt)。
 
 
 ## Google account and cloud sync

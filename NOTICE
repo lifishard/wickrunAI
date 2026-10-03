@@ -1,19 +1,29 @@
-wickrunAI
-Copyright 2026 wickrunAI contributors
+wickrunAI (灯芯AI)
+Copyright (c) 2026 the copyright holder of wickrunAI. All rights reserved.
 
-This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+wickrunAI 4.1.1 and later are proprietary software; see LICENSE. Version 4.1.0 and
+earlier were released under the Apache License, Version 2.0, and copies obtained
+under it remain under it.
 
-This product bundles third-party software. The full dependency list is in
-package.json; each dependency's own license text ships inside node_modules
-and in the packaged application. Components distributed under the Apache
-License, Version 2.0 include:
+This product includes open-source components. Each is licensed under its own terms;
+the complete list with every license text is in public/THIRD_PARTY_LICENSES.txt,
+which is generated from package-lock.json and ships with the application. Notable components:
 
   - PDF.js (pdfjs-dist)
-    Copyright Mozilla Foundation and contributors
+    Copyright Mozilla Foundation and contributors — Apache License 2.0
 
   - SheetJS Community Edition (xlsx)
-    Copyright SheetJS LLC
+    Copyright SheetJS LLC — Apache License 2.0
 
   - DOMPurify
     Copyright Dr.-Ing. Mario Heiderich, Cure53
-    (dual licensed: Apache License 2.0 or Mozilla Public License 2.0)
+    Dual licensed (Apache License 2.0 or Mozilla Public License 2.0); used under
+    the Apache License 2.0.
+
+  - JSZip
+    Copyright Stuart Knightley and contributors
+    Dual licensed (MIT or GPL-3.0-or-later); used under the MIT License.
+
+  - React, Tiptap, marked, highlight.js, mammoth, docx, pdf-lib, opencc-js,
+    electron-updater, ws, zod, the Model Context Protocol SDK and Capacitor
+    MIT, BSD or Apache-2.0 licenses; see public/THIRD_PARTY_LICENSES.txt.
