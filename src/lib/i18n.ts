@@ -19,6 +19,17 @@ export const LOCALES: { value: Locale; label: string; label2: string; lang: stri
  * 英文查词典，查不到就退回简体原文 —— 半翻译的界面也比缺字的界面好用。
  */
 const EN: Record<string, string> = {
+  '正在检查文件 {n}%': 'Checking file {n}%',
+  '上传中 {n}%': 'Uploading {n}%',
+  '正在确认云端保存…': 'Confirming cloud storage…',
+  '已上传到云端': 'Uploaded to cloud',
+  '上传到云端': 'Upload to cloud',
+  '取消上传': 'Cancel upload',
+  '正在停止上传…': 'Stopping upload…',
+  '停止时间比预期长，仍在等待确认；本次上传尚未结束。': 'Stopping is taking longer than expected. Waiting for confirmation; this upload has not finished yet.',
+  '已取消上传；已发送的数据可能仍在确认，可稍后刷新文件列表。': 'Upload cancelled. Data already sent may still be confirmed by the server; refresh the file list later to check.',
+  '服务器单文件上限：{size}': 'Server limit per file: {size}',
+  '云存储、预览和模型读取各有限制；上传成功不会自动把文件交给模型。': 'Cloud storage, previews and model input have separate limits. Uploading does not automatically send the file to a model.',
   ...BUTLER_EN,
   ...SHARING_EN,
   '文字与目录已同步，{n} 个文件等待来源设备上线。':'Text and directories are synced. {n} files are waiting for a source device to come online.',

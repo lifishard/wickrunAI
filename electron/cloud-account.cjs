@@ -43,33 +43,68 @@ function createCloudAccount({ app, safeStorage, openExternal, fetcher = fetch })
     if (!safeStorage.isEncryptionAvailable()) throw new Error('Secure storage is unavailable. Sign-in credentials cannot be read.');
     return safeStorage.decryptString(Buffer.from(entry.token, 'base64'));
   };
-  async function request(urlPath, method = 'GET', body, token = credential()) {
-    const response = await fetcher(ORIGIN + urlPath, {
-      method, redirect: 'error', signal: AbortSignal.timeout(20000),
-      headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-      body: body ? JSON.stringify(body) : undefined,
-    });
-    const data = await response.json().catch(() => null);
-    if (!response.ok) {
-      const detail = data && typeof data === 'object' ? data.error || data.message : null;
-      const message = typeof detail === 'string' ? detail : detail && typeof detail === 'object' && typeof detail.message === 'string' ? detail.message : null;
-      const error = new Error(message || `Cloud request failed (${response.status}).`);
-      error.status = response.status;
-      if (data && typeof data.code === 'string') error.code = data.code;
+  const cancelled = () => Object.assign(new Error('上传已取消'), { name: 'AbortError' });
+  let mediaLifetime = new AbortController();
+  const mediaAccountId = () => registry.active === active && Object.hasOwn(registry.accounts, active) ? active : null;
+  async function request(urlPath, method = 'GET', body, token, { signal } = {}) {
+    if (signal?.aborted) throw cancelled();
+    const controller = new AbortController();
+    const cancel = () => controller.abort();
+    signal?.addEventListener('abort', cancel, { once: true });
+    const timer = setTimeout(() => controller.abort(new DOMException('Cloud request timed out.', 'TimeoutError')), 20000);
+    timer.unref?.();
+    try {
+      if (signal?.aborted) throw cancelled();
+      const authToken = token === undefined ? credential() : token;
+      const response = await fetcher(ORIGIN + urlPath, {
+        method, redirect: 'error', signal: controller.signal,
+        headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}) },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      const data = await response.json().catch(error => {
+        if (controller.signal.aborted) throw controller.signal.reason;
+        if (error?.name === 'AbortError' || error?.name === 'TimeoutError') throw error;
+        return null;
+      });
+      if (!response.ok) {
+        const detail = data && typeof data === 'object' ? data.error || data.message : null;
+        const message = typeof detail === 'string' ? detail : detail && typeof detail === 'object' && typeof detail.message === 'string' ? detail.message : null;
+        const error = new Error(message || `Cloud request failed (${response.status}).`);
+        error.status = response.status;
+        error.retryAfter = response.headers?.get('Retry-After');
+        if (data && typeof data.code === 'string') error.code = data.code;
+        throw error;
+      }
+      if (!data || typeof data !== 'object') throw new Error('Invalid cloud response.');
+      if (signal?.aborted) throw cancelled();
+      return data;
+    } catch (error) {
+      if (signal?.aborted) throw cancelled();
+      if (controller.signal.aborted) throw controller.signal.reason;
       throw error;
-    }
-    if (!data || typeof data !== 'object') throw new Error('Invalid cloud response.');
-    return data;
+    } finally { clearTimeout(timer); signal?.removeEventListener('abort', cancel); }
   }
   return {
     activeId: active,
+    mediaAccountId,
+    mediaSignal: () => mediaLifetime.signal,
     basePath: base,
     signedIn: () => Boolean(active),
     /** 云文件库（主进程内部用）：渲染进程不能指定地址或令牌 */
-    async media(operation, input = {}) {
+    async media(operation, input = {}, { signal, accountId = mediaAccountId() } = {}) {
+      if (signal?.aborted) throw cancelled();
       if (!active) throw new Error('请先登录云账号，再使用云文件。');
+      if (!accountId || accountId !== mediaAccountId()) throw new Error('云账号已切换，请重新上传。');
       if (typeof operation !== 'string' || !/^[a-zA-Z]{2,20}$/.test(operation)) throw new Error('Unsupported media operation.');
-      return request('/api/media', 'POST', { operation, input });
+      const controller = new AbortController();
+      const cancel = () => controller.abort();
+      const lifetime = mediaLifetime.signal;
+      for (const source of [signal, lifetime]) { source?.addEventListener('abort', cancel, { once: true }); if (source?.aborted) cancel(); }
+      try {
+        const result = await request('/api/media', 'POST', { operation, input }, undefined, { signal: controller.signal });
+        if (accountId !== mediaAccountId()) throw new Error('云账号已切换，请重新上传。');
+        return result;
+      } finally { for (const source of [signal, lifetime]) source?.removeEventListener('abort', cancel); }
     },
     /** 任务中继（主进程内部用，不经 IPC）：只允许 /api/cloud/relay/ 下的接口 */
     async relay(urlPath, method = 'GET', body) {
@@ -107,16 +142,20 @@ function createCloudAccount({ app, safeStorage, openExternal, fetcher = fetch })
     },
     activate() {
       if (!readyAccount) throw new Error('Complete Google sign-in first.');
+      mediaLifetime.abort();
       registry.accounts[readyAccount.user.id] = readyAccount;
       registry.active = readyAccount.user.id;
       require('./device-workspace.cjs').chooseDeviceWorkspace(base,registry,readyAccount.user.id,{firstLogin:!active,safeStorage});
       persist();
     },
     async logout() {
-      if (active) await request('/api/cloud/desktop/logout', 'POST');
-      registry.active = null;
-      if (active) delete registry.accounts[active];
-      persist();
+      mediaLifetime.abort();
+      try {
+        if (active) await request('/api/cloud/desktop/logout', 'POST');
+        registry.active = null;
+        if (active) delete registry.accounts[active];
+        persist();
+      } catch (error) { mediaLifetime = new AbortController(); throw error; }
     },
     async call(action, input = {}) {
       if (action === 'collaboration') {

@@ -2,6 +2,7 @@ import ArtifactImage from './ArtifactImage';
 import ArtifactMedia from './ArtifactMedia';
 import { formatBytes } from '../lib/format-bytes';
 import { uploadToCloud, type UploadProgress } from '../lib/cloud-media';
+import { uploadProgressText } from '../lib/upload-progress';
 import React from 'react';
 import { useT } from '../lib/i18n';
 import type { Artifact } from '../types';
@@ -51,6 +52,36 @@ function FileCard({ artifact: a, onOpen, onSaved }: { artifact: Artifact; onOpen
   const [working, setWorking] = React.useState(false);
   const [upload, setUpload] = React.useState<UploadProgress | null>(null);
   const [uploaded, setUploaded] = React.useState(false);
+  const [uploadNotice, setUploadNotice] = React.useState('');
+  const [cancelling, setCancelling] = React.useState(false);
+  const [cancelSlow, setCancelSlow] = React.useState(false);
+  const uploadController = React.useRef<AbortController | null>(null);
+  React.useEffect(() => {
+    setCancelSlow(false);
+    if (!cancelling) return;
+    const timer = setTimeout(() => setCancelSlow(true), 5000);
+    return () => clearTimeout(timer);
+  }, [cancelling]);
+  React.useEffect(() => {
+    setUploaded(false); setUpload(null); setUploadNotice(''); setCancelling(false); setError('');
+    return () => { const controller = uploadController.current; uploadController.current = null; controller?.abort(); };
+  }, [a.id, a.path]);
+  const sendToCloud = async () => {
+    if (!a.path || uploadController.current) return;
+    const controller = new AbortController(); uploadController.current = controller;
+    const current = () => uploadController.current === controller;
+    setError(''); setUploaded(false); setUploadNotice(''); setCancelling(false); setUpload({ sent: 0, total: a.size ?? 0, phase: 'hashing' });
+    try {
+      await uploadToCloud(a.path, value => { if (current() && !controller.signal.aborted) setUpload(value); }, controller.signal);
+      if (current() && !controller.signal.aborted) setUploaded(true);
+      else if (current()) setUploadNotice(t('已取消上传；已发送的数据可能仍在确认，可稍后刷新文件列表。'));
+    } catch (err) {
+      if (current()) {
+        if (controller.signal.aborted || (err as Error)?.name === 'AbortError') setUploadNotice(t('已取消上传；已发送的数据可能仍在确认，可稍后刷新文件列表。'));
+        else setError(err instanceof Error ? err.message : String(err));
+      }
+    } finally { if (current()) { setUpload(null); setCancelling(false); uploadController.current = null; } }
+  };
   const action = async (fn: () => Promise<void>) => {
     setError(''); setWorking(true);
     try { await fn(); } catch (err) { setError(err instanceof Error ? err.message : String(err)); }
@@ -95,9 +126,13 @@ function FileCard({ artifact: a, onOpen, onSaved }: { artifact: Artifact; onOpen
         </> : null}
         {(bridge?.saveArtifact || a.text !== undefined) ? <button type="button" className="btn sm" disabled={working} onClick={() => void action(save)}>{a.path ? '另存为' : '保存文件'}</button> : null}
         {a.path && bridge?.cloudMedia && ['video', 'audio', 'image', 'binary', 'pdf', 'docx', 'xlsx', 'other'].includes(a.type) ? <button type="button" className="btn sm" disabled={working || !!upload}
-          onClick={() => void action(async () => { setUploaded(false); setUpload({ sent: 0, total: a.size ?? 0 }); try { await uploadToCloud(a.path!, setUpload); setUploaded(true); } finally { setUpload(null); } })}>
-          {upload ? `上传中 ${upload.total ? Math.floor(upload.sent / upload.total * 100) : 0}%` : uploaded ? '已上传到云端' : '上传到云端'}</button> : null}
+          onClick={() => void sendToCloud()}>
+          {upload ? cancelling ? t('正在停止上传…') : uploadProgressText(upload, t) : uploaded ? t('已上传到云端') : t('上传到云端')}</button> : null}
+        {upload ? <button type="button" className="btn sm" disabled={cancelling} onClick={() => { setCancelling(true); uploadController.current?.abort(); }}>{t('取消上传')}</button> : null}
       </div>
+      {a.path && bridge?.cloudMedia ? <div className="artifact-file-status">{t('云存储、预览和模型读取各有限制；上传成功不会自动把文件交给模型。')}</div> : null}
+      {uploadNotice ? <div className="artifact-file-status" role="status">{uploadNotice}</div> : null}
+      {cancelling && cancelSlow ? <div className="artifact-file-status" role="status">{t('停止时间比预期长，仍在等待确认；本次上传尚未结束。')}</div> : null}
       {error ? <div className="artifact-file-error" role="alert">{error}</div> : null}
     </div>
   </details>;

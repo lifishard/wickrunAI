@@ -1,4 +1,7 @@
 import { desktop } from './transport';
+import { onWebCloudAccountChange, webCloudAccount } from './cloud-api';
+import { checkMediaAbort, mediaAbortError, mediaAwait, mediaContentIdentity, mediaPutTimeout, mediaRetryAfter, mediaTimed,
+  MEDIA_UPLOAD_ATTEMPTS, MediaUploadRetry, type MediaFailure } from './cloud-media-upload';
 
 /** 云文件库的错误来自服务端（英文），这里翻成人能照着做的中文。 */
 export function cloudMediaError(error: unknown): string {
@@ -11,95 +14,188 @@ export function cloudMediaError(error: unknown): string {
   return text;
 }
 
-export interface UploadProgress { sent: number; total: number }
+export interface UploadProgress { sent: number; total: number; phase?: 'hashing' | 'uploading' | 'finalizing' | 'done' }
+
+function translatedMediaError(error: unknown): Error {
+  if (error instanceof Error && error.name === 'AbortError') return error;
+  const result = new Error(cloudMediaError(error)) as MediaFailure;
+  if (error instanceof Error) result.name = error.name;
+  if (error && typeof error === 'object') {
+    const original = error as MediaFailure;
+    for (const key of ['status', 'code', 'retryAfter', 'retryAfterMs', 'fatal'] as const) {
+      if (original[key] !== undefined) Object.assign(result, { [key]: original[key] });
+    }
+  }
+  return result;
+}
 
 /** 把本机文件传到账号的云文件库（桌面端）。传完后网页端可以直接播放和下载。 */
-export async function uploadToCloud(path: string, onProgress: (p: UploadProgress) => void): Promise<void> {
+export async function uploadToCloud(path: string, onProgress: (p: UploadProgress) => void, signal?: AbortSignal): Promise<void> {
+  checkMediaAbort(signal);
   const bridge = desktop();
   if (!bridge?.cloudMedia) throw new Error('这个版本不能上传到云端，请更新桌面端。');
   const requestId = `media-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-  const off = bridge.onEvent((event) => { if (event.requestId === requestId && event.type === 'media-progress') onProgress(event.data as UploadProgress); });
-  try { await bridge.cloudMedia('upload', { path, requestId }); }
-  catch (error) { throw new Error(cloudMediaError(error)); }
-  finally { off(); }
+  const off = bridge.onEvent((event) => { if (!signal?.aborted && event.requestId === requestId && event.type === 'media-progress') onProgress(event.data as UploadProgress); });
+  const cancel = () => { void bridge.cloudMedia('cancel', { requestId }).catch(() => {}); };
+  signal?.addEventListener('abort', cancel, { once: true });
+  try {
+    checkMediaAbort(signal);
+    // Cancellation stops native workers; keep the UI busy until their upload IPC has actually settled.
+    await bridge.cloudMedia('upload', { path, requestId });
+    checkMediaAbort(signal);
+  } catch (error) { checkMediaAbort(signal); throw translatedMediaError(error); }
+  finally { signal?.removeEventListener('abort', cancel); off(); }
 }
 
 /* ------------------------------------------------------------------ *
  * 云文件库：桌面端走主进程（带本机登录令牌），网页走同源接口
  * ------------------------------------------------------------------ */
-import { webCloudAccount } from './cloud-api';
-
 export interface CloudFile { id: string; name: string; mime: string; size: number; status: string; createdAt: number }
-export interface CloudUsage { available: boolean; usedBytes: number; limitBytes: number; availableBytes: number; plan: 'free' | 'paid'; overLimit: boolean }
+export interface CloudUsage { available: boolean; usedBytes: number; limitBytes: number; availableBytes: number; maxFileBytes?: number; plan: 'free' | 'paid'; overLimit: boolean }
 
-export async function mediaCall<T = any>(operation: string, input: Record<string, unknown> = {}): Promise<T> {
+export async function mediaCall<T = any>(operation: string, input: Record<string, unknown> = {}, signal?: AbortSignal): Promise<T> {
   const bridge = desktop();
   try {
-    if (bridge?.cloudMedia) return await bridge.cloudMedia(operation as never, input) as T;
-    const account = webCloudAccount();
-    const response = await fetch('/api/media', {
-      method: 'POST', credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.timeout(30000),
-      headers: { 'Content-Type': 'application/json', ...(account ? { 'X-Wickrun-Account': account } : {}) },
-      body: JSON.stringify({ operation, input }),
+    return await mediaTimed(signal, 30000, async requestSignal => {
+      if (bridge?.cloudMedia) return await mediaAwait(bridge.cloudMedia(operation as never, input), requestSignal) as T;
+      const account = webCloudAccount();
+      const response = await fetch('/api/media', {
+        method: 'POST', credentials: 'same-origin', cache: 'no-store', signal: requestSignal,
+        headers: { 'Content-Type': 'application/json', ...(account ? { 'X-Wickrun-Account': account } : {}) },
+        body: JSON.stringify({ operation, input }),
+      });
+      const data = await response.json().catch(error => { if (requestSignal.aborted) throw error; return {}; });
+      if (!response.ok) {
+        const retryAfter = mediaRetryAfter(response.headers.get('Retry-After'));
+        throw Object.assign(new Error(typeof data.error === 'string' ? data.error : `云文件请求失败（${response.status}）`),
+          { status: response.status, code: typeof data.code === 'string' ? data.code : undefined, retryAfter, retryAfterMs: retryAfter });
+      }
+      return data as T;
     });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(typeof data.error === 'string' ? data.error : `云文件请求失败（${response.status}）`);
-    return data as T;
-  } catch (error) { throw new Error(cloudMediaError(error)); }
+  } catch (error) { throw translatedMediaError(error); }
 }
 
-const PART_RETRIES = 4;
-async function putWithRetry(url: string, body: Blob, signal?: AbortSignal): Promise<void> {
-  let last = '';
-  for (let attempt = 0; attempt < PART_RETRIES; attempt += 1) {
-    if (signal?.aborted) throw new Error('上传已取消');
-    try {
-      const response = await fetch(url, { method: 'PUT', body, signal });
-      if (response.ok) return;
-      if (response.status < 500 && response.status !== 429 && response.status !== 408) throw Object.assign(new Error(`云存储拒绝了上传（HTTP ${response.status}）。请刷新页面重试。`), { fatal: true });
-      last = `HTTP ${response.status}`;
-    } catch (error) {
-      if ((error as { fatal?: boolean }).fatal || signal?.aborted) throw error;
-      last = error instanceof Error ? error.message : String(error);
-    }
-    await new Promise(r => setTimeout(r, 500 * 2 ** attempt));
-  }
-  throw new Error(`网络不稳定，上传中断（${last}）。再次选择同一个文件会从断点继续。`);
+const invalidUpload = () => Object.assign(new Error('云端续传信息不一致，已停止上传。请刷新后重试。'), { fatal: true });
+interface BegunUpload { id: string; mode: 'single' | 'multipart'; status: string; size: number; url?: string; publicRow?: CloudFile;
+  partSize?: number; partCount?: number; completedParts?: { partNumber: number; size: number }[] }
+function validBegun(value: BegunUpload, size: number, expectedId?: string): BegunUpload {
+  if (!value || typeof value.id !== 'string' || !value.id || value.size !== size || expectedId != null && value.id !== expectedId) throw invalidUpload();
+  if (value.status === 'ready') { validCompleted(value.publicRow, value.id, size); return value; }
+  if (value.status !== 'pending' || value.mode !== 'single' && value.mode !== 'multipart') throw invalidUpload();
+  if (value.mode === 'single' && (typeof value.url !== 'string' || !value.url)) throw invalidUpload();
+  if (value.mode === 'multipart' && (!Number.isSafeInteger(value.partSize) || value.partSize! <= 0
+    || !Number.isSafeInteger(value.partCount) || value.partCount !== Math.ceil(size / value.partSize!))) throw invalidUpload();
+  return value;
+}
+function validCompleted(value: CloudFile | undefined, id: string, size: number): CloudFile {
+  if (!value || value.id !== id || value.size !== size || value.status !== 'ready') throw invalidUpload();
+  return value;
 }
 
 /** 浏览器里把文件直传到云存储：大文件分片、可续传，不经过应用服务器。 */
 export async function uploadFileFromBrowser(file: File, onProgress: (p: UploadProgress) => void, signal?: AbortSignal): Promise<CloudFile> {
-  const requestKey = 'up-' + await sha256Hex(`${file.name}|${file.size}|${file.lastModified}`);
-  const begun = await mediaCall('begin', { name: file.name, mime: file.type || 'application/octet-stream', size: file.size, requestKey, source: 'web' });
-  if (begun.status === 'ready') { onProgress({ sent: file.size, total: file.size }); return begun.publicRow; }
+  checkMediaAbort(signal);
+  const account = webCloudAccount();
+  if (!account) throw new Error('请先登录云账号，再上传到云端。');
+  if (!Number.isSafeInteger(file.size) || file.size <= 0) throw new Error('文件为空或大小无效，请重新选择。');
+  const control = new AbortController(), retry = new MediaUploadRetry();
+  const cancel = () => control.abort(mediaAbortError(signal));
+  signal?.addEventListener('abort', cancel, { once: true });
+  const check = () => {
+    if (webCloudAccount() !== account) control.abort(new DOMException('云账号已切换，上传已停止。请在当前账号重新选择文件。', 'AbortError'));
+    checkMediaAbort(control.signal);
+  };
+  const accountOff = onWebCloudAccountChange(id => {
+    if (id !== account) control.abort(new DOMException('云账号已切换，上传已停止。请在当前账号重新选择文件。', 'AbortError'));
+  });
+  const call = <T,>(operation: string, input: Record<string, unknown>): Promise<T> => retry.run(async () => {
+    check(); const result = await mediaCall<T>(operation, input, control.signal); check(); return result;
+  }, control.signal);
   let sent = 0;
-  const report = () => onProgress({ sent: Math.min(sent, file.size), total: file.size });
-  if (begun.mode === 'single') { await putWithRetry(begun.url, file, signal); sent = file.size; report(); }
-  else {
-    const have = new Set<number>((begun.completedParts ?? []).map((p: { partNumber: number }) => p.partNumber));
-    for (const p of begun.completedParts ?? []) sent += p.size;
-    report();
-    const todo: number[] = []; for (let n = 1; n <= begun.partCount; n += 1) if (!have.has(n)) todo.push(n);
-    let next = 0, failure: unknown = null;
-    const worker = async () => {
-      while (!failure && next < todo.length) {
-        const batch = todo.slice(next, next + 4); next += batch.length;
-        const urls = new Map<number, string>(((await mediaCall('partUrls', { id: begun.id, partNumbers: batch })).parts as { partNumber: number; url: string }[]).map(p => [p.partNumber, p.url]));
-        for (const n of batch) {
-          if (failure) return;
-          const start = (n - 1) * begun.partSize, end = Math.min(file.size, start + begun.partSize);
-          try { await putWithRetry(urls.get(n)!, file.slice(start, end), signal); sent += end - start; report(); } catch (error) { failure = error; return; }
+  const report = (phase: UploadProgress['phase'], bytes = sent) => { check(); onProgress({ sent: Math.min(bytes, file.size), total: file.size, phase }); };
+  const done = (row: CloudFile) => { report('done', file.size); return row; };
+  try {
+    if (signal?.aborted) cancel();
+    check();
+    const name = file.name, mime = file.type || 'application/octet-stream';
+    const { requestKey } = await mediaContentIdentity(file, name, mime, bytes => report('hashing', bytes), control.signal, check);
+    const declaration = { name, mime, size: file.size, requestKey, source: 'web' };
+    const begun = validBegun(await call<BegunUpload>('begin', declaration), file.size);
+    if (begun.status === 'ready') return done(begun.publicRow!);
+    report('uploading');
+    const partUrls = async (numbers: number[]) => {
+      const result = await call<{ id?: string; parts: { partNumber: number; url: string }[] }>('partUrls', { id: begun.id, partNumbers: numbers });
+      if (!result || result.id != null && result.id !== begun.id || !Array.isArray(result.parts) || result.parts.length !== numbers.length) throw invalidUpload();
+      const urls = new Map<number, string>();
+      for (const part of result.parts) {
+        if (!numbers.includes(part.partNumber) || urls.has(part.partNumber) || typeof part.url !== 'string' || !part.url) throw invalidUpload();
+        urls.set(part.partNumber, part.url);
+      }
+      return urls;
+    };
+    const put = async (firstUrl: string, body: Blob, renew: () => Promise<{ url: string } | { ready: CloudFile }>, contentType?: string): Promise<CloudFile | undefined> => {
+      let url = firstUrl, renewed = false;
+      for (let attempt = 0; ; attempt++) {
+        await retry.wait(control.signal); check();
+        try {
+          const response = await mediaTimed(control.signal, mediaPutTimeout(body.size), requestSignal => fetch(url, { method: 'PUT', body, signal: requestSignal,
+            ...(contentType ? { headers: { 'Content-Type': contentType } } : {}) }));
+          check();
+          if (response.ok) return;
+          const retryAfter = mediaRetryAfter(response.headers.get('Retry-After'));
+          throw Object.assign(new Error(`云存储拒绝了上传（HTTP ${response.status}）。请重新选择文件以续传。`), { status: response.status, retryAfter, retryAfterMs: retryAfter });
+        } catch (error) {
+          check();
+          if ((error as MediaFailure)?.status === 403 && !renewed && attempt < MEDIA_UPLOAD_ATTEMPTS - 1) {
+            renewed = true;
+            const next = await renew(); check();
+            if ('ready' in next) return next.ready;
+            url = next.url; continue;
+          }
+          retry.failed(error, attempt);
         }
       }
     };
-    await Promise.all(Array.from({ length: Math.min(3, todo.length) }, worker));
-    if (failure) throw failure;
-  }
-  return mediaCall('complete', { id: begun.id });
-}
-
-async function sha256Hex(text: string): Promise<string> {
-  const bytes = new TextEncoder().encode(text);
-  const digest = await crypto.subtle.digest('SHA-256', bytes);
-  return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 40);
+    if (begun.mode === 'single') {
+      const recovered = await put(begun.url!, file, async () => {
+        const renewed = validBegun(await call<BegunUpload>('begin', declaration), file.size, begun.id);
+        if (renewed.status === 'ready') return { ready: renewed.publicRow! };
+        if (renewed.mode !== 'single') throw invalidUpload();
+        return { url: renewed.url! };
+      }, mime);
+      if (recovered) return done(recovered);
+      sent = file.size; report('uploading');
+    } else {
+      const partSize = begun.partSize!, partCount = begun.partCount!, have = new Set<number>();
+      for (const part of begun.completedParts ?? []) {
+        if (!Number.isInteger(part.partNumber) || part.partNumber < 1 || part.partNumber > partCount || have.has(part.partNumber)) throw invalidUpload();
+        const bytes = Math.min(partSize, file.size - (part.partNumber - 1) * partSize);
+        if (part.size === bytes) { have.add(part.partNumber); sent += bytes; }
+      }
+      report('uploading');
+      const todo = Array.from({ length: partCount }, (_, index) => index + 1).filter(number => !have.has(number));
+      let next = 0, failure: unknown;
+      const worker = async () => {
+        try {
+          while (next < todo.length) {
+            check(); const batch = todo.slice(next, next + 4); next += batch.length;
+            const urls = await partUrls(batch);
+            for (const number of batch) {
+              check(); const start = (number - 1) * partSize, end = Math.min(file.size, start + partSize);
+              await put(urls.get(number)!, file.slice(start, end), async () => ({ url: (await partUrls([number])).get(number)! }));
+              check(); sent += end - start; report('uploading');
+            }
+          }
+        } catch (error) {
+          if (failure === undefined) { failure = error; control.abort(new DOMException('一个分片未能完成，已停止其余上传。', 'AbortError')); }
+          throw error;
+        }
+      };
+      await Promise.allSettled(Array.from({ length: Math.min(3, todo.length) }, worker));
+      if (failure !== undefined) throw failure;
+    }
+    check(); report('finalizing', file.size);
+    return done(validCompleted(await call<CloudFile>('complete', { id: begun.id }), begun.id, file.size));
+  } catch (error) { throw translatedMediaError(error); }
+  finally { accountOff(); signal?.removeEventListener('abort', cancel); }
 }

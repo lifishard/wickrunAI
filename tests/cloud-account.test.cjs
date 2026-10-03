@@ -81,3 +81,72 @@ test('relay requests stay under /api/cloud/relay/ and use the bearer token',asyn
   await assert.rejects(account.relay('/api/cloud/keys','GET'),/Unsupported relay/);
   await assert.rejects(account.relay('/api/cloud/relay/../keys','GET'),/Unsupported relay/);
 });
+
+function signedFixture(t,fetcher){
+  const f=fixture(t,fetcher);
+  fs.writeFileSync(path.join(f.base,'cloud-accounts.json'),JSON.stringify({active:'alice',accounts:{alice:{user,token:Buffer.from('encrypted:'+token).toString('base64')}}}));
+  return f;
+}
+function gate(){let resolve;const promise=new Promise(r=>{resolve=r;});return {promise,resolve};}
+
+test('media preserves body-read timeout classification for safe control retries',async t=>{
+  const f=signedFixture(t,async()=>({ok:true,json:async()=>{throw new DOMException('body timed out','TimeoutError');}}));
+  await assert.rejects(f.create().media('begin'),error=>error.name==='TimeoutError');
+});
+
+test('media exposes structured rate limits and checks the initiating account before requesting',async t=>{
+  let calls=0;
+  const f=signedFixture(t,async()=>{calls++;return new Response(JSON.stringify({error:'busy',code:'limited'}),{status:429,headers:{'Retry-After':'7'}});});
+  const account=f.create();assert.equal(account.mediaAccountId(),'alice');
+  await assert.rejects(account.media('begin',{}, {accountId:'bob'}),/账号已切换/);assert.equal(calls,0);
+  await assert.rejects(account.media('begin',{}, {accountId:'alice'}),error=>error.status===429&&error.code==='limited'&&error.retryAfter==='7');
+});
+
+test('media merges caller cancellation with timeout and cleans caller listeners',async t=>{
+  const entered=gate();let cancelled=false;
+  const f=signedFixture(t,async(_url,{signal})=>{entered.resolve();return new Promise((_,reject)=>{
+    signal.addEventListener('abort',()=>{cancelled=true;reject(signal.reason);},{once:true});
+  });});
+  const account=f.create(),controller=new AbortController();
+  const pending=account.media('partUrls',{}, {signal:controller.signal,accountId:'alice'});
+  await entered.promise;controller.abort();await assert.rejects(pending,error=>error.name==='AbortError');assert(cancelled);
+  assert.equal(require('node:events').getEventListeners(controller.signal,'abort').length,0);
+  await assert.rejects(account.media('begin',{}, {signal:controller.signal}),error=>error.name==='AbortError');
+});
+
+test('account logout cancels an in-flight media request before accepting its result',async t=>{
+  const entered=gate();let cancelled=false;
+  const f=signedFixture(t,async(url,{signal})=>{
+    if(url.endsWith('/logout'))return response({ok:true});
+    entered.resolve();return new Promise((_,reject)=>signal.addEventListener('abort',()=>{cancelled=true;reject(signal.reason);},{once:true}));
+  });
+  const account=f.create();const pending=account.media('complete',{id:'same-id'});
+  const rejected=assert.rejects(pending,error=>error.name==='AbortError');
+  await entered.promise;await account.logout();await rejected;assert(cancelled);assert.equal(account.mediaAccountId(),null);
+  await assert.rejects(account.media('begin',{}, {accountId:'alice'}),/账号已切换/);
+});
+
+test('failed logout retires the old upload lifetime while keeping future media available',async t=>{
+  const f=signedFixture(t,async url=>url.endsWith('/logout')?response({error:'offline'},503):response({ok:true}));
+  const account=f.create(),old=account.mediaSignal();
+  await assert.rejects(account.logout(),error=>error.status===503);assert(old.aborted);
+  assert(!account.mediaSignal().aborted);assert.equal(account.mediaAccountId(),'alice');
+  assert.deepEqual(await account.media('status'),{ok:true});
+});
+
+test('production account wiring cancels a suspended storage PUT immediately on logout',async t=>{
+  const entered=gate();let cancelled=false,completed=false;
+  const f=signedFixture(t,async(url,options)=>{
+    if(url.endsWith('/logout'))return response({ok:true});
+    const {operation}=JSON.parse(options.body);
+    if(operation==='begin')return response({id:'same-id',mode:'single',url:'https://r2.test/put'});
+    completed=true;return response({id:'same-id',status:'ready'});
+  });
+  const account=f.create(),file=path.join(f.base,'sample.bin');fs.writeFileSync(file,'bytes');
+  const uploader=require('../electron/media-upload.cjs').createMediaUploader({
+    call:(op,input,options)=>account.media(op,input,options),getAccountId:()=>account.mediaAccountId(),getAccountSignal:()=>account.mediaSignal(),
+    fetchImpl:async(_url,{signal})=>{entered.resolve();return new Promise((_,reject)=>signal.addEventListener('abort',()=>{cancelled=true;reject(signal.reason);},{once:true}));},
+  });
+  const pending=uploader.upload({filePath:file}),rejected=assert.rejects(pending,error=>error.name==='AbortError');
+  await entered.promise;await account.logout();await rejected;assert(cancelled);assert(!completed);
+});

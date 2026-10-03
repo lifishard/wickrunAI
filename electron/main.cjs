@@ -383,12 +383,18 @@ function registerIpc() {
   ipcMain.handle('snc:cloudPoll', () => cloudAccount.poll());
   ipcMain.handle('snc:cloudCall', (_e, { action, input }) => cloudAccount.call(action, input));
   ipcMain.handle('snc:cloudGuestData', () => cloudAccount.guestData());
+  let mediaSwitching = false;
   ipcMain.handle('snc:cloudSwitch', async (_e, logout) => {
     dataAvailable();
+    if (mediaSwitching) throw new Error('Account switching is already in progress.');
     if (inflight.size || activeToolControllers.size || cloudRelay?.busy()) throw new Error('Stop running tasks before switching accounts.');
-    await store.flush();
-    if (logout) await cloudAccount.logout(); else cloudAccount.activate();
-    app.relaunch(); app.quit();
+    mediaSwitching = true;
+    try {
+      for (const controller of mediaUploads.values()) controller.abort();
+      await store.flush();
+      if (logout) await cloudAccount.logout(); else cloudAccount.activate();
+      app.relaunch(); app.quit();
+    } catch (error) { mediaSwitching = false; throw error; }
   });
   const { activateTaskNotification, createTaskNotifier } = require('./task-notifications.cjs');
   taskNotifier = createTaskNotifier({
@@ -661,14 +667,19 @@ function registerIpc() {
     return generatedMedia.save(clean);
   });
   // Cloud file library: only the main process talks to the server, and only for files inside the authorised folders.
-  const mediaUploader = require('./media-upload.cjs').createMediaUploader({ call: (operation, input) => cloudAccount.media(operation, input) });
+  const mediaUploader = require('./media-upload.cjs').createMediaUploader({
+    call: (operation, input, options) => cloudAccount.media(operation, input, options),
+    getAccountId: () => cloudAccount.mediaAccountId(),
+    getAccountSignal: () => cloudAccount.mediaSignal(),
+  });
   const mediaUploads = new Map();
   ipcMain.handle('snc:cloudMedia', async (e, { action, input } = {}) => {
     artifactSender(e);
     if (action === 'upload') {
+      if (mediaSwitching) throw new Error('正在切换云账号，请稍后再上传。');
       const { inspectFile } = require('./file-records.cjs');
       const file = inspectFile(input?.path, mediaRoots());
-      const requestId = typeof input?.requestId === 'string' ? input.requestId.slice(0, 80) : null;
+      const requestId = typeof input?.requestId === 'string' && input.requestId ? input.requestId.slice(0, 80) : require('node:crypto').randomUUID();
       if (requestId && mediaUploads.has(requestId)) throw Error('这个文件正在上传。');
       const controller = new AbortController();
       if (requestId) mediaUploads.set(requestId, controller);

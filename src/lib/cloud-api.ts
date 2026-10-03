@@ -15,7 +15,14 @@ export const cloudBridge = (): CloudBridge | null => {
 };
 export class CloudApiError extends Error { constructor(message: string, public status: number) { super(message); } }
 let webAccountId: string | null = null;
-export function configureWebCloudAccount(id:string|null) { webAccountId=id; }
+const webAccountListeners=new Set<(id:string|null)=>void>();
+export function configureWebCloudAccount(id:string|null) {
+  if(webAccountId===id)return;
+  webAccountId=id;for(const listener of webAccountListeners)listener(id);
+}
+export function onWebCloudAccountChange(listener:(id:string|null)=>void):()=>void {
+  webAccountListeners.add(listener);return()=>{webAccountListeners.delete(listener);};
+}
 export function webCloudAccount() { return webAccountId; }
 export async function cloudAccountIdentity():Promise<string|null> {
   const native=cloudBridge();return native?(await native.cloudState()).user?.id??null:webAccountId;

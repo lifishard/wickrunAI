@@ -3,6 +3,7 @@ import { useT } from '../lib/i18n';
 import { desktop } from '../lib/transport';
 import { formatBytes } from '../lib/format-bytes';
 import { mediaCall, uploadFileFromBrowser, type CloudFile, type CloudUsage, type UploadProgress } from '../lib/cloud-media';
+import { uploadProgressText } from '../lib/upload-progress';
 import './CloudFiles.css';
 
 const ICON: Record<string, string> = { video: '🎬', audio: '🎧', image: '🖼' };
@@ -16,20 +17,40 @@ export default function CloudFiles() {
   const [error, setError] = React.useState('');
   const [loading, setLoading] = React.useState(true);
   const [progress, setProgress] = React.useState<UploadProgress | null>(null);
+  const [uploadNotice, setUploadNotice] = React.useState('');
+  const [cancelling, setCancelling] = React.useState(false);
+  const [cancelSlow, setCancelSlow] = React.useState(false);
   const [playing, setPlaying] = React.useState<{ file: CloudFile; url: string } | null>(null);
   const abort = React.useRef<AbortController | null>(null);
+  const mounted = React.useRef(false);
+  const loadSequence = React.useRef(0);
   const isDesktop = Boolean(desktop());
+  React.useEffect(() => {
+    setCancelSlow(false);
+    if (!cancelling) return;
+    const timer = setTimeout(() => setCancelSlow(true), 5000);
+    return () => clearTimeout(timer);
+  }, [cancelling]);
 
   const load = React.useCallback(async () => {
+    const sequence = ++loadSequence.current;
+    const current = () => mounted.current && sequence === loadSequence.current;
     setError('');
     try {
       const status = await mediaCall<CloudUsage>('status');
+      if (!current()) return;
       setUsage(status);
-      if (status.available) setFiles((await mediaCall<{ files: CloudFile[] }>('list')).files);
-    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
-    finally { setLoading(false); }
+      if (status.available) {
+        const result = await mediaCall<{ files: CloudFile[] }>('list');
+        if (current()) setFiles(result.files);
+      }
+    } catch (e) { if (current()) setError(e instanceof Error ? e.message : String(e)); }
+    finally { if (current()) setLoading(false); }
   }, []);
-  React.useEffect(() => { void load(); return () => abort.current?.abort(); }, [load]);
+  React.useEffect(() => {
+    mounted.current = true; void load();
+    return () => { mounted.current = false; loadSequence.current += 1; abort.current?.abort(); };
+  }, [load]);
 
   const play = async (file: CloudFile) => {
     setError('');
@@ -51,12 +72,24 @@ export default function CloudFiles() {
   };
   const pick = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]; event.target.value = '';
-    if (!file) return;
-    setError(''); setProgress({ sent: 0, total: file.size });
-    abort.current = new AbortController();
-    try { await uploadFileFromBrowser(file, setProgress, abort.current.signal); await load(); }
-    catch (e) { setError(e instanceof Error ? e.message : String(e)); }
-    finally { setProgress(null); abort.current = null; }
+    if (!file || abort.current) return;
+    setError(''); setUploadNotice(''); setCancelling(false); setProgress({ sent: 0, total: file.size, phase: 'hashing' });
+    const controller = new AbortController();
+    abort.current = controller;
+    const current = () => mounted.current && abort.current === controller;
+    try {
+      await uploadFileFromBrowser(file, value => { if (current() && !controller.signal.aborted) setProgress(value); }, controller.signal);
+      if (current() && !controller.signal.aborted) {
+        setUploadNotice(t('已上传到云端')); setProgress(null); abort.current = null;
+        await load();
+      }
+      else if (current()) setUploadNotice(t('已取消上传；已发送的数据可能仍在确认，可稍后刷新文件列表。'));
+    } catch (e) {
+      if (current()) {
+        if (controller.signal.aborted || (e as Error)?.name === 'AbortError') setUploadNotice(t('已取消上传；已发送的数据可能仍在确认，可稍后刷新文件列表。'));
+        else setError(e instanceof Error ? e.message : String(e));
+      }
+    } finally { if (current()) { setProgress(null); setCancelling(false); abort.current = null; } }
   };
 
   if (loading) return <div className="cloud-files-note">{t('正在读取云文件…')}</div>;
@@ -67,14 +100,18 @@ export default function CloudFiles() {
       <div className={`cloud-files-bar${usage.overLimit ? ' is-full' : percent >= 85 ? ' is-warn' : ''}`} role="progressbar" aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100} aria-label={t('云存储已用')}><span style={{ width: `${percent}%` }} /></div>
       <div className="cloud-files-usage-text"><span>{formatBytes(usage.usedBytes)} / {formatBytes(usage.limitBytes)}（{usage.plan === 'paid' ? t('付费套餐') : t('免费套餐')}）</span><span>{t('剩余 {size}', { size: formatBytes(usage.availableBytes) })}</span></div>
       {usage.overLimit ? <div className="cloud-files-error" role="alert">{t('已超出套餐容量：暂时不能上传新文件，已有文件都保留着。请删除一些文件或升级套餐。')}</div> : null}
+      {usage.maxFileBytes && usage.maxFileBytes > 0 ? <div className="cloud-files-note">{t('服务器单文件上限：{size}', { size: formatBytes(usage.maxFileBytes) })}</div> : null}
     </div> : null}
     {!isDesktop ? <div>
       <label className="btn sm primary" style={{ cursor: progress || usage?.overLimit ? 'not-allowed' : 'pointer', opacity: progress || usage?.overLimit ? 0.6 : 1 }}>
-        {progress ? t('上传中 {n}%', { n: progress.total ? Math.floor(progress.sent / progress.total * 100) : 0 }) : t('上传文件')}
+        {progress ? cancelling ? t('正在停止上传…') : uploadProgressText(progress, t) : t('上传文件')}
         <input type="file" hidden disabled={!!progress || usage?.overLimit} onChange={pick} />
       </label>
-      {progress ? <button type="button" className="btn sm" style={{ marginLeft: 8 }} onClick={() => abort.current?.abort()}>{t('取消')}</button> : null}
+      {progress ? <button type="button" className="btn sm" style={{ marginLeft: 8 }} disabled={cancelling} onClick={() => { setCancelling(true); abort.current?.abort(); }}>{t('取消')}</button> : null}
     </div> : <div className="cloud-files-note">{t('在对话的「本轮文件与产物」里点「上传到云端」，文件就会出现在这里，网页端也能播放和下载。')}</div>}
+    <div className="cloud-files-note">{t('云存储、预览和模型读取各有限制；上传成功不会自动把文件交给模型。')}</div>
+    {cancelling && cancelSlow ? <div className="cloud-files-note" role="status">{t('停止时间比预期长，仍在等待确认；本次上传尚未结束。')}</div> : null}
+    {uploadNotice ? <div className="cloud-files-note" role="status">{uploadNotice}</div> : null}
     {error ? <div className="cloud-files-error" role="alert">{error}</div> : null}
     {playing ? <div className="cloud-files-player">
       {kindOf(playing.file.mime) === 'video' ? <video src={playing.url} controls autoPlay playsInline preload="metadata" />
