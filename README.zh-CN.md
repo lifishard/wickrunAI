@@ -8,7 +8,7 @@
 
 开源的、闭源的，付费的、免费的，都能调度。Key 自己带，云同步由你选择，共享内容不会传递你的凭据。
 
-[![Version](https://img.shields.io/badge/version-4.0.6-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
+[![Version](https://img.shields.io/badge/version-4.1.0-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-lightgrey)](#安装)
 [![CI](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml/badge.svg)](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml)
@@ -20,6 +20,18 @@
 </div>
 
 ---
+
+## 4.1.0 — 项目空间与会征求同意的今日管家
+
+本次更新把协作空间变成可以一起推进目标的项目空间，把今日管家改成先征求同意、安静提建议的助手，并修复了数据较多时界面反复白屏的问题。
+
+- **项目空间。** 写下目标，拆成任务，为每个任务指定负责人、验收人和截止日期。AI 可以按验收标准给出判定，但任务要由负责人确认、再由另一个人验收才算完成；每次判定都记录是谁、何时、用了哪个模型。
+- **开启管家前先确认数据范围。** 页面写明会用到什么、去哪里、不会做什么；确认之前不收集、不分析、不执行。「管家记住了什么」可以逐条删除、全部清除、下载或撤回同意，删除会同步到所有设备。
+- **建议收件箱。** 管家默认不再自动开工，而是把要做的事放进收件箱，你点「做吧」才开始；采纳的准备工作只在独立工作区里使用文件工具。
+- **AI 写的早晚简报和首开问候。** 简报和问候由你选的模型写成；每天第一次打开时在窗口顶部出现一张问候卡片，不再弹出对话框。管家还会在本机学习你的使用习惯，只保留一句话摘要，可以关闭。
+- **不再反复白屏。** 只在确有改动时做完整云同步，管家同步改读很小的专用数据，未变化的记录不再重写。在出问题的电脑上，界面从约每 4 分钟崩溃一次变为连续运行一小时以上不再崩溃；同步期间发出的问题也不会再被旧副本覆盖而消失。
+
+付款、转账、交易和谈判仍然完全禁止；项目看板不做端到端加密。侧栏标题改为占满整行，悬停时显示操作按钮。详见 [4.1.0 发布说明](docs/releases/v4.1.0.md)。
 
 ## 4.0.3 — 启动提速、稳定第三方客户端与云文件库
 

@@ -12,9 +12,26 @@ import { CloudSyncClient } from '../lib/cloud-sync';
 import { DeviceVault } from '../lib/e2ee-vault';
 import EncryptionSettings from './EncryptionSettings';
 const BASE='wickrun:cloud:base:v1';
+// The Butler slice of the sync base, kept apart from BASE: BASE holds every synced
+// conversation (tens of MB), and reading it for the frequent Butler sync made the
+// renderer parse and rewrite it every few seconds.
+const BUTLER_BASE='wickrun:cloud:butler-base:v1';
+type ButlerBase={userId:string;data:CloudData;revision:number};
+/** A fast 32-bit FNV-1a hash; enough to notice that something changed. */
+function hashText(text:string):string{let h=0x811c9dc5;for(let i=0;i<text.length;i++){h^=text.charCodeAt(i);h=Math.imul(h,0x01000193);}return (h>>>0).toString(36);}
+/**
+ * Cheap change marker for the synced local state; a full sync compares the real data.
+ * Conversations are summarised (their messages can be large); settings, projects,
+ * skills and scheduled tasks are small, so any edit to them changes the marker.
+ */
+function localSignature(local:Omit<CloudLocal,'observations'>):string{
+  const c=local.conversations.map(x=>`${x.id}:${x.updatedAt}:${x.messages.length}:${x.title}:${x.projectId??''}:${x.pinned?1:0}:${(x.draft??'').length}:${hashText(JSON.stringify(x.config??null))}`).join('|');
+  return [hashText(c),hashText(JSON.stringify(local.projects)),hashText(JSON.stringify(local.skills)),hashText(JSON.stringify(local.tasks)),hashText(JSON.stringify(local.settings))].join('#');
+}
 type Remote = {revision:number;data:CloudData};
 type ConflictReview = {records:string[];revision:number;fingerprint:string;importGuest:boolean};
-type Props={local:Omit<CloudLocal,'observations'>;blocked:boolean;isBlocked:()=>boolean;onApply:(next:CloudLocal)=>Promise<void>;onButlerApply:(brain:ButlerBrainState,prefs:ButlerProactivePreferences|undefined)=>Promise<void>;beforeSwitch:()=>Promise<void>};
+/** isCurrent: true while nothing changed on this device since the merged data was read; checked right before it replaces local state. */
+type Props={local:Omit<CloudLocal,'observations'>;blocked:boolean;isBlocked:()=>boolean;onApply:(next:CloudLocal,isCurrent:()=>boolean)=>Promise<void>;onButlerApply:(brain:ButlerBrainState,prefs:ButlerProactivePreferences|undefined)=>Promise<void>;beforeSwitch:()=>Promise<void>};
 export default function CloudSyncControl(props:Props){
   const t=useT(), current=React.useRef(props);current.current=props;
   const [open,setOpen]=React.useState(false),[status,setStatus]=React.useState<CloudStatus|null>(null),[native,setNative]=React.useState<DesktopCloudState|null>(null);
@@ -24,6 +41,7 @@ export default function CloudSyncControl(props:Props){
   const [archives,setArchives]=React.useState<CloudData['archives']>([]);
   const [cloudKeyIds,setCloudKeyIds]=React.useState<string[]>([]);
   const lock=React.useRef(false),last=React.useRef(''),didInitial=React.useRef(false);
+  const synced=React.useRef<{signature:string;revision:number}|null>(null),butlerSeen=React.useRef<{fingerprint:string;revision:number}|null>(null);
   const clientRef=React.useRef<{accountId:string;client:CloudSyncClient}|null>(null);
   const statusRef=React.useRef(status);statusRef.current=status;
   const vault=React.useMemo(()=>status?.user&&status.syncProtocol==='layered-v1'?new DeviceVault(status.user.id,getTransport(),input=>cloudCall('sync',{op:'vault',input})):undefined,[status?.user?.id,status?.syncProtocol]);
@@ -67,6 +85,7 @@ export default function CloudSyncControl(props:Props){
     const account=statusRef.current;
     if(!account?.available||!account.user)return;
     lock.current=true;setWorking(true);setError('');setNotice('');
+    const started=performance.now();
     try{
       const transport=getTransport(),before=await collect(),client=layered();
       const prepare=(data:CloudData)=>client?client.prepare(data):Promise.resolve(data);
@@ -83,6 +102,8 @@ export default function CloudSyncControl(props:Props){
       const raw=await transport.kvGet(BASE);
       const saved=raw?JSON.parse(raw) as {userId:string;data:CloudData}:null;
       if(saved&&saved.userId!==account.user.id)throw new Error(t('账号与本地同步记录不匹配，已停止同步。'));
+      const butlerRaw=saved?await transport.kvGet(BUTLER_BASE):null,butlerBase=butlerRaw?JSON.parse(butlerRaw) as ButlerBase:null;
+      if(saved&&butlerBase&&butlerBase.userId===saved.userId&&butlerBase.revision>=((saved as {revision?:number}).revision??0))saved.data=withButlerCloudSlice(saved.data,butlerBase.data);
       if(saved&&client)saved.data=await prepare(saved.data);
       const read=()=>client?client.read(saved?.data):cloudCall<Remote>('read');
       const write=(revision:number,data:CloudData)=>client?client.write(revision,data):cloudCall<Remote>('write',{revision,data});
@@ -141,21 +162,31 @@ export default function CloudSyncControl(props:Props){
       const restored=client?await client.restore(combined):combined;
       if(current.current.isBlocked())throw new Error(t('任务正在运行，云端已保存；空闲后会继续合并本机内容。'));
       // Downloads can take time; merge edits made while files were in flight.
-      const afterDownload=await collect();
+      const afterDownload=await collect(),afterSignature=localSignature(afterDownload);
+      // A message sent or a task started after this point must not be replaced by the older copy being applied.
+      const isCurrent=()=>!current.current.isBlocked()&&localSignature(current.current.local)===afterSignature;
       const downloadedCombined=mergeCloudData(await prepare(projectCloudData(finalLocal)),await prepare(projectCloudData(afterDownload)),combined);
       const applyData=canonicalCloud(downloadedCombined)===canonicalCloud(combined)?restored:client?await client.restore(downloadedCombined):downloadedCombined;
       combined=downloadedCombined;
-      await current.current.onApply(hydrateCloudData(applyData,afterDownload,keyResult.ids,account.user.id));
+      // Replacing every conversation re-renders the app and saves everything again;
+      // skip it when the merge brought nothing new to this device.
+      if(canonicalCloud(downloadedCombined)!==canonicalCloud(await prepare(projectCloudData(afterDownload)))){
+        // The cloud copy is already saved; the local merge waits for the next quiet moment.
+        if(!isCurrent())throw new Error(t('本机内容刚有变化，云端已保存；稍后会自动合并。'));
+        await current.current.onApply(hydrateCloudData(applyData,afterDownload,keyResult.ids,account.user.id),isCurrent);
+      }
       setArchives(combined.archives);
       await transport.kvSet(BASE,JSON.stringify({userId:account.user.id,data:merged,revision:remote.revision}));
+      await transport.kvSet(BUTLER_BASE,JSON.stringify({userId:account.user.id,data:butlerCloudSlice(merged),revision:remote.revision}));
+      synced.current={signature:localSignature(current.current.local),revision:remote.revision};
       if(client)await client.applied(remote.revision);
       last.current=canonicalCloud(combined);setConflicts(null);
       setNotice(client?.pendingFiles?t('文字与目录已同步，{n} 个文件等待来源设备上线。',{n:client.pendingFiles}):t('云端同步完成'));
       if(client?.warning)setError(client.warning);
     }catch(e){setError(e instanceof CloudMergeConflict?t('同一内容在两端都有修改，请选择冲突版本。'):String((e as Error).message||e));}
-    finally{lock.current=false;setWorking(false);}
+    finally{lock.current=false;setWorking(false);(window as unknown as Record<string,unknown>).__wickrunSyncDiag={full:Math.round(performance.now()-started),at:new Date().toISOString().slice(11,19)};}
   }
-  async function syncButler(){
+  async function syncButler(force=false){
     if(lock.current)return;
     const account=statusRef.current;
     if(!account?.available||!account.user)return;
@@ -164,7 +195,18 @@ export default function CloudSyncControl(props:Props){
       const transport=getTransport(),accountId=account.user.id,client=layered();
       const localBrain=await readCloudButler(accountId)??emptyButlerBrain(accountId);
       const local=butlerCloudSlice(projectCloudData({...current.current.local,conversations:[],projects:[],skills:[],tasks:[],observations:[],butler:localBrain}));
-      const raw=await transport.kvGet(BASE),saved=raw?JSON.parse(raw) as {userId:string;data:CloudData}:null;
+      const fingerprint=canonicalCloud(local);
+      // Most ticks change nothing: compare a small local fingerprint and the cloud revision first.
+      const remoteRevision=client?await client.revision():undefined;
+      if(!force&&butlerSeen.current&&butlerSeen.current.fingerprint===fingerprint&&(remoteRevision===undefined||butlerSeen.current.revision===remoteRevision))return;
+      let saved:ButlerBase|null=null;
+      const smallRaw=await transport.kvGet(BUTLER_BASE);
+      if(smallRaw)saved=JSON.parse(smallRaw) as ButlerBase;
+      else{
+        // First run after an upgrade: derive the Butler base once from the full base.
+        const raw=await transport.kvGet(BASE),full=raw?JSON.parse(raw) as {userId:string;data:CloudData;revision?:number}:null;
+        if(full)saved={userId:full.userId,data:butlerCloudSlice(full.data),revision:full.revision??0};
+      }
       if(saved&&saved.userId!==accountId)return;
       let base=butlerCloudSlice(saved?.data??emptyCloudData());
       const read=()=>client?client.read(saved?.data,true):cloudCall<Remote>('read');
@@ -177,7 +219,7 @@ export default function CloudSyncControl(props:Props){
         // row resolve locally; unrelated collections remain byte-for-byte remote.
         merged=mergeButlerSlices(base,local,remoteSlice);
         const next=withButlerCloudSlice(remote.data,merged);
-        if(canonicalCloud(next)===canonicalCloud(remote.data))break;
+        if(canonicalCloud(butlerCloudSlice(next))===canonicalCloud(remoteSlice))break;
         try{remote=client?await client.write(remote.revision,next,true):await cloudCall<Remote>('write',{revision:remote.revision,data:next});break;}
         catch(e){if(attempt===2||!(/409|Cloud data changed/.test(String(e))||(e as {status?:number}).status===409))throw e;remote=await read();}
       }
@@ -191,26 +233,38 @@ export default function CloudSyncControl(props:Props){
       // Only advance the baseline for records actually applied on this device.
       // Advancing unrelated rows would turn an old local chat into a new edit
       // and overwrite another device's newer chat on the next full sync.
-      if(saved)await transport.kvSet(BASE,JSON.stringify({userId:accountId,data:withButlerCloudSlice(saved.data,merged),revision:remote.revision}));
+      if(saved||remote.revision>0)await transport.kvSet(BUTLER_BASE,JSON.stringify({userId:accountId,data:butlerCloudSlice(merged),revision:remote.revision}));
+      const after=await readCloudButler(accountId)??emptyButlerBrain(accountId);
+      butlerSeen.current={fingerprint:canonicalCloud(butlerCloudSlice(projectCloudData({...current.current.local,conversations:[],projects:[],skills:[],tasks:[],observations:[],butler:after}))),revision:remote.revision};
     }catch(e){setError(String((e as Error).message||e));}
     finally{lock.current=false;}
   }
   React.useEffect(()=>{
-    const changed=()=>{void syncButler();};
+    const changed=()=>{void syncButler(true);};
     window.addEventListener('wickrun:butler-change',changed);
-    const timer=setInterval(()=>{if(statusRef.current?.user)void syncButler();},5000);
+    // Local Butler edits sync right away (event above); this only picks up other devices.
+    const timer=setInterval(()=>{if(statusRef.current?.user)void syncButler();},30000);
     return()=>{window.removeEventListener('wickrun:butler-change',changed);clearInterval(timer);};
   },[]);
   React.useEffect(()=>{
     if(!status?.user||!status.available||props.blocked)return;
     const timer=setTimeout(()=>{
       if(!didInitial.current){didInitial.current=true;void sync();return;}
-      void collect().then(async value=>{const client=layered(),data=projectCloudData(value);if(canonicalCloud(client?await client.prepare(data):data)!==last.current&&!conflicts)void sync();}).catch(e=>setError(String(e.message||e)));
+      // A cheap signature replaces projecting and hashing every conversation after each edit.
+      if(synced.current?.signature!==localSignature(current.current.local)&&!conflicts)void sync();
     },didInitial.current?5000:100);
     return()=>clearTimeout(timer);
   },[status,props.local.settings,props.local.conversations,props.local.projects,props.local.skills,props.local.tasks,props.blocked]);
   React.useEffect(()=>{
-    const timer=setInterval(()=>{if(statusRef.current?.user&&!current.current.isBlocked()&&!conflicts)void sync();},60000);
+    const timer=setInterval(()=>{
+      if(!statusRef.current?.user||current.current.isBlocked()||conflicts||lock.current)return;
+      // Only sync when this device or another one changed something.
+      const client=layered();
+      void (client?client.revision():Promise.resolve(-1)).then(revision=>{
+        if(synced.current&&revision===synced.current.revision&&synced.current.signature===localSignature(current.current.local))return;
+        void sync();
+      }).catch(()=>{});
+    },60000);
     return()=>clearInterval(timer);
   },[conflicts]);
 

@@ -216,3 +216,14 @@ test('Grok rawInput compatibility does not broaden Kimi permissions or turn reje
   const grok=fixture(t,root=>edit(root));assert.equal((await grok.run(event=>grok.host.approve('request',event.id,false))).status,'permission_required');
   assert.equal(grok.store.job('run','approval-'+grok.notifications[0].id).approved,false);
 });
+
+test('a refused Grok command says which parameter could not be verified; run_in_background is accepted',async t=>{
+  const f=fixture(t,()=>{const call=command();call.rawInput.env={SECRET:'hidden'};call.rawInput.shell='pwsh';return call;});
+  assert.equal((await f.run()).status,'permission_required');
+  const alias=fixture(t,()=>{const call=command();call.rawInput.run_in_background=true;delete call.rawInput.is_background;return call;});
+  assert.equal((await alias.run()).status,'completed');
+  assert.equal(alias.notifications[0].event.toolCall.rawInput.is_background,true);
+  assert.equal(alias.notifications[0].event.toolCall.rawInput.run_in_background,undefined);
+  const crlf=fixture(t,()=>{const call=command();call.rawInput.command='Get-Date\r\nGet-Location';call._meta['x.ai/tool'].input.command='Get-Date\nGet-Location';return call;});
+  assert.equal((await crlf.run()).status,'completed');
+});

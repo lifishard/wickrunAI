@@ -22,7 +22,9 @@ function createBackgroundWindow({ app, Tray, Menu, nativeImage, iconPath, getWin
       tray.setContextMenu(Menu.buildFromTemplate([
         { label: '打开灯芯AI', click: show },
         { type: 'separator' },
-        { label: '退出灯芯AI', click: () => app.quit() },
+        // Mark the quit before anything else: a window closing during the quit
+        // must not hide to the tray and say the app keeps running.
+        { label: '退出灯芯AI', click: () => { quitting = true; app.quit(); } },
       ]));
       tray.on('click', show);
       tray.on('double-click', show);

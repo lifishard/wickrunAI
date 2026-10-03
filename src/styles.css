@@ -234,13 +234,32 @@ button {
   font-size: 13px;
 }
 
-.conv-item .icon-btn {
-  opacity: 0;
+/* The title uses the whole row. Actions float over its right part and only
+   appear on hover or keyboard focus, while the title dissolves out of the way. */
+.conv-item { position: relative; }
+.conv-title { transition: opacity .18s ease, filter .18s ease; }
+.conv-actions {
+  position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+  display: flex; align-items: center; gap: 2px;
+  opacity: 0; pointer-events: none; transition: opacity .18s ease;
 }
-.conv-item:hover .icon-btn,
-.conv-item.active .icon-btn,
-.conv-item:focus-within .icon-btn {
-  opacity: 1;
+.conv-item:hover .conv-actions,
+.conv-item:focus-within .conv-actions,
+.conv-item.show-actions .conv-actions { opacity: 1; pointer-events: auto; }
+.conv-item:hover .conv-title,
+.conv-item:focus-within .conv-title,
+.conv-item.show-actions .conv-title { opacity: 0; filter: blur(3px); }
+.conv-item:hover .pin-dot,
+.conv-item:focus-within .pin-dot,
+.conv-item.show-actions .pin-dot { opacity: 0; }
+.conv-more { display: none; }
+@media (hover: none), (max-width: 860px) {
+  .conv-more { display: inline-flex; flex-shrink: 0; }
+  .conv-item:hover:not(.show-actions) .conv-title,
+  .conv-item:focus-within:not(.show-actions) .conv-title { opacity: 1; filter: none; }
+  .conv-item:hover:not(.show-actions) .conv-actions,
+  .conv-item:focus-within:not(.show-actions) .conv-actions { opacity: 0; pointer-events: none; }
+  .conv-item.show-actions .conv-actions { right: 48px; }
 }
 
 .sidebar-foot {
@@ -2296,7 +2315,7 @@ kbd {
 
 @media (max-width: 860px) {
   .icon-btn { min-width: 44px; min-height: 44px; }
-  .conv-item .icon-btn { min-width: 44px; min-height: 44px; opacity: 1; }
+  .conv-item .icon-btn { min-width: 44px; min-height: 44px; }
   .copy-code, .copy-text { min-width: 44px; min-height: 44px; justify-content: center; }
   .md pre, .copyable-pre > pre { padding-top: 55px; }
   .md-copy-wrap { padding-top: 50px; }
@@ -3114,3 +3133,36 @@ kbd {
 
 .btn.icon-only { padding: 5px 7px; }
 .share-topbar .share-reveal { margin-right: 4px; }
+
+/* Butler: suggestion count on the top-bar entry, and the quiet first-open card. */
+.butler-home-trigger { position: relative; }
+.butler-badge {
+  display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; margin-left: 6px;
+  border-radius: 999px; background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; line-height: 1;
+}
+.butler-greeting {
+  display: flex; align-items: flex-start; gap: 12px;
+  margin: 8px auto; padding: 12px 14px; max-width: var(--content-w, 760px); width: calc(100% - 32px);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border)); border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 6%, var(--bg-elev, var(--bg)));
+  animation: butler-greeting-in 220ms ease-out;
+}
+.butler-greeting-text { flex: 1; min-width: 0; display: grid; gap: 4px; }
+.butler-greeting-text strong { font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+.butler-greeting-text ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 2px; font-size: 13px; color: var(--fg-dim); }
+.butler-greeting-text small { color: var(--fg-dim); font-size: 12px; }
+.butler-greeting-text small:empty { display: none; }
+.butler-greeting-chip { display: inline-block; margin-right: 6px; padding: 0 6px; border-radius: 999px; background: var(--bg-sunken, var(--bg)); font-size: 11px; }
+.butler-greeting-actions { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
+@keyframes butler-greeting-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .butler-greeting { animation: none; } }
+@media (max-width: 600px) {
+  .butler-greeting { flex-direction: column; }
+  .butler-greeting-actions { width: 100%; }
+  .butler-greeting-actions .btn.primary { flex: 1; }
+}
+
+/* Follow-ups the user sent while a task ran, shown as their own turns under the question. */
+.run-followups { display: grid; gap: 8px; margin: 8px 0 4px; }
+.run-followup { position: relative; }
+.run-followup-label { display: block; margin-bottom: 2px; font-size: 11px; color: var(--fg-dim); }

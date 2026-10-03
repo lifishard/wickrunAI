@@ -456,17 +456,31 @@ function createAcpClient({
     if (label === 'Grok ACP' && result.kind === 'execute') {
       const input = value.rawInput;
       const keys = ['variant', 'command', 'description', 'is_background', 'timeout'];
-      const valid = input && typeof input === 'object' && !Array.isArray(input)
-        && input.variant === 'Bash' && Object.keys(input).every(key => keys.includes(key))
-        && typeof input.command === 'string' && input.command.trim().length > 0
-        && input.command.length <= 20000 && !/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(input.command)
-        && (input.description === undefined || (typeof input.description === 'string' && input.description.length <= 2000))
-        && (input.timeout === undefined || input.timeout === null || (Number.isInteger(input.timeout) && input.timeout >= 0 && input.timeout <= 36000000))
-        && (input.is_background === undefined || typeof input.is_background === 'boolean');
+      // Why a command could not be verified: parameter names and check names only, never values,
+      // so a refusal can be explained to the user and diagnosed from the run record.
+      const reasons = [];
+      if (!input || typeof input !== 'object' || Array.isArray(input)) reasons.push('no-input');
+      else {
+        if (input.variant !== 'Bash') reasons.push('variant');
+        // `run_in_background` is the same switch under another name; anything else unknown is refused.
+        const unknown = Object.keys(input).filter(key => !keys.includes(key) && key !== 'run_in_background');
+        if (unknown.length) reasons.push('unknown:' + unknown.slice(0, 5).map(key => String(key).replace(/[^\w.-]/g, '').slice(0, 40)).join(','));
+        if (!(typeof input.command === 'string' && input.command.trim().length > 0 && input.command.length <= 20000
+          && !/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(input.command))) reasons.push('command');
+        if (!(input.description === undefined || (typeof input.description === 'string' && input.description.length <= 2000))) reasons.push('description');
+        if (!(input.timeout === undefined || input.timeout === null || (Number.isInteger(input.timeout) && input.timeout >= 0 && input.timeout <= 36000000))) reasons.push('timeout');
+        for (const key of ['is_background', 'run_in_background']) if (input[key] !== undefined && typeof input[key] !== 'boolean') reasons.push(key);
+        if (typeof input.is_background === 'boolean' && typeof input.run_in_background === 'boolean' && input.is_background !== input.run_in_background) reasons.push('background-conflict');
+      }
       const declared = value._meta?.['x.ai/tool']?.input?.command;
-      if (valid && (declared === undefined || declared === input.command)) {
-        result.rawInput = Object.fromEntries(keys.filter(key => input[key] !== undefined).map(key => [key, input[key]]));
-      } else result.commandUnsafe = true;
+      // Line endings may differ between the two copies; the command itself may not.
+      const lines = text => typeof text === 'string' ? text.replace(/\r\n/g, '\n') : text;
+      if (!reasons.length && declared !== undefined && lines(declared) !== lines(input.command)) reasons.push('declared-mismatch');
+      if (!reasons.length) {
+        const background = input.is_background ?? input.run_in_background;
+        result.rawInput = Object.fromEntries(keys.filter(key => key !== 'is_background' && input[key] !== undefined).map(key => [key, input[key]]));
+        if (background !== undefined) result.rawInput.is_background = background;
+      } else { result.commandUnsafe = true; result.commandUnsafeReason = reasons.join(';'); }
     }
     return result;
   }

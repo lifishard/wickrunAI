@@ -8,7 +8,7 @@
 
 Open or closed, paid or free. Bring your own keys; cloud sync is optional, and sharing never transfers your credentials.
 
-[![Version](https://img.shields.io/badge/version-4.0.6-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
+[![Version](https://img.shields.io/badge/version-4.1.0-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-lightgrey)](#install)
 [![CI](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml/badge.svg)](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml)
@@ -20,6 +20,18 @@ Open or closed, paid or free. Bring your own keys; cloud sync is optional, and s
 </div>
 
 ---
+
+## 4.1.0 — Project spaces and a Butler that asks first
+
+This update turns the collaboration space into project spaces where people and AI move a goal forward together, makes Today's Butler ask for consent and suggest quietly, and fixes the repeated blank window on machines with a lot of data.
+
+- **Project spaces.** Write a goal, break it into tasks, and give each task an assignee, a reviewer, and a due date. AI can judge a delivery against the acceptance criteria, but a task is done only when its assignee confirms and a different person approves. Every verdict records who gave it, when, and with which model.
+- **Consent before the Butler starts.** A notice says what it uses, where that goes, and what it never does; until you agree, nothing is collected, analyzed, or run. "What Butler remembers" lets you delete items one by one, clear everything, download your data, or withdraw consent, and deletions sync to all your devices.
+- **A suggestions inbox.** The Butler no longer starts work on its own by default. It puts what it would do in an inbox and starts only when you choose "Do it"; accepted work uses file tools only, in an isolated folder.
+- **AI-written briefs and a first-open greeting.** Your chosen model writes the morning and evening briefs and a short greeting. The first time you open the app each day, a dismissible card appears at the top instead of a dialog. The Butler can also learn your usage habits on the device, keeping only a one-sentence summary, and you can turn this off.
+- **No more repeated blank windows.** Full cloud syncs run only when something changed, Butler sync reads a small dedicated record, and unchanged records are not rewritten. On the affected machine, the window went from crashing about every 4 minutes to running for over an hour without a crash, and a question sent during a sync no longer disappears under an older copy.
+
+Payments, transfers, trades, and negotiation stay fully blocked, and project boards are not end-to-end encrypted. Sidebar titles now use the full row and show their actions on hover. See the [4.1.0 release notes](docs/releases/v4.1.0.md).
 
 ## 4.0.3 — Faster startup, steadier local clients, and cloud files
 

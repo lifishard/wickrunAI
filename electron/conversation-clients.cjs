@@ -23,6 +23,16 @@ const GROK_WORK_SCOPE_MESSAGE = '本次 Grok 操作未执行：客户端未提�
 const GROK_WORK_PATH_MESSAGE = '本次 Grok 文件编辑未执行：目标路径不在授权工作目录内，或符号链接指向目录外。请检查工作目录后继续。';
 
 function acpKind(kind) { return kind === 'kimi' || kind === 'grok'; }
+/** Says which part of a Grok command request could not be verified, so the user knows what to ask for instead. */
+function grokCommandRefusal(reason) {
+  const parts = String(reason).split(';').map(code => {
+    if (code.startsWith('unknown:')) return `带了尚未支持的参数（${code.slice(8)}）`;
+    return { 'no-input': '没有给出命令内容', variant: '不是命令行请求', command: '命令为空、过长或含控制字符', description: '命令说明格式不对',
+      timeout: '超时参数格式不对', is_background: '后台运行参数格式不对', run_in_background: '后台运行参数格式不对',
+      'background-conflict': '后台运行参数前后矛盾', 'declared-mismatch': '两处给出的命令内容不一致' }[code] || code;
+  });
+  return `本次 Grok 命令未执行：${[...new Set(parts)].join('；')}，无法完整核实，所以没有交给你确认。已有进度已保留；可以让 Grok 去掉这些参数后重试这一步。`;
+}
 function workMessages(kind) {
   return kind === 'grok'
     ? { scope: GROK_WORK_SCOPE_MESSAGE, path: GROK_WORK_PATH_MESSAGE }
@@ -72,7 +82,7 @@ function validateWorkPermission(event, root, clientKind, scratchDir) {
       && typeof input.command === 'string' && input.command.trim() && input.command.length <= 20000) {
       return { ok: true, requiresExplicitApproval: true };
     }
-    return { ok: false, message: workMessages(clientKind).scope };
+    return { ok: false, message: call?.commandUnsafeReason ? grokCommandRefusal(call.commandUnsafeReason) : workMessages(clientKind).scope };
   }
   const roots = [root];
   if (clientKind === 'grok' && scratchDir) {

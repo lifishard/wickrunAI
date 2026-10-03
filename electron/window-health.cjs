@@ -78,4 +78,32 @@ function watchGpu(app, { log = () => {}, windows = () => [] } = {}) {
   });
 }
 
-module.exports = { configureCompositing, createLog, watchWindow, watchGpu, PROBE };
+/*
+ * Memory telemetry: the renderer was being killed for running out of memory
+ * every few minutes on one machine and the cause could not be reproduced
+ * elsewhere. Every minute, record the renderer's working set together with what
+ * the page reports about itself (JS heap, DOM size, conversation sizes, last
+ * cloud sync), but only when it grew noticeably or every ten minutes, so the
+ * log stays small and the last lines before a crash show what grew.
+ */
+const DIAG = 'typeof window.__wickrunDiag==="function"?window.__wickrunDiag():null';
+function watchMemory(win, { app, log = () => {}, intervalMs = 60000, now = Date.now } = {}) {
+  let peak = 0, lastLogged = 0;
+  const sample = async () => {
+    if (win.isDestroyed() || win.webContents.isDestroyed()) return;
+    const pid = win.webContents.getOSProcessId();
+    const metric = app.getAppMetrics().find((m) => m.pid === pid);
+    const mb = Math.round((metric?.memory?.workingSetSize ?? 0) / 1024);
+    if (mb < peak + 200 && now() - lastLogged < 10 * 60000) return;
+    peak = Math.max(peak, mb); lastLogged = now();
+    let page = null;
+    try { page = await Promise.race([win.webContents.executeJavaScript(DIAG, true), new Promise((r) => setTimeout(() => r('busy'), 3000))]); } catch { page = 'unavailable'; }
+    log(`memory renderer=${mb}MB ${typeof page === 'string' ? page : JSON.stringify(page)}`);
+  };
+  const timer = setInterval(() => { void sample(); }, intervalMs);
+  timer.unref?.();
+  win.webContents.on('did-finish-load', () => { peak = 0; });
+  return { sample, stop: () => clearInterval(timer) };
+}
+
+module.exports = { configureCompositing, createLog, watchWindow, watchGpu, watchMemory, PROBE };

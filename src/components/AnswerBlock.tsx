@@ -377,6 +377,13 @@ export default function AnswerBlock(props: {
       {question ? <MessageNotes notes={question.annotations} onSave={props.onSaveAnnotation}
         onDelete={(id) => props.onDeleteAnnotation(question.id, id)} /> : null}
 
+      {/* What the user added while the task ran reads as their own words, right under the question, not folded away. */}
+      {answer?.supplementalInputs?.length ? <div className="run-followups" aria-label={t('运行中补充的问题')}>{answer.supplementalInputs.map(m=>(
+        <div key={m.id} className="question run-followup">
+          <span className="run-followup-label">{t('运行中补充')} · {new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+          <div className="question-markdown"><Markdown text={m.content} /></div>
+        </div>))}</div> : null}
+
       {sources.length ? <SourcesRow sources={sources} /> : null}
 
       <OutputHistory items={answer?.outputHistory}/>
@@ -394,7 +401,6 @@ export default function AnswerBlock(props: {
       {answer?.notice ? <div className="answer-notice">{clientText(t, answer.notice)}</div> : null}
       {answer?.subagents?.length ? <SubagentProgress jobs={answer.subagents}/> : null}
       {answer?.harness?.review ? <details className="task-review"><summary>{t('完成自查 · 模型复核')}</summary><p>{answer.harness.review.summary}</p><p>{answer.harness.review.checks}</p>{answer.harness.review.nextAction?<p>可选下一步：{answer.harness.review.nextAction}</p>:null}</details>:null}
-      {answer?.supplementalInputs?.length ? <details className="delivery-panel"><summary>{t('已补充的信息 · {n} 条', { n: answer.supplementalInputs.length })}</summary>{answer.supplementalInputs.map(m=><blockquote key={m.id}>{m.content}</blockquote>)}</details>:null}
 
       {answer?.userQuestionHistory?.map((item) => (
         <UserQuestionCard

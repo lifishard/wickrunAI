@@ -3770,6 +3770,10 @@ const EN: Record<string, string> = {
   '结论': 'Verdict',
   '还没有跑过对照。': 'No ablation runs yet.',
   '找不到这条记忆，可能已经删除': 'This memory could not be found; it may have been deleted',
+  '更多操作': 'More actions',
+  '本机内容刚有变化，云端已保存；稍后会自动合并。': 'Something changed on this device; the cloud copy is saved and will be merged here shortly.',
+  '运行中补充': 'Added while running',
+  '运行中补充的问题': 'Follow-ups added while running',
 };
 
 const hantCache = new Map<string, string>();

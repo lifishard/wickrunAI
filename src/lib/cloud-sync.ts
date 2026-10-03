@@ -141,6 +141,12 @@ export class CloudSyncClient {
     const plain=isSealed(bytes)?await unsealBytes(this.encryptionKey!,bytes,this.context(ref.collection,ref.id)):bytes;
     const value=JSON.parse(decoder().decode(plain));this.records.set(key(ref),value);return value;
   }
+  /** The current cloud revision only (a few hundred bytes), to skip a sync when nothing changed remotely. */
+  async revision():Promise<number>{
+    const head=await this.call<Head>({op:'manifest'});
+    if(!Number.isSafeInteger(head.revision))throw Error('Unsupported sync directory.');
+    return head.revision;
+  }
   async read(seed?:CloudData,butlerOnly=false):Promise<Snapshot>{
     await this.encryption();
     await this.seed(seed&&butlerOnly?{...emptyCloudData(),butler:seed.butler??[],preferences:seed.preferences}:seed);await this.heartbeat();

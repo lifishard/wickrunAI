@@ -28,6 +28,8 @@ export default function Sidebar(props: {
 }) {
   const t = useT();
   const [renaming, setRenaming] = React.useState<string | null>(null);
+  // Touch screens have no hover: the ⋯ button shows a row's actions in place of its title.
+  const [actionsFor, setActionsFor] = React.useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = React.useState<Conversation | null>(null);
   const [draft, setDraft] = React.useState('');
   const [q, setQ] = React.useState('');
@@ -72,7 +74,7 @@ export default function Sidebar(props: {
     return (
       <div
         key={`${where}-${c.id}`}
-        className={`conv-item${c.id === props.activeId ? ' active' : ''}`}
+        className={`conv-item${c.id === props.activeId ? ' active' : ''}${actionsFor === c.id ? ' show-actions' : ''}`}
         onClick={() => props.onSelect(c.id)}
         onDoubleClick={() => {
           // 没取名的会话开重命名时留空，占位符显示当前语言的默认名。
@@ -109,6 +111,9 @@ export default function Sidebar(props: {
               {c.forkedFrom ? <span className="fork-mark" title={t('从别的对话分叉来的')}><Icon name="fork" size={13}/></span> : null}
               {conversationTitle(c.title, t)}
             </span>
+            <button className="icon-btn conv-more" title={t('更多操作')} aria-label={t('更多操作')} aria-expanded={actionsFor===c.id}
+              onClick={e=>{e.stopPropagation();setActionsFor(v=>v===c.id?null:c.id);}}><Icon name="more" size={17}/></button>
+            <span className="conv-actions" onClick={()=>setActionsFor(null)}>
             <button
               className="icon-btn"
               title={c.pinned ? t('取消钉选') : t('钉到顶部')}
@@ -131,7 +136,7 @@ export default function Sidebar(props: {
             >
               <Icon name="copy" size={17}/>
             </button>
-            <button className="icon-btn" title={t('分享')} aria-label={t('分享对话')} onClick={e=>{e.stopPropagation();props.onShare('conversation',c.id);}}><Icon name="arrowUpRight"/></button>
+            <button className="icon-btn" title={t('分享')} aria-label={t('分享对话')} onClick={e=>{e.stopPropagation();props.onShare('conversation',c.id);}}><Icon name="share" size={17}/></button>
             <button
               className="icon-btn"
               title={t('存成文件')}
@@ -154,6 +159,7 @@ export default function Sidebar(props: {
             >
               <Icon name="trash" size={17}/>
             </button>
+            </span>
           </>
         )}
       </div>
@@ -229,7 +235,7 @@ export default function Sidebar(props: {
                   <Icon name={collapsed ? 'chevronRight' : 'chevronDown'} size={15}/> {p.emoji} {p.name}
                   <span className="project-count">{list.length}</span>
                 </button>
-                <button className="icon-btn" title={t('分享项目')} onClick={()=>props.onShare('project',p.id)}><Icon name="arrowUpRight"/></button>
+                <button className="icon-btn" title={t('分享项目')} aria-label={t('分享项目')} onClick={()=>props.onShare('project',p.id)}><Icon name="share" size={16}/></button>
                 <button
                   className="icon-btn"
                   title={t('在「{name}」里新开一个对话', { name: p.name })}

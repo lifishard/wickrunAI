@@ -65,6 +65,7 @@ export function mergeCloudData(base:CloudData,local:CloudData,remote:CloudData, 
       key.startsWith('butler:job:')?mergeButlerJobRow(b,l,r,key,pick):pick(b,l,r,key)
       :(b:CloudRow|undefined,l:CloudRow|undefined,r:CloudRow|undefined,key:string)=>pick(b,l,r,key);
     result[name]=[...ids].sort().map(id=>merge(maps[0].get(id),maps[1].get(id),maps[2].get(id),`${name}:${id}`,pick)).filter(Boolean) as CloudRow[];
+    if(name==='butler')result.butler=keepButlerForgets(result.butler??[],[base,local,remote].flatMap(data=>data.butler??[]));
   }
   for(const key of new Set([...Object.keys(base.preferences),...Object.keys(local.preferences),...Object.keys(remote.preferences)])){
     const value=pick(base.preferences[key],local.preferences[key],remote.preferences[key],`preferences:${key}`);
@@ -90,6 +91,23 @@ function mergeConversationRow(b:CloudRow|undefined,l:CloudRow|undefined,r:CloudR
   const ids=[...original,...[...additions.values()].sort((a,b)=>Number(a.createdAt??0)-Number(b.createdAt??0)||a.id.localeCompare(b.id)).map(row=>row.id)];
   merged.messages=ids.map(id=>pick(maps[0].get(id),maps[1].get(id),maps[2].get(id),`${key}:message:${id}`)).filter(Boolean);
   return merged;
+}
+
+/**
+ * What a user told the Butler to forget stays forgotten: a forget row is never
+ * deleted by a merge (an older app, or a stale copy, simply lacks it). The only
+ * exception is a row already covered by a later "forget everything".
+ */
+function keepButlerForgets(merged:CloudRow[],seen:CloudRow[]):CloudRow[] {
+  const latest=new Map<string,CloudRow>();
+  for(const row of [...seen,...merged])if(row.kind==='forget'&&typeof row.at==='number'){
+    const prior=latest.get(row.id);if(!prior||Number(row.at)>Number(prior.at))latest.set(row.id,row);
+  }
+  const star=[...latest.values()].filter(row=>row.entityId==='*').reduce((at,row)=>Math.max(at,Number(row.at)),0);
+  // The same cap as the brain keeps (capForgotten), so a merge and a save never disagree.
+  const forgets=[...latest.values()].filter(row=>row.entityId==='*'?Number(row.at)===star:Number(row.at)>star)
+    .sort((a,b)=>(a.entityId==='*'?-1:b.entityId==='*'?1:Number(b.at)-Number(a.at))).slice(0,600);
+  return [...merged.filter(row=>row.kind!=='forget'),...forgets].sort((a,b)=>a.id<b.id?-1:a.id>b.id?1:0);
 }
 
 /** A phone's pause/message must survive a simultaneous host progress update. */
@@ -141,7 +159,9 @@ const take=(value:unknown,keys:string[]):Record<string,unknown>=>{
   return Object.fromEntries(keys.filter(k=>record[k]!==undefined).map(k=>[k,record[k]]));
 };
 const PREFS=['theme','locale','uiDensity','sendKey','fontScale','showReasoningByDefault','requestTimeoutMs','routeGroups'];
-const BUTLER_PREFS=['enabled','paused','sources','backend','maxTokensPerDay','cadence','morning','evening','timezone','hostDeviceId','allowResearch','allowRoutineExecution','maxWorkPerDay','externalUnderstanding'];
+const BUTLER_PREFS=['enabled','paused','sources','backend','maxTokensPerDay','cadence','morning','evening','timezone','hostDeviceId','allowResearch','allowRoutineExecution','maxWorkPerDay','externalUnderstanding','consent','learnHabits'];
+/** Cleared values travel as null so that another device drops them too. */
+const BUTLER_NULLABLE=['hostDeviceId','consent'];
 export function butlerCloudSlice(data:CloudData):CloudData {
   const slice=emptyCloudData();
   slice.butler=data.butler??[];
@@ -170,7 +190,7 @@ export function mergeButlerSlices(base:CloudData,local:CloudData,remote:CloudDat
 export function butlerPreferencesFromCloud(preferences:Record<string,unknown>,local:ButlerProactivePreferences|undefined):ButlerProactivePreferences|undefined {
   const result={...(local??{})} as ButlerProactivePreferences;
   for(const key of BUTLER_PREFS)if(preferences[`butler.${key}`]!==undefined){
-    if(key==='hostDeviceId'&&preferences[`butler.${key}`]===null)delete result.hostDeviceId;
+    if(BUTLER_NULLABLE.includes(key)&&preferences[`butler.${key}`]===null)delete (result as unknown as Record<string,unknown>)[key];
     else (result as unknown as Record<string,unknown>)[key]=preferences[`butler.${key}`];
   }
   return Object.keys(result).length?result:undefined;
@@ -180,7 +200,7 @@ const MSG=['id','role','content','reasoning','createdAt','model','steps','error'
 export type CloudLocal = { settings:AppSettings; conversations:Conversation[]; projects:Project[]; skills:Skill[]; tasks:ScheduledTask[]; observations:CloudRow[]; archives?:CloudRow[]; butler?:ButlerBrainState };
 export function butlerRows(brain:ButlerBrainState):CloudRow[] {
   const safe=projectButlerBrainForSync(brain);
-  return ([['signal',safe.signals],['goal',safe.goals],['brief',safe.briefs],['skill',safe.skillProposals],['job',safe.jobs??[]],['host',safe.hosts??[]],['feedback',safe.feedback??[]],['audit',safe.audit??[]]] as const)
+  return ([['signal',safe.signals],['goal',safe.goals],['brief',safe.briefs],['skill',safe.skillProposals],['job',safe.jobs??[]],['host',safe.hosts??[]],['feedback',safe.feedback??[]],['audit',safe.audit??[]],['forget',safe.forgotten??[]]] as const)
     .flatMap(([kind,items])=>items.map(item=>({...item,...(kind==='job'?{jobKind:(item as import('./proactive-butler').ButlerJob).kind}:{}),...(kind==='audit'?{auditKind:(item as import('./proactive-butler').ButlerAudit).kind}:{}),id:`${kind}:${item.id}`,entityId:item.id,kind})));
 }
 export function butlerBrainFromRows(rows:CloudRow[]|undefined,accountId:string,local?:ButlerBrainState):ButlerBrainState {
@@ -190,6 +210,7 @@ export function butlerBrainFromRows(rows:CloudRow[]|undefined,accountId:string,l
     briefs:scoped('brief') as unknown as ButlerBrainState['briefs'],skillProposals:scoped('skill') as unknown as ButlerBrainState['skillProposals'],
     jobs:scoped('job') as unknown as ButlerBrainState['jobs'],hosts:scoped('host') as unknown as ButlerBrainState['hosts'],
     feedback:scoped('feedback') as unknown as ButlerBrainState['feedback'],audit:scoped('audit') as unknown as ButlerBrainState['audit'],
+    forgotten:scoped('forget') as unknown as ButlerBrainState['forgotten'],
     actionGrants:local?.accountId===accountId?local.actionGrants:[],updatedAt:Math.max(local?.accountId===accountId?local.updatedAt:0,...(rows??[]).map(row=>Number(row.updatedAt??row.createdAt??row.lastSeenAt??0)))};
 }
 export function projectCloudData(local:CloudLocal):CloudData {
@@ -199,7 +220,7 @@ export function projectCloudData(local:CloudLocal):CloudData {
   const proactive=local.settings.butler?.proactive;
   if(proactive){
     for(const [key,value] of Object.entries(take(proactive,BUTLER_PREFS)))result.preferences[`butler.${key}`]=value;
-    result.preferences['butler.hostDeviceId']=proactive.hostDeviceId??null;
+    for(const key of BUTLER_NULLABLE)result.preferences[`butler.${key}`]=(proactive as unknown as Record<string,unknown>)[key]??null;
   }
   if(local.butler)result.butler=butlerRows(local.butler);
   result.profiles=local.settings.keyProfiles.map(p=>({ ...take(p,['name','baseUrl','createdAt','routeProfiles','quotaGroup']), id:p.id, extraHeaders:Object.fromEntries(Object.entries(p.extraHeaders??{}).filter(([k])=>!/(?:auth|token|secret|password|api.?key)/i.test(k))) }));

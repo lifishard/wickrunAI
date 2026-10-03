@@ -1,7 +1,7 @@
 {
-  "version": "4.0.6",
-  "commit": "7c18431e56356fbf27ff4e19481c54c9c3120846",
-  "tag": "android-source-v4.0.6",
+  "version": "4.1.0",
+  "commit": "997094b893353464f886a664340b7b6f49ef0759",
+  "tag": "android-source-v4.1.0",
   "applicationId": "dev.anyai.app",
   "certificateSha256": "2eabaf5e4d45e35596ac141af761cca0e212fda7eac87a269077ad019d1a3b99"
 }

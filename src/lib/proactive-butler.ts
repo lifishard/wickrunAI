@@ -31,7 +31,19 @@ export interface ButlerProactivePreferences {
   maxWorkPerDay?: number;
   /** Redacted excerpts can be sent to the selected model only while collection is on. */
   externalUnderstanding: 'local-topics' | 'redacted-context';
+  /** The data-scope notice the account accepted. Without a current one nothing is collected or sent. */
+  consent?: {version:number;at:number};
+  /** Learn when and how the app is used (hours, topics, chat versus Work), computed on the device. */
+  learnHabits?: boolean;
 }
+
+/** Bump when the consent notice changes what is collected or where it goes. */
+export const BUTLER_CONSENT_VERSION = 1;
+export function butlerConsented(prefs:Pick<ButlerProactivePreferences,'consent'>|undefined):boolean {
+  return !!prefs?.consent && prefs.consent.version>=BUTLER_CONSENT_VERSION && Number.isFinite(prefs.consent.at);
+}
+/** Ids of signals learned from usage patterns rather than from what the user wrote. */
+export const BUTLER_HABIT_PREFIX = 'wickrun:habit-';
 
 export interface ButlerSignal {
   id: string;
@@ -78,6 +90,8 @@ export interface ButlerBrief {
   accountId: string;
   period: 'morning' | 'evening';
   createdAt: number;
+  /** One or two sentences written by the model for the first open of the day. */
+  greeting?: string;
   items: ButlerBriefItem[];
 }
 
@@ -119,13 +133,20 @@ export interface ButlerBrainState {
   hosts?: ButlerHost[];
   feedback?: ButlerFeedback[];
   audit?: ButlerAudit[];
+  /** What the user told the Butler to forget. Data observed before `at` is never learned again. */
+  forgotten?: ButlerForget[];
   updatedAt: number;
 }
+/** id is a signal id, or '*' for everything observed before `at`. */
+export interface ButlerForget {id:string;accountId:string;at:number}
 
 export interface ButlerJob {
   id:string;accountId:string;kind:'analyze'|'research'|'brief'|'work';goalId?:string;period?:'morning'|'evening';
-  status:'queued'|'running'|'waiting'|'completed'|'failed';createdAt:number;updatedAt:number;error?:string;
+  /** proposed: waiting in the quiet inbox for the user to accept; declined: the user said no. */
+  status:'proposed'|'declined'|'queued'|'running'|'waiting'|'completed'|'failed';createdAt:number;updatedAt:number;error?:string;
   conversationId?:string;summary?:string;commands?:ButlerWorkCommand[];automatic?:boolean;
+  /** Started as an inbox proposal; it runs only after the user accepts it. */
+  proposal?:boolean;
 }
 export interface ButlerWorkCommand {id:string;kind:'message'|'pause'|'resume';text?:string;createdAt:number}
 export interface ButlerHost {id:string;accountId:string;name:string;lastSeenAt:number}
@@ -164,6 +185,11 @@ export type ButlerRuntimeAction =
   | {kind:'run-work';goalId:string}
   | {kind:'work-command';jobId:string;command:'message'|'pause'|'resume';text?:string}
   | {kind:'retry-job';jobId:string}
+  | {kind:'answer-proposal';jobId:string;decision:'accept'|'decline'}
+  | {kind:'forget-signals';signalIds:string[]}
+  | {kind:'forget-goal';goalId:string}
+  | {kind:'forget-all'}
+  | {kind:'consent';granted:boolean}
   | {kind:'pause'} | {kind:'resume'} | {kind:'turn-off'};
 
 export interface ButlerRuntimeController {
@@ -179,7 +205,7 @@ export function emptyButlerBrain(accountId:string):ButlerBrainState {
 export const DEFAULT_BUTLER_PREFERENCES:ButlerProactivePreferences = {
   enabled:false,paused:false,sources:{wickrun:true},backend:{kind:'route-group',routeGroupId:'',effort:'medium'},
   maxTokensPerDay:12000,cadence:'twice-daily',morning:'08:00',evening:'18:00',
-  timezone:'UTC',allowResearch:true,allowRoutineExecution:true,maxWorkPerDay:3,externalUnderstanding:'redacted-context',
+  timezone:'UTC',allowResearch:true,allowRoutineExecution:false,maxWorkPerDay:3,externalUnderstanding:'redacted-context',learnHabits:true,
 };
 
 /** Remove raw links, identifiers and prompt-control text before a signal can leave a device. */
@@ -263,47 +289,107 @@ export function addButlerBrief(brain:ButlerBrainState,brief:ButlerBrief):ButlerB
     goalId:i.goalId,evidenceIds:[...new Set(i.evidenceIds)],result:safeResultRef(i.result),
   })).filter(i=>i.title && i.summary && !i.summary.includes('[REDACTED]'));
   if(!items.length)return brain;
-  return {...brain,briefs:[...brain.briefs,{id:brief.id,accountId:brain.accountId,period:brief.period,createdAt:brief.createdAt,items}],updatedAt:Math.max(brain.updatedAt,brief.createdAt)};
+  const greeting=brief.greeting?modelSafeSummary(brief.greeting,300):'';
+  return {...brain,briefs:[...brain.briefs,{id:brief.id,accountId:brain.accountId,period:brief.period,createdAt:brief.createdAt,...(greeting&&!greeting.includes('[REDACTED]')?{greeting}:{}),items}],updatedAt:Math.max(brain.updatedAt,brief.createdAt)};
+}
+
+/** When a signal id was last forgotten (directly or by "forget everything"); 0 if never. */
+export function forgottenBefore(brain:Pick<ButlerBrainState,'forgotten'|'accountId'>,id:string):number {
+  let at=0;
+  for(const f of brain.forgotten??[])if(f.accountId===brain.accountId&&(f.id===id||f.id==='*')&&f.at>at)at=f.at;
+  return at;
+}
+
+/** Drop what a forget covers and every record that only stood on it. */
+function withoutSignals(brain:ButlerBrainState,remove:Set<string>,now:number):ButlerBrainState {
+  const signals=brain.signals.filter(s=>!remove.has(s.id));
+  const kept=new Set(signals.map(s=>s.id));
+  const keep=(ids:string[])=>ids.filter(id=>kept.has(id));
+  const goals=brain.goals.map(g=>({...g,evidenceIds:keep(g.evidenceIds)})).filter(g=>g.evidenceIds.length>0);
+  const briefs=brain.briefs.map(b=>({...b,items:b.items.map(i=>({...i,evidenceIds:keep(i.evidenceIds)})).filter(i=>i.evidenceIds.length>0)})).filter(b=>b.items.length>0);
+  const skillProposals=brain.skillProposals.map(p=>({...p,evidenceIds:keep(p.evidenceIds)})).filter(p=>p.evidenceIds.length>0);
+  const targets={goal:new Set(goals.map(g=>g.id)),brief:new Set(briefs.map(b=>b.id)),skill:new Set(skillProposals.map(p=>p.id))};
+  return {...brain,signals,goals,briefs,skillProposals,
+    // Feedback and action records about what was forgotten go with it.
+    feedback:brain.feedback?.filter(f=>targets[f.targetKind].has(f.targetId)),
+    audit:brain.audit?.flatMap(a=>!a.sourceIds?.length?[a]:keep(a.sourceIds).length?[{...a,sourceIds:keep(a.sourceIds)}]:[]),
+    updatedAt:now};
+}
+
+/** Newest tombstones first, never dropping the latest "forget everything" or keeping what it already covers. */
+export function capForgotten(list:ButlerForget[],limit=600):ButlerForget[] {
+  const star=list.filter(f=>f.id==='*').sort((a,b)=>b.at-a.at)[0];
+  const rest=list.filter(f=>f.id!=='*'&&(!star||f.at>star.at)).sort((a,b)=>b.at-a.at).slice(0,star?limit-1:limit);
+  return [...(star?[star]:[]),...rest].sort((a,b)=>a.at-b.at);
+}
+
+export function forgetButlerSignals(brain:ButlerBrainState,ids:string[],now=Date.now()):ButlerBrainState {
+  const wanted=new Set(ids.filter(id=>brain.signals.some(s=>s.id===id)));
+  if(!wanted.size)return brain;
+  const next=withoutSignals(brain,wanted,now);
+  const forgotten=capForgotten([...(brain.forgotten??[]).filter(f=>!wanted.has(f.id)),...[...wanted].map(id=>({id,accountId:brain.accountId,at:now}))]);
+  const goals=new Set(next.goals.map(g=>g.id));
+  return {...next,forgotten,jobs:brain.jobs?.map(j=>j.goalId&&!goals.has(j.goalId)&&['proposed','queued'].includes(j.status)?{...j,status:'failed' as const,error:'依据已被删除。',updatedAt:now}:j)};
+}
+
+/** A fresh start: nothing learned before now is kept or learned again. Running Work is left to its own controls. */
+export function forgetAllButler(brain:ButlerBrainState,now=Date.now()):ButlerBrainState {
+  return {...brain,signals:[],goals:[],briefs:[],skillProposals:[],feedback:[],audit:[],
+    jobs:(brain.jobs??[]).filter(j=>j.kind==='work'&&['running','waiting'].includes(j.status)),
+    forgotten:[{id:'*',accountId:brain.accountId,at:now}],updatedAt:now};
 }
 
 /** Cloud sync gets the account's normalized brain, without device-local grants. */
 export function projectButlerBrainForSync(brain:ButlerBrainState):ButlerBrainState {
   const accountId=brain.accountId;
   const consent=Object.fromEntries(BUTLER_SOURCES.map(s=>[s,true])) as Record<ButlerSource,boolean>;
-  const signals=retainButlerSignals({...brain,signals:brain.signals.filter(s=>s.accountId===accountId&&s.modelSafe===true)
+  const forgotten=capForgotten((brain.forgotten??[]).filter(f=>f.accountId===accountId&&typeof f.id==='string'&&/^(?:\*|[a-zA-Z0-9:_-]{1,120})$/.test(f.id)&&Number.isFinite(f.at)&&f.at>0));
+  // Rows made before "forget everything" (or that only stood on forgotten data) do not come back
+  // from a device that had not heard of the forget yet.
+  const star=forgottenBefore({accountId,forgotten},'*');
+  const signals=retainButlerSignals({...brain,signals:brain.signals.filter(s=>s.accountId===accountId&&s.modelSafe===true&&!(forgottenBefore({accountId,forgotten},s.id)>=s.observedAt))
     .map(s=>projectButlerSignal(s,consent,consent)).filter((s):s is ButlerSignal=>!!s)},500);
   const ids=new Set(signals.map(s=>s.id));
+  // A record is gone when its signal was forgotten and has not been learned again since.
+  const gone=(id:string)=>!ids.has(id)&&forgottenBefore({accountId,forgotten},id)>0;
   const refs=(evidenceIds:string[])=>[...new Set(evidenceIds.filter(id=>ids.has(id)))];
+  const goals=brain.goals.filter(g=>g.accountId===accountId&&refs(g.evidenceIds).length>0).slice(-200);
+  const goalIds=new Set(goals.map(g=>g.id));
+  const briefs=brain.briefs.filter(b=>b.accountId===accountId&&b.createdAt>star).slice(-100).map(b=>({
+      id:b.id,accountId,period:b.period,createdAt:b.createdAt,...(b.greeting?{greeting:modelSafeSummary(b.greeting,300)}:{}),
+      items:b.items.filter(i=>refs(i.evidenceIds).length>0).map(i=>({id:i.id,kind:i.kind,
+        title:modelSafeSummary(i.title,100),summary:modelSafeSummary(i.summary,1200),goalId:i.goalId,
+        evidenceIds:refs(i.evidenceIds),result:safeResultRef(i.result)})),
+    })).filter(b=>b.items.length>0);
+  const skills=brain.skillProposals.filter(s=>s.accountId===accountId&&s.createdAt>star&&refs(s.evidenceIds).length>0).slice(-100);
+  const briefIds=new Set(briefs.map(b=>b.id)),skillIds=new Set(skills.map(s=>s.id));
   return {schema:1,accountId,
     signals:signals.map(({sourceRef:_,...safe})=>safe),
-    goals:brain.goals.filter(g=>g.accountId===accountId&&refs(g.evidenceIds).length>0).slice(-200).map(g=>({
+    goals:goals.map(g=>({
       id:g.id,accountId,title:modelSafeSummary(g.title,100),hypothesis:modelSafeSummary(g.hypothesis,400),
       evidenceIds:refs(g.evidenceIds),confidence:g.confidence,status:g.status,
       userCorrection:g.userCorrection?modelSafeSummary(g.userCorrection,400):undefined,
       updatedAt:g.updatedAt,dismissedAt:g.dismissedAt,
     })),
-    briefs:brain.briefs.filter(b=>b.accountId===accountId).slice(-100).map(b=>({
-      id:b.id,accountId,period:b.period,createdAt:b.createdAt,
-      items:b.items.filter(i=>refs(i.evidenceIds).length>0).map(i=>({id:i.id,kind:i.kind,
-        title:modelSafeSummary(i.title,100),summary:modelSafeSummary(i.summary,1200),goalId:i.goalId,
-        evidenceIds:refs(i.evidenceIds),result:safeResultRef(i.result)})),
-    })).filter(b=>b.items.length>0),
-    skillProposals:brain.skillProposals.filter(s=>s.accountId===accountId&&refs(s.evidenceIds).length>0).slice(-100).map(s=>({
+    briefs,
+    skillProposals:skills.map(s=>({
       id:s.id,accountId,name:modelSafeSummary(s.name,60),description:modelSafeSummary(s.description,160),
       body:modelSafeSummary(s.body,2000),evidenceIds:refs(s.evidenceIds),status:s.status,
       createdAt:s.createdAt,reviewedAt:s.reviewedAt,
     })),
     actionGrants:[],
-    jobs:brain.jobs?.filter(j=>j.accountId===accountId).slice(-200).map(j=>({id:j.id,accountId,kind:j.kind,goalId:j.goalId,
+    // Running Work stays under its own controls; other jobs go with the goal they served.
+    jobs:brain.jobs?.filter(j=>j.accountId===accountId&&(j.kind==='work'&&['running','waiting'].includes(j.status)||j.createdAt>star&&(!j.goalId||goalIds.has(j.goalId)))).slice(-200).map(j=>({id:j.id,accountId,kind:j.kind,goalId:j.goalId,
       period:j.period,status:j.status,createdAt:j.createdAt,updatedAt:j.updatedAt,error:j.error?modelSafeSummary(j.error,200):undefined,
       conversationId:j.conversationId?modelSafeSummary(j.conversationId,120):undefined,summary:j.summary?modelSafeSummary(j.summary,800):undefined,
-      automatic:j.automatic===true,commands:j.commands?.slice(-20).map(c=>({id:modelSafeSummary(c.id,120),kind:c.kind,text:c.text?modelSafeSummary(c.text,2000):undefined,createdAt:c.createdAt}))})),
+      automatic:j.automatic===true,...(j.proposal?{proposal:true}:{}),commands:j.commands?.slice(-20).map(c=>({id:modelSafeSummary(c.id,120),kind:c.kind,text:c.text?modelSafeSummary(c.text,2000):undefined,createdAt:c.createdAt}))})),
     hosts:brain.hosts?.filter(h=>h.accountId===accountId).slice(-20).map(h=>({id:h.id,accountId,name:modelSafeSummary(h.name,80),lastSeenAt:h.lastSeenAt})),
-    feedback:brain.feedback?.filter(f=>f.accountId===accountId).slice(-300).map(f=>({id:f.id,accountId,targetKind:f.targetKind,
+    feedback:brain.feedback?.filter(f=>f.accountId===accountId&&f.createdAt>star&&(f.targetKind==='goal'?goalIds:f.targetKind==='brief'?briefIds:skillIds).has(f.targetId)).slice(-300).map(f=>({id:f.id,accountId,targetKind:f.targetKind,
       targetId:f.targetId,rating:f.rating,comment:f.comment?modelSafeSummary(f.comment,500):undefined,createdAt:f.createdAt})),
-    audit:brain.audit?.filter(a=>a.accountId===accountId).slice(-500).map(a=>({id:a.id,accountId,jobId:a.jobId,at:a.at,
+    audit:brain.audit?.filter(a=>a.accountId===accountId&&a.at>star&&!(a.sourceIds?.length&&a.sourceIds.every(gone))).slice(-500).map(a=>({id:a.id,accountId,jobId:a.jobId,at:a.at,
       kind:a.kind,title:modelSafeSummary(a.title,100),detail:modelSafeSummary(a.detail,500),
       sourceIds:a.sourceIds?.filter(id=>ids.has(id)),model:a.model?modelSafeSummary(a.model,100):undefined,status:a.status})),
+    ...(forgotten.length?{forgotten:forgotten.map(f=>({id:f.id,accountId,at:f.at}))}:{}),
     updatedAt:brain.updatedAt};
 }
 

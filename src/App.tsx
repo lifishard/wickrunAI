@@ -99,6 +99,8 @@ import { butlerClock } from './lib/butler-policy';
 import { butlerMemorySources } from './lib/butler-memory';
 import { butlerWorkConfig } from './lib/butler-work';
 import type { ButlerJob, ButlerWorkCommand } from './lib/proactive-butler';
+import { butlerConsented } from './lib/proactive-butler';
+import { ButlerGreeting, ButlerHomeButton } from './components/ButlerGreeting';
 import { conversationQueue, nextQueuedIndex, type QueuedInput } from './lib/run-queue';
 import { teamNotifications } from './lib/team-notify';
 import { I18nProvider, LOCALES, setActiveLocale, translate, type Locale } from './lib/i18n';
@@ -153,6 +155,7 @@ export default function App() {
   const [bootError, setBootError] = React.useState<string | null>(null);
   const [bootReady, setBootReady] = React.useState(false);
   const [butlerOpen,setButlerOpen]=React.useState(false);
+  const [butlerGreeting,setButlerGreeting]=React.useState(false);
   const [shareSource,setShareSource]=React.useState<{kind:'conversation'|'project'|'file'|'workflow';sourceId:string}>();
   const [sharingOpen,setSharingOpen]=React.useState(()=>Boolean(sharedLinkToken()));
   React.useEffect(()=>{
@@ -307,6 +310,12 @@ export default function App() {
     queueSaveChain.current=queueSaveChain.current.catch(()=>{}).then(()=>getTransport().kvSet('wickrun:input-queue:v1',data)).catch(reportSaveError);
   },[queue,settings]);
 
+  function dismissButlerGreeting(){
+    if(!butlerGreeting)return;
+    setButlerGreeting(false);
+    const prefs=settingsRef.current?.butler?.proactive,account=butlerRuntime.getSnapshot().brain.accountId;
+    if(prefs)void getTransport().kvSet('wickrun:butler:welcome:'+account,butlerClock(Date.now(),prefs.timezone).day).catch(reportSaveError);
+  }
   function notifyTask(kind:'question'|'paused'|'error'|'completed',id:string,conversationId:string,title:string,body:string){
     if(settingsRef.current?.notifications?.enabled===false)return;
     void desktop()?.notifyTask?.({kind,id,conversationId,title,body:body.slice(0,500),silent:settingsRef.current?.notifications?.sound===false}).catch(()=>{});
@@ -440,15 +449,18 @@ export default function App() {
     let alive=true,seeded=false;const seen=new Set<string>();
     const update=()=>{
       const snapshot=butlerRuntime.getSnapshot(),prefs=settingsRef.current?.butler?.proactive;
-      if(!snapshot.deviceId||!prefs?.enabled||prefs.paused)return;
+      if(!snapshot.deviceId||!prefs?.enabled||prefs.paused||!butlerConsented(prefs))return;
       if(!seeded){
         seeded=true;for(const brief of snapshot.brain.briefs)seen.add(brief.id);
+        // The first open of the day gets a quiet card in the window, never a dialog over the user's work.
         const day=butlerClock(Date.now(),prefs.timezone).day,key='wickrun:butler:welcome:'+snapshot.brain.accountId;
-        void getTransport().kvGet(key).then(async old=>{if(!alive||old===day)return;await getTransport().kvSet(key,day);if(alive)setButlerOpen(true);}).catch(reportSaveError);
+        void getTransport().kvGet(key).then(old=>{if(alive&&old!==day)setButlerGreeting(true);}).catch(reportSaveError);
         return;
       }
       for(const brief of snapshot.brain.briefs)if(!seen.has(brief.id)){
-        seen.add(brief.id);notifyTask('completed','butler:'+brief.id,'butler:today',t('管家已准备好新的结果'),brief.items.map(item=>item.title).slice(0,3).join(' · '));
+        seen.add(brief.id);
+        // Only the morning and evening briefs notify; research and Work results wait in the panel.
+        if(brief.greeting)notifyTask('completed','butler:'+brief.id,'butler:today',t('管家的简报好了'),brief.greeting);
       }
     };
     update();const unsubscribe=butlerRuntime.subscribe(update);return()=>{alive=false;unsubscribe();};
@@ -896,6 +908,57 @@ export default function App() {
 
 
   const conversationsRef = React.useRef(conversations); conversationsRef.current = conversations;
+  /*
+   * Titles written by a model. The title request after the first answer can fail
+   * (an official client that starts slowly, a paused run, a conversation from an
+   * older version); those conversations kept the first words of the message, which
+   * the sidebar cuts to two characters. Title them in the background, one at a
+   * time, with the conversation's own model and the default profile as fallback.
+   */
+  React.useEffect(()=>{
+    if(!bootReady)return;
+    let busy=false,alive=true;
+    const titleOnce=async()=>{
+      if(busy||!alive)return;busy=true;
+      try{
+        const current=settingsRef.current;if(!current)return;
+        const target=conversationsRef.current.filter(c=>!c.titleManuallySet&&!c.titleGenerated&&!c.creationFingerprint&&!titleRequestsRef.current.has(c.id)
+          &&!runningRef.current.has(c.id)&&c.messages[0]?.role==='user'&&c.messages.some(m=>m.role==='assistant'&&!m.pending&&m.content?.trim()))
+          .sort((a,b)=>b.updatedAt-a.updatedAt)[0];
+        if(!target)return;
+        titleRequestsRef.current.add(target.id);
+        const first=target.messages[0],answer=target.messages.find(m=>m.role==='assistant'&&!m.pending&&m.content?.trim())!;
+        const goal=answer.runState?.harness?.goal?.trim()||String(first.content??'');
+        const prompt=titlePrompt(goal,answer.content);
+        let raw:string|undefined;
+        const bridge=desktop();
+        if(target.config.client&&bridge?.conversationClientTitle){
+          try{raw=await bridge.conversationClientTitle({selection:target.config.client,prompt,system:TITLE_SYSTEM,timeoutMs:45000});}catch{/* fall back to an API profile */}
+        }
+        if(!raw){
+          const profile=current.keyProfiles.find(p=>p.id===target.keyProfileId&&p.hasSecret)??current.keyProfiles.find(p=>p.id===current.activeKeyProfileId&&p.hasSecret);
+          if(!profile)return;
+          const cfg=profile.id===target.keyProfileId&&!target.config.client?target.config:current.defaultConfig;
+          const controller=new AbortController(),timer=window.setTimeout(()=>controller.abort(),30000);
+          try{raw=await requestAssistant(profile,{...cfg,toolsEnabled:false,customBody:''},prompt,controller.signal,TITLE_SYSTEM);}
+          catch{return;}finally{window.clearTimeout(timer);}
+        }
+        const title=raw?cleanConversationTitle(raw):null;
+        if(!title||!alive)return;
+        setConversations(all=>all.map(c=>c.id===target.id&&!c.titleManuallySet&&!c.titleGenerated&&c.title===target.title?{...c,title,titleGenerated:true}:c));
+      }finally{busy=false;}
+    };
+    const first=window.setTimeout(()=>void titleOnce(),30000),timer=window.setInterval(()=>void titleOnce(),60000);
+    return()=>{alive=false;window.clearTimeout(first);window.clearInterval(timer);};
+  },[bootReady]);
+
+  // Read by the main process for memory telemetry (logs/window.log); cheap counters only.
+  React.useEffect(()=>{(window as unknown as Record<string,unknown>).__wickrunDiag=()=>{
+    const list=conversationsRef.current;let messages=0,chars=0,fullRunStates=0;
+    for(const c of list){messages+=c.messages.length;for(const m of c.messages){chars+=m.content?.length??0;if(m.runState&&!m.runState.slim)fullRunStates++;}}
+    const memory=(performance as unknown as {memory?:{usedJSHeapSize:number}}).memory;
+    return {heapMB:memory?Math.round(memory.usedJSHeapSize/1e6):null,conversations:list.length,messages,contentMB:Math.round(chars/1e5)/10,fullRunStates,dom:document.getElementsByTagName('*').length,sync:(window as unknown as Record<string,unknown>).__wickrunSyncDiag??null};
+  };},[]);
   const activeIdRef = React.useRef(activeId); activeIdRef.current = activeId;
   const [coordinationOpen,setCoordinationOpen]=React.useState(false);
   const creationChain = React.useRef(Promise.resolve());
@@ -967,8 +1030,8 @@ export default function App() {
       await saveConversationsNow(conversationsRef.current);
     }
     if(existing.messages.length||queueRef.current.some(q=>q.conversationId===id))return id;
-    if(job.automatic&&!existing.workspace)throw Error('主动执行需要独立工作区；请先在桌面设置可复制的工作目录。');
-    const selected=butlerWorkConfig(current,current.butler.proactive,{autonomous:job.automatic===true});
+    if((job.automatic||job.proposal)&&!existing.workspace)throw Error('管家的准备工作需要独立工作区；请先在桌面设置可复制的工作目录。');
+    const selected=butlerWorkConfig(current,current.butler.proactive,{autonomous:job.automatic===true,accepted:job.proposal===true});
     flushSync(()=>setConversations(all=>all.map(c=>c.id===id?{...c,...selected}:c)));
     await saveConversationsNow(conversationsRef.current);
     if(!settingsRef.current?.butler?.proactive?.enabled||settingsRef.current.butler.proactive.paused)throw Error('管家已暂停，Work 草稿已保存。');
@@ -1544,7 +1607,8 @@ export default function App() {
         }).catch(error=>{startingRef.current.delete(convId);reportSaveError(error);});
         return true;
       };
-      const autonomousButler=butlerRuntime.getSnapshot().brain.jobs?.some(job=>job.conversationId===convId&&job.automatic)===true;
+      // Automatic Work and accepted suggestions run sandboxed in their isolated folder.
+      const autonomousButler=butlerRuntime.getSnapshot().brain.jobs?.some(job=>job.conversationId===convId&&(job.automatic||job.proposal))===true;
       if(autonomousButler&&!conv.workspace)throw Error('主动管家任务缺少独立工作区，已阻止执行。');
       const handle = runConnectedAgent({
         requestId,
@@ -2401,9 +2465,11 @@ export default function App() {
       {teamVisible ? <div className="team-workspace-container" style={sharingOpen?{display:'none'}:undefined}><React.Suspense fallback={<div className="empty"><BrandLoading label={t('正在打开协作空间…')} /></div>}><TeamWorkspace butlerController={butlerRuntime} sidebarTarget={teamSidebar} sidebarHidden={sidebarHidden} onOpenSidebar={()=>{setSidebarHidden(false);setSidebarOpen(true);}} onNavigate={()=>setSidebarOpen(false)} projects={projects} settings={settings} sourceConversation={active} beforeRestore={async()=>{stopAll();await teamRuntime.pauseAll();await saveConversationsNow(conversations);}} onProject={projectId=>setSettings(s=>s?{...s,collaborationView:{visible:true,projectId}}:s)} onSettingsChange={update=>setSettings(prev=>prev?update(prev):prev)} onProjectMemory={updateProjectMemory} initialProjectId={settings.collaborationView?.projectId??activeProject?.id} onSingle={()=>setTeamVisible(false)} onSettings={()=>{setSettingsTab('keys');setSettingsOpen(true);}} onCreateProject={name=>{const p=makeProject(name);setProjects(all=>[...all,p]);return p.id;}} onHandoff={(text,projectId)=>{const conv=newConversation(settings.defaultConfig,settings.activeKeyProfileId);conv.projectId=projectId;conv.title=titleFrom(text);conv.messages=[{id:uid(),role:'user',content:text,createdAt:Date.now()}];setConversations(all=>[...all,conv]);setActiveId(conv.id);setTeamVisible(false);}}/></React.Suspense></div> : null}
       <main className="main" style={teamVisible||sharingOpen?{display:'none'}:undefined}>
         {active?.workspaceError?<div className="grant-banner" role="alert">{active.workspaceError}</div>:active?.workspace?<div className="grant-banner">{t('当前 Work 使用独立文件副本；在「并行任务」中检查并应用改动。')}</div>:null}
+        {butlerGreeting&&settings.butler?.proactive?.enabled&&butlerConsented(settings.butler.proactive)&&!settings.butler.proactive.paused?<ButlerGreeting controller={butlerRuntime} prefs={settings.butler.proactive}
+          onOpen={()=>{dismissButlerGreeting();setButlerOpen(true);}} onDismiss={dismissButlerGreeting}/>:null}
         {saveError ? <div className="grant-banner" role="alert">{saveError}<button className="btn sm" onClick={() => { void Promise.all([saveSettings(settings), saveConversationsNow(conversations),saveProjects(projects),saveSkills(skills),saveTasks(tasks)]).then(() => setSaveError(null)).catch(reportSaveError); }}>{t('重试保存')}</button></div> : null}
         <div className="topbar">
-          <button className="btn sm butler-home-trigger" onClick={()=>setButlerOpen(true)}>{t('今日管家')}</button>
+          <ButlerHomeButton controller={butlerRuntime} onOpen={()=>{setButlerOpen(true);dismissButlerGreeting();}}/>
           <button className="btn sm ghost only-narrow" title={t('展开侧栏')} onClick={() => { setSidebarHidden(false); setSidebarOpen(true); }}>
             <Icon name="menu" size={18}/>
           </button>
@@ -2432,10 +2498,14 @@ export default function App() {
               await Promise.all([saveSettings(nextSettings),getTransport().kvSet(BUTLER_BRAIN_KEY,JSON.stringify(brain))]);
               window.dispatchEvent(new Event('wickrun:butler-reload'));
             }}
-            onApply={async next=>{
-              for(const old of conversations){const incoming=next.conversations.find(c=>c.id===old.id);if(!incoming)await forgetRuns(old.id);else{const removed=new Set(old.messages.filter(m=>!incoming.messages.some(n=>n.id===m.id)).map(m=>m.id));if(removed.size)await forgetRuns(old.id,removed);}}
-              await applyCloudLocal(next);
+            onApply={async(next,isCurrent)=>{
+              // Check and replace in one synchronous step: a message sent while the sync was
+              // in flight must never be overwritten by the older copy (it would vanish until a reload).
+              if(!isCurrent())throw new Error(t('本机内容刚有变化，云端已保存；稍后会自动合并。'));
+              const previous=conversationsRef.current;
               flushSync(()=>{setSettings(next.settings);setConversations(next.conversations);setProjects(next.projects);setSkills(next.skills);setTasks(next.tasks);});
+              for(const old of previous){const incoming=next.conversations.find(c=>c.id===old.id);if(!incoming)await forgetRuns(old.id);else{const removed=new Set(old.messages.filter(m=>!incoming.messages.some(n=>n.id===m.id)).map(m=>m.id));if(removed.size)await forgetRuns(old.id,removed);}}
+              await applyCloudLocal(next);
               window.dispatchEvent(new Event('wickrun:butler-reload'));
               if(!next.conversations.some(c=>c.id===activeId))setActiveId(next.conversations[0]?.id??null);
             }}/>
@@ -2806,6 +2876,11 @@ export default function App() {
           return copy.binaryFiles?`${message} ${t('二进制文件请在共享内容中单独下载。')}`:message;
         }}
         onHandoff={openSharedHandoff}
+        onBoardAI={(prompt,system,signal,choice)=>{
+          const selectedProfile=settings.keyProfiles.find(p=>p.id===choice.profileId);
+          if(!selectedProfile||!choice.model)return Promise.reject(Error(t('请先选择可用的 API 模型。')));
+          return requestAssistant(selectedProfile,{...settings.defaultConfig,model:choice.model,toolsEnabled:false,customBody:''},prompt,signal,system);
+        }}
         onGenerate={(item,prompt,signal,choice)=>{
           const selectedProfile=settings.keyProfiles.find(p=>p.id===choice.profileId);
           if(!selectedProfile||!choice.model)return Promise.reject(Error(t('请先选择可用的 API 模型。')));

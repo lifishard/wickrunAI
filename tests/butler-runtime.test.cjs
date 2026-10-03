@@ -13,7 +13,7 @@ function setup(options={}) {
   const load=loader({'./store':{uid},'./skills':{bodyHash:hash,slugify:s=>s},'./transport':{desktop:()=>null,getTransport:()=>noopStorage},
     './cloud-api':{cloudCall:async()=>({user:null}),cloudBridge:()=>null},'./butler-model':{runButlerModel:async()=>{throw Error('unexpected default model');}}});
   const domain=load(path.join(base,'proactive-butler.ts'));
-  let settings={butler:{proactive:{...domain.DEFAULT_BUTLER_PREFERENCES,enabled:true,hostDeviceId:'device-one',allowRoutineExecution:false,timezone:'UTC',...options.prefs}}},skills=[];
+  let settings={butler:{proactive:{...domain.DEFAULT_BUTLER_PREFERENCES,enabled:true,consent:{version:1,at:1},hostDeviceId:'device-one',allowRoutineExecution:false,timezone:'UTC',...options.prefs}}},skills=[];
   const conversations=[{id:'conv-1',title:'Useful agent skills',updatedAt:now,messages:[{id:'m1',role:'user',content:'Help me find AI skills useful for my daily work',createdAt:now}]}];
   const model=options.model??(async(_settings,_prefs,prompt)=>{calls.push(JSON.parse(prompt));const evidence=calls.at(-1).signals?.[0]?.id;
     return {text:JSON.stringify({goals:[{title:'Find practical AI skills',hypothesis:'May want a daily shortlist',evidenceIds:[evidence],confidence:'high'}],skills:[]}),tokens:800,sources:[],steps:[],route:'Fixture · brain'};});
@@ -228,4 +228,98 @@ test('invented evidence cannot replace a summary and edited messages are extract
  f.conversations[0].messages[0].content='My corrected request is a reusable weekly plan';f.advance(40000);
  await f.runtime.tick();await settle(f.runtime);assert.equal(calls,2);const signals=f.runtime.getSnapshot().brain.signals;
  assert.equal(signals.length,1);assert.equal(signals[0].id,original);assert.match(signals[0].summary,/corrected request/);
+});
+
+test('nothing is collected or sent until the data-scope notice is accepted',async()=>{
+ const f=setup({prefs:{consent:undefined}});await f.runtime.tick();await settle(f.runtime);
+ assert.equal(f.calls.length,0);assert.equal(f.runtime.getSnapshot().brain.signals.length,0);
+ await assert.rejects(f.runtime.action({kind:'add-need',text:'Plan my week'}),/数据范围/);
+ await f.runtime.action({kind:'consent',granted:true});await settle(f.runtime);
+ assert.equal(f.settings().butler.proactive.consent.version,1);assert.ok(f.runtime.getSnapshot().brain.signals.length>0);
+ await f.runtime.action({kind:'consent',granted:false});
+ assert.equal(f.settings().butler.proactive.consent,undefined);assert.equal(f.settings().butler.proactive.enabled,false);
+});
+
+test('without routine execution the Butler suggests in a quiet inbox and runs only what is accepted',async()=>{
+ const f=setup();await f.runtime.tick();await settle(f.runtime);
+ const goal=f.runtime.getSnapshot().brain.goals[0];assert.equal(goal.status,'proposed');
+ f.advance(40000);await f.runtime.tick();await settle(f.runtime);
+ let proposal=f.runtime.getSnapshot().brain.jobs.find(j=>j.proposal);
+ assert.equal(proposal.status,'proposed');assert.equal(proposal.kind,'research');assert.equal(proposal.goalId,goal.id);
+ const before=f.calls.length;f.advance(40000);await f.runtime.tick();await settle(f.runtime);
+ assert.equal(f.calls.length,before);assert.equal(f.runtime.getSnapshot().brain.jobs.filter(j=>j.proposal).length,1);
+ await f.runtime.action({kind:'answer-proposal',jobId:proposal.id,decision:'accept'});await settle(f.runtime);
+ assert.equal(f.runtime.getSnapshot().brain.goals[0].status,'confirmed');
+ proposal=f.runtime.getSnapshot().brain.jobs.find(j=>j.id===proposal.id);assert.equal(proposal.status,'completed');assert.equal(proposal.automatic,false);
+ assert.equal(f.calls.length,before+1);
+ f.advance(40000);await f.runtime.tick();await settle(f.runtime);
+ assert.equal(f.runtime.getSnapshot().brain.jobs.filter(j=>j.proposal).length,1,'a researched goal is not suggested again without Work');
+});
+
+test('a declined suggestion is not repeated and open suggestions are capped',async()=>{
+ let n=0;const f=setup({model:async(_s,_p,prompt)=>{const p=JSON.parse(prompt);const id=p.signals?.[0]?.id;
+  return {text:JSON.stringify({goals:id?[1,2,3,4,5].map(i=>({title:`Need ${++n}-${i}`,hypothesis:'Recurring need',evidenceIds:[id],confidence:'medium'})):[],skills:[]}),tokens:100,sources:[],steps:[]};}});
+ await f.runtime.tick();await settle(f.runtime);
+ for(let i=0;i<6;i++){f.advance(40000);await f.runtime.tick();await settle(f.runtime);}
+ const open=f.runtime.getSnapshot().brain.jobs.filter(j=>j.status==='proposed');assert.equal(open.length,3);
+ await f.runtime.action({kind:'answer-proposal',jobId:open[0].id,decision:'decline'});
+ for(let i=0;i<3;i++){f.advance(40000);await f.runtime.tick();await settle(f.runtime);}
+ const jobs=f.runtime.getSnapshot().brain.jobs.filter(j=>j.proposal);
+ assert.equal(jobs.filter(j=>j.goalId===open[0].goalId).length,1);assert.equal(jobs.length,3,'the daily cap holds after a decline');
+});
+
+test('forgotten needs and goals are removed everywhere and not learned again from the same messages',async()=>{
+ const f=setup();await f.runtime.tick();await settle(f.runtime);
+ const brain=f.runtime.getSnapshot().brain,signal=brain.signals.find(s=>!s.id.includes('habit'));
+ await f.runtime.action({kind:'feedback',targetKind:'goal',targetId:brain.goals[0].id,rating:'useful',comment:'keep going'});
+ await f.runtime.action({kind:'forget-goal',goalId:brain.goals[0].id});
+ let next=f.runtime.getSnapshot().brain;
+ assert.equal(next.goals.length,0);assert.ok(!next.signals.some(s=>s.id===signal.id));assert.equal(next.feedback.length,0);
+ assert.ok(next.forgotten.some(x=>x.id===signal.id));
+ f.advance(40000);await f.runtime.tick();await settle(f.runtime);next=f.runtime.getSnapshot().brain;
+ assert.ok(!next.signals.some(s=>s.id===signal.id),'the same message is not ingested again');
+ f.conversations[0].messages.push({id:'m-new',role:'user',content:'Now help me plan a garden',createdAt:Date.UTC(2026,8,30,7)+50000});
+ f.advance(40000);await f.runtime.tick();await settle(f.runtime);
+ assert.ok(f.runtime.getSnapshot().brain.signals.some(s=>/garden/.test(s.summary)),'new activity is still learned');
+ await f.runtime.action({kind:'forget-all'});next=f.runtime.getSnapshot().brain;
+ assert.deepEqual([next.signals.length,next.goals.length,next.briefs.length,next.audit.length>0],[0,0,0,true]);
+ const synced=f.domain.projectButlerBrainForSync({...next,signals:[{...signal,observedAt:1}]});
+ assert.equal(synced.signals.length,0,'a stale copy from another device cannot bring a forgotten signal back');
+});
+
+test('the model writes the brief and greeting; references it cannot back are dropped',async()=>{
+ const prompts=[];const f=setup({model:async(_s,_p,prompt)=>{const p=JSON.parse(prompt);prompts.push(p);
+  if(String(p.task).includes('简报')){const goalId=p.goals[0].goalId;
+   return {text:JSON.stringify({greeting:'早上好。今天先把 AI 技能清单定下来。',items:[{kind:'suggestion',title:'挑三个技能',summary:'从已确认的需求出发，先试三个。',ref:goalId},{kind:'finding',title:'编造的进展',summary:'没有依据。',ref:'goal-unknown'}]}),tokens:300,sources:[],steps:[]};}
+  return {text:JSON.stringify({goals:[{title:'Find practical AI skills',hypothesis:'May want a daily shortlist',evidenceIds:[p.signals[0].id],confidence:'high'}],skills:[]}),tokens:300,sources:[],steps:[]};}});
+ await f.runtime.tick();await settle(f.runtime);
+ await f.runtime.action({kind:'generate-brief',period:'morning'});await settle(f.runtime);
+ const brief=f.runtime.getSnapshot().brain.briefs.at(-1);
+ assert.equal(brief.greeting,'早上好。今天先把 AI 技能清单定下来。');assert.deepEqual(brief.items.map(i=>i.title),['挑三个技能']);
+ assert.ok(brief.items[0].evidenceIds.length>0);assert.ok(prompts.at(-1).goals.length===1&&prompts.at(-1).now.weekday);
+ const failing=setup({model:async(_s,_p,prompt)=>{if(String(JSON.parse(prompt).task).includes('简报'))throw Error('rate limited');
+  const p=JSON.parse(prompt);return {text:JSON.stringify({goals:[{title:'Find practical AI skills',hypothesis:'May want a daily shortlist',evidenceIds:[p.signals[0].id],confidence:'high'}],skills:[]}),tokens:300,sources:[],steps:[]};}});
+ await failing.runtime.tick();await settle(failing.runtime);await failing.runtime.action({kind:'generate-brief',period:'evening'});await settle(failing.runtime);
+ const fallback=failing.runtime.getSnapshot().brain;assert.equal(fallback.briefs.at(-1).greeting,undefined);assert.equal(fallback.briefs.at(-1).items.length,1);
+ assert.ok(fallback.audit.some(a=>a.title==='简报改用模板'));
+});
+
+test('an upgraded account is paused until consent, and consent turns automatic execution off',async()=>{
+ const f=setup({prefs:{consent:undefined,allowRoutineExecution:true}});await f.runtime.tick();
+ assert.equal(f.settings().butler.proactive.paused,true,'older app versions on the account stop too');
+ await f.runtime.action({kind:'consent',granted:true});
+ assert.deepEqual([f.settings().butler.proactive.paused,f.settings().butler.proactive.allowRoutineExecution],[false,false]);
+});
+
+test('an accepted Work suggestion runs sandboxed even with routine execution off',async()=>{
+ const started=[];const f=setup({prefs:{allowResearch:false},work:{startWork:async(job,prompt)=>{started.push({job,prompt});return 'sandbox-work';},workState:()=>({status:'running'})}});
+ await f.runtime.tick();await settle(f.runtime);f.advance(40000);await f.runtime.tick();await settle(f.runtime);
+ const proposal=f.runtime.getSnapshot().brain.jobs.find(j=>j.proposal);assert.equal(proposal.kind,'work');assert.equal(started.length,0);
+ await f.runtime.action({kind:'answer-proposal',jobId:proposal.id,decision:'accept'});await settle(f.runtime);
+ assert.equal(started.length,1);assert.equal(started[0].job.proposal,true);assert.equal(started[0].job.automatic,false);
+ assert.match(started[0].prompt,/建议收件箱/);assert.match(started[0].prompt,/仅获准在当前隔离工作目录内读写文件/);
+ const {butlerWorkConfig}=f.load(path.join(base,'butler-work.ts'));
+ const settings={defaultConfig:{enabledTools:['run_command','web_search'],approvalMode:'ask'},routeGroups:[{id:'g',routes:[{profileId:'p',model:'m'}]}]};
+ const cfg=butlerWorkConfig(settings,{allowRoutineExecution:false,backend:{kind:'route-group',routeGroupId:'g',effort:'medium'}},{accepted:true});
+ assert.ok(!cfg.config.enabledTools.includes('run_command'));assert.ok(!cfg.config.enabledTools.includes('web_search'));
 });

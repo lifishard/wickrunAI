@@ -3,7 +3,7 @@ import type { Project } from './projects';
 import type { CollaborationData, Graph, TeamProject, Workflow } from './collaboration';
 import { cloudCall, type CloudUser } from './cloud-api';
 
-export type SharedKind = 'file' | 'folder' | 'conversation' | 'project' | 'workflow';
+export type SharedKind = 'file' | 'folder' | 'conversation' | 'project' | 'workflow' | 'board';
 export type SharedRole = 'viewer' | 'commenter' | 'editor';
 export type SharedVisibility = 'private' | 'link' | 'invite' | 'team';
 export interface SharedPolicy { visibility: SharedVisibility; linkRole: SharedRole; invites: {email:string;role:SharedRole}[]; teamRole?:SharedRole; allowGuestComments?:boolean; requireSignIn?:boolean }

@@ -172,6 +172,7 @@ function createWindow() {
   });
 
   windowHealth.watchWindow(mainWindow, { log: windowLog() });
+  windowHealth.watchMemory(mainWindow, { app, log: windowLog() });
 
   mainWindow.once('ready-to-show', () => {
     if (saved?.maximized) mainWindow.maximize();

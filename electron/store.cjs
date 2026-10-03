@@ -152,6 +152,9 @@ module.exports = {
     return rec.v;
   },
   async secretSet(id, value) {
+    // Encryption output differs on every call, so an unchanged key would still
+    // rewrite the whole store; cloud sync re-applies every key on each sync.
+    try { if (module.exports.secretGet(id) === value) return; } catch { /* unreadable: overwrite below */ }
     const rec = encryptionAvailable()
       ? { enc: true, v: safeStorage.encryptString(value).toString('base64') }
       : { enc: false, v: value };

@@ -4,6 +4,7 @@ import type { AppSettings } from '../../types';
 import { useT } from '../../lib/i18n';
 import { collaborationCall, publishSharedSeed, shareLink, sharedLinkToken, type SharedItem, type SharedSpace, type SharedConnection, type SharedSeed } from '../../lib/shared-resources';
 import SharedWorkflowEditor from './SharedWorkflowEditor';
+import ProjectBoards from './ProjectBoards';
 import { uploadSharedFile, downloadSharedFile, sharedFileLink, type FileTransferProgress } from '../../lib/shared-files';
 import { sharedMessageIdentity,sharedMessageGroups } from '../../lib/message-identity';
 import './CollaborationHub.css';
@@ -15,12 +16,12 @@ type SharedComment = { id: string; authorId: string; authorName?: string; body: 
 type SharedEvent = { id: string; authorId?: string; authorName?: string; actorId?: string; actorName?: string; action?: string; text?: string; body?: string; kind?: string; createdAt?: number; at?: number };
 type HistoryEntry = { id: string; actorId: string; actorName?: string; at: number; action: string; revision: number; title: string; payload: Record<string, unknown> };
 type HubState = { user?: { id: string; email?: string; name?: string } | null; items: SharedItem[]; spaces: SharedSpace[]; connections: SharedConnection[]; storage?:{usedBytes:number;limitBytes:number;availableBytes:number;plan:string;includesHistory:boolean}|null };
-type Tab = 'items' | 'spaces' | 'connections';
+type Tab = 'boards' | 'items' | 'spaces' | 'connections';
 type ModelChoice={profileId:string;model:string};
-type Props = { initialSource?:{kind:SharedItem['kind'];sourceId:string};onOpenSidebar?:()=>void;sidebarHidden?:boolean;onAccount?:()=>void; settings: AppSettings; seeds: SharedSeed[]; onClose: () => void; onImport?: (item: SharedItem, token?:string) => Promise<string|void>; onHandoff?: (receipt:Record<string,unknown>,target:SharedItem|undefined,connection:SharedConnection)=>Promise<void>; onGenerate?: (item: SharedItem, prompt: string, signal: AbortSignal, choice:ModelChoice) => Promise<string> };
+type Props = { initialSource?:{kind:SharedItem['kind'];sourceId:string};onOpenSidebar?:()=>void;sidebarHidden?:boolean;onAccount?:()=>void; settings: AppSettings; seeds: SharedSeed[]; onClose: () => void; onImport?: (item: SharedItem, token?:string) => Promise<string|void>; onHandoff?: (receipt:Record<string,unknown>,target:SharedItem|undefined,connection:SharedConnection)=>Promise<void>; onGenerate?: (item: SharedItem, prompt: string, signal: AbortSignal, choice:ModelChoice) => Promise<string>; onBoardAI?: (prompt:string, system:string, signal:AbortSignal, choice:ModelChoice) => Promise<string> };
 
 const kinds = ['file', 'folder', 'conversation', 'project', 'workflow'] as const;
-const kindNames: Record<string, string> = { file: '文件', folder: '文件夹', conversation: '对话', project: '项目', workflow: '工作流' };
+const kindNames: Record<string, string> = { file: '文件', folder: '文件夹', conversation: '对话', project: '项目', workflow: '工作流', board: '项目看板' };
 const roleNames: Record<Role, string> = { viewer: '查看', commenter: '评论', editor: '编辑' };
 const visibilityNames = { private: '受限访问', link: '知道链接的人', invite: '受邀的人', team: '空间成员' } as const;
 const timestamp = (value?: number) => value ? new Date(value).toLocaleString() : '';
@@ -105,13 +106,14 @@ function Thread({ item, role, disabled, onSend, viewerId,onAnnotate,comments,set
   </section>;
 }
 
-export default function CollaborationHub({ initialSource,onOpenSidebar,sidebarHidden,onAccount,settings, seeds, onClose, onImport, onHandoff, onGenerate }: Props) {
+export default function CollaborationHub({ initialSource,onOpenSidebar,sidebarHidden,onAccount,settings, seeds, onClose, onImport, onHandoff, onGenerate, onBoardAI }: Props) {
   const [showList,setShowList]=React.useState(false);
   const t = useT();
   const appliedSource=React.useRef('');
   const [createOpen,setCreateOpen]=React.useState(Boolean(initialSource));
   const [newEncrypted,setNewEncrypted]=React.useState(true);
-  const [tab, setTab] = React.useState<Tab>('items');
+  // Projects come first: shared goals, tasks and who confirmed them. Sharing a specific item opens its list.
+  const [tab, setTab] = React.useState<Tab>(initialSource ? 'items' : 'boards');
   const [state, setState] = React.useState<HubState>({ items: [], spaces: [], connections: [] });
   const [selectedId, setSelectedId] = React.useState('');
   const [opened, setOpened] = React.useState<Opened | null>(null);
@@ -320,7 +322,7 @@ export default function CollaborationHub({ initialSource,onOpenSidebar,sidebarHi
     if(!selectedSpace||!canManageSpace){setSpaceHistory([]);return;}
     void collaborationCall<{history:Record<string,unknown>[]}>('getSpaceHistory',{spaceId:selectedSpace.id}).then(r=>{if(live.current)setSpaceHistory(r.history);}).catch(e=>setError(errText(e)));
   },[selectedSpace?.id,selectedSpace?.revision,canManageSpace]);
-  const myItems = [...new Map([...state.items, ...linkedItems].filter(i => (!spaceId || i.spaceId === spaceId || i.groupGrants?.some(g=>g.spaceId===spaceId)) && (!itemSearch.trim()||i.title.toLocaleLowerCase().includes(itemSearch.trim().toLocaleLowerCase()))).map(i => [i.id, i])).values()];
+  const myItems = [...new Map([...state.items, ...linkedItems].filter(i => i.kind !== ('board' as SharedItem['kind']) && (!spaceId || i.spaceId === spaceId || i.groupGrants?.some(g=>g.spaceId===spaceId)) && (!itemSearch.trim()||i.title.toLocaleLowerCase().includes(itemSearch.trim().toLocaleLowerCase()))).map(i => [i.id, i])).values()];
   const openItem = (id: string) => void run(async () => { setShowList(false); const linked = Boolean(token && linkedItems.some(i => i.id === id)); if (!linked) { setToken(null); setLinkedItems([]); } await open(id, linked ? token ?? undefined : undefined); setCreatedLink(''); });
   const currentSeedOptions = seeds.filter(s => s.kind === newKind);
   const allItems=[...new Map([...state.items,...linkedItems].map(i=>[i.id,i])).values()];
@@ -365,7 +367,7 @@ export default function CollaborationHub({ initialSource,onOpenSidebar,sidebarHi
   return <div className={`share-hub ${item?(showList?'share-show-list':'share-show-item'):''}`} role="region" aria-label={t('共享与协作')}>
     <header className="share-topbar">{onOpenSidebar&&<button className="btn sm ghost only-narrow share-reveal" title={t('展开侧栏')} aria-label={t('展开侧栏')} onClick={onOpenSidebar}><Icon name="menu" size={18}/></button>}{onOpenSidebar&&sidebarHidden&&<button className="btn sm ghost wide-only share-reveal" title={t('展开侧栏（Ctrl+B）')} aria-label={t('展开侧栏（Ctrl+B）')} onClick={onOpenSidebar}><Icon name="menu" size={18}/></button>}<div><h1>{t('群组与共享')}</h1></div>{onAccount&&<button className="btn ghost" onClick={onAccount}>{t('账号与加密')}</button>}<button className="btn ghost" onClick={onClose} aria-label={t('关闭')}><Icon name="close" size={16}/>{t('关闭')}</button></header>
     <nav className="share-tabs" aria-label={t('协作页面')}>
-      {([['items', '共享内容'], ['spaces', '空间与成员'], ['connections', '工作交接']] as const).map(([id, label]) => <button key={id} onClick={() => setTab(id)} aria-current={tab === id ? 'page' : undefined}>{t(label)}</button>)}
+      {([['boards', '项目'], ['items', '共享内容'], ['spaces', '空间与成员'], ['connections', '工作交接']] as const).map(([id, label]) => <button key={id} onClick={() => setTab(id)} aria-current={tab === id ? 'page' : undefined}>{t(label)}</button>)}
     </nav>
     {error && <div className="share-alert" role="alert">{error}<button className="btn sm ghost" onClick={() => setError('')}>{t('关闭')}</button></div>}
     {notice && <p className="share-notice" role="status">{notice}</p>}
@@ -377,6 +379,7 @@ export default function CollaborationHub({ initialSource,onOpenSidebar,sidebarHi
     {pendingAI&&<div className="share-conflict"><p>{t('助手回复已生成，但尚未保存到群聊。')}</p><pre>{pendingAI.message.content}</pre><button className="btn" disabled={busy} onClick={()=>void run(async()=>{const result=await collaborationCall<Opened>('postMessage',{itemId:pendingAI.itemId,...(pendingAI.token?{token:pendingAI.token}:{}),message:pendingAI.message});if(item?.id===pendingAI.itemId)applyOpen(result);setPendingAI(null);await refreshState();})}>{t('重试保存回复')}</button><button className="btn ghost" onClick={()=>setPendingAI(null)}>{t('放弃这条回复')}</button></div>}
 
     {state.storage&&<details className="share-storage"><summary>{t('云存储空间（共享文件 + 云文件库）')} · {(state.storage.usedBytes/1024/1024).toFixed(1)} MB / {(state.storage.limitBytes/1024/1024/1024).toFixed(0)} GB</summary><progress aria-label={t('已用文件空间')} value={state.storage.usedBytes} max={state.storage.limitBytes}/><p>{t('共享文件与云文件库共用同一份额度，计入上传者，历史版本也占用空间。付费扩容尚未开放。')}</p></details>}
+    {tab === 'boards' && <ProjectBoards settings={settings} me={state.user} spaces={state.spaces} items={state.items} onRefresh={refreshState} onAI={onBoardAI}/>}
     {tab === 'items' && <div className="share-layout">
       <aside className="share-rail"><div className="share-rail-head"><h2>{t('共享内容')}</h2>{item&&<button className="btn sm ghost only-narrow" onClick={()=>setShowList(false)}>{t('返回内容')}</button>}<button className="btn sm" onClick={() => void run(refreshState)}>{t('刷新')}</button></div>
         <Field label={t('空间')}><select value={spaceId} onChange={e => setSpaceId(e.target.value)}><option value="">{t('全部空间')}</option>{state.spaces.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></Field>
