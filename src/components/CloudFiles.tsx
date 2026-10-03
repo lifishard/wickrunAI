@@ -3,7 +3,7 @@ import { useT } from '../lib/i18n';
 import { desktop } from '../lib/transport';
 import { formatBytes } from '../lib/format-bytes';
 import { mediaCall, uploadFileFromBrowser, type CloudFile, type CloudUsage, type UploadProgress } from '../lib/cloud-media';
-import { uploadProgressText } from '../lib/upload-progress';
+import { uploadProgressText, uploadCancellationText } from '../lib/upload-progress';
 import './CloudFiles.css';
 
 const ICON: Record<string, string> = { video: '🎬', audio: '🎧', image: '🖼' };
@@ -86,7 +86,7 @@ export default function CloudFiles() {
       else if (current()) setUploadNotice(t('已取消上传；已发送的数据可能仍在确认，可稍后刷新文件列表。'));
     } catch (e) {
       if (current()) {
-        if (controller.signal.aborted || (e as Error)?.name === 'AbortError') setUploadNotice(t('已取消上传；已发送的数据可能仍在确认，可稍后刷新文件列表。'));
+        if (controller.signal.aborted || (e as Error)?.name === 'AbortError') setUploadNotice(uploadCancellationText(e, t));
         else setError(e instanceof Error ? e.message : String(e));
       }
     } finally { if (current()) { setProgress(null); setCancelling(false); abort.current = null; } }

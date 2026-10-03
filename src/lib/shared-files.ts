@@ -1,16 +1,19 @@
 import { collaborationCall, SHARED_FILE_MAX_BYTES, type SharedItem } from './shared-resources';
-import { cloudAccountIdentity } from './cloud-api';
+import { cloudAccountIdentity, cloudCall, onWebCloudAccountChange } from './cloud-api';
+import { MEDIA_CONTENT_SCHEME, MEDIA_UPLOAD_ATTEMPTS, MediaUploadRetry, mediaAbortError, mediaAwait, mediaContentIdentity,
+  mediaPutTimeout, mediaRetryAfter, mediaTimed, checkMediaIntegrity, checkMediaParts, invalidMediaUpload, waitMediaVerification,
+  safeMediaFailure, type MediaFailure, type MediaIntegrityState } from './cloud-media-upload';
 
 export const SHARED_FILE_CHUNK_BYTES = 512 * 1024;
 type Data = Record<string, unknown>;
-type Call = <T>(operation:string,input?:Data)=>Promise<T>;
-export type FileTransferProgress = {done:number;total:number;direction:'upload'|'download'};
+type Call = <T>(operation:string,input?:Data,options?:{signal?:AbortSignal;accountId?:string;timeoutMs?:number})=>Promise<T>;
+export type FileTransferProgress = {done:number;total:number;direction:'upload'|'download';phase?:'hashing'|'uploading'|'finalizing'|'done'};
 type TransferOptions = {token?:string;signal?:AbortSignal;onProgress?:(value:FileTransferProgress)=>void;call?:Call;account?:()=>Promise<string|null>;historyId?:string;
   /** Use object storage when the server offers it. Defaults on, except when a custom `call` is injected. */
   objectStorage?:boolean;
   /** Sends bytes to a signed storage URL. Replaced in tests. */
   put?:(url:string,body:Blob,signal?:AbortSignal)=>Promise<Response>;
-  get?:(url:string,signal?:AbortSignal)=>Promise<Response>};
+  get?:(url:string,signal?:AbortSignal)=>Promise<Response>; initialAccount?:string|null; retry?:MediaUploadRetry; canCleanup?:()=>boolean};
 type UploadStatus = {uploadId:string;chunkSize:number;chunkCount:number;missing:number[]};
 export type SharedFilePayload = {name:string;mime:string;size:number;blobId:string;sha256?:string;chunkSize?:number;storage?:'r2';fileEncryption?:{keyId:string;plainSize:number}};
 /** Largest shared file kept in object storage; a sealed (end-to-end encrypted) file must fit in memory, so it stays at 100 MB. */
@@ -19,7 +22,7 @@ export const SHARED_OBJECT_MAX_BYTES=5*1024*1024*1024;
 export const SHARED_MEMORY_DOWNLOAD_BYTES=256*1024*1024;
 
 function notCancelled(signal?:AbortSignal) {
-  if(signal?.aborted)throw new DOMException('文件传输已取消。','AbortError');
+  if(signal?.aborted)throw mediaAbortError(signal);
 }
 async function digest(blob:Blob):Promise<string> {
   const hash=await crypto.subtle.digest('SHA-256',await blob.arrayBuffer());
@@ -44,122 +47,136 @@ function checkManifest(data:Data):SharedFilePayload {
   if(!Number.isSafeInteger(data.size)||Number(data.size)<0||Number(data.size)>SHARED_FILE_MAX_BYTES||data.chunkSize!==SHARED_FILE_CHUNK_BYTES||!text(data,'blobId')||!/^[a-f0-9]{64}$/.test(text(data,'sha256')))throw Error('文件传输信息无效。');
   return data as SharedFilePayload;
 }
-async function pause(ms:number,signal?:AbortSignal) {
-  notCancelled(signal);
-  await new Promise<void>((resolve,reject)=>{
-    const cancel=()=>{clearTimeout(timer);reject(new DOMException('文件传输已取消。','AbortError'));};
-    const timer=setTimeout(()=>{signal?.removeEventListener('abort',cancel);resolve();},ms);
-    signal?.addEventListener('abort',cancel,{once:true});
-  });
-}
 async function session(options:TransferOptions) {
-  const account=options.account??cloudAccountIdentity,initial=await account(),call=options.call??collaborationCall;
-  const guarded=async<T>(operation:string,input:Data):Promise<T>=>{
-    for(let attempt=0;attempt<3;attempt++) {
-      notCancelled(options.signal);if(await account()!==initial)throw Error('账号已切换，已停止传输文件。');
-      try {
-        const result=await call<T>(operation,input);
-        notCancelled(options.signal);if(await account()!==initial)throw Error('账号已切换，已停止传输文件。');
-        return result;
-      } catch(error) {
-        const status=(error as {status?:number}).status;
-        if(options.signal?.aborted||attempt===2||status!==undefined&&![429,502,503,504].includes(status)||error instanceof Error&&/账号已切换/.test(error.message))throw error;
-        await pause(status===429?2000:500*(attempt+1),options.signal);
-      }
-    }
-    throw Error('文件传输失败。');
+  const account=options.account??cloudAccountIdentity,initial=options.initialAccount!==undefined?options.initialAccount:await account(),retry=options.retry??new MediaUploadRetry();
+  const check=async(signal=options.signal)=>{notCancelled(signal);if(await mediaAwait(account(),signal)!==initial)throw new DOMException('账号已切换，已停止传输文件。','AbortError');notCancelled(signal);};
+  const raw:Call=options.call??((operation,input,request)=>/^file/.test(operation)
+    ?cloudCall('collaboration',{operation,input},request):collaborationCall(operation,input));
+  const guarded=async<T>(operation:string,input:Data,request?:{signal?:AbortSignal}):Promise<T>=>{
+    const signal=request?.signal??options.signal;
+    return retry.run(async()=>{
+      await check(signal);
+      const result=await mediaTimed(signal,30000,requestSignal=>raw<T>(operation,input,{signal:requestSignal,accountId:initial??undefined}));
+      await check(signal);return result;
+    },signal);
   };
-  return {initial,call:guarded};
+  return {initial,call:guarded,check,retry,raw,account};
 }
 
 
-type ObjectUpload={id:string;mode:'single'|'multipart';status:string;size:number;url?:string;partSize?:number;partCount?:number;completedParts?:{partNumber:number;size:number}[]};
-async function sendWithRetry(url:string,body:Blob,options:TransferOptions):Promise<void> {
+interface ObjectUpload extends MediaIntegrityState {payload?:Data}
+async function sendWithRetry(url:string,body:Blob,options:TransferOptions,io:Awaited<ReturnType<typeof session>>,renew:()=>Promise<string>):Promise<void> {
   const send=options.put??((target:string,data:Blob,signal?:AbortSignal)=>fetch(target,{method:'PUT',body:data,signal}));
-  let last='';
-  for(let attempt=0;attempt<4;attempt++) {
-    notCancelled(options.signal);
+  let renewed=false;
+  for(let attempt=0;;attempt++) {
+    await io.retry.wait(options.signal);await io.check();
     try {
-      const response=await send(url,body,options.signal);
+      const response=await mediaTimed(options.signal,mediaPutTimeout(body.size),signal=>send(url,body,signal));await io.check();
       if(response.ok)return;
-      if(response.status<500&&response.status!==429&&response.status!==408)throw Object.assign(Error(`云存储拒绝了上传（HTTP ${response.status}）。请刷新页面后重试。`),{fatal:true});
-      last=`HTTP ${response.status}`;
+      throw Object.assign(Error(`网络不稳定或云存储拒绝上传（HTTP ${response.status}）。再次选择同一个文件会从断点继续。`),{status:response.status,retryAfterMs:mediaRetryAfter(response.headers?.get('Retry-After')??null)});
     } catch(error) {
-      if((error as {fatal?:boolean}).fatal||options.signal?.aborted)throw error;
-      last=error instanceof Error?error.message:String(error);
+      await io.check();
+      if((error as MediaFailure).status===403&&!renewed&&attempt<MEDIA_UPLOAD_ATTEMPTS-1){renewed=true;url=await renew();continue;}
+      io.retry.failed(error,attempt);
     }
-    await pause(500*2**attempt,options.signal);
   }
-  throw Error(`网络不稳定，上传中断（${last}）。再次选择同一个文件会从断点继续。`);
 }
-async function resumeKey(itemId:string,file:File):Promise<string> {
-  const bytes=new TextEncoder().encode(`${itemId}|${file.name}|${file.size}|${file.lastModified}`);
+async function resumeKey(itemId:string,file:File,root:string):Promise<string> {
+  const bytes=new TextEncoder().encode(JSON.stringify(['shared',itemId,file.name,file.type||'application/octet-stream',root]));
   const hash=await crypto.subtle.digest('SHA-256',bytes);
-  return 'sh-'+Array.from(new Uint8Array(hash),b=>b.toString(16).padStart(2,'0')).join('').slice(0,40);
+  return 'sh2-'+Array.from(new Uint8Array(hash),b=>b.toString(16).padStart(2,'0')).join('');
 }
 
 /**
  * Send the file straight to object storage. The server only issues signed URLs and
  * checks permissions and quota, so file size no longer depends on it.
- * Returns null when this server has no object storage, so the caller can use the old path.
+ * Strict uploads never silently downgrade to the legacy storage protocol.
  */
-async function uploadToObjectStorage(io:Awaited<ReturnType<typeof session>>,scope:Data,file:File,encrypted:{keyId:string}|null,options:TransferOptions):Promise<SharedFilePayload|null> {
-  let begun:ObjectUpload;
-  // A plain file can resume where it stopped; a sealed one is re-encrypted each time, so its bytes differ and it must start over.
-  const requestKey=encrypted?crypto.randomUUID():await resumeKey(String(scope.itemId),file);
-  try {
-    begun=await io.call<ObjectUpload>('fileR2Begin',{...scope,name:file.name,mime:file.type||'application/octet-stream',size:file.size,requestKey,...(encrypted?{keyId:encrypted.keyId}:{})});
-  } catch(error) {
-    if((error as {status?:number}).status===501)return null;
-    throw error;
-  }
+async function uploadToObjectStorage(io:Awaited<ReturnType<typeof session>>,scope:Data,file:File,encrypted:{keyId:string}|null,options:TransferOptions):Promise<SharedFilePayload> {
   const total=file.size;let sent=0;
-  const report=()=>options.onProgress?.({done:Math.min(sent,total),total,direction:'upload'});
+  const report=(phase:FileTransferProgress['phase'],done=sent)=>{notCancelled(options.signal);options.onProgress?.({done:Math.min(done,total),total,direction:'upload',phase});};
+  const {root}=await mediaContentIdentity(file,file.name,file.type||'application/octet-stream',done=>report('hashing',done),options.signal);
+  const requestKey=await resumeKey(String(scope.itemId),file,root);
+  const begun=checkMediaIntegrity(await io.call<ObjectUpload>('fileR2Begin',{...scope,name:file.name,mime:file.type||'application/octet-stream',size:file.size,requestKey,
+    contentScheme:MEDIA_CONTENT_SCHEME,contentRoot:root,...(encrypted?{keyId:encrypted.keyId}:{})}),total,root,undefined,true);
   try {
-    if(begun.status!=='ready') {
-      if(begun.mode==='single') {
-        if(!begun.url)throw Error('文件传输信息无效。');
-        await sendWithRetry(begun.url,file,options);sent=total;report();
-      } else {
-        const partSize=begun.partSize,count=begun.partCount;
-        if(!partSize||!count||count!==Math.ceil(total/partSize))throw Error('文件传输信息无效。');
+    checkMediaIntegrity(begun,total,root);
+    if(begun.status==='pending') {
+        checkMediaParts(begun);
+        const partSize=begun.partSize!,count=begun.partCount!;
         const have=new Set((begun.completedParts??[]).map(p=>p.partNumber));
         for(const part of begun.completedParts??[])sent+=part.size;
-        report();
+        report('uploading');
         const todo:number[]=[];for(let n=1;n<=count;n++)if(!have.has(n))todo.push(n);
         let next=0,failure:unknown=null;
-        const worker=async()=>{
-          while(!failure&&next<todo.length) {
-            const batch=todo.slice(next,next+4);next+=batch.length;
-            try {
-              const {parts}=await io.call<{parts:{partNumber:number;url:string}[]}>('fileR2Parts',{...scope,uploadId:begun.id,partNumbers:batch});
-              const urls=new Map(parts.map(p=>[p.partNumber,p.url]));
-              for(const n of batch) {
-                if(failure)return;
-                const start=(n-1)*partSize,end=Math.min(total,start+partSize),url=urls.get(n);
-                if(!url)throw Error('文件传输信息无效。');
-                await sendWithRetry(url,file.slice(start,end),options);sent+=end-start;report();
-              }
-            } catch(error) { failure=error;return; }
-          }
+        const peers=new AbortController(),stop=()=>peers.abort(mediaAbortError(options.signal));
+        options.signal?.addEventListener('abort',stop,{once:true});if(options.signal?.aborted)stop();
+        const peerOptions={...options,signal:peers.signal},peerIo=await session(peerOptions);
+        const urlsFor=async(numbers:number[])=>{
+          const result=await peerIo.call<{id?:string;parts:{partNumber:number;url:string}[]}>('fileR2Parts',{...scope,uploadId:begun.id,partNumbers:numbers});
+          if(!result||result.id!==undefined&&result.id!==begun.id||!Array.isArray(result.parts)||result.parts.length!==numbers.length)throw invalidMediaUpload();
+          const urls=new Map<number,string>();
+          for(const part of result.parts){if(!numbers.includes(part.partNumber)||urls.has(part.partNumber)||typeof part.url!=='string'||!part.url)throw invalidMediaUpload();urls.set(part.partNumber,part.url);}
+          return urls;
         };
-        await Promise.all(Array.from({length:Math.min(3,todo.length)},worker));
+        const worker=async()=>{
+            try {
+            while(next<todo.length) {
+              await peerIo.check();const batch=todo.slice(next,next+4);next+=batch.length;
+              const urls=await urlsFor(batch);
+              for(const n of batch) {
+                await peerIo.check();
+                const start=(n-1)*partSize,end=Math.min(total,start+partSize),url=urls.get(n);
+                await sendWithRetry(url!,file.slice(start,end),peerOptions,peerIo,async()=>(await urlsFor([n])).get(n)!);
+                sent+=end-start;report('uploading');
+              }
+            }
+            } catch(error) { if(failure===null){failure=error;peers.abort();}throw error; }
+        };
+        try {await Promise.allSettled(Array.from({length:Math.min(3,todo.length)},worker));}
+        finally {options.signal?.removeEventListener('abort',stop);}
         if(failure)throw failure;
-      }
     }
-    const result=await io.call<{payload:Data}>('fileR2Finish',{...scope,uploadId:begun.id});
+    report('finalizing',total);
+    const first=begun.status==='verifying'?begun:checkMediaIntegrity(await io.call<ObjectUpload>('fileR2Finish',{...scope,uploadId:begun.id}),total,root,begun.id);
+    const result=await waitMediaVerification(first,signal=>io.call<ObjectUpload>('fileR2Finish',{...scope,uploadId:begun.id},{signal}),total,root,options.signal);
+    if(!result.payload)throw invalidMediaUpload();
     const manifest=checkManifest(result.payload);
-    if(manifest.size!==total)throw Error('文件校验不一致，请重新上传。');
+    if(manifest.storage!=='r2'||manifest.blobId!==begun.id||manifest.size!==total||manifest.name!==file.name||manifest.mime!==(file.type||'application/octet-stream'))throw invalidMediaUpload();
+    await io.check();report('done',total);
     return manifest;
   } catch(error) {
-    // A cancelled or sealed upload cannot be resumed, so release its reserved space; other failures keep their progress.
-    if((encrypted||(error as {name?:string}).name==='AbortError')&&await (options.account??cloudAccountIdentity)()===io.initial)await (options.call??collaborationCall)('fileR2Abort',{...scope,uploadId:begun.id}).catch(()=>{});
+    if(options.canCleanup?.()!==false&&(encrypted||options.signal?.aborted||['integrity_mismatch','verification_unavailable'].includes((error as MediaFailure)?.code??''))){
+      try {
+        const result=await mediaTimed(undefined,5000,async signal=>{
+          if(await mediaAwait(io.account(),signal)!==io.initial||options.canCleanup?.()===false)return null;
+          return io.raw<{ok?:boolean;pendingCleanup?:boolean}>('fileR2Abort',{...scope,uploadId:begun.id},{signal,accountId:io.initial??undefined,timeoutMs:5000});
+        });
+        if(result!==null&&result?.ok!==true)throw invalidMediaUpload();
+        if(result?.pendingCleanup)throw Object.assign(new Error('上传已取消，云端清理仍待确认，占用空间暂时保留。请等待清理后重新选择文件。'),{name:options.signal?.aborted?'AbortError':'Error',code:'cleanup_pending'});
+      }catch(cleanupError){if((cleanupError as MediaFailure)?.code==='cleanup_pending')throw cleanupError;throw Object.assign(new Error('本地文件传输已停止，云端取消状态尚未确认。请稍后检查共享文件。'),{name:options.signal?.aborted?'AbortError':'Error',code:'abort_unconfirmed'});}
+    }
     throw error;
   }
 }
 
 /** Each request is bounded; a finished upload stays unpublished until the item is saved. */
 export async function uploadSharedFile(itemId:string,file:File,options:TransferOptions={}):Promise<SharedFilePayload> {
+  const control=new AbortController(),cancel=()=>control.abort(mediaAbortError(options.signal));
+  options.signal?.addEventListener('abort',cancel,{once:true});if(options.signal?.aborted)cancel();
+  let accountOff=()=>{},timer:ReturnType<typeof setInterval>|undefined;
+  try{
+    const account=options.account??cloudAccountIdentity,initial=await mediaAwait(account(),control.signal);
+    let accountCurrent=true;
+    const changed=()=>{accountCurrent=false;control.abort(new DOMException('账号已切换，已停止传输文件。','AbortError'));};
+    accountOff=onWebCloudAccountChange?.(id=>{if(id!==initial)changed();})??(()=>{});
+    let checking=false;
+    timer=setInterval(()=>{if(checking||control.signal.aborted)return;checking=true;void account().then(id=>{if(id!==initial)changed();},changed).finally(()=>{checking=false;});},250);
+    return await uploadSharedFileScoped(itemId,file,{...options,initialAccount:initial,signal:control.signal,retry:new MediaUploadRetry(),canCleanup:()=>accountCurrent});
+  }catch(error){throw safeMediaFailure(error);}
+  finally{if(timer)clearInterval(timer);accountOff();options.signal?.removeEventListener('abort',cancel);control.abort();}
+}
+async function uploadSharedFileScoped(itemId:string,file:File,options:TransferOptions):Promise<SharedFilePayload> {
   const objectStorage=(options.objectStorage??!options.call)&&file.size>0;
   const ceiling=objectStorage?SHARED_OBJECT_MAX_BYTES:SHARED_FILE_MAX_BYTES;
   if(!Number.isSafeInteger(file.size)||file.size<0||file.size>ceiling)throw Error(objectStorage?'文件不能超过 5 GB。':'文件不能超过 100 MB。');
@@ -169,20 +186,20 @@ export async function uploadSharedFile(itemId:string,file:File,options:TransferO
   const sealed=cryptoClient?await cryptoClient.isEncrypted(itemId,options.token):false;
   // A sealed file is encrypted in memory, so it keeps the 100 MB limit; check before reading it.
   if(sealed&&file.size>SHARED_FILE_MAX_BYTES)throw Error('加密共享文件不能超过 100 MB。');
-  const encrypted=cryptoClient&&sealed?await cryptoClient.encryptFile(itemId,new Uint8Array(await file.arrayBuffer()),options.token):null;
+  const encrypted=cryptoClient&&sealed?await mediaAwait(cryptoClient.encryptFile(itemId,new Uint8Array(await mediaAwait(file.arrayBuffer(),options.signal)),options.token),options.signal):null;
   if(encrypted){
     if(encrypted.bytes.length>SHARED_FILE_MAX_BYTES)throw Error('加密后的文件不能超过 100 MB。');
     file=new File([new Uint8Array(encrypted.bytes)],'encrypted',{type:'application/octet-stream'});
   }
+  // The existing encrypted manifest schema also authenticates a whole-ciphertext SHA-256 (encrypted files remain capped at 100 MB).
+  const compatibleSha256=objectStorage&&(encrypted||file.size<=64*1024*1024)?await mediaAwait(digest(file),options.signal):undefined;
+  await io.check();
   options.onProgress?.({done:0,total:file.size,direction:'upload'});
   const scope={itemId,...(options.token?{token:options.token}:{})};
   if(objectStorage) {
     const stored=await uploadToObjectStorage(io,scope,file,encrypted,options);
     if(stored) {
-      // A hash is only affordable for files that fit comfortably in memory; the server verifies the byte count either way.
-      const sha256=encrypted||file.size<=64*1024*1024?await digest(file):undefined;
-      const manifest:SharedFilePayload=sha256?{...stored,sha256}:stored;
-      options.onProgress?.({done:file.size,total:file.size,direction:'upload'});
+      const manifest=compatibleSha256?{...stored,sha256:compatibleSha256}:stored;
       return encrypted?{...manifest,name:original.name,mime:original.type||'application/octet-stream',fileEncryption:{keyId:encrypted.keyId,plainSize:original.size}}:manifest;
     }
   }
@@ -206,7 +223,7 @@ export async function uploadSharedFile(itemId:string,file:File,options:TransferO
     return encrypted?{...manifest,name:original.name,mime:original.type||'application/octet-stream',fileEncryption:{keyId:encrypted.keyId,plainSize:original.size}}:manifest;
   } catch(error) {
     // A switched account must not issue cleanup as a different principal.
-    if(await (options.account??cloudAccountIdentity)()===io.initial)await (options.call??collaborationCall)('fileAbort',{...scope,uploadId:started.uploadId}).catch(()=>{});
+    if(options.canCleanup?.()!==false&&await io.account()===io.initial)await mediaTimed(undefined,5000,signal=>io.raw('fileAbort',{...scope,uploadId:started.uploadId},{signal,accountId:io.initial??undefined})).catch(()=>{});
     throw error;
   }
 }

@@ -7,22 +7,21 @@ const MiB = 1024 ** 2;
 function tmp(t) { const d = fs.mkdtempSync(path.join(os.tmpdir(), 'wickrun-up-')); t.after(() => fs.rmSync(d, { recursive: true, force: true })); return d; }
 
 // A tiny fake of the server's media API and the bucket.
-function fakeCloud({ partSize = 4 * MiB, failPuts = [] } = {}) {
+function fakeCloud({ partSize = 16 * MiB, failPuts = [] } = {}) {
   const state = { calls: [], put: [], uploads: new Map(), failures: [...failPuts] };
   const call = async (operation, input) => {
     state.calls.push(operation);
     if (operation === 'begin') {
       let row = state.uploads.get(input.requestKey);
       if (!row) {
-        const multipart = input.size > 8 * MiB;
-        row = { id: 'id-' + state.uploads.size, mode: multipart ? 'multipart' : 'single', size: input.size, parts: new Map(), status: 'pending' };
+        row = { id: 'id-' + state.uploads.size, mode: 'multipart', size: input.size, contentScheme: input.contentScheme, contentRoot: input.contentRoot, parts: new Map(), status: 'pending' };
         state.uploads.set(input.requestKey, row);
       }
-      return row.mode === 'single' ? { id: row.id, mode: 'single', url: `https://r2.test/put/${row.id}`, status: 'pending' }
-        : { id: row.id, mode: 'multipart', partSize, partCount: Math.ceil(row.size / partSize), status: 'pending', completedParts: [...row.parts].map(([partNumber, size]) => ({ partNumber, size })) };
+      return { ...row, partSize, partCount: Math.ceil(row.size / partSize), completedParts: [...row.parts].map(([partNumber, size]) => ({ partNumber, size })) };
     }
     if (operation === 'partUrls') return { parts: input.partNumbers.map(n => ({ partNumber: n, url: `https://r2.test/part/${input.id}/${n}` })) };
-    if (operation === 'complete') return { id: input.id, status: 'ready' };
+    if (operation === 'complete') return { ...[...state.uploads.values()].find(row => row.id === input.id), status: 'ready', verifiedAt: 1 };
+    if (operation === 'abort') return { ok: true };
     throw Error('unexpected ' + operation);
   };
   const fetchImpl = async (url, { body }) => {
@@ -44,16 +43,16 @@ test('a small file goes up with one PUT', async t => {
 });
 
 test('a large file goes up in parts, never holding more than a few parts', async t => {
-  const dir = tmp(t), file = path.join(dir, 'long.mp4'); fs.writeFileSync(file, Buffer.alloc(10 * MiB + 123, 2));
+  const dir = tmp(t), file = path.join(dir, 'long.mp4'); fs.writeFileSync(file, Buffer.alloc(40 * MiB + 123, 2));
   const cloud = fakeCloud();
   const progress = [];
   await createMediaUploader({ call: cloud.call, fetchImpl: cloud.fetchImpl }).upload({ filePath: file, onProgress: p => progress.push(p.sent) });
-  assert.deepEqual(cloud.state.put.map(p => p.size).sort((a, b) => a - b), [2 * MiB + 123, 4 * MiB, 4 * MiB]);
-  assert.equal(progress.at(-1), 10 * MiB + 123);
+  assert.deepEqual(cloud.state.put.map(p => p.size).sort((a, b) => a - b), [8 * MiB + 123, 16 * MiB, 16 * MiB]);
+  assert.equal(progress.at(-1), 40 * MiB + 123);
 });
 
 test('after an interruption the same file resumes and sends only the missing parts', async t => {
-  const dir = tmp(t), file = path.join(dir, 'long.mp4'); fs.writeFileSync(file, Buffer.alloc(12 * MiB, 3));
+  const dir = tmp(t), file = path.join(dir, 'long.mp4'); fs.writeFileSync(file, Buffer.alloc(48 * MiB, 3));
   const cloud = fakeCloud({ failPuts: [0, 400] }); // first part ok, second part refused for good
   const uploader = createMediaUploader({ call: cloud.call, fetchImpl: cloud.fetchImpl, sleep: async () => {} });
   await assert.rejects(uploader.upload({ filePath: file }), /拒绝了上传/);
@@ -63,7 +62,7 @@ test('after an interruption the same file resumes and sends only the missing par
   assert.equal(result.status, 'ready');
   const parts = new Set(cloud.state.put.map(p => p.url));
   assert.equal(parts.size, cloud.state.put.length, 'no part is sent twice');
-  assert.equal(cloud.state.put.length, 3, `3 parts of 4 MiB in total, sent ${sentBefore} before the stop`);
+  assert.equal(cloud.state.put.length, 3, `3 parts of 16 MiB in total, sent ${sentBefore} before the stop`);
 });
 
 test('temporary network errors are retried, then reported with what to do', async t => {
@@ -144,11 +143,12 @@ test('changed bytes cannot reuse a ready upload with the same filename, size and
   const call = async (op, input) => {
     if (op === 'begin') {
       const existing = uploads.get(input.requestKey);
-      if (existing) return { id: existing.id, status: 'ready', publicRow: existing };
-      const row = { id: 'id-' + uploads.size, status: 'ready' }; uploads.set(input.requestKey, row);
-      return { id: row.id, mode: 'single', url: 'https://r2.test/put' };
+      if (existing) return { ...existing, status: 'ready', verifiedAt: 1 };
+      const row = { id: 'id-' + uploads.size, mode: 'multipart', size: input.size, contentScheme: input.contentScheme, contentRoot: input.contentRoot }; uploads.set(input.requestKey, row);
+      return { ...row, status: 'pending', partSize: 16 * MiB, partCount: 1, completedParts: [] };
     }
-    return { id: input.id, status: 'ready' };
+    if (op === 'partUrls') return { parts: input.partNumbers.map(partNumber => ({ partNumber, url: 'https://r2.test/put' })) };
+    return { ...[...uploads.values()].find(row => row.id === input.id), status: 'ready', verifiedAt: 1 };
   };
   const uploader = createMediaUploader({ call, fetchImpl: async () => { puts++; return new Response(); } });
   const first = await uploader.upload({ filePath: file }); await uploader.upload({ filePath: file });
@@ -169,11 +169,11 @@ test('a source edited after begin is refused before PUT and complete', async t =
 });
 
 test('final byte validation catches changes to an already sent or resumed part', async t => {
-  const file = path.join(tmp(t), 'large.bin'); fs.writeFileSync(file, Buffer.alloc(10 * MiB, 1));
+  const file = path.join(tmp(t), 'large.bin'); fs.writeFileSync(file, Buffer.alloc(40 * MiB, 1));
   const cloud = fakeCloud(); let changed = false;
   const call = async (op, input) => {
     const result = await cloud.call(op, input);
-    if (op === 'begin') result.completedParts = [{ partNumber: 1, size: 4 * MiB }];
+    if (op === 'begin') result.completedParts = [{ partNumber: 1, size: 16 * MiB }];
     return result;
   };
   const fetchImpl = async (...args) => {
@@ -269,7 +269,7 @@ test('long Retry-After is never shortened and does not consume normal transfer t
 });
 
 test('API 429 preserves one session and uses Retry-After for begin, partUrls and complete', async t => {
-  const file = path.join(tmp(t), 'large.bin'); fs.writeFileSync(file, Buffer.alloc(10 * MiB));
+  const file = path.join(tmp(t), 'large.bin'); fs.writeFileSync(file, Buffer.alloc(40 * MiB));
   const cloud = fakeCloud(), failed = new Set(), waits = []; let clock = 0;
   const call = async (op, input) => {
     if (!failed.has(op)) { failed.add(op); throw Object.assign(Error('limited'), { status: 429, retryAfter: '1' }); }
@@ -279,26 +279,30 @@ test('API 429 preserves one session and uses Retry-After for begin, partUrls and
   assert.equal(cloud.state.uploads.size, 1); assert.equal(waits.length, 3); assert(waits.every(ms => ms === 1000));
 });
 
-test('single 403 renews once with the same id and persistent 403 stops', async t => {
-  const file = small(t), cloud = fakeCloud(); let begins = 0, attempts = 0;
-  const call = async (op, input) => { const result = await cloud.call(op, input); if (op === 'begin') { begins++; result.url += '?generation=' + begins; result.headers = { 'Content-Type': 'application/octet-stream' }; } return result; };
+test('a one-part upload renews its part URL once and persistent 403 stops', async t => {
+  const file = small(t), cloud = fakeCloud(); let urls = 0, attempts = 0;
+  const call = async (op, input) => {
+    const result = await cloud.call(op, input);
+    if (op === 'partUrls') { urls++; for (const part of result.parts) part.url += '?generation=' + urls; }
+    return result;
+  };
   const seen = [];
-  await createMediaUploader({ call, fetchImpl: async (url, options) => { seen.push({ url, headers: options.headers }); return new Response('', { status: ++attempts === 1 ? 403 : 200 }); } }).upload({ filePath: file });
-  assert.equal(begins, 2); assert.notEqual(seen[0].url, seen[1].url); assert.deepEqual(seen[0].headers, seen[1].headers);
-  begins = 0; attempts = 0;
+  await createMediaUploader({ call, fetchImpl: async (url) => { seen.push(url); return new Response('', { status: ++attempts === 1 ? 403 : 200 }); } }).upload({ filePath: file });
+  assert.equal(urls, 2); assert.notEqual(seen[0], seen[1]);
+  urls = 0; attempts = 0;
   await assert.rejects(createMediaUploader({ call, fetchImpl: async () => { attempts++; return new Response('', { status: 403 }); } }).upload({ filePath: file }), /拒绝了上传/);
-  assert.equal(begins, 2); assert.equal(attempts, 2);
+  assert.equal(urls, 2); assert.equal(attempts, 2);
 });
 
-test('single renewal refuses another reservation id', async t => {
-  const file = small(t), cloud = fakeCloud(); let begins = 0, attempts = 0;
-  const call = async (op, input) => { const result = await cloud.call(op, input); if (op === 'begin' && ++begins > 1) result.id = 'other-id'; return result; };
-  await assert.rejects(createMediaUploader({ call, fetchImpl: async () => { attempts++; return new Response('', { status: 403 }); } }).upload({ filePath: file }), /会话已变化/);
+test('a renewed part URL refuses another reservation id', async t => {
+  const file = small(t), cloud = fakeCloud(); let urls = 0, attempts = 0;
+  const call = async (op, input) => { const result = await cloud.call(op, input); if (op === 'partUrls' && ++urls > 1) result.id = 'other-id'; return result; };
+  await assert.rejects(createMediaUploader({ call, fetchImpl: async () => { attempts++; return new Response('', { status: 403 }); } }).upload({ filePath: file }), /续传信息不一致/);
   assert.equal(attempts, 1); assert(!cloud.state.calls.includes('complete'));
 });
 
 test('multipart 403 renews only the refused part within the same upload', async t => {
-  const file = path.join(tmp(t), 'large.bin'); fs.writeFileSync(file, Buffer.alloc(10 * MiB));
+  const file = path.join(tmp(t), 'large.bin'); fs.writeFileSync(file, Buffer.alloc(40 * MiB));
   const cloud = fakeCloud(), requested = []; let refused = false;
   const call = async (op, input) => { if (op === 'partUrls') requested.push(input); return cloud.call(op, input); };
   await createMediaUploader({ call, fetchImpl: async (...args) => { if (!refused) { refused = true; return new Response('', { status: 403 }); } return cloud.fetchImpl(...args); } }).upload({ filePath: file });
@@ -324,11 +328,11 @@ test('cancel interrupts retry waiting and keeps AbortError', async t => {
 
 test('API cancellation reaches begin, partUrls, renewal and complete', async t => {
   for (const target of ['begin', 'partUrls', 'renew', 'complete']) {
-    const file = target === 'partUrls' ? path.join(tmp(t), 'large.bin') : small(t); if (target === 'partUrls') fs.writeFileSync(file, Buffer.alloc(10 * MiB));
-    const cloud = fakeCloud(), entered = gate(), controller = new AbortController(); let begins = 0, cancelled = false;
+    const file = target === 'partUrls' ? path.join(tmp(t), 'large.bin') : small(t); if (target === 'partUrls') fs.writeFileSync(file, Buffer.alloc(40 * MiB));
+    const cloud = fakeCloud(), entered = gate(), controller = new AbortController(); let urls = 0, cancelled = false;
     const call = async (op, input, { signal }) => {
-      if (op === 'begin') begins++;
-      if (op === target || target === 'renew' && op === 'begin' && begins === 2) { entered.resolve(); return abortable(signal, () => { cancelled = true; }); }
+      if (op === 'partUrls') urls++;
+      if (op === target || target === 'renew' && op === 'partUrls' && urls === 2) { entered.resolve(); return abortable(signal, () => { cancelled = true; }); }
       return cloud.call(op, input);
     };
     const pending = createMediaUploader({ call, fetchImpl: target === 'renew' ? async () => new Response('', { status: 403 }) : cloud.fetchImpl }).upload({ filePath: file, signal: controller.signal });
@@ -337,7 +341,7 @@ test('API cancellation reaches begin, partUrls, renewal and complete', async t =
 });
 
 test('first partUrls failure aborts and joins the other workers', async t => {
-  const file = path.join(tmp(t), 'large.bin'); fs.writeFileSync(file, Buffer.alloc(36 * MiB));
+  const file = path.join(tmp(t), 'large.bin'); fs.writeFileSync(file, Buffer.alloc(144 * MiB));
   const cloud = fakeCloud(), peerEntered = gate(); let joined = false, puts = 0;
   const failure = Error('partUrls failed');
   const call = async (op, input, { signal }) => {
@@ -350,7 +354,7 @@ test('first partUrls failure aborts and joins the other workers', async t => {
 });
 
 test('failed PUT aborts in-flight peer PUTs before returning', async t => {
-  const file = path.join(tmp(t), 'large.bin'); fs.writeFileSync(file, Buffer.alloc(36 * MiB));
+  const file = path.join(tmp(t), 'large.bin'); fs.writeFileSync(file, Buffer.alloc(144 * MiB));
   const cloud = fakeCloud(), peerEntered = gate(); let joined = false;
   const fetchImpl = async (url, { signal }) => {
     if (url.endsWith('/1')) { await peerEntered.promise; return new Response('', { status: 400 }); }
@@ -372,7 +376,7 @@ test('account snapshot prevents continuation and 100 percent is not done before 
 });
 
 test('429 cooldown is shared by all workers before further PUTs', async t => {
-  const file = path.join(tmp(t), 'large.bin'); fs.writeFileSync(file, Buffer.alloc(36 * MiB));
+  const file = path.join(tmp(t), 'large.bin'); fs.writeFileSync(file, Buffer.alloc(144 * MiB));
   const cloud = fakeCloud(), cooling = gate(), allWaiting = gate(), release = gate();
   let clock = 0, sleeps = 0, attempts = 0, refused = false;
   const call = async (op, input) => {
@@ -417,18 +421,16 @@ test('account lifetime immediately aborts suspended PUT and removes its listener
   assert.equal(require('node:events').getEventListeners(lifetime.signal, 'abort').length, 0);
 });
 
-test('same-session ready renewal reconciles with complete and shows finalizing before recheck', async t => {
-  const file = small(t), cloud = fakeCloud(), phases = []; let begins = 0, puts = 0;
+test('same-session ready reuse checks the verified descriptor before reporting done', async t => {
+  const file = small(t), cloud = fakeCloud(), phases = []; let puts = 0;
   const call = async (op, input) => {
     const row = await cloud.call(op, input);
-    if (op === 'begin' && ++begins === 2) return { id: row.id, status: 'ready', publicRow: { id: row.id, status: 'ready' } };
+    if (op === 'begin') return { ...row, status: 'ready', verifiedAt: 1 };
     return row;
   };
-  await createMediaUploader({ call, fetchImpl: async () => { puts++; return new Response('', { status: 403 }); } }).upload({ filePath: file, onProgress: p => phases.push(p) });
-  assert.equal(puts, 1); assert(cloud.state.calls.includes('complete'));
+  await createMediaUploader({ call, fetchImpl: async () => { puts++; return new Response(); } }).upload({ filePath: file, onProgress: p => phases.push(p) });
+  assert.equal(puts, 0); assert(!cloud.state.calls.includes('complete'));
   assert.equal(phases.at(-2).phase, 'finalizing'); assert.equal(phases.at(-1).phase, 'done');
-  assert(phases.some(p => p.phase === 'hashing' && p.sent === p.total));
-  assert(phases.some(p => p.phase === 'uploading' && p.sent === 0));
 });
 
 test('upload timeout is finite and retryable while caller cancellation stays AbortError', async t => {
@@ -454,13 +456,71 @@ test('a replaced path cannot substitute different bytes into the pinned file han
   assert.equal(puts, 1); assert(!cloud.state.calls.includes('complete'));
 });
 
-test('multipart byte verification also covers parts not aligned to hash chunks', async t => {
-  const file = path.join(tmp(t), 'large.bin'), bytes = Buffer.alloc(10 * MiB + 17);
-  for (let n = 0; n < bytes.length; n += MiB) bytes.fill(n / MiB, n, Math.min(bytes.length, n + MiB));
-  fs.writeFileSync(file, bytes); const cloud = fakeCloud({ partSize: 3 * MiB });
-  await createMediaUploader({ call: cloud.call, fetchImpl: async (url, options) => {
-    const n = Number(url.split('/').at(-1)), start = (n - 1) * 3 * MiB;
-    assert.deepEqual(options.body, bytes.subarray(start, start + 3 * MiB)); return cloud.fetchImpl(url, options);
-  } }).upload({ filePath: file });
-  assert.equal(cloud.state.put.length, 4);
+test('strict multipart rejects non-protocol part sizes before allocating or sending', async t => {
+  const file = small(t), cloud = fakeCloud({ partSize: 3 * MiB });
+  await assert.rejects(createMediaUploader({ call: cloud.call, fetchImpl: cloud.fetchImpl }).upload({ filePath: file }), /续传信息不一致/);
+  assert.equal(cloud.state.put.length, 0); assert(!cloud.state.calls.includes('complete'));
+});
+
+for (const stage of ['begin', 'complete']) for (const defect of ['scheme', 'root', 'single', 'missingTime', 'zeroTime', 'nanTime']) test(`native ${stage} rejects ${defect} without done`, async t => {
+  const file = small(t), cloud = fakeCloud(), phases = [];
+  const call = async (op, input) => {
+    const result = await cloud.call(op, input); if (op !== stage) return result;
+    result.status = 'ready'; result.verifiedAt = 1;
+    if (defect === 'scheme') delete result.contentScheme;
+    if (defect === 'root') result.contentRoot = '0'.repeat(64);
+    if (defect === 'single') result.mode = 'single';
+    if (defect === 'missingTime') delete result.verifiedAt;
+    if (defect === 'zeroTime') result.verifiedAt = 0;
+    if (defect === 'nanTime') result.verifiedAt = NaN;
+    return result;
+  };
+  await assert.rejects(createMediaUploader({ call, fetchImpl: cloud.fetchImpl }).upload({ filePath: file, onProgress: p => phases.push(p.phase) }), /续传信息不一致/);
+  assert(!phases.includes('done')); assert(!cloud.state.calls.includes('abort'));
+});
+
+test('native verification polls separately and never reports done before verified ready', async t => {
+  const file = small(t), cloud = fakeCloud(), phases = []; let complete = 0, clock = 0;
+  const call = async (op, input) => { const result = await cloud.call(op, input); if (op === 'complete' && ++complete === 1) { result.status = 'verifying'; delete result.verifiedAt; result.retryAfterMs = 1000; } return result; };
+  await createMediaUploader({ call, fetchImpl: cloud.fetchImpl, now: () => clock, sleep: async ms => { clock += ms; } }).upload({ filePath: file, onProgress: p => phases.push(p.phase) });
+  assert.equal(complete, 2); assert.equal(phases.at(-2), 'finalizing'); assert.equal(phases.at(-1), 'done');
+});
+
+test('native verified failure clears only a trusted reservation and permits identical reselect', async t => {
+  const file = small(t), cloud = fakeCloud(); let failed = true, aborts = 0;
+  const call = async (op, input) => {
+    const result = await cloud.call(op, input);
+    if (op === 'begin' && failed) { failed = false; return { ...result, status: 'verification_failed', code: 'integrity_mismatch', error: 'https://signed.invalid/?secret=x' }; }
+    if (op === 'abort') { aborts++; cloud.state.uploads.clear(); }
+    return result;
+  };
+  const uploader = createMediaUploader({ call, fetchImpl: cloud.fetchImpl });
+  await assert.rejects(uploader.upload({ filePath: file }), error => error.code === 'integrity_mismatch' && !error.message.includes('signed.invalid'));
+  assert.equal(aborts, 1); assert.equal((await uploader.upload({ filePath: file })).status, 'ready');
+});
+
+test('native verification deadline interrupts a Retry-After wait', async t => {
+  const file = small(t), cloud = fakeCloud(); let polls = 0;
+  const call = async (op, input) => {
+    if (op === 'complete') {
+      if (++polls === 1) { const result = await cloud.call(op, input); delete result.verifiedAt; return { ...result, status: 'verifying', retryAfterMs: 0 }; }
+      throw Object.assign(Error('limited'), { status: 429, retryAfter: '60' });
+    }
+    return cloud.call(op, input);
+  };
+  const started = Date.now();
+  await assert.rejects(createMediaUploader({ call, fetchImpl: cloud.fetchImpl, verificationTimeoutMs: 300 }).upload({ filePath: file }), error => error.code === 'verification_timeout');
+  assert(Date.now() - started < 1500); assert.equal(polls, 2);
+});
+
+for (const pendingCleanup of [false, true]) test(`native cancel verification truthfully reports pending cleanup=${pendingCleanup}`, async t => {
+  const file = small(t), cloud = fakeCloud(), entered = gate(), controller = new AbortController(), phases = []; let late;
+  const call = async (op, input, options) => {
+    if (op === 'complete') { entered.resolve(); return new Promise(resolve => { late = resolve; }); }
+    if (op === 'abort') { assert.equal(options.accountId, 'alice'); return pendingCleanup ? { ok: true, pendingCleanup: true } : new Promise(() => {}); }
+    return cloud.call(op, input);
+  };
+  const pending = createMediaUploader({ call, fetchImpl: cloud.fetchImpl, getAccountId: () => 'alice', abortTimeoutMs: 20 }).upload({ filePath: file, signal: controller.signal, onProgress: p => phases.push(p.phase) });
+  await entered.promise; controller.abort(); await assert.rejects(pending, error => error.name === 'AbortError' && error.code === (pendingCleanup ? 'cleanup_pending' : 'abort_unconfirmed'));
+  late({ status: 'ready' }); await new Promise(r => setImmediate(r)); assert(!phases.includes('done'));
 });

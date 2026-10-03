@@ -1,5 +1,7 @@
 /** Content identity shared with the desktop uploader. This root is not a whole-file SHA-256. */
 export const MEDIA_CONTENT_CHUNK_BYTES = 4 * 1024 * 1024;
+export const MEDIA_CONTENT_SCHEME = 'wickrun-media-content-v1';
+export const MEDIA_VERIFICATION_TIMEOUT_MS = 15 * 60 * 1000;
 export const MEDIA_UPLOAD_ATTEMPTS = 4;
 export const MEDIA_RETRY_WAIT_BUDGET_MS = 120000;
 /** Allow slow links at 64 KiB/s while keeping each individual PUT finite and cancellable. */
@@ -73,11 +75,64 @@ export async function mediaContentIdentity(file: Blob, name: string, mime: strin
     check(); onHashed(end);
   }
   const encode = (value: unknown) => new TextEncoder().encode(JSON.stringify(value));
-  const root = await mediaAwait(digestHex(encode(['wickrun-media-content-v1', file.size, MEDIA_CONTENT_CHUNK_BYTES, hashes])), signal);
+  const root = await mediaAwait(digestHex(encode([MEDIA_CONTENT_SCHEME, file.size, MEDIA_CONTENT_CHUNK_BYTES, hashes])), signal);
   check();
   const requestKey = 'up2-' + await mediaAwait(digestHex(encode(['library', name, mime, root])), signal);
   check();
   return { root, requestKey };
+}
+
+export interface MediaIntegrityState {
+  id: string; mode: 'multipart'; size: number; status: 'pending' | 'verifying' | 'verification_failed' | 'ready';
+  contentScheme: string; contentRoot: string; verifiedAt?: number; retryAfterMs?: number; code?: string;
+  partSize?: number; partCount?: number; completedParts?: { partNumber: number; size: number }[];
+}
+export const invalidMediaUpload = () => Object.assign(new Error('云端续传信息不一致或尚未支持内容校验，已停止上传。请更新后重试。'), { fatal: true });
+/** A ready label or a matching size alone is never proof of the stored bytes. */
+export function checkMediaIntegrity<T extends MediaIntegrityState>(value: T, size: number, root: string, id?: string, allowFailure = false): T {
+  if (!value || typeof value.id !== 'string' || !value.id || id !== undefined && value.id !== id
+    || value.mode !== 'multipart' || value.size !== size || value.contentScheme !== MEDIA_CONTENT_SCHEME || value.contentRoot !== root
+    || !['pending', 'verifying', 'verification_failed', 'ready'].includes(value.status)
+    || (value.status === 'ready' ? !Number.isSafeInteger(value.verifiedAt) || value.verifiedAt! <= 0 : value.verifiedAt !== undefined)) throw invalidMediaUpload();
+  if (value.status === 'verification_failed' && !allowFailure) throw Object.assign(new Error(value.code === 'integrity_mismatch'
+    ? '云端文件内容校验失败，请重新选择文件上传。' : '云端暂时无法验证文件内容，请稍后重新选择文件以恢复。'), { fatal: true, code: value.code === 'integrity_mismatch' ? 'integrity_mismatch' : 'verification_unavailable' });
+  return value;
+}
+export function checkMediaParts(value: MediaIntegrityState): void {
+  if (value.partSize !== 16 * 1024 * 1024 || !Number.isSafeInteger(value.partCount) || value.partCount! > 10000
+    || value.partCount !== Math.ceil(value.size / value.partSize!) || !Array.isArray(value.completedParts ?? [])) throw invalidMediaUpload();
+  const seen = new Set<number>();
+  for (const part of value.completedParts ?? []) {
+    if (!Number.isSafeInteger(part.partNumber) || part.partNumber < 1 || part.partNumber > value.partCount! || seen.has(part.partNumber)
+      || part.size !== Math.min(value.partSize!, value.size - (part.partNumber - 1) * value.partSize!)) throw invalidMediaUpload();
+    seen.add(part.partNumber);
+  }
+}
+export async function waitMediaVerification<T extends MediaIntegrityState>(first: T, read: (signal: AbortSignal) => Promise<T>,
+  size: number, root: string, signal?: AbortSignal): Promise<T> {
+  try {
+    return await mediaTimed(signal, MEDIA_VERIFICATION_TIMEOUT_MS, async requestSignal => {
+      let result = checkMediaIntegrity(first, size, root, first.id);
+      while (result.status !== 'ready') {
+        if (result.status !== 'verifying') throw invalidMediaUpload();
+        const delay = result.retryAfterMs;
+        await mediaSleep(typeof delay === 'number' && Number.isFinite(delay) && delay >= 0 ? Math.max(250, Math.min(delay, 10000)) : 1000, requestSignal);
+        result = checkMediaIntegrity(await read(requestSignal), size, root, first.id);
+      }
+      return result;
+    });
+  } catch (error) {
+    if ((error as Error)?.name === 'TimeoutError') throw Object.assign(new Error('云端内容校验仍在进行，已停止等待。请稍后重新选择同一文件以继续确认。'), { code: 'verification_timeout', fatal: true });
+    throw error;
+  }
+}
+
+/** Avoid displaying signed links, tokens or arbitrary upstream exception bodies. */
+export function safeMediaFailure(error: unknown): Error {
+  const source = error as MediaFailure;
+  const message = error instanceof Error ? error.message : '';
+  if (!/https?:\/\/|(?:token|signature|authorization|credential|secret)["']?\s*[=:]|\bBearer\s+\S+/i.test(message)) return error instanceof Error ? error : new Error('文件传输失败，请重试。');
+  return Object.assign(new Error('文件传输请求失败，请重新选择文件以恢复。'), { name: source.name === 'AbortError' ? 'AbortError' : 'Error', status: source.status, code: source.code, retryAfter: source.retryAfter, retryAfterMs: source.retryAfterMs, fatal: source.fatal });
 }
 
 export function mediaRetryAfter(value: string | null, now = Date.now()): number | undefined {

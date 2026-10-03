@@ -160,6 +160,18 @@ function createCloudAccount({ app, safeStorage, openExternal, fetcher = fetch })
     async call(action, input = {}) {
       if (action === 'collaboration') {
         if (!input || typeof input !== 'object' || typeof input.operation !== 'string' || !input.input || typeof input.input !== 'object') throw new Error('Invalid collaboration operation.');
+        if (input.expectedAccountId !== undefined) {
+          if (!input.expectedAccountId || input.expectedAccountId !== mediaAccountId()) throw new Error('账号已切换，已停止传输文件。');
+          try {
+            const result = await request('/api/collaboration', 'POST', { operation: input.operation, input: input.input }, undefined, { signal: mediaLifetime.signal });
+            if (input.expectedAccountId !== mediaAccountId()) throw new Error('账号已切换，已停止传输文件。');
+            return result;
+          } catch (error) {
+            // Electron invoke serializes only Error.message; keep retry metadata in an explicit file-transfer envelope.
+            const message = /https?:\/\/|(?:token|signature|authorization|credential|secret)\s*[=:]/i.test(error?.message ?? '') ? '文件传输请求失败，请重试。' : error?.message;
+            return { fileTransferError: { message: message || '文件传输请求失败，请重试。', name: error?.name, status: error?.status, code: error?.code, retryAfter: error?.retryAfter } };
+          }
+        }
         // The main process chooses the endpoint; renderer input cannot supply a URL or an authorization token.
         return request('/api/collaboration', 'POST', input);
       }

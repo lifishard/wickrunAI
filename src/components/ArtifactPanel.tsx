@@ -2,7 +2,7 @@ import ArtifactImage from './ArtifactImage';
 import ArtifactMedia from './ArtifactMedia';
 import { formatBytes } from '../lib/format-bytes';
 import { uploadToCloud, type UploadProgress } from '../lib/cloud-media';
-import { uploadProgressText } from '../lib/upload-progress';
+import { uploadProgressText, uploadCancellationText } from '../lib/upload-progress';
 import React from 'react';
 import { useT } from '../lib/i18n';
 import type { Artifact } from '../types';
@@ -77,7 +77,7 @@ function FileCard({ artifact: a, onOpen, onSaved }: { artifact: Artifact; onOpen
       else if (current()) setUploadNotice(t('已取消上传；已发送的数据可能仍在确认，可稍后刷新文件列表。'));
     } catch (err) {
       if (current()) {
-        if (controller.signal.aborted || (err as Error)?.name === 'AbortError') setUploadNotice(t('已取消上传；已发送的数据可能仍在确认，可稍后刷新文件列表。'));
+        if (controller.signal.aborted || (err as Error)?.name === 'AbortError') setUploadNotice(uploadCancellationText(err, t));
         else setError(err instanceof Error ? err.message : String(err));
       }
     } finally { if (current()) { setUpload(null); setCancelling(false); uploadController.current = null; } }

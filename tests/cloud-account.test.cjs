@@ -138,8 +138,9 @@ test('production account wiring cancels a suspended storage PUT immediately on l
   const entered=gate();let cancelled=false,completed=false;
   const f=signedFixture(t,async(url,options)=>{
     if(url.endsWith('/logout'))return response({ok:true});
-    const {operation}=JSON.parse(options.body);
-    if(operation==='begin')return response({id:'same-id',mode:'single',url:'https://r2.test/put'});
+    const {operation,input}=JSON.parse(options.body);
+    if(operation==='begin')return response({...input,id:'same-id',mode:'multipart',status:'pending',partSize:16*1024**2,partCount:1,completedParts:[]});
+    if(operation==='partUrls')return response({parts:[{partNumber:1,url:'https://r2.test/put'}]});
     completed=true;return response({id:'same-id',status:'ready'});
   });
   const account=f.create(),file=path.join(f.base,'sample.bin');fs.writeFileSync(file,'bytes');
@@ -149,4 +150,19 @@ test('production account wiring cancels a suspended storage PUT immediately on l
   });
   const pending=uploader.upload({filePath:file}),rejected=assert.rejects(pending,error=>error.name==='AbortError');
   await entered.promise;await account.logout();await rejected;assert(cancelled);assert(!completed);
+});
+
+test('scoped shared-file IPC errors preserve retry metadata without exposing signed URLs',async t=>{
+ let calls=0;const f=signedFixture(t,async()=>{calls++;return new Response(JSON.stringify({error:'https://signed.invalid?token=private',code:'rate_limited'}),{status:429,headers:{'Retry-After':'7'}});});
+ const account=f.create();await assert.rejects(account.call('collaboration',{operation:'fileR2Begin',input:{},expectedAccountId:'bob'}),/账号已切换/);assert.equal(calls,0);
+ const result=await account.call('collaboration',{operation:'fileR2Begin',input:{},expectedAccountId:'alice'});
+ assert.equal(result.fileTransferError.status,429);assert.equal(result.fileTransferError.retryAfter,'7');assert.equal(result.fileTransferError.code,'rate_limited');assert(!JSON.stringify(result).includes('signed.invalid'));
+});
+
+test('scoped shared-file IPC ignores a late response after its account lifetime expires',async t=>{
+ const entered=gate(),late=gate();
+ const f=signedFixture(t,async(url)=>{if(url.endsWith('/logout'))return response({error:'retry'},503);entered.resolve();await late.promise;return response({status:'ready'});});
+ const account=f.create(),pending=account.call('collaboration',{operation:'fileR2Finish',input:{},expectedAccountId:'alice'});
+ await entered.promise;await assert.rejects(account.logout());late.resolve();const result=await pending;
+ assert.equal(result.fileTransferError.name,'AbortError');assert.equal(result.status,undefined);
 });

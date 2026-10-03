@@ -36,12 +36,17 @@ function fixture(t, { flush = async () => {}, logout = async () => {} } = {}) {
   const file = path.join(dir, 'sample.bin'); fs.writeFileSync(file, 'fixture bytes');
   const state = { flushes: 0, logouts: 0, relaunches: 0, quits: 0, operations: [], puts: 0 };
   const mediaUploads = new Map(), lifetime = new AbortController();
+  let declaration;
   const cloudAccount = {
     mediaAccountId: () => 'fixture-account', mediaSignal: () => lifetime.signal,
     async media(operation, input) {
       state.operations.push(operation);
-      if (operation === 'begin') return { id: 'fixture-upload', mode: 'single', url: 'https://r2.test/put' };
-      if (operation === 'complete') return { id: input.id, status: 'ready' };
+      if (operation === 'begin') {
+        declaration = { id: 'fixture-upload', mode: 'multipart', size: input.size, contentScheme: input.contentScheme, contentRoot: input.contentRoot, status: 'pending', partSize: 16 * 1024 * 1024, partCount: 1, completedParts: [] };
+        return declaration;
+      }
+      if (operation === 'partUrls') return { parts: input.partNumbers.map(partNumber => ({ partNumber, url: 'https://r2.test/part' })) };
+      if (operation === 'complete') return { ...declaration, status: 'ready', verifiedAt: Date.now() };
       throw Error('Unexpected media operation: ' + operation);
     },
     async logout() { state.logouts++; await logout(); },
@@ -90,7 +95,7 @@ for (const failureAt of ['flush', 'logout']) {
     await assert.rejects(f.handlers.switchAccount({}, true), error => error === failure);
     assert.equal(f.state.quits, 0); assert.equal(f.state.relaunches, 0);
     const result = await f.upload(); assert.equal(result.status, 'ready');
-    assert.deepEqual(f.state.operations, ['begin', 'complete']); assert.equal(f.state.puts, 1);
+    assert.deepEqual(f.state.operations, ['begin', 'partUrls', 'complete']); assert.equal(f.state.puts, 1);
     await f.handlers.switchAccount({}, true);
     assert.equal(f.state.flushes, 2); assert.equal(f.state.logouts, failureAt === 'flush' ? 1 : 2);
     assert.equal(f.state.quits, 1); assert.equal(f.state.relaunches, 1);

@@ -11,10 +11,24 @@ const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const deferred = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; };
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const fileOf = (text = 'abcdefghij') => new File([text], 'same.bin', { type: 'application/octet-stream', lastModified: 123 });
-const row = (file, id = 'upload-one') => ({ id, name: file.name, mime: file.type, size: file.size, status: 'ready', createdAt: 1 });
-const single = (file, extra = {}) => ({ id: 'upload-one', size: file.size, mode: 'single', status: 'pending', url: 'https://storage.test/first', ...extra });
-const multipart = (file, extra = {}) => ({ id: 'upload-one', size: file.size, mode: 'multipart', status: 'pending', partSize: 2, partCount: Math.ceil(file.size / 2), completedParts: [], ...extra });
-
+function strictFixture(t, hook = () => {}, file = fileOf(), partSize = 16 * 1024 ** 2) {
+  const rows = new Map(), puts = [], declarations = [], phases = []; let serial = 0;
+  const pending = row => ({ ...row, status: 'pending', partSize, partCount: Math.ceil(row.size / partSize), completedParts: [] });
+  const ready = row => ({ ...row, status: 'ready', verifiedAt: 1, createdAt: 1 });
+  const f = setup(t, async call => {
+    const custom = await hook(call, { rows, puts, declarations, pending, ready }); if (custom !== undefined) return custom;
+    if (call.operation === 'begin') {
+      declarations.push(call.input); let row = rows.get(call.input.requestKey);
+      if (!row) { row = { ...call.input, id: `upload-${++serial}`, mode: 'multipart' }; rows.set(call.input.requestKey, row); }
+      return json(row.finished ? ready(row) : pending(row));
+    }
+    if (call.operation === 'partUrls') return json({ parts: call.input.partNumbers.map(partNumber => ({ partNumber, url: `https://storage.test/${call.input.id}/${partNumber}` })) });
+    if (call.operation === 'complete') { const row = [...rows.values()].find(row => row.id === call.input.id); row.finished = true; return json(ready(row)); }
+    if (call.operation === 'abort') { for (const [key, row] of rows) if (row.id === call.input.id) rows.delete(key); return json({ ok: true }); }
+    puts.push(call); return new Response('', { status: 200 });
+  });
+  return { ...f, file, rows, puts, declarations, phases, upload: (signal, selected = file) => f.api.uploadFileFromBrowser(selected, p => phases.push(p), signal), ready, pending };
+}
 function setup(t, handler, bridge = null) {
   const load = loader({ './transport': { desktop: () => bridge } });
   const account = load(path.join(root, 'cloud-api.ts'));
@@ -57,48 +71,6 @@ test('a 5 GiB file hashes sequential 4 MiB chunks without a whole-file buffer', 
   assert.equal(slices.at(-1)[1], file.size); assert.match(result.requestKey, /^up2-[a-f0-9]{64}$/);
 });
 
-test('same metadata with changed bytes cannot reuse a ready cloud file', async t => {
-  const first = fileOf('first-byte'), second = fileOf('other-byte'), uploads = new Map();
-  const f = setup(t, call => {
-    if (call.operation === 'begin') {
-      let saved = uploads.get(call.input.requestKey);
-      if (!saved) { saved = { id: `upload-${uploads.size + 1}`, ready: false }; uploads.set(call.input.requestKey, saved); }
-      return json(saved.ready ? { ...single(first, { id: saved.id }), status: 'ready', publicRow: row(first, saved.id) }
-        : single(first, { id: saved.id, url: `https://storage.test/${saved.id}` }));
-    }
-    if (call.operation === 'complete') { [...uploads.values()].find(u => u.id === call.input.id).ready = true; return json(row(first, call.input.id)); }
-    return new Response('', { status: 200 });
-  });
-  const a = await f.api.uploadFileFromBrowser(first, () => {}), b = await f.api.uploadFileFromBrowser(second, () => {});
-  assert.notEqual(a.id, b.id); assert.equal(uploads.size, 2);
-  assert.equal(f.calls.filter(c => c.init.method === 'PUT').length, 2);
-  assert.ok(f.calls.filter(c => c.operation === 'begin').every(c => c.input.sha256 === undefined));
-});
-
-test('same metadata with changed bytes cannot reuse a pending upload', async t => {
-  const first = fileOf('first-byte'), second = fileOf('other-byte'), uploads = new Map();
-  const f = setup(t, call => {
-    if (call.operation === 'begin') {
-      if (!uploads.has(call.input.requestKey)) uploads.set(call.input.requestKey, `upload-${uploads.size + 1}`);
-      const id = uploads.get(call.input.requestKey); return json(single(first, { id, url: `https://storage.test/${id}` }));
-    }
-    if (call.operation === 'complete') return json(row(first, call.input.id));
-    return new Response('', { status: call.url.endsWith('upload-1') ? 403 : 200 });
-  });
-  await assert.rejects(f.api.uploadFileFromBrowser(first, () => {}), error => error.status === 403);
-  const finished = await f.api.uploadFileFromBrowser(second, () => {});
-  assert.equal(finished.id, 'upload-2'); assert.equal(uploads.size, 2);
-  assert.deepEqual(f.calls.filter(c => c.operation === 'complete').map(c => c.input.id), ['upload-2']);
-});
-
-test('cancellation during hashing stops before begin, including a slice that finishes late', async t => {
-  const read = deferred(), entered = deferred(), control = new AbortController();
-  const file = { name: 'hash.bin', type: '', size: 3, slice: () => ({ arrayBuffer: () => { entered.resolve(); return read.promise; } }) };
-  const f = setup(t, () => { throw Error('no request expected'); });
-  const progress = [], pending = f.api.uploadFileFromBrowser(file, p => progress.push(p), control.signal);
-  await entered.promise; control.abort(); await assert.rejects(pending, { name: 'AbortError' }); read.resolve(new ArrayBuffer(3)); await tick();
-  assert.equal(f.calls.length, 0); assert.deepEqual(progress.map(p => p.phase), ['hashing']);
-});
 
 test('mediaCall retains cancellation and structured server retry information', async t => {
   const f = setup(t, () => json({ error: 'Slow down', code: 'rate_limited' }, 429, { 'Retry-After': '3' }));
@@ -152,135 +124,6 @@ test('retry attempts and cumulative added cooldown are bounded without shortenin
   assert.throws(() => budget.failed(longer, 1), error => error === longer);
 });
 
-test('a long server Retry-After ends the attempt without retrying early', async t => {
-  const file = fileOf(), f = setup(t, call => call.operation === 'begin' ? json(single(file)) : new Response('', { status: 429, headers: { 'Retry-After': '121' } }));
-  await assert.rejects(f.api.uploadFileFromBrowser(file, () => {}), error => error.status === 429 && error.retryAfter === 121000);
-  assert.equal(f.calls.filter(c => c.init.method === 'PUT').length, 1); assert.equal(f.calls.filter(c => c.operation === 'complete').length, 0);
-});
-
-test('cancelling a 429 cooldown stops the wait and never starts the next PUT', async t => {
-  const file = fileOf(), waiting = deferred(), control = new AbortController();
-  const f = setup(t, call => {
-    if (call.operation === 'begin') return json(single(file));
-    waiting.resolve(); return new Response('', { status: 429, headers: { 'Retry-After': '60' } });
-  });
-  const pending = f.api.uploadFileFromBrowser(file, () => {}, control.signal);
-  await waiting.promise; await tick(); control.abort(); await assert.rejects(pending, { name: 'AbortError' });
-  assert.equal(f.calls.filter(c => c.init.method === 'PUT').length, 1);
-  assert.equal(getEventListeners(control.signal, 'abort').length, 0);
-});
-
-test('single PUT renews once with the identical declaration and reports each phase', async t => {
-  const file = fileOf(), progress = []; let begins = 0;
-  const f = setup(t, call => {
-    if (call.operation === 'begin') return json(single(file, { url: `https://storage.test/${++begins}` }));
-    if (call.operation === 'complete') return json(row(file));
-    return new Response('', { status: call.url.endsWith('/1') ? 403 : 200 });
-  });
-  await f.api.uploadFileFromBrowser(file, p => progress.push(p));
-  const declarations = f.calls.filter(c => c.operation === 'begin').map(c => c.input);
-  assert.equal(declarations.length, 2); assert.deepEqual(declarations[0], declarations[1]);
-  assert.deepEqual([...new Set(progress.map(p => p.phase))], ['hashing', 'uploading', 'finalizing', 'done']);
-  assert.ok(progress.every(p => p.sent <= p.total));
-});
-
-test('single PUT renewal recovers the same ready file without needing another URL', async t => {
-  const file = fileOf(); let begins = 0;
-  const f = setup(t, call => {
-    if (call.operation === 'begin') return json(++begins === 1 ? single(file) : { id: 'upload-one', size: file.size, status: 'ready', publicRow: row(file) });
-    return new Response('', { status: 403 });
-  });
-  assert.equal((await f.api.uploadFileFromBrowser(file, () => {})).id, 'upload-one');
-  assert.equal(f.calls.filter(c => c.init.method === 'PUT').length, 1); assert.equal(f.calls.filter(c => c.operation === 'complete').length, 0);
-});
-
-test('single PUT renewal refuses a different upload id', async t => {
-  const file = fileOf(); let begins = 0;
-  const f = setup(t, call => call.operation === 'begin' ? json(single(file, { id: ++begins === 1 ? 'upload-one' : 'replacement' })) : new Response('', { status: 403 }));
-  await assert.rejects(f.api.uploadFileFromBrowser(file, () => {}), /续传信息不一致/);
-  assert.equal(begins, 2); assert.equal(f.calls.filter(c => c.init.method === 'PUT').length, 1);
-});
-
-test('single PUT cannot renew a second time after another 403', async t => {
-  const file = fileOf();
-  const f = setup(t, call => call.operation === 'begin' ? json(single(file)) : new Response('', { status: 403 }));
-  await assert.rejects(f.api.uploadFileFromBrowser(file, () => {}), error => error.status === 403);
-  assert.equal(f.calls.filter(c => c.operation === 'begin').length, 2);
-  assert.equal(f.calls.filter(c => c.init.method === 'PUT').length, 2);
-  assert.equal(f.calls.filter(c => c.operation === 'complete').length, 0);
-});
-
-test('each multipart 403 renews only its original upload id and part number', async t => {
-  const file = fileOf(), attempts = new Map(), renewals = [];
-  const f = setup(t, call => {
-    if (call.operation === 'begin') return json(multipart(file));
-    if (call.operation === 'partUrls') {
-      assert.equal(call.input.id, 'upload-one');
-      const renewal = call.input.partNumbers.length === 1 && attempts.has(call.input.partNumbers[0]);
-      if (renewal) renewals.push(call.input.partNumbers[0]);
-      return json({ parts: call.input.partNumbers.map(partNumber => ({ partNumber, url: `https://storage.test/part/${partNumber}` })) });
-    }
-    if (call.operation === 'complete') return json(row(file));
-    const number = Number(call.url.split('/').at(-1)), count = (attempts.get(number) ?? 0) + 1; attempts.set(number, count);
-    return new Response('', { status: count === 1 ? 403 : 200 });
-  });
-  await f.api.uploadFileFromBrowser(file, () => {});
-  assert.deepEqual([...renewals].sort(), [1, 2, 3, 4, 5]); assert.ok([...attempts.values()].every(n => n === 2));
-});
-
-test('multipart refuses renewed URLs for an unexpected part before uploading bytes', async t => {
-  const file = fileOf(); let urls = 0;
-  const f = setup(t, call => {
-    if (call.operation === 'begin') return json(multipart(file, { completedParts: [1, 2, 3, 4].map(partNumber => ({ partNumber, size: 2 })) }));
-    if (call.operation === 'partUrls') return json({ parts: [{ partNumber: ++urls === 1 ? 5 : 4, url: 'https://storage.test/part' }] });
-    return new Response('', { status: 403 });
-  });
-  await assert.rejects(f.api.uploadFileFromBrowser(file, () => {}), /续传信息不一致/);
-  assert.equal(f.calls.filter(c => c.init.method === 'PUT').length, 1);
-});
-
-for (const stage of ['begin', 'partUrls', 'complete', 'renewal']) test(`cancellation reaches an in-flight ${stage} request`, async t => {
-  const file = fileOf(), ready = deferred(), control = new AbortController(); let begins = 0, seen;
-  const f = setup(t, call => {
-    const block = call.operation === stage || stage === 'renewal' && call.operation === 'begin' && begins === 1;
-    if (block) { seen = call.init.signal; ready.resolve(); return new Promise(() => {}); }
-    if (call.operation === 'begin') { begins++; return json(stage === 'partUrls' ? multipart(file) : single(file)); }
-    if (call.operation === 'complete') return json(row(file));
-    return new Response('', { status: stage === 'renewal' ? 403 : 200 });
-  });
-  const pending = f.api.uploadFileFromBrowser(file, () => {}, control.signal);
-  await ready.promise; control.abort(); await assert.rejects(pending, { name: 'AbortError' });
-  assert.equal(seen.aborted, true); assert.equal(getEventListeners(control.signal, 'abort').length, 0);
-});
-
-test('the first multipart failure cancels sibling workers and waits for them to settle', async t => {
-  const file = fileOf('abcdefghijklmnopqr'), started = deferred(); let active = 0, cancelled = 0, completed = 0;
-  const f = setup(t, async call => {
-    if (call.operation === 'begin') return json(multipart(file));
-    if (call.operation === 'partUrls') return json({ parts: call.input.partNumbers.map(partNumber => ({ partNumber, url: `https://storage.test/${partNumber}` })) });
-    if (call.operation === 'complete') { completed++; return json(row(file)); }
-    if (call.url.endsWith('/5')) { await started.promise; return new Response('', { status: 400 }); }
-    active++; started.resolve();
-    return new Promise((_, reject) => {
-      const stop = () => { active--; cancelled++; reject(new DOMException('cancelled', 'AbortError')); };
-      call.init.signal.addEventListener('abort', stop, { once: true }); if (call.init.signal.aborted) stop();
-    });
-  });
-  await assert.rejects(f.api.uploadFileFromBrowser(file, () => {}), error => error.status === 400);
-  assert.equal(active, 0); assert.ok(cancelled >= 1); assert.equal(completed, 0);
-});
-
-test('an account change immediately aborts a hanging PUT and cannot complete under the new account', async t => {
-  const file = fileOf(), ready = deferred(); let putSignal;
-  const f = setup(t, call => {
-    if (call.operation === 'begin') { assert.equal(call.init.headers['X-Wickrun-Account'], 'account-one'); return json(single(file)); }
-    putSignal = call.init.signal; ready.resolve(); return new Promise(() => {});
-  });
-  const pending = f.api.uploadFileFromBrowser(file, () => {}); await ready.promise;
-  f.account.configureWebCloudAccount('account-two'); assert.equal(putSignal.aborted, true);
-  await assert.rejects(pending, error => error.name === 'AbortError' && /账号已切换/.test(error.message));
-  assert.equal(f.calls.filter(c => c.operation === 'complete').length, 0);
-});
 
 test('native cancellation waits for the upload IPC to settle, then clears listeners and preserves AbortError', async t => {
   const ipc = deferred(), calls = [], control = new AbortController(); let event, off = 0;
@@ -293,4 +136,146 @@ test('native cancellation waits for the upload IPC to settle, then clears listen
   event({ requestId: calls[0].input.requestId, type: 'media-progress', data: { sent: 1, total: 2 } }); assert.deepEqual(progress, []);
   ipc.reject(new Error('IPC converted cancellation')); await assert.rejects(pending, { name: 'AbortError' });
   assert.equal(off, 1); assert.equal(getEventListeners(control.signal, 'abort').length, 0);
+});
+
+test('same metadata with changed bytes uses separate ready and pending reservations', async t => {
+  const f = strictFixture(t), first = fileOf('first-byte'), second = fileOf('other-byte');
+  const a = await f.upload(undefined, first), b = await f.upload(undefined, second);
+  assert.notEqual(a.id, b.id); assert.equal(f.rows.size, 2);
+  assert.notEqual(f.declarations[0].contentRoot, f.declarations[1].contentRoot);
+  assert.equal(f.declarations[0].contentScheme, 'wickrun-media-content-v1');
+  assert.deepEqual([...new Set(f.phases.map(p => p.phase))], ['hashing', 'uploading', 'finalizing', 'done']);
+});
+
+test('ready reuse requires the complete verified descriptor and does not PUT again', async t => {
+  const f = strictFixture(t); await f.upload(); const sent = f.puts.length; await f.upload(); assert.equal(f.puts.length, sent);
+});
+
+for (const stage of ['begin', 'complete']) for (const defect of ['scheme', 'root', 'id', 'size', 'single', 'missingTime', 'zeroTime', 'negativeTime', 'stringTime', 'fractionalTime'])
+  test(`${stage} rejects ${defect} before done`, async t => {
+    const f = strictFixture(t, (call, state) => {
+      if (call.operation !== stage) return;
+      const base = stage === 'begin' ? { ...call.input, mode: 'multipart', id: 'upload-1' } : [...state.rows.values()][0];
+      const value = state.ready(base);
+      if (defect === 'scheme') delete value.contentScheme;
+      if (defect === 'root') value.contentRoot = '0'.repeat(64);
+      if (defect === 'id') value.id = stage === 'begin' ? '' : 'different';
+      if (defect === 'size') value.size++;
+      if (defect === 'single') value.mode = 'single';
+      if (defect === 'missingTime') delete value.verifiedAt;
+      if (defect === 'zeroTime') value.verifiedAt = 0;
+      if (defect === 'negativeTime') value.verifiedAt = -1;
+      if (defect === 'stringTime') value.verifiedAt = '1';
+      if (defect === 'fractionalTime') value.verifiedAt = 1.5;
+      return json(value);
+    });
+    await assert.rejects(f.upload(), /续传信息不一致/); assert(!f.phases.some(p => p.phase === 'done')); assert(!f.calls.some(c => c.operation === 'abort'));
+  });
+
+test('hash cancellation returns promptly even if a slice finishes late', async t => {
+  const read = deferred(), entered = deferred(), control = new AbortController();
+  const file = { name: 'hash.bin', type: '', size: 3, slice: () => ({ arrayBuffer: () => { entered.resolve(); return read.promise; } }) };
+  const f = strictFixture(t, () => assert.fail('no request expected'), file);
+  const pending = f.upload(control.signal); await entered.promise; control.abort(); await assert.rejects(pending, { name: 'AbortError' }); read.resolve(new ArrayBuffer(3));
+  await tick(); assert.equal(f.calls.length, 0);
+});
+
+test('verification polls until ready while remaining finalizing', async t => {
+  let polls = 0; const f = strictFixture(t, (call, state) => {
+    if (call.operation === 'complete' && ++polls === 1) return json({ ...state.pending([...state.rows.values()][0]), status: 'verifying', retryAfterMs: 0 });
+  });
+  await f.upload(); assert.equal(polls, 2); assert.equal(f.phases.at(-1).phase, 'done'); assert.equal(f.phases.at(-2).phase, 'finalizing');
+});
+
+test('verification_failed cleans the matching reservation so reselecting identical bytes succeeds', async t => {
+  let fail = true; const f = strictFixture(t, (call, state) => {
+    if (call.operation === 'complete' && fail) { fail = false; return json({ ...state.pending([...state.rows.values()][0]), status: 'verification_failed', code: 'integrity_mismatch', error: 'secret=https://signed.invalid' }); }
+  });
+  await assert.rejects(f.upload(), error => error.code === 'integrity_mismatch' && !/signed.invalid/.test(error.message));
+  assert.equal(f.rows.size, 0); const row = await f.upload(); assert.equal(row.id, 'upload-2');
+});
+
+for (const result of ['pending', 'unresponsive']) test(`cancel while verifying reports ${result} cleanup truthfully and ignores late ready`, async t => {
+  const entered = deferred(), late = deferred(), control = new AbortController(); let polls = 0, aborts = 0;
+  const f = strictFixture(t, (call, state) => {
+    if (call.operation === 'complete') { if (++polls === 1) return json({ ...state.pending([...state.rows.values()][0]), status: 'verifying', retryAfterMs: 0 }); entered.resolve(); return late.promise; }
+    if (call.operation === 'abort') { aborts++; assert.equal(call.init.headers['X-Wickrun-Account'], 'account-one'); return result === 'pending' ? json({ ok: true, pendingCleanup: true }) : new Promise(() => {}); }
+  });
+  const pending = f.upload(control.signal); await entered.promise; control.abort();
+  await assert.rejects(pending, error => error.name === 'AbortError' && error.code === (result === 'pending' ? 'cleanup_pending' : 'abort_unconfirmed'));
+  late.resolve(json(f.ready([...f.rows.values()][0]))); await tick(); assert.equal(aborts, 1); assert(!f.phases.some(p => p.phase === 'done'));
+});
+
+test('an A to B to A account transition stops a suspended verification and never cleans under B', async t => {
+  const entered = deferred(), late = deferred();
+  const f = strictFixture(t, call => { if (call.operation === 'complete') { entered.resolve(); return late.promise; } });
+  const pending = f.upload(); await entered.promise; f.account.configureWebCloudAccount('account-two'); f.account.configureWebCloudAccount('account-one');
+  await assert.rejects(pending, { name: 'AbortError' }); late.resolve(json({})); await tick(); assert(!f.calls.some(c => c.operation === 'abort')); assert(!f.phases.some(p => p.phase === 'done'));
+});
+
+test('one-part 403 renews only the same part and cannot renew twice', async t => {
+  let puts = 0; const f = strictFixture(t, call => call.init.method === 'PUT' ? new Response('', { status: ++puts === 1 ? 403 : 200 }) : undefined, fileOf(), 16 * 1024 ** 2);
+  await f.upload(); assert.equal(puts, 2); const requests = f.calls.filter(c => c.operation === 'partUrls'); assert.equal(requests.length, 2); assert.deepEqual(requests[0].input, requests[1].input);
+});
+
+test('persistent 403 exhausts one renewal and retains resumable progress', async t => {
+  const f = strictFixture(t, call => call.init.method === 'PUT' ? new Response('', { status: 403 }) : undefined, fileOf(), 16 * 1024 ** 2);
+  await assert.rejects(f.upload(), error => error.status === 403); assert.equal(f.calls.filter(c => c.init.method === 'PUT').length, 2); assert(!f.calls.some(c => c.operation === 'abort'));
+});
+
+test('a long Retry-After does not retry early', async t => {
+  const f = strictFixture(t, call => call.init.method === 'PUT' ? new Response('', { status: 429, headers: { 'Retry-After': '121' } }) : undefined, fileOf(), 16 * 1024 ** 2);
+  await assert.rejects(f.upload(), error => error.status === 429 && error.retryAfterMs === 121000); assert.equal(f.calls.filter(c => c.init.method === 'PUT').length, 1);
+});
+
+test('cancelling a Retry-After wait stops the next PUT', async t => {
+  const entered = deferred(), control = new AbortController();
+  const f = strictFixture(t, call => { if (call.init.method === 'PUT') { entered.resolve(); return new Response('', { status: 429, headers: { 'Retry-After': '60' } }); } }, fileOf(), 16 * 1024 ** 2);
+  const pending = f.upload(control.signal); await entered.promise; await tick(); control.abort(); await assert.rejects(pending, { name: 'AbortError' }); assert.equal(f.calls.filter(c => c.init.method === 'PUT').length, 1);
+});
+
+for (const stage of ['begin', 'partUrls', 'complete', 'renewal']) test(`cancellation reaches suspended ${stage}`, async t => {
+  const entered = deferred(), control = new AbortController(); let urls = 0, seen;
+  const f = strictFixture(t, call => {
+    if (call.operation === 'partUrls') urls++;
+    if (call.operation === stage || stage === 'renewal' && call.operation === 'partUrls' && urls === 2) { seen = call.init.signal; entered.resolve(); return new Promise(() => {}); }
+    if (stage === 'renewal' && call.init.method === 'PUT') return new Response('', { status: 403 });
+  });
+  const pending = f.upload(control.signal); await entered.promise; control.abort(); await assert.rejects(pending, { name: 'AbortError' }); assert.equal(seen.aborted, true);
+});
+
+test('the first failed part cancels and joins its sibling requests', async t => {
+  const entered = deferred(); let active = 0, cancelled = 0;
+  const buffer = new ArrayBuffer(4 * 1024 ** 2);
+  t.mock.method(crypto.subtle, 'digest', async () => new ArrayBuffer(32));
+  const large = { name: 'large.bin', type: '', size: 9 * 16 * 1024 ** 2, slice: (start, end) => ({ size: end - start, arrayBuffer: async () => buffer }) };
+  const f = strictFixture(t, async call => {
+    if (call.init.method !== 'PUT') return;
+    if (call.url.endsWith('/5')) { await entered.promise; return new Response('', { status: 400 }); }
+    active++; entered.resolve(); return new Promise((_, reject) => { const stop = () => { active--; cancelled++; reject(new DOMException('cancelled', 'AbortError')); }; call.init.signal.addEventListener('abort', stop, { once: true }); if (call.init.signal.aborted) stop(); });
+  }, large);
+  await assert.rejects(f.upload(), error => error.status === 400); assert.equal(active, 0); assert(cancelled >= 1); assert(!f.calls.some(c => c.operation === 'complete'));
+});
+
+test('malformed renewed part maps are refused before another PUT', async t => {
+  let urls = 0; const f = strictFixture(t, call => {
+    if (call.operation === 'partUrls' && ++urls === 2) return json({ parts: [{ partNumber: 2, url: 'https://storage.test/bad' }] });
+    if (call.init.method === 'PUT') return new Response('', { status: 403 });
+  }, fileOf(), 16 * 1024 ** 2);
+  await assert.rejects(f.upload(), /续传信息不一致/); assert.equal(f.calls.filter(c => c.init.method === 'PUT').length, 1);
+});
+
+test('native shared-file IPC reconstructs rate-limit metadata and fixes the expected account', async t => {
+  const prior = globalThis.window, seen = [];
+  globalThis.window = { snc: { cloudCall: async (action, input) => { seen.push({ action, input }); return { fileTransferError: { message: 'limited', name: 'Error', status: 429, code: 'limited', retryAfter: '7' } }; } } };
+  t.after(() => { if (prior === undefined) delete globalThis.window; else globalThis.window = prior; });
+  const api = loader()(path.join(root, 'cloud-api.ts'));
+  await assert.rejects(api.cloudCall('collaboration', { operation: 'fileR2Begin', input: {} }, { accountId: 'alice' }), error => error.status === 429 && error.retryAfterMs === 7000 && error.code === 'limited');
+  assert.equal(seen[0].input.expectedAccountId, 'alice');
+});
+
+test('strict multipart bounds reject tiny sizes and excessive counts before allocation', () => {
+  const helpers = loader()(path.join(root, 'cloud-media-upload.ts'));
+  for (const partSize of [0, 1, 2, 4 * 1024 ** 2, 64 * 1024 ** 2]) assert.throws(() => helpers.checkMediaParts({ size: 5 * 1024 ** 3, partSize, partCount: Math.ceil(5 * 1024 ** 3 / Math.max(1, partSize)) }), /续传信息不一致/);
+  assert.throws(() => helpers.checkMediaParts({ size: 16 * 1024 ** 2 * 10001, partSize: 16 * 1024 ** 2, partCount: 10001 }), /续传信息不一致/);
 });

@@ -262,8 +262,8 @@ export default function CollaborationHub({ initialSource,onOpenSidebar,sidebarHi
     if(!item||!canEdit)return;
     const controller=new AbortController();fileTransfer.current=controller;
     try {
-      const result=await uploadSharedFile(item.id,file,{token:token??undefined,signal:controller.signal,onProgress:value=>{if(live.current)setTransferProgress(value);}});
-      if(live.current){patchPayload(result);setNotice(t('文件已上传，请保存修改。'));}
+      const result=await uploadSharedFile(item.id,file,{token:token??undefined,signal:controller.signal,onProgress:value=>{if(live.current&&!controller.signal.aborted)setTransferProgress(value);}});
+      if(live.current&&!controller.signal.aborted){patchPayload(result);setNotice(t('文件已上传，请保存修改。'));}
     }finally{fileTransfer.current=null;if(live.current)setTransferProgress(null);}
   };
   const download = async (historical?:HistoryEntry) => {
@@ -371,7 +371,7 @@ export default function CollaborationHub({ initialSource,onOpenSidebar,sidebarHi
     </nav>
     {error && <div className="share-alert" role="alert">{error}<button className="btn sm ghost" onClick={() => setError('')}>{t('关闭')}</button></div>}
     {notice && <p className="share-notice" role="status">{notice}</p>}
-    {transferProgress&&<div className="share-file-progress" role="status"><span>{t(transferProgress.direction==='upload'?'正在上传文件':'正在下载文件')} · {Math.round(transferProgress.total?transferProgress.done/transferProgress.total*100:0)}%</span><progress value={transferProgress.done} max={Math.max(1,transferProgress.total)}/><button className="btn sm ghost" onClick={()=>fileTransfer.current?.abort()}>{t('取消传输')}</button></div>}
+    {transferProgress&&<div className="share-file-progress" role="status"><span>{t(transferProgress.direction==='download'?'正在下载文件':transferProgress.phase==='hashing'?'正在检查文件':transferProgress.phase==='finalizing'?'正在校验云端内容…':transferProgress.phase==='done'?'文件内容已校验':'正在上传文件')} · {Math.round(transferProgress.total?transferProgress.done/transferProgress.total*100:0)}%</span><progress value={transferProgress.done} max={Math.max(1,transferProgress.total)}/><button className="btn sm ghost" onClick={()=>fileTransfer.current?.abort()}>{t('取消传输')}</button></div>}
     {!state.user && <p className="share-signin">{t('未登录者可查看公开内容；发言、编辑和共享需要登录。')}{typeof window!=='undefined'&&window.snc?<button className="btn sm" onClick={onClose}>{t('返回工作区登录')}</button>:<a className="btn sm" href="/api/auth/google?next=%2Fshare">{t('使用 Google 登录')}</a>}</p>}
     <details className="share-link-open"><summary>{t('打开共享链接')}</summary><form className="share-open-link share-actions" onSubmit={e=>{e.preventDefault();void run(async()=>{const nextToken=linkTokenFromInput(linkInput);if(!nextToken)throw Error(t('共享链接无效。'));await open(undefined,nextToken);setToken(nextToken);setTab('items');setSpaceId('');setLinkInput('');setCreatedLink('');});}}>
       <input aria-label={t('打开共享链接')} value={linkInput} onChange={e=>setLinkInput(e.target.value)} placeholder={t('粘贴共享链接')}/><button className="btn" disabled={busy||!linkInput.trim()}>{t('打开链接')}</button>
@@ -494,7 +494,6 @@ export default function CollaborationHub({ initialSource,onOpenSidebar,sidebarHi
     </div>}
   </div>;
 }
-
 
 
 

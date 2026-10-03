@@ -27,18 +27,36 @@ export function webCloudAccount() { return webAccountId; }
 export async function cloudAccountIdentity():Promise<string|null> {
   const native=cloudBridge();return native?(await native.cloudState()).user?.id??null:webAccountId;
 }
-export async function cloudCall<T>(action: string, input: Record<string, unknown> = {}): Promise<T> {
+export type CloudCallOptions = { signal?: AbortSignal; accountId?: string; timeoutMs?: number };
+export async function cloudCall<T>(action: string, input: Record<string, unknown> = {}, options: CloudCallOptions = {}): Promise<T> {
+  const { mediaTimed, mediaRetryAfter } = await import('./cloud-media-upload');
   const native = cloudBridge();
-  if (native) return await native.cloudCall(action, input) as T;
+  if (native && options.signal === undefined && options.accountId === undefined && options.timeoutMs === undefined) return await native.cloudCall(action, input) as T;
+  if (native) return mediaTimed(options.signal, options.timeoutMs ?? 20000, async () => {
+    const result = await native.cloudCall(action, options.accountId !== undefined && action === 'collaboration' ? { ...input, expectedAccountId: options.accountId } : input) as T & {
+      fileTransferError?: { message?: string; name?: string; status?: number; code?: string; retryAfter?: string };
+    };
+    if (options.accountId !== undefined && action === 'collaboration' && result?.fileTransferError) {
+      const failure = result.fileTransferError;
+      throw Object.assign(new Error(failure.message || '文件传输请求失败，请重试。'), { name: failure.name || 'Error', status: failure.status, code: failure.code, retryAfterMs: mediaRetryAfter(failure.retryAfter ?? null) });
+    }
+    return result;
+  });
   const routes: Record<string, [string, string]> = { status: ['/api/cloud/status','GET'], read: ['/api/cloud/data','GET'], write: ['/api/cloud/data','PUT'], sync:['/api/cloud/sync','POST'],keys: ['/api/cloud/keys','GET'], collaboration:['/api/collaboration','POST'] };
   let route = routes[action];
   if (['keyGet','keySet','keyDelete'].includes(action)) route = ['/api/cloud/keys/'+encodeURIComponent(String(input.id)), {keyGet:'GET',keySet:'PUT',keyDelete:'DELETE'}[action]!];
   if (!route) throw new Error('Unsupported cloud operation');
   const hasBody=['PUT','POST'].includes(route[1]);
-  const response = await fetch(route[0], { method:route[1], credentials:'same-origin', cache:'no-store', signal:AbortSignal.timeout(20000), headers:{...(webAccountId?{'X-Wickrun-Account':webAccountId}:{}),...(hasBody?{'Content-Type':'application/json'}:{})}, body:hasBody?JSON.stringify(input):undefined });
+  if (options.accountId !== undefined && options.accountId !== webAccountId) throw new DOMException('账号已切换，已停止传输文件。', 'AbortError');
+  const accountId = options.accountId ?? webAccountId;
+  return mediaTimed(options.signal, options.timeoutMs ?? 20000, async signal => {
+  const response = await fetch(route[0], { method:route[1], credentials:'same-origin', cache:'no-store', signal, headers:{...(accountId?{'X-Wickrun-Account':accountId}:{}),...(hasBody?{'Content-Type':'application/json'}:{})}, body:hasBody?JSON.stringify(input):undefined });
   const data = await response.json();
-  if (!response.ok) throw new CloudApiError(data.error || 'Cloud request failed', response.status);
+  if (!response.ok) throw Object.assign(new CloudApiError(data.error || 'Cloud request failed', response.status), {
+    code: typeof data.code === 'string' ? data.code : undefined, retryAfterMs: mediaRetryAfter(response.headers.get('Retry-After')),
+  });
   return data as T;
+  });
 }
 
 let keyAccount: string | null = null;
