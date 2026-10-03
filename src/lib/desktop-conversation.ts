@@ -28,8 +28,13 @@ export function runDesktopConversation(args:RunAgentArgs):AgentHandle {
   state.requirementSourceIds=[...new Set([...(state.requirementSourceIds??[]),...state.working.filter(m=>m.role==='user'&&!m.contextKind).map(m=>m.id)])];
   state.harness=taskSeed(args.history,args.config,state.harness);
   const save=async()=>{reconcileProgress(state);state.delivery=deliveryReport(state);state.at=Date.now();await events.onRunState(structuredClone(state));};
+  const assertDispatch=()=>{
+    if(args.canDispatch?.()===false&&!cancelled){cancelled=true;cancelControl.abort();if(state.nativeDesktop?.taskId)void bridge?.nativeAiCancel(state.nativeDesktop.taskId).catch(()=>{});}
+    if(cancelled)throw Error('暂停请求已记录，未继续交接；官方应用中的操作结果仍需核实。');
+  };
   void(async()=>{
     try{
+      assertDispatch();
       if(state.uncertainCallId?.startsWith('desktop-'))throw Error('新输入和原任务现场已保存。Claude Desktop 中的原操作可能仍在运行，请先在官方应用核实结果，再新窗口交接；未自动重复派发。');
       const reviewBlocked=await awaitAbortable(reviewGuard(args,'claude-desktop'),cancelControl.signal);
       if(reviewBlocked)throw Error(reviewBlocked);
@@ -40,6 +45,7 @@ export function runDesktopConversation(args:RunAgentArgs):AgentHandle {
         const goal=JSON.stringify(buildWire(history,{...args.config,toolsEnabled:false,historyLimit:0},args.extraSystem+harnessInstructions(args.config,state)+nativeProgressInstructions(state)+'\n'+NATIVE_OUTPUT_INSTRUCTIONS));
         if(goal.length>24000)throw Error('Claude Desktop 的交接材料超过 24000 字符。请使用新对话明确本次目标，或改用 Claude Code / API 模型处理长上下文；原文未裁剪。');
         await save();
+        assertDispatch();
         const creation=bridge.nativeAiCreate({provider:'claude-desktop',goal,images,requestKey:state.runId,projectId:args.toolCtx?.()?.projectId??undefined,
           workers:args.config.subagents?.enabled?args.config.subagents.workers.map(w=>({profileId:w.profileId,model:w.model,outputField:'max_tokens' as const})):[],
           maxJobs:Math.max(1,Math.min(8,args.config.subagents?.maxCalls||4)),maxOutputTokens:2048});
@@ -52,11 +58,13 @@ export function runDesktopConversation(args:RunAgentArgs):AgentHandle {
       // 领取模式：任务进队列，已连接的 Claude 会话调用 wickrun_claim_task 自行领取。
       // 没有在线的 Claude 时才用深链接打开官方应用，预填一句「领取任务」的话。
       const live=(await awaitAbortable(bridge.nativeAiState(),cancelControl.signal)).connections?.find(c=>c.provider==='claude-desktop')?.connected;
+      assertDispatch();
       if(live)events.onNotice('任务已排队，请复制本条回答中的完整任务指令，到 Claude 发送。进度和成果会回到此处。');
       else{await awaitAbortable(bridge.nativeAiOpen('claude-desktop',taskId),cancelControl.signal);events.onNotice('已打开 Claude Desktop。请在官方应用发送预填的话并授权连接器，Claude 会领取此任务；进度和结果会回到此处。');}
       const deadline=Date.now()+(args.config.runtime?.maxMinutes||60)*60000;
       let signature='';
       while(!cancelled){
+        assertDispatch();
         const task=(await awaitAbortable(bridge.nativeAiState(),cancelControl.signal)).tasks.find(t=>t.id===taskId);
         if(!task)throw Error('原 Claude Desktop 任务记录已不可用，未自动重发。');
         const next=JSON.stringify(task);
@@ -79,7 +87,7 @@ export function runDesktopConversation(args:RunAgentArgs):AgentHandle {
           for(const step of outputs){state.steps=state.steps!.filter(existing=>existing.id!==step.id).concat(step);events.onStep(step);}
           const blocker=completionBlocker(state,task.result||'',args.config);if(blocker)throw Error(blocker);
           if(!task.result?.trim()||state.harness?.action&&planOnly(task.result))throw Error('Claude Desktop 已回传，但内容仍只有计划，任务尚未确认完成。');
-          await awaitAbortable(applyNativeProgress(state,task.result,check=>args.config.toolsEnabled&&bridge.tool?bridge.tool('inspect_deliverable',check,args.toolCtx()):Promise.resolve({ok:false,content:'',error:'当前连接无法核验文件'})),cancelControl.signal);
+          await awaitAbortable(applyNativeProgress(state,task.result,check=>{assertDispatch();return args.config.toolsEnabled&&bridge.tool?bridge.tool('inspect_deliverable',check,args.toolCtx()):Promise.resolve({ok:false,content:'',error:'当前连接无法核验文件'});}),cancelControl.signal);
           events.onContentReplace?.(state.content??'','');
           state.status='completed';state.reason=undefined;state.harness!.stage='deliver';
           state.working.push({id:args.requestId+'-answer',role:'assistant',content:outputTranscript(state.content??'',outputs),createdAt:Date.now()});

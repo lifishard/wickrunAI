@@ -199,6 +199,50 @@ test('path replacement and truncation cannot finish an upload', async t => {
   }
 });
 
+test('distinct large file IDs cannot collide before or during final byte validation', async t => {
+  const originalId = 9007199254740992n, replacementId = 9007199254740993n;
+  assert.notEqual(originalId, replacementId);
+  assert.equal(Number(originalId), Number(replacementId), 'the Number representation loses the distinguishing bit');
+  for (const replaceDuringScan of [false, true]) await t.test(replaceDuringScan ? 'replacement during byte scan' : 'replacement before byte scan', async sub => {
+    const file = small(sub), original = fs.readFileSync(file), cloud = fakeCloud();
+    const open = fs.promises.open.bind(fs.promises), stat = fs.promises.stat.bind(fs.promises);
+    let replaced = false, reads = 0;
+    const replace = () => {
+      fs.renameSync(file, file + '.old'); fs.writeFileSync(file, Buffer.alloc(original.length, 9)); replaced = true;
+    };
+    // Preserve real file reads and replacement; only expose deterministic 64-bit identities.
+    sub.mock.method(fs.promises, 'open', async (...args) => {
+      const handle = await open(...args);
+      if (args[0] === file) {
+        const handleStat = handle.stat.bind(handle), read = handle.read.bind(handle);
+        sub.mock.method(handle, 'stat', async options => {
+          const result = await handleStat(options); result.ino = options?.bigint ? originalId : Number(originalId); return result;
+        });
+        sub.mock.method(handle, 'read', async (...input) => {
+          const result = await read(...input);
+          if (++reads === 3 && replaceDuringScan) replace(); // hash, PUT body, validation scan
+          return result;
+        });
+      }
+      return handle;
+    });
+    sub.mock.method(fs.promises, 'stat', async (target, options) => {
+      const result = await stat(target, options);
+      if (target === file) {
+        const id = replaced ? replacementId : originalId;
+        result.ino = options?.bigint ? id : Number(id);
+      }
+      return result;
+    });
+    await assert.rejects(createMediaUploader({ call: cloud.call, fetchImpl: async (...args) => {
+      assert.deepEqual(args[1].body, original, 'the upload remains pinned to the original handle');
+      const response = await cloud.fetchImpl(...args); if (!replaceDuringScan) replace(); return response;
+    } }).upload({ filePath: file }), /被修改/);
+    assert.equal(replaced, true); assert(!fs.readFileSync(file).equals(original));
+    assert(!cloud.state.calls.includes('complete'));
+  });
+});
+
 test('429 waits honor seconds and HTTP date; invalid headers back off with no final sleep', async t => {
   for (const [header, expected] of [['2', 2000], ['Thu, 01 Jan 1970 00:00:04 GMT', 3000], ['invalid', 500], ['1.5', 500], ['-1', 500], ['0', 0]]) {
     const file = small(t), cloud = fakeCloud(); let clock = 1000, attempts = 0; const waits = [];

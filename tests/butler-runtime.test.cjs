@@ -22,7 +22,7 @@ function setup(options={}) {
     collector:options.collector??(async()=>({sources:{}}))});
   const config={settings:()=>settings,conversations:()=>conversations,skills:()=>skills,onSettings:s=>{settings=s;},onSkills:s=>{skills=s;},...options.work};
   runtime.configure(config);
-  return {runtime,db,calls,domain,settings:()=>settings,setRoutine:enabled=>{settings={...settings,butler:{...settings.butler,proactive:{...settings.butler.proactive,allowRoutineExecution:enabled}}};runtime.configure(config);},setAccount:id=>{account=id;},advance:ms=>{now+=ms;},load,conversations};
+  return {runtime,db,calls,domain,settings:()=>settings,patchPrefs:patch=>{settings={...settings,butler:{...settings.butler,proactive:{...settings.butler.proactive,...patch}}};runtime.configure(config);},configureWork:work=>runtime.configure({...config,...work}),setRoutine:enabled=>{settings={...settings,butler:{...settings.butler,proactive:{...settings.butler.proactive,allowRoutineExecution:enabled}}};runtime.configure(config);},setAccount:id=>{account=id;},advance:ms=>{now+=ms;},load,conversations};
 }
 async function settle(runtime){for(let i=0;i<80;i++){await new Promise(r=>setImmediate(r));if(!runtime.getSnapshot().busy)return;}throw Error('runtime did not settle');}
 
@@ -161,6 +161,7 @@ test('disabling routine execution during Work creation cancels the just-created 
  f.setRoutine(false);resolveStart('late-work');await settle(f.runtime);
  assert.deepEqual(controls.map(c=>[c.id,c.command.kind]),[['late-work','pause']]);
  assert.equal(f.runtime.getSnapshot().brain.jobs.find(job=>job.kind==='work').status,'failed');
+ assert.equal(f.runtime.getSnapshot().brain.jobs.find(job=>job.kind==='work').conversationId,'late-work');
 });
 
 test('pausing Butler during manual Work creation stops the just-created run',{timeout:5000},async()=>{
@@ -172,6 +173,7 @@ test('pausing Butler during manual Work creation stops the just-created run',{ti
  await f.runtime.action({kind:'pause'});resolveStart('late-manual-work');await settle(f.runtime);
  assert.deepEqual(controls.map(c=>[c.id,c.command.kind]),[['late-manual-work','pause']]);
  assert.equal(f.runtime.getSnapshot().brain.jobs.find(job=>job.kind==='work').status,'failed');
+ assert.equal(f.runtime.getSnapshot().brain.jobs.find(job=>job.kind==='work').conversationId,'late-manual-work');
 });
 
 test('failed analysis resumes its local checkpoint without synchronizing the session to the brain',async()=>{
@@ -235,7 +237,8 @@ test('nothing is collected or sent until the data-scope notice is accepted',asyn
  assert.equal(f.calls.length,0);assert.equal(f.runtime.getSnapshot().brain.signals.length,0);
  await assert.rejects(f.runtime.action({kind:'add-need',text:'Plan my week'}),/数据范围/);
  await f.runtime.action({kind:'consent',granted:true});await settle(f.runtime);
- assert.equal(f.settings().butler.proactive.consent.version,1);assert.ok(f.runtime.getSnapshot().brain.signals.length>0);
+ assert.equal(f.settings().butler.proactive.consent.version,1);assert.equal(f.runtime.getSnapshot().brain.signals.length,0);
+ await f.runtime.action({kind:'resume'});await settle(f.runtime);assert.ok(f.runtime.getSnapshot().brain.signals.length>0);
  await f.runtime.action({kind:'consent',granted:false});
  assert.equal(f.settings().butler.proactive.consent,undefined);assert.equal(f.settings().butler.proactive.enabled,false);
 });
@@ -304,11 +307,12 @@ test('the model writes the brief and greeting; references it cannot back are dro
  assert.ok(fallback.audit.some(a=>a.title==='简报改用模板'));
 });
 
-test('an upgraded account is paused until consent, and consent turns automatic execution off',async()=>{
+test('an upgraded account stays paused after consent until explicit resume, with automatic execution off',async()=>{
  const f=setup({prefs:{consent:undefined,allowRoutineExecution:true}});await f.runtime.tick();
  assert.equal(f.settings().butler.proactive.paused,true,'older app versions on the account stop too');
  await f.runtime.action({kind:'consent',granted:true});
- assert.deepEqual([f.settings().butler.proactive.paused,f.settings().butler.proactive.allowRoutineExecution],[false,false]);
+ assert.deepEqual([f.settings().butler.proactive.paused,f.settings().butler.proactive.allowRoutineExecution],[true,false]);
+ await f.runtime.action({kind:'resume'});assert.equal(f.settings().butler.proactive.paused,false);
 });
 
 test('an accepted Work suggestion runs sandboxed even with routine execution off',async()=>{
@@ -322,4 +326,138 @@ test('an accepted Work suggestion runs sandboxed even with routine execution off
  const settings={defaultConfig:{enabledTools:['run_command','web_search'],approvalMode:'ask'},routeGroups:[{id:'g',routes:[{profileId:'p',model:'m'}]}]};
  const cfg=butlerWorkConfig(settings,{allowRoutineExecution:false,backend:{kind:'route-group',routeGroupId:'g',effort:'medium'}},{accepted:true});
  assert.ok(!cfg.config.enabledTools.includes('run_command'));assert.ok(!cfg.config.enabledTools.includes('web_search'));
+});
+
+const deferred=()=>{let resolve;const promise=new Promise(r=>{resolve=r;});return {promise,resolve};};
+function seedWork(f,commands=[]){
+ const brain=f.runtime.getSnapshot().brain;
+ brain.goals=[{id:'stop-goal',accountId:brain.accountId,title:'Fixture task',hypothesis:'User requested a task',evidenceIds:[],confidence:'high',status:'confirmed',updatedAt:1}];
+ brain.jobs=[{id:'stop-job',accountId:brain.accountId,kind:'work',goalId:'stop-goal',conversationId:'stop-conversation',status:'running',createdAt:1,updatedAt:1,commands}];
+}
+
+test('pause closes dispatch synchronously, remains pending through collector suspension, and never certifies exit',async()=>{
+ const entered=deferred(),release=deferred();let hold=false;
+ const f=setup({collector:async action=>{if(action==='suspend'&&hold){entered.resolve();await release.promise;}return {sources:{}};}});
+ await f.runtime.load();const before=f.runtime.captureDispatchGuard();assert.equal(before(),true);hold=true;
+ const pending=f.runtime.action({kind:'pause'});
+ assert.equal(f.settings().butler.proactive.paused,true);assert.equal(before(),false);
+ await entered.promise;assert.equal(f.runtime.getSnapshot().stopRequest.status,'pending');
+ await assert.rejects(f.runtime.action({kind:'resume'}),/仍在处理中/);
+ hold=false;release.resolve();await pending;
+ assert.equal(f.runtime.getSnapshot().stopRequest.status,'requested');
+ assert.ok(f.runtime.getSnapshot().brain.audit.some(row=>row.title==='暂停请求已记录'&&row.status==='planned'));
+ assert.equal(f.calls.length,0);
+ await f.runtime.action({kind:'resume'});assert.equal(before(),false,'old preparation cannot revive after resume');
+ assert.equal(f.runtime.captureDispatchGuard()(),true);await settle(f.runtime);
+});
+
+test('paused host keeps a heartbeat without collecting or dispatching a model',async()=>{
+ const actions=[];const f=setup({prefs:{paused:true},collector:async action=>{actions.push(action);return {sources:{}};}});
+ await f.runtime.tick();const first=f.runtime.getSnapshot().brain.hosts[0].lastSeenAt;
+ f.advance(61000);await f.runtime.tick();
+ assert.ok(f.runtime.getSnapshot().brain.hosts[0].lastSeenAt>first);assert.equal(f.calls.length,0);
+ assert.equal(f.runtime.getSnapshot().brain.signals.length,0);assert.ok(actions.every(action=>['status','suspend'].includes(action)));
+ assert.equal(f.runtime.getSnapshot().stopRequest.status,'requested');
+});
+
+test('remote consent and local consent never lift a stored explicit or upgrade pause',async()=>{
+ const f=setup({prefs:{consent:undefined}});await f.runtime.tick();await f.runtime.action({kind:'pause'});
+ f.patchPrefs({consent:{version:1,at:2}});await f.runtime.tick();
+ assert.equal(f.settings().butler.proactive.paused,true);assert.equal(f.calls.length,0);
+ await f.runtime.action({kind:'consent',granted:true});await f.runtime.tick();
+ assert.equal(f.settings().butler.proactive.paused,true);assert.equal(f.calls.length,0);
+});
+
+test('a source withdrawal blocks old preparations before the collector acknowledges it',async()=>{
+ const entered=deferred(),release=deferred();
+ const f=setup({collector:async action=>{if(action==='consent'){entered.resolve();await release.promise;}return {sources:{}};}});
+ await f.runtime.load();const before=f.runtime.captureDispatchGuard();
+ const pending=f.runtime.action({kind:'set-device-consent',source:'browser',consented:false});
+ assert.equal(before(),false);await entered.promise;assert.equal(f.runtime.captureDispatchGuard()(),false);
+ release.resolve();await pending;assert.equal(before(),false);await settle(f.runtime);
+});
+
+test('failed Work request is collected without reopening the pause gate or claiming completion',async()=>{
+ const f=setup({work:{controlWork:async()=>{throw Error('fixture delivery failure');}}});await f.runtime.load();seedWork(f);
+ await f.runtime.action({kind:'pause'});
+ assert.equal(f.runtime.getSnapshot().stopRequest.status,'failed');assert.equal(f.runtime.getSnapshot().stopRequest.failedCount,1);
+ assert.match(f.runtime.getSnapshot().error,/fixture delivery failure/);assert.equal(f.runtime.captureDispatchGuard()(),false);
+ assert.equal(f.runtime.getSnapshot().brain.jobs[0].status,'running');
+ assert.equal(f.runtime.getSnapshot().brain.audit.find(row=>row.title==='暂停请求已记录').status,'failed');
+});
+
+test('a paused remote host remains unconfirmed without invoking local Work controls',async()=>{
+ let stops=0;const f=setup({host:false,prefs:{hostDeviceId:'remote'},work:{controlWork:async()=>stops++}});await f.runtime.load();seedWork(f);
+ await f.runtime.action({kind:'pause'});assert.equal(stops,0);assert.equal(f.runtime.getSnapshot().stopRequest.status,'requested');
+ assert.equal(f.runtime.getSnapshot().brain.jobs[0].status,'running');
+});
+
+test('pause then resume while a command is pending cannot let its old command loop dispatch another resume',async()=>{
+ const entered=deferred(),release=deferred(),commands=[];
+ const f=setup({work:{controlWork:async(_id,command)=>{commands.push(command.kind);if(command.kind==='message'){entered.resolve();await release.promise;}},workState:()=>({status:'running'})}});
+ await f.runtime.load();seedWork(f,[{id:'message-one',kind:'message',text:'detail',createdAt:1},{id:'old-resume',kind:'resume',createdAt:2}]);
+ const syncing=f.runtime.syncWorkJobs();await entered.promise;
+ await f.runtime.action({kind:'pause'});await f.runtime.action({kind:'resume'});release.resolve();await syncing;
+ assert.equal(commands.includes('resume'),false);await settle(f.runtime);
+});
+
+test('queued stop delivery keeps its original controller and does not cross an account boundary',async()=>{
+ let oldCalls=0,newCalls=0;const f=setup({work:{controlWork:async()=>oldCalls++}});await f.runtime.load();seedWork(f);
+ const pending=f.runtime.stopWork();f.configureWork({controlWork:async()=>newCalls++});await pending;
+ assert.equal(oldCalls,1);assert.equal(newCalls,0);
+ const foreign=f.runtime.stopWork();f.runtime.emit({brain:f.domain.emptyButlerBrain('other-account'),stopRequest:undefined});await foreign;
+ assert.equal(newCalls,0);assert.equal(f.runtime.getSnapshot().stopRequest,undefined);
+});
+
+test('a collector poll from before pause and resume cannot start a fresh extraction request',async()=>{
+ const entered=deferred(),release=deferred();let models=0;
+ const f=setup({prefs:{sources:{browser:true},externalUnderstanding:'redacted-context'},collector:async action=>{
+   if(action==='poll'){entered.resolve();await release.promise;return {sources:{},recordIds:['old-context'],contexts:[{id:'old-context',source:'browser',sourceLabel:'Browser',text:'research agent skills',observedAt:Date.UTC(2026,8,30,7)}]};}return {sources:{}};
+ },model:async()=>{models++;return {text:'{"signals":[]}',tokens:1,sources:[],steps:[]};}});
+ const local=JSON.parse(f.db.get('wickrun:butler:device:v1'));local.consent.browser=true;f.db.set('wickrun:butler:device:v1',JSON.stringify(local));
+ const oldTick=f.runtime.tick();await entered.promise;await f.runtime.action({kind:'pause'});await f.runtime.action({kind:'resume'});release.resolve();await oldTick;
+ assert.equal(models,0);assert.equal(f.runtime.getSnapshot().brain.signals.some(row=>row.id==='old-context'),false);
+});
+
+test('pause during collector configuration prevents its old continuation from polling after resume',async()=>{
+ const entered=deferred(),release=deferred();let polls=0,held=false;
+ const f=setup({collector:async(action,input)=>{if(action==='suspend'&&input?.suspended===false&&!held){held=true;entered.resolve();await release.promise;}if(action==='poll')polls++;return {sources:{}};}});
+ const oldTick=f.runtime.tick();await entered.promise;await f.runtime.action({kind:'pause'});await f.runtime.action({kind:'resume'});release.resolve();await oldTick;
+ assert.equal(polls,0);
+});
+
+test('a non-host still contributes its authorized local source without executing queued host work',async()=>{
+ let polls=0;const f=setup({host:false,prefs:{hostDeviceId:'remote',sources:{browser:true}},collector:async action=>{
+   if(action==='poll'){polls++;return {sources:{},signals:[{id:'browser-topic',source:'browser',sourceLabel:'Browser',topic:'Agent tools',intent:'research',summary:'Research agent tools',observedAt:1,basis:'behavior',confidence:'low'}]};}return {sources:{}};
+ }});
+ const local=JSON.parse(f.db.get('wickrun:butler:device:v1'));local.consent.browser=true;f.db.set('wickrun:butler:device:v1',JSON.stringify(local));
+ await f.runtime.tick();assert.equal(polls,1);assert.equal(f.calls.length,0);assert.ok(f.runtime.getSnapshot().brain.signals.some(row=>row.id==='browser-topic'));
+});
+
+test('failed source withdrawal immediately removes its local grant and stays fail-closed across reload',async()=>{
+ let models=0;const f=setup({prefs:{sources:{browser:true},externalUnderstanding:'redacted-context'},collector:async action=>{
+   if(action==='consent')throw Error('collector could not persist withdrawal');
+   if(action==='poll')return {sources:{},contexts:[{id:'must-not-send',source:'browser',sourceLabel:'Browser',text:'private activity',observedAt:1}]};return {sources:{}};
+ },model:async()=>{models++;return {text:'{"signals":[]}',tokens:1,sources:[],steps:[]};}});
+ const local=JSON.parse(f.db.get('wickrun:butler:device:v1'));local.consent.browser=true;f.db.set('wickrun:butler:device:v1',JSON.stringify(local));await f.runtime.load();
+ await assert.rejects(f.runtime.action({kind:'set-device-consent',source:'browser',consented:false}),/could not persist/);
+ assert.equal(JSON.parse(f.db.get('wickrun:butler:device:v1')).consent.browser,false);
+ assert.equal(JSON.parse(f.db.get('wickrun:butler:device:v1')).controlFailed,true);
+ assert.equal(f.runtime.getSnapshot().stopRequest.status,'failed');assert.equal(f.runtime.captureDispatchGuard()(),false);
+ f.patchPrefs({paused:false});await f.runtime.reload();await f.runtime.tick();assert.equal(models,0);assert.equal(f.runtime.captureDispatchGuard()(),false);
+});
+
+test('pause persistence failure stays visible and does not reopen local dispatch',async()=>{
+ let fail=false;const f=setup({beforeWrite:async()=>{if(fail)throw Error('fixture storage failure');}});await f.runtime.load();fail=true;
+ await assert.rejects(f.runtime.action({kind:'pause'}),/fixture storage failure/);
+ assert.equal(f.runtime.getSnapshot().stopRequest.status,'failed');assert.match(f.runtime.getSnapshot().error,/storage failure/);
+ assert.equal(f.settings().butler.proactive.paused,true);assert.equal(f.runtime.captureDispatchGuard()(),false);
+ fail=false;await f.runtime.tick();assert.equal(f.calls.length,0);
+});
+
+test('collector suspension failure remains failed and local dispatch stays closed',async()=>{
+ let fail=false;const f=setup({collector:async action=>{if(fail&&action==='suspend')throw Error('fixture collector failure');return {sources:{}};}});await f.runtime.load();fail=true;
+ await assert.rejects(f.runtime.action({kind:'pause'}),/fixture collector failure/);
+ assert.equal(f.runtime.getSnapshot().stopRequest.status,'failed');assert.equal(f.runtime.captureDispatchGuard()(),false);
+ fail=false;await f.runtime.tick();assert.equal(f.calls.length,0);
 });

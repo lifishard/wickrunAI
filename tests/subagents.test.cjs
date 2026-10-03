@@ -19,7 +19,7 @@ function fixture(options={}){
     params:{max_tokens:{enabled:true,value:4096},max_completion_tokens:{enabled:false,value:4096}},runtime:{maxTokens:options.maxTokens||0},
     subagents:{enabled:true,workers:structuredClone(workers).map(w=>options.assignedRole?{...w,role:options.assignedRole}:w),maxCalls:options.maxCalls||4,allowEdits:options.allowEdits||false},
     customBody:'parent-private-body',systemPrompt:'parent-private-system',historyLimit:99,client:{kind:'codex'}};
-  const args={requestId:'parent-run',config,roleCatalog:options.roleCatalog,profile:{id:'parent-profile'},apiKey:'parent-secret',history:[],
+  const args={requestId:'parent-run',config,canDispatch:options.canDispatch,roleCatalog:options.roleCatalog,profile:{id:'parent-profile'},apiKey:'parent-secret',history:[],
     resolveWorker:options.resolveWorker|| (async id=>({profile:{id},apiKey:'child-secret',models:[{id:workers.find(w=>w.profileId===id)?.model}]})),
     events:{onUsage(){usageEvents++;}},toolCtx:()=>({}),effortMappings:[],extraSystem:'parent-extra',timeoutMs:1000,canRunHostTools:true,autoRetry:0,limits:options.limits};
   const run=childArgs=>{
@@ -28,12 +28,20 @@ function fixture(options={}){
     options.onRun?.(launch);
     return launch.handle;
   };
-  const save=async()=>{saves.push(structuredClone(state));};
+  const save=async()=>{saves.push(structuredClone(state));await options.save?.(state);};
   const runtime=createSubagentRuntime(args,state,save,run);
   return {runtime,state,launches,saves,args,get usageEvents(){return usageEvents;}};
 }
 
 async function turn(){await new Promise(resolve=>setImmediate(resolve));}
+
+test('a child whose running checkpoint is delayed cannot launch after its parent pauses',async()=>{
+  let release,entered,held=false,allowed=true;const ready=new Promise(r=>{entered=r;});
+  const f=fixture({canDispatch:()=>allowed,save:async state=>{if(!held&&state.subagents.some(job=>job.status==='running')){held=true;entered();await new Promise(r=>{release=r;});}}});
+  await f.runtime.tool('spawn_subagent',{worker_id:'sol',request_key:'late-child',task:'Inspect a document'});await ready;
+  allowed=false;f.runtime.stop();release();await f.runtime.waitRunning();
+  assert.equal(f.launches.length,0);assert.equal(f.state.subagents[0].status,'cancelled');assert.equal(f.state.spentTokens,0);
+});
 async function spawn(f,key,task=key,worker_id='sol'){
   const result=await f.runtime.tool('spawn_subagent',{worker_id,request_key:key,task});await turn();return result;
 }

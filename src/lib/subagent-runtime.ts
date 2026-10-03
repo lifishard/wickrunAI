@@ -38,7 +38,7 @@ export function createSubagentRuntime(args:RunAgentArgs,state:RunState,save:()=>
     const role=template?{id:template.id,name:template.name,instructions:template.instructions}:worker.role;
     const prior=state.subagents!.find(j=>j.requestKey===key);
     if(prior)return prior.task===task&&prior.workerId===worker.id&&prior.role?.id===role?.id?{ok:true,content:JSON.stringify(publicJob(prior)),summary:'返回已有子代理，未重复调用'}:{ok:false,content:'',error:'此 request_key 已对应不同任务，请核对后使用新编号。'};
-    if(stopped)return {ok:false,content:'',error:'主任务已暂停，不能派发新子代理'};
+    if(stopped||args.canDispatch?.()===false)return {ok:false,content:'',error:'主任务已暂停，不能派发新子代理'};
     if(active.size>=2)return {ok:false,content:'',error:'已有两个子代理运行中，请先等待结果或处理其他工作。'};
     if(state.subagents!.length>=Math.max(1,Math.min(8,pool!.maxCalls || 4)))return {ok:false,content:'',error:'已达到本轮临时子代理次数上限。'};
     const max=args.config.runtime?.maxTokens || 0;
@@ -69,13 +69,14 @@ export function createSubagentRuntime(args:RunAgentArgs,state:RunState,save:()=>
     void (async()=>{
       try{
         const selected=await args.resolveWorker!(worker.profileId);
-        if(stopped){await terminal('cancelled','主任务已暂停，尚未发送模型请求');return;}
+        if(stopped||args.canDispatch?.()===false){await terminal('cancelled','主任务已暂停，尚未发送模型请求');return;}
         const tools=args.config.enabledTools.filter(name=>!INTERNAL.has(name)&&TOOL_BY_NAME[name]&&(!TOOL_BY_NAME[name].dangerous||pool!.allowEdits&&args.config.toolsEnabled));
         const config:GenerationConfig={...args.config,client:undefined,model:worker.model,subagents:undefined,agentRole:undefined,customBody:'',systemPrompt:'',historyLimit:0,
           toolsEnabled:args.config.toolsEnabled,enabledTools:tools,maxToolRounds:8,
           params:{...args.config.params,max_tokens:{enabled:true,value:2048},max_completion_tokens:{enabled:false,value:2048}},
           runtime:{contextTokens:32000,tpm:0,rpm:0,maxTokens:WORKER_BUDGET,maxMinutes:10,recoveryMinutes:1,harness:'guided',semanticCompression:true}};
         job.status='running';await save();
+        if(stopped||args.canDispatch?.()===false){await terminal('cancelled','主任务已暂停，尚未发送模型请求');return;}
         running.handle=run({...args,createConversation:undefined,coordinateTasks:undefined,coordinationInbox:undefined,requestId:`${args.requestId}-sub-${job.id}`,profile:selected.profile,apiKey:selected.apiKey,config,
           history:[{id:'subtask-'+job.id,role:'user',content:task,createdAt:Date.now()}],resume:undefined,conversationMemory:undefined,compactBeforeRun:false,
           resolveWorker:undefined,roleCatalog:undefined,previousModel:undefined,limitOf:()=>args.limits?.get(selected.profile.id,worker.model,selected.profile.baseUrl),onLearnLimit:l=>args.limits?.learn(selected.profile.id,worker.model,selected.profile.baseUrl,l),modelInfo:selected.models?.find(m=>m.id===worker.model),autoRetry:0,

@@ -141,8 +141,10 @@ function createMediaUploader({ call, fetchImpl = (...args) => fetch(...args), sl
       const changed = () => Error('文件在上传过程中被修改，请重新上传。');
       try {
         check(); handle = await fs.promises.open(filePath, 'r'); check();
-        const stat = await handle.stat(); size = stat.size;
+        // Windows file IDs can exceed Number's exact range; keep identity fields as bigint.
+        const stat = await handle.stat({ bigint: true }); size = Number(stat.size);
         if (!stat.isFile() || size <= 0) throw Error('文件为空或不存在，无法上传。');
+        if (!Number.isSafeInteger(size)) throw Error('文件过大，无法安全上传。');
         progress('hashing');
         const hashes = [];
         for (let start = 0; start < size; start += CHUNK_SIZE) {
@@ -154,15 +156,15 @@ function createMediaUploader({ call, fetchImpl = (...args) => fetch(...args), sl
         const finalName = name || path.basename(filePath), finalMime = mime || mediaInfo(filePath)?.mime || 'application/octet-stream';
         const input = { name: finalName, mime: finalMime, size, requestKey: 'up2-' + sha(JSON.stringify(['library', finalName, finalMime, root])), source };
         const validate = async () => {
-          check(); if ((await handle.stat()).size !== size) throw changed();
-          const current = await fs.promises.stat(filePath);
-          if (current.dev !== stat.dev || current.ino !== stat.ino || current.size !== size) throw changed();
+          check(); if ((await handle.stat({ bigint: true })).size !== stat.size) throw changed();
+          const current = await fs.promises.stat(filePath, { bigint: true });
+          if (current.dev !== stat.dev || current.ino !== stat.ino || current.size !== stat.size) throw changed();
           for (let start = 0, n = 0; start < size; start += CHUNK_SIZE, n++) {
             if (sha(await read(start, Math.min(CHUNK_SIZE, size - start))) !== hashes[n]) throw changed();
           }
-          check(); if ((await handle.stat()).size !== size) throw changed();
-          const final = await fs.promises.stat(filePath);
-          if (final.dev !== stat.dev || final.ino !== stat.ino || final.size !== size) throw changed();
+          check(); if ((await handle.stat({ bigint: true })).size !== stat.size) throw changed();
+          const final = await fs.promises.stat(filePath, { bigint: true });
+          if (final.dev !== stat.dev || final.ino !== stat.ino || final.size !== stat.size) throw changed();
         };
         const bodyFor = async (start, length) => {
           // Independently verify fixed chunks, including unaligned part boundaries.

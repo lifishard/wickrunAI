@@ -44,6 +44,10 @@ export function runConnectedAgent(args:RunAgentArgs):AgentHandle {
     content:args.resume?.content || '',reasoning:args.resume?.reasoning || '',lastModel:args.config.model,attemptId:args.requestId,phase:'request',steps:args.resume?.steps || [],sources:args.resume?.sources || []};
   let saveChain=Promise.resolve();
   const save=async()=>{reconcileProgress(state);state.delivery=deliveryReport(state);state.at=Date.now();const snapshot=structuredClone(state);await (saveChain=saveChain.then(()=>events.onRunState(snapshot)));};
+  const assertDispatch=()=>{
+    if(args.canDispatch?.()===false&&!cancelled){cancelled=true;cancelControl.abort();void bridge?.toolAbort(state.runId!).catch(()=>{});}
+    if(cancelled)throw Error('暂停请求已记录，未继续派发；本机操作结果仍需核实。');
+  };
   state.milestones=structuredClone(args.resume?.milestones??args.conversationMemory?.milestones??[]);
   state.requirements=structuredClone(args.resume?.requirements??args.conversationMemory?.requirements??[]);
   state.contextArchive=structuredClone(args.resume?.contextArchive??args.conversationMemory?.archive??[]);
@@ -52,6 +56,7 @@ export function runConnectedAgent(args:RunAgentArgs):AgentHandle {
   state.harness=taskSeed([...state.working,...(state.pendingInputMessages??[])],args.config,state.harness);
   void (async()=>{
     try{
+      assertDispatch();
       if(!bridge)throw Error('本机连接需要使用桌面版。');
       const reviewBlocked=await awaitAbortable(reviewGuard(args,args.config.client!.kind),cancelControl.signal);
       if(reviewBlocked)throw Error(reviewBlocked);
@@ -142,10 +147,11 @@ export function runConnectedAgent(args:RunAgentArgs):AgentHandle {
           const preview=Array.isArray(event.event?.codeChanges)?event.event.codeChanges:undefined;
           const id=event.id,step:ToolStep={id,callId:id,name:'native_client_operation',args:event.event || {},status:'running' as const,summary:preview?'Grok 请求修改文件':'官方客户端请求执行操作',startedAt:Date.now(),...(preview?{codeChanges:preview}:{})};
           state.status='waiting';state.waitKind='approval';events.onNotice('官方客户端正在等待操作确认');
-          void save().then(()=>args.confirm(step)).then(approved=>bridge.conversationClientApprove(nativeRequestId,id,approved && !cancelled)).catch(()=>bridge.conversationClientApprove(nativeRequestId,id,false).catch(()=>{})).finally(()=>{if(!cancelled){state.status='running';state.waitKind=undefined;events.onNotice('正在等待官方客户端返回结果…');}});
+          void save().then(()=>{assertDispatch();return args.confirm(step);}).then(approved=>bridge.conversationClientApprove(nativeRequestId,id,approved && !cancelled && args.canDispatch?.()!==false)).catch(()=>bridge.conversationClientApprove(nativeRequestId,id,false).catch(()=>{})).finally(()=>{if(!cancelled){state.status='running';state.waitKind=undefined;events.onNotice('正在等待官方客户端返回结果…');}});
         }
       });
       for(let turn=0;turn<6;turn++){
+      assertDispatch();
       if(cancelled)throw Error('已暂停并保存当前执行现场');
       nativeRequestId=turn===0?args.requestId:`${args.requestId}-followup-${turn}`;streamed='';visibleStream='';streamStarted=false;
       if(!recovered)consumeLiveInputs(state);
@@ -163,6 +169,7 @@ ${JSON.stringify(transcript)}`;
       events.onNotice('正在等待官方客户端返回结果…');
       // Save dispatch uncertainty before invoking: a renderer restart cannot imply that nothing ran.
       if(!recovered){state.uncertainCallId='native-'+nativeRequestId;await save();}
+      assertDispatch();
       const result=recovered ?? await awaitAbortable(bridge.conversationClientRun({runId:state.runId!,requestId:nativeRequestId,prompt,images,cwd:args.config.toolsEnabled?args.toolCtx().workspaceRoots[0]:undefined}),cancelControl.signal);
       if(result.codeChanges?.length || result.codeAuditWarnings?.length){
         const id=nativeRequestId+'-code-audit';
@@ -221,7 +228,7 @@ ${JSON.stringify(transcript)}`;
       if(result.status!=='completed')throw Error(result.error || `官方客户端已暂停（${result.status}），已有内容已保留。`);
       if(state.pendingInputMessages?.length){state.working.push({id:nativeRequestId+'-answer',role:'assistant',content:result.text,createdAt:Date.now()});await save();continue;}
       if(state.userQuestion&&!state.userQuestion.answers){state.waitKind='question';throw Error('已完成可独立进行的工作，等待用户回答');}
-      await applyNativeProgress(state,result.text,check=>args.config.toolsEnabled&&bridge.tool?bridge.tool('inspect_deliverable',check,args.toolCtx()):Promise.resolve({ok:false,content:'',error:'当前连接无法核验文件'}));
+      await applyNativeProgress(state,result.text,check=>{assertDispatch();return args.config.toolsEnabled&&bridge.tool?bridge.tool('inspect_deliverable',check,args.toolCtx()):Promise.resolve({ok:false,content:'',error:'当前连接无法核验文件'});});
       const blocker=completionBlocker(state,state.content??'',args.config);if(blocker)throw Error(blocker);
       if(state.harness?.action&&planOnly(state.content??'')){
         state.harness.completion={status:'needs_work',reason:'本机客户端仅返回了计划，尚未确认完成。',evidence:[],at:Date.now()};

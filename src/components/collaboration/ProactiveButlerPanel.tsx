@@ -103,12 +103,17 @@ export default function ProactiveButlerPanel({settings,onSettings,controller,onO
   const greeting=todayBrief?.greeting;
   return <section className="proactive-butler" aria-label={t('主动管家')}>
     <header className="proactive-head"><div><h2>{greeting??t('今天，有什么值得帮你做？')}</h2><p>{greeting?t(todayBrief?.period==='morning'?'早间简报':'晚间简报')+' · '+new Date(todayBrief!.createdAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}):t('发现需求，准备结果。由你决定判断是否准确、做法是否合适。')}</p></div>
-      <span className={`proactive-state ${inactive||!consented?'off':'on'}`}>{!pref.enabled?t('已关闭'):!consented?t('等你确认'):pref.paused?t('已暂停'):t('已启用')}</span></header>
+      <span className={`proactive-state ${inactive||!consented?'off':'on'}`}>{snapshot.stopRequest?.status==='failed'?t('暂停请求需处理'):!pref.enabled?t('已关闭'):!consented?t('等你确认'):pref.paused?t('暂停请求已记录'):t('已启用')}</span></header>
     <div className="proactive-quickbar">
       <button className="btn" aria-expanded={setupOpen} onClick={()=>{if(!consented&&!pref.enabled){setConsentOpen(true);return;}setSetupOpen(value=>!value);}}><Icon name="settings"/>{t(pref.enabled?'管家设置':'开始设置')}</button>
-      {pref.enabled&&consented&&<button className={`btn ${pref.paused?'':'danger'}`} onClick={()=>void act({kind:pref.paused?'resume':'pause'})}><Icon name={pref.paused?'play':'pause'}/>{t(pref.paused?'恢复管家':'紧急暂停')}</button>}
-      {pref.enabled&&consented&&<span className="proactive-host-chip">{snapshot.host.status==='local'?t('本机后台执行'):snapshot.host.status==='connected'?t('执行电脑在线'):t('等待执行电脑')}</span>}
+      {pref.enabled&&consented&&<button className={`btn ${pref.paused?'':'danger'}`} disabled={working&&pref.paused} onClick={()=>void act({kind:pref.paused?'resume':'pause'})}><Icon name={pref.paused?'play':'pause'}/>{t(pref.paused?'恢复管家':'紧急暂停')}</button>}
+      {pref.enabled&&consented&&<span className="proactive-host-chip">{snapshot.host.status==='local'?t(inactive?'执行电脑：本机':'本机后台执行'):snapshot.host.status==='connected'?t('执行电脑在线'):t('等待执行电脑')}</span>}
     </div>
+    {inactive&&(pref.paused||snapshot.stopRequest)&&<div className="proactive-privacy" role="status" aria-live="polite">
+      <strong>{t(snapshot.stopRequest?.status==='failed'?'部分暂停请求未能送达':snapshot.stopRequest?.status==='pending'?'正在提交暂停请求':'暂停请求已记录')}</strong>
+      {snapshot.stopRequest?.status==='failed'&&<p>{t('暂停请求未能完整保存或转交。本机已拦住后续派发；重启后的状态与远端执行仍需核实。')}</p>}
+      <p>{t(snapshot.host.status==='local'?'已阻止本机继续派发。正在执行的工具可能仍在结束，退出和结果尚未确认，请在 Work 会话核实。':'远端停止尚未确认。执行电脑在线不代表已停止；离线或旧版设备的执行状态未知。')}</p>
+    </div>}
     {askConsent&&<ButlerConsent upgraded={pref.enabled&&!consented} disabled={working||!controller||!canEdit}
       onAccept={()=>void act({kind:'consent',granted:true}).then(ok=>{if(ok){setConsentOpen(false);setSetupOpen(true);}})}
       onDecline={()=>{setConsentOpen(false);if(pref.enabled)void act({kind:'turn-off'});}}/>}

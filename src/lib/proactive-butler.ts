@@ -154,6 +154,8 @@ export interface ButlerFeedback {id:string;accountId:string;targetKind:'goal'|'b
 export interface ButlerAudit {id:string;accountId:string;jobId?:string;at:number;kind:'inference'|'model'|'research'|'collection'|'control'|'feedback'|'work';title:string;detail:string;sourceIds?:string[];model?:string;status:'planned'|'completed'|'failed'|'blocked'}
 
 export interface ButlerRuntimeSnapshot {
+  /** Local request delivery only. No value here certifies that tools or remote hosts exited. */
+  stopRequest?:{status:'pending'|'requested'|'failed';failedCount:number};
   brain: ButlerBrainState;
   deviceId?: string;
   canHost?: boolean;
