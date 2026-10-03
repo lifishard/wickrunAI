@@ -1,5 +1,15 @@
 /** English copy for the proactive Butler screen. Source copy lives in the UI. */
 export const BUTLER_EN: Record<string,string> = {
+  '暂停请求已记录': 'Pause requested',
+  '暂停请求需处理': 'Pause request needs attention',
+  '暂停请求未能完整保存或转交。本机已拦住后续派发；重启后的状态与远端执行仍需核实。': 'The pause request could not be fully saved or delivered. Further local dispatches are blocked; state after restart and remote execution still need checking.',
+  '正在提交暂停请求': 'Sending pause requests',
+  '部分暂停请求未能送达': 'Some pause requests could not be delivered',
+  '执行电脑：本机': 'Host: this computer',
+  '已阻止本机继续派发。正在执行的工具可能仍在结束，退出和结果尚未确认，请在 Work 会话核实。': 'New dispatches on this computer are blocked. Tools may still be finishing; their exit and results are unconfirmed. Check the Work conversation.',
+  '远端停止尚未确认。执行电脑在线不代表已停止；离线或旧版设备的执行状态未知。': 'Remote stopping is unconfirmed. An online host is not proof of a stop; execution on offline or older devices is unknown.',
+  '管家已暂停，未继续派发任务。': 'Butler is paused. No further task was dispatched.',
+  '工具取消请求未确认，请在执行电脑核实结果。': 'Tool cancellation is unconfirmed. Check the results on the host computer.',
   '等你确认': 'Awaiting your consent',
   '撤回同意并关闭': 'Withdraw consent and turn off',
   '管家升级了：确认数据范围后继续': 'Butler has been updated: review its data scope to continue',

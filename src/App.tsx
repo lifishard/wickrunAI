@@ -449,7 +449,7 @@ export default function App() {
   React.useEffect(()=>{
     if(!settings||!bootReady)return;
     butlerRuntime.configure({settings:()=>settingsRef.current!,conversations:()=>quitSnapshot.current.conversations,skills:()=>quitSnapshot.current.skills,
-      onSettings:value=>{settingsRef.current=value;setSettings(value);},onSkills:setSkills,startWork:startButlerWork,controlWork:controlButlerWork,workState:butlerWorkState});
+      onSettings:value=>{settingsRef.current=value;setSettings(value);},onSkills:setSkills,startWork:startButlerWork,controlWork:controlButlerWork,stopOwnedWork:stopOwnedButlerWork,workState:butlerWorkState});
     void butlerRuntime.tick();
   },[settings,bootReady]);
   React.useEffect(()=>{
@@ -905,16 +905,21 @@ export default function App() {
   const startedCreations = React.useRef(new Set<string>());
   const queueRef = React.useRef(queue); queueRef.current = queue;
 
-  function createRequestedConversation(input: ConversationRequest, operationKey: string, sourceId: string | null, direct = false, supplied?: QueuedInput): Promise<ToolResult> {
+  function createRequestedConversation(input: ConversationRequest, operationKey: string, sourceId: string | null, direct = false, supplied?: QueuedInput, dispatchGuard?:()=>boolean): Promise<ToolResult> {
+    const source=sourceId?conversationsRef.current.find(c=>c.id===sourceId):undefined;
+    const canDispatch=dispatchGuard??(source?.privacy==='personal-butler'?butlerRuntime.captureDispatchGuard():undefined);
     const operation = creationChain.current.then(async () => {
+      if(canDispatch&&!canDispatch())throw Error('管家已暂停，未派发新会话。');
       const current = settingsRef.current;
       if (!current) throw Error('设置尚未载入。');
       const source = sourceId ? conversationsRef.current.find(c => c.id === sourceId) : undefined;
       if (sourceId && !source) throw Error('原会话已不可用，未创建新任务。');
       const identity = await conversationRequestIdentity(sourceId ?? 'home', operationKey, input);
+      if(canDispatch&&!canDispatch())throw Error('管家已暂停，未派发新会话。');
       const previous = conversationsRef.current.find(c => c.id === identity.id);
       if (previous && previous.creationFingerprint !== identity.fingerprint) throw Error('同一次创建请求的内容已改变，请使用新的 request_key。');
       let next = previous ?? requestedConversation(source, current.defaultConfig, current.activeKeyProfileId, input, identity);
+      if(canDispatch)next={...next,privacy:'personal-butler'};
       if (!previous) {
         // Persist the independent conversation before acknowledging or dispatching its prompt.
         flushSync(() => {
@@ -924,7 +929,7 @@ export default function App() {
       }
       await saveConversationsNow(conversationsRef.current);
       const root=input.workspace_root??source?.workspace?.root??current.tools.workspaceRoots[0];
-      if(input.mode==='work'&&root&&desktop()&&!next.workspace){
+      if((!canDispatch||canDispatch())&&input.mode==='work'&&root&&desktop()&&!next.workspace){
         try{
           const workspace=await desktop()!.conversationWorkspaceCreate(next.id,root);
           next={...next,workspace,workspaceError:undefined};
@@ -939,11 +944,12 @@ export default function App() {
         setActiveId(next.id); setTeamVisible(false); setSidebarOpen(false); setOpenArtifact(null); setConfigOpen(false);
         if (supplied?.text) { setAttachments([]); setQuotes([]); }
       }
-      if (input.start && input.prompt && !next.messages.length && !startedCreations.current.has(next.id) && !queueRef.current.some(q=>q.conversationId===next.id)) {
+      const startAllowed=!canDispatch||canDispatch();
+      if (startAllowed && input.start && input.prompt && !next.messages.length && !startedCreations.current.has(next.id) && !queueRef.current.some(q=>q.conversationId===next.id)) {
         startedCreations.current.add(next.id);
         setQueue(all => [...all, {text:input.prompt,attachments:supplied?.attachments??[],quotes:supplied?.quotes??[],quoteOnly:supplied?.quoteOnly??false,conversationId:next.id,toolsEnabled:input.mode==='work'}]);
       }
-      return {ok:true,summary:`已创建 ${input.mode==='work'?'Work':'Chat'} 对话`,content:JSON.stringify({id:next.id,title:next.title,mode:input.mode,status:input.start&&input.prompt?'queued':'draft',duplicate:Boolean(previous),workspace:next.workspace,message:'独立上下文已保存。新任务在新会话运行；不要在原会话重复执行。'})};
+      return {ok:true,summary:`已创建 ${input.mode==='work'?'Work':'Chat'} 对话`,content:JSON.stringify({id:next.id,title:next.title,mode:input.mode,status:startAllowed&&input.start&&input.prompt?'queued':'draft',duplicate:Boolean(previous),workspace:next.workspace,message:startAllowed?'独立上下文已保存。新任务在新会话运行；不要在原会话重复执行。':'管家暂停请求已记录；新会话仅保留草稿，未派发。'})};
     });
     creationChain.current = operation.then(()=>{},()=>{});
     return operation;
@@ -958,13 +964,16 @@ export default function App() {
     });
   }
   async function startButlerWork(job:ButlerJob,prompt:string):Promise<string>{
+    const canDispatch=butlerRuntime.captureDispatchGuard();
+    if(!canDispatch())throw Error('管家已暂停，未创建 Work。');
     const current=settingsRef.current;if(!current?.butler?.proactive)throw Error('管家设置不可用。');
     if(!desktop())throw Error('请在同账号的执行电脑处理后台 Work。');
     const input=parseConversationRequest({mode:'work',title:t('管家 · ')+(butlerRuntime.getSnapshot().brain.goals.find(g=>g.id===job.goalId)?.title??'执行需求').slice(0,65),prompt,start:false,request_key:job.id});
-    const result=await createRequestedConversation(input,job.id,null,false);
+    const result=await createRequestedConversation(input,job.id,null,false,undefined,canDispatch);
     if(!result.ok)throw Error(result.error??'Work 会话创建失败。');
     const id=JSON.parse(result.content).id as string;
     const existing=conversationsRef.current.find(c=>c.id===id);if(!existing)throw Error('Work 会话未保存。');
+    if(!canDispatch())return id;
     if(existing.privacy!=='personal-butler'){
       flushSync(()=>setConversations(all=>all.map(c=>c.id===id?{...c,privacy:'personal-butler'}:c)));
       await saveConversationsNow(conversationsRef.current);
@@ -974,26 +983,42 @@ export default function App() {
     const selected=butlerWorkConfig(current,current.butler.proactive,{autonomous:job.automatic===true});
     flushSync(()=>setConversations(all=>all.map(c=>c.id===id?{...c,...selected}:c)));
     await saveConversationsNow(conversationsRef.current);
-    if(!settingsRef.current?.butler?.proactive?.enabled||settingsRef.current.butler.proactive.paused)throw Error('管家已暂停，Work 草稿已保存。');
+    if(!canDispatch())return id;
     setQueue(all=>all.some(q=>q.conversationId===id)?all:[...all,{text:prompt,attachments:[],quotes:[],quoteOnly:false,conversationId:id,toolsEnabled:true,preserveComposer:true}]);
     return id;
   }
   async function controlButlerWork(conversationId:string,command:ButlerWorkCommand):Promise<void>{
     const conv=conversationsRef.current.find(c=>c.id===conversationId);if(!conv)return;
     if(command.kind==='pause'){
-      abortRun(conversationId);setQueue(all=>all.filter(q=>q.conversationId!==conversationId));return;
+      const group=conv.coordinationGroupId??conv.id;
+      await requestButlerStops(conversationsRef.current.filter(c=>c.id===conv.id||c.privacy==='personal-butler'&&(c.coordinationGroupId??c.id)===group).map(c=>c.id));return;
     }
     if(command.kind==='message'){
       if(!command.text||conv.coordinationMessages?.some(m=>m.id===command.id))return;
       flushSync(()=>updateConv(conversationId,c=>({...c,coordinationMessages:[...(c.coordinationMessages??[]),{id:command.id,fromId:'butler-user',fromTitle:'用户通过管家补充',text:command.text!,at:command.createdAt}]})));
       await saveConversationsNow(conversationsRef.current);return;
     }
+    if(!butlerRuntime.captureDispatchGuard()())throw Error('管家已暂停，未转交继续请求。');
     if(runningRef.current.has(conversationId)||startingRef.current.has(conversationId))return;
     const answer=[...conv.messages].reverse().find(m=>m.role==='assistant');
     const question=[...conv.messages].reverse().find(m=>m.role==='user'&&!m.contextKind)?.content??conv.draft;
     if(!question)return;
     if(answer?.runState){await sendRef.current(question,undefined,answer.runState,{text:question,attachments:[],quotes:[],quoteOnly:false,conversationId,toolsEnabled:true,preserveComposer:true});}
     else if(!conv.messages.length&&!queueRef.current.some(q=>q.conversationId===conversationId))setQueue(all=>[...all,{text:question,attachments:[],quotes:[],quoteOnly:false,conversationId,toolsEnabled:true,preserveComposer:true}]);
+  }
+  async function requestButlerStops(conversationIds:string[]):Promise<void>{
+    const ids=new Set(conversationIds),failures:unknown[]=[];
+    // Clear refs immediately as React state may not commit until after a late preparation resolves.
+    queueRef.current=queueRef.current.filter(q=>!q.conversationId||!ids.has(q.conversationId));
+    setQueue(all=>all.filter(q=>!q.conversationId||!ids.has(q.conversationId)));
+    setResumeInput(value=>value&&ids.has(value.convId)?null:value);
+    setFailoverResume(value=>value&&ids.has(value.convId)?null:value);
+    for(const id of ids){blockedOnRoots.current.delete(id);try{abortRun(id);}catch(error){failures.push(error);}}
+    if(failures.length)throw Error(`部分 Work 暂停请求未能转交：${failures.map(String).join('；')}`);
+  }
+  async function stopOwnedButlerWork():Promise<void>{
+    const known=new Set((butlerRuntime.getSnapshot().brain.jobs??[]).flatMap(job=>job.conversationId?[job.conversationId]:[]));
+    await requestButlerStops(conversationsRef.current.filter(c=>c.privacy==='personal-butler'||known.has(c.id)).map(c=>c.id));
   }
   function butlerWorkState(conversationId:string):{status:ButlerJob['status'];summary?:string;error?:string}{
     const conv=conversationsRef.current.find(c=>c.id===conversationId);if(!conv)return {status:'waiting',error:'执行会话暂未同步到此电脑。'};
@@ -1008,11 +1033,14 @@ export default function App() {
   }
   async function coordinateTasks(sourceId:string,input:Record<string,unknown>,key:string):Promise<ToolResult>{
     const source=conversationsRef.current.find(c=>c.id===sourceId);if(!source)throw Error('来源会话不存在。');
+    const canDispatch=source.privacy==='personal-butler'?butlerRuntime.captureDispatchGuard():undefined;
+    if(canDispatch&&!canDispatch())throw Error('管家已暂停，未转交协调消息。');
     if(input.action==='list')return {ok:true,content:JSON.stringify({tasks:taskSummaries(sourceId)}),summary:'已读取并行任务状态'};
     if(input.action!=='message'||typeof input.conversation_id!=='string'||typeof input.text!=='string'||!input.text.trim()||input.text.length>4000||typeof input.request_key!=='string'||! /^[\w-]{1,80}$/.test(input.request_key))throw Error('请输入目标会话、最多 4000 字的协作消息和稳定 request_key。');
     let target=relatedConversations(source,conversationsRef.current).find(c=>c.id===input.conversation_id&&c.id!==sourceId);if(!target)throw Error('只能向同项目或同组的其他会话发送消息。');
     const request=parseConversationRequest({mode:'chat',prompt:input.text,request_key:input.request_key,start:false});
     const identity=await conversationRequestIdentity(sourceId,key,request),id='coord-'+identity.id;
+    if(canDispatch&&!canDispatch())throw Error('管家已暂停，未转交协调消息。');
     target=conversationsRef.current.find(c=>c.id===target!.id);if(!target)throw Error('接收会话已删除。');
     const previous=target.coordinationMessages?.find(m=>m.id===id);
     if(previous&&previous.text!==input.text.trim())throw Error('同一 request_key 已用于其他消息。');
@@ -1336,6 +1364,9 @@ export default function App() {
       if (!settings) return;
       const targetConversation=queuedInput?.conversationId ? conversationsRef.current.find(c=>c.id===queuedInput.conversationId) : active;
       if(queuedInput?.conversationId&&!targetConversation){toast.show('目标会话已不存在，未发送。');return;}
+      const butlerOwned=targetConversation&&(targetConversation.privacy==='personal-butler'||butlerRuntime.getSnapshot().brain.jobs?.some(job=>job.conversationId===targetConversation.id));
+      const canDispatch=butlerOwned?butlerRuntime.captureDispatchGuard():undefined;
+      if(canDispatch&&!canDispatch()){toast.show(t('管家已暂停，未继续派发任务。'));return;}
       const nativeClient=(targetConversation?.config ?? settings.defaultConfig).client;
       const profile:KeyProfile|null=nativeClient ? {id:`client:${nativeClient.kind}`,name:nativeClient.kind,baseUrl:'',hasSecret:false,extraHeaders:{},createdAt:0} : settings.keyProfiles.find(p=>p.id===targetConversation?.keyProfileId) ?? settings.keyProfiles.find(p=>p.id===settings.activeKeyProfileId) ?? settings.keyProfiles[0] ?? null;
       // 目标会话由排队条目指定，否则就是当前可见的会话；只有同一个会话在跑才排队。
@@ -1375,13 +1406,18 @@ export default function App() {
         preparingDraftRef.current.delete(preparingKey);
         if (restoreDraft && draft) updateConv(preparingKey, conversation => ({...conversation, draft: conversation.draft || draft}));
       };
+      const preparationStopped=()=>{
+        if(preparation.signal.aborted||canDispatch&&!canDispatch()){preparation.abort();finishPreparing(true);return true;}
+        return false;
+      };
       let apiKey: string | null;
       try { apiKey = nativeClient ? 'official-client' : await secretGet(profile.id); }
       catch (e) { finishPreparing(true); if (!preparation.signal.aborted) toast.show(String(e)); return; }
-      if (preparation.signal.aborted) return;
+      if (preparationStopped()) return;
       if (!apiKey) { finishPreparing(true); toast.show(t('这份凭据还没填 API Key')); setSettingsOpen(true); return; }
       // 没有会话就现开一个；排队条目带着会话 id，指向哪个会话就在哪个会话里跑
       const conv = targetConversation ?? newConversationForSend!;
+      if(preparationStopped())return;
       if(conv.workspaceError&&(queuedInput?.toolsEnabled??conv.config.toolsEnabled)){finishPreparing(true);toast.show('独立工作区未准备好，任务未执行。请修正目录后重新创建 Work 会话。',6000);return;}
       const roleCatalog=localizeRoles(libraryRoles(settings.officeLibrary,conv.projectId?teamRuntime.project(conv.projectId).office?.customRoles:undefined),locale);
       const cfg = withRequestedDelegation(queuedInput?.toolsEnabled===undefined?conv.config:{...conv.config,toolsEnabled:queuedInput.toolsEnabled},text,roleCatalog,profile.id);
@@ -1405,7 +1441,7 @@ export default function App() {
       if (!resumeFrom && replaceFromIndex !== undefined) {
         try { await forgetRuns(conv.id, new Set(conv.messages.slice(replaceFromIndex).map((m) => m.id))); }
         catch (e) { finishPreparing(true); if (!preparation.signal.aborted) toast.show(t('无法更新执行记录：{error}', { error: String(e) })); return; }
-        if (preparation.signal.aborted) return;
+        if (preparationStopped()) return;
       }
 
       // 本轮唤起的技能：固定一份快照，并记一次使用次数。
@@ -1433,7 +1469,7 @@ export default function App() {
       if (!nativeClient && apiKey && [...kept, userMsg].some(m => m.attachments?.some(a => a.kind === 'image')) && visionUntested(profile, cfg.model, modelInfo)) {
         toast.show(t('正在确认当前模型能否看图…'), 4000);
         try { await probeVision(profile, cfg.model, apiKey, {signal:preparation.signal}); } catch { /* 测不出来就按接入声明处理 */ }
-        if (preparation.signal.aborted) return;
+        if (preparationStopped()) return;
       }
       try { validateMediaRoute([...kept, userMsg], profile, cfg.model, modelInfo, !!nativeClient); }
       catch (e) { finishPreparing(true); toast.show(String(e), 6000); return; }
@@ -1542,7 +1578,8 @@ export default function App() {
       if(autonomousButler&&!conv.workspace)throw Error('主动管家任务缺少独立工作区，已阻止执行。');
       const handle = runConnectedAgent({
         requestId,
-        createConversation: (input,key) => createRequestedConversation(input,key,convId),
+        canDispatch,
+        createConversation: (input,key) => createRequestedConversation(input,key,convId,false,undefined,canDispatch),
         coordinateTasks: (input,key)=>coordinateTasks(convId,input,key),
         coordinationInbox: async()=>conversationsRef.current.find(c=>c.id===convId)?.coordinationMessages??[],
         profile,

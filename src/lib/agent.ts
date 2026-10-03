@@ -26,7 +26,7 @@ import { buildRequestBody, type ContentPart, type WireMessage } from './paramSch
 import { TOOL_BY_NAME, availableTools } from './tools/registry';
 import type { EffortMapping } from './effort';
 import { backoffMs, classifyError, stopReasonInfo } from './errors';
-import { getTransport } from './transport';
+import { getTransport, desktop } from './transport';
 import { uid } from './store';
 import { composeSystem } from './system';
 import { checkWire, type WireProblem } from './wirecheck';
@@ -90,6 +90,8 @@ export interface AgentEvents {
 }
 
 export interface RunAgentArgs {
+  /** Live ownership gate. A cancelled preparation must not dispatch after a later resume. */
+  canDispatch?:()=>boolean;
   privateInput?: boolean;
   roleCatalog?: import('./office').AgentRole[];
   autoProbe?: boolean;
@@ -439,6 +441,12 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
   };
   const pauseInfo = (title: string): ErrorInfo => ({ kind: 'unknown', title, detail: title, fixes: [], retryable: false, blameModel: false });
   const subagents=createSubagentRuntime(args,state,save,runAgent);
+  const assertDispatch=()=>{
+    if(args.canDispatch?.()===false&&!control.signal.aborted)handle.abort();
+    if(control.signal.aborted)throw abortError();
+  };
+  const dispatchChat=(...input:Parameters<typeof transport.chat>)=>{assertDispatch();return transport.chat(...input);};
+  const dispatchTool=(...input:Parameters<typeof transport.callTool>)=>{assertDispatch();return transport.callTool(...input);};
   const wait = async (ms: number, reason: string) => {
     if (ms > policy.recoveryMinutes*60000) throw new Error('额度恢复时间超过本阶段自动等待上限，进度已保留');
     state.status = 'waiting'; state.waitKind='quota'; state.nextRetryAt = Date.now()+ms; state.reason = reason;
@@ -447,7 +455,7 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
     state.status = 'running'; state.waitKind=undefined; state.nextRetryAt = undefined; state.reason = undefined;
   };
   const interrupted = async <T,>(promise: Promise<T>): Promise<T> => {
-    if (control.signal.aborted) throw abortError();
+    assertDispatch();
     let off = () => {};
     try {
       return await Promise.race([promise, new Promise<never>((_, reject) => {
@@ -476,30 +484,34 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
     userPaused = true;
     state.reason = state.phase === 'tools' ? '已停止派发新操作；正在执行的工具结果会由桌面端保存，续跑前将核实状态' : '你已暂停任务';
     state.nextRetryAt = undefined;
+    // The native operation journal keeps late results. Cancellation never proves rollback or exit.
+    if(state.phase==='tools')state.uncertainCallId ??= state.pendingCalls?.[state.toolCursor??0]?.id;
     control.abort();
     if (activeRequest) void transport.abort(activeRequest);
+    if(args.canDispatch&&state.runId)void desktop?.()?.toolAbort(state.runId).catch(()=>events.onNotice('工具取消请求未确认，请在执行电脑核实结果。'));
   } };
   const awaitUser = async <T,>(action:()=>Promise<T>):Promise<T> => {
     const invoke=action;state.status='waiting';state.waitKind='approval';events.onNotice('等待你确认此操作，已有进度保留');await save();
-    try{return await interrupted(invoke());}
+    try{assertDispatch();return await interrupted(invoke());}
     finally{if(!control.signal.aborted){state.status='running';state.waitKind=undefined;events.onNotice('');await save();}}
   };
 
   void (async () => {
     try {
+      assertDispatch();
       if(args.autoProbe&&cfg.thinkingStyle==='auto'&&args.profile.protocol!=='anthropic'){
         events.onNotice('正在核对当前模型的请求格式…');
         // 格式检测撞上 TPM/RPM 也按调用额度退避后重测，不因为检测本身被限流就停下整次任务
         const probeStarted=Date.now();
         let report=await probeCompatibility(args.profile,cfg.model,args.apiKey,{signal:control.signal});
         while(report.status!=='ready'&&isRateLimited(report.note,/\b429\b/.test(report.note)?429:undefined)){
-          if(control.signal.aborted)throw abortError();
+          assertDispatch();
           const ms=rateLimitDelay(undefined,classifyError(report.note,429,{model:cfg.model}).retryAfterMs);
           if(Date.now()-probeStarted+ms>policy.recoveryMinutes*60000)break;
           await wait(ms,'等待调用额度后重新核对请求格式');
-          report=await probeCompatibility(args.profile,cfg.model,args.apiKey,{force:true,signal:control.signal});
+          assertDispatch();report=await probeCompatibility(args.profile,cfg.model,args.apiKey,{force:true,signal:control.signal});
         }
-        if(control.signal.aborted)throw abortError();
+        assertDispatch();
         if(report.status!=='ready')throw Error(`兼容性检测暂未完成：${report.note}。可在输入框下方重新检测。`);
         events.onNotice('');
       }
@@ -563,7 +575,7 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
         state.contextSnapshot = { ...snapshot(body,cfg,args.profile,cap,state.compactions?.length), phase: 'compacting' };
         await save(); events.onNotice('正在整理较早上下文，原始记录保留，可随时暂停');
         try {
-          await transport.chat({ privateInput:args.privateInput, requestId, runId: state.runId, purpose: 'compaction', round: state.round,
+          await dispatchChat({ privateInput:args.privateInput, requestId, runId: state.runId, purpose: 'compaction', round: state.round,
             url: endpoint(args.profile.baseUrl,'chat/completions'), headers: buildHeaders(args.apiKey,args.profile), body, stream: cfg.stream, timeoutMs: args.timeoutMs,
             paceKey: quotaKey(args.profile), paceTokens: input+reserve, paceInput: input, paceOutput: reserve,
             paceTpm: cap.tpm, paceItpm: cap.itpm, paceOtpm: cap.otpm, cachedInputCounts: cap.cachedInputCounts,
@@ -592,7 +604,7 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
         account(stat,usage,text+summaryReasoning,!!error || control.signal.aborted,dispatched,failedStatus);
         stat.detail = error || undefined;
         observeInput(body,args.profile,cfg,usage?.prompt_tokens);
-        if (control.signal.aborted) throw abortError();
+        assertDispatch();
         try {
           if (error || reason !== 'stop') throw new Error(error || '摘要未完整结束');
           const summary = validateCompaction(text,state,candidate.throughIndex);
@@ -614,7 +626,7 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
             for (const filePath of recentOutputFiles(state, 3)) {
               if (budget <= 0) break;
               try {
-                const read = await transport.callTool('read_file', { path: filePath }, args.toolCtx());
+                const read = await dispatchTool('read_file', { path: filePath }, args.toolCtx());
                 if (!read.ok) continue;
                 const full = String(read.content ?? '');
                 const take = full.slice(0, Math.min(2000, budget));
@@ -646,7 +658,7 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
       }
       if (resume?.nextRetryAt && resume.nextRetryAt > Date.now()) await wait(resume.nextRetryAt-Date.now(), '继续等待调用额度恢复');
       for (;;) {
-        if (control.signal.aborted) throw abortError();
+        assertDispatch();
         if (budgetExceeded()) { await finishPause('本阶段达到 token 预算；接着跑会开启下一阶段预算'); return; }
         if(state.phase!=='tools'&&state.pendingInputMessages?.length){
           state.working.push(...state.pendingInputMessages);
@@ -658,7 +670,7 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
           const previousChecks=qualityCheckpoint(state);
           const calls = state.pendingCalls ?? [];
           for (let i = state.toolCursor ?? 0; i < calls.length; i++) {
-            if (control.signal.aborted) throw abortError();
+            assertDispatch();
             const call = calls[i];
             const def = TOOL_BY_NAME[call.name];
             let parsed: Record<string, unknown> = {};
@@ -751,7 +763,7 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
               if (!args.canRunHostTools || ['read_context','read_source_text','read_review_text','update_plan','update_requirements','verify_requirements','request_access'].includes(call.name)) {
                 result={ok:false,content:'用户补充要求，取消尚未执行的旧计划；请重新规划。',summary:'取消尚未执行的旧计划'};step.status='denied';
               } else {
-                result=await interrupted(transport.callTool('reconcile_operation',{runId:state.runId,callId:`${state.round}-${i}-${call.id}`,name:call.name,args:parsed},args.toolCtx()));
+                result=await interrupted(dispatchTool('reconcile_operation',{runId:state.runId,callId:`${state.round}-${i}-${call.id}`,name:call.name,args:parsed},args.toolCtx()));
                 if(result.operationStatus==='not_started')step.status='denied';
                 else if(result.operationStatus!=='completed'&&!result.uncertain)result={ok:false,content:'',uncertain:true,error:'当前环境未提供可靠的原操作核实结果'};
               }
@@ -768,7 +780,7 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
                 const review = args.toolCtx().reviewCodeChanges === true && ['write_file','edit_file','delete_file'].includes(call.name);
                 let codeReviewToken: string | undefined;
                 if (review) {
-                  const preview = await interrupted(transport.callTool('preview_code_change',{name:call.name,args:parsed},args.toolCtx()));
+                  const preview = await interrupted(dispatchTool('preview_code_change',{name:call.name,args:parsed},args.toolCtx()));
                   if (!preview.ok || !preview.reviewToken) throw Error(preview.error || '无法生成代码差异，未执行修改');
                   codeReviewToken = preview.reviewToken;
                   step.codeChanges = preview.codeChanges;
@@ -781,7 +793,7 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
                   result = { ok: false, content: '', error: '用户拒绝了操作，请换一种已获准的方法。' };
                   step.status = 'denied';
                 } else {
-                  if (control.signal.aborted) throw abortError();
+                  assertDispatch();
                   try {
                     result = ['spawn_subagent','list_subagents','wait_subagents'].includes(call.name) ? await interrupted(subagents.tool(call.name,parsed))
                       : call.name === 'coordinate_tasks' ? await interrupted(args.coordinateTasks!(parsed,state.runId!))
@@ -799,12 +811,12 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
                       : call.name === 'update_plan' ? updatePlan(state, parsed)
                       : call.name === 'update_requirements' ? updateRequirements(state, parsed)
                       : call.name === 'verify_requirements' ? await interrupted(verifyRequirements(state,parsed,check => args.canRunHostTools
-                        ? transport.callTool('inspect_deliverable',check,{...args.toolCtx()})
+                        ? dispatchTool('inspect_deliverable',check,{...args.toolCtx()})
                         : Promise.resolve({ok:false,content:'',error:'当前环境没有本地文件核验能力'})))
                       : OUTPUT_TOOL_NAMES.some(name=>name===call.name) ? runOutputTool(call.name,parsed)
                       : call.name === 'request_access'
                       ? await awaitUser(()=>args.grantAccess({ scope: String(parsed.scope ?? '') as AccessRequest['scope'], target: parsed.target ? String(parsed.target) : undefined, reason: String(parsed.reason ?? '') }))
-                      : await interrupted(transport.callTool(call.name, parsed, { ...args.toolCtx(), codeReviewToken, execution: {
+                      : await interrupted(dispatchTool(call.name, parsed, { ...args.toolCtx(), codeReviewToken, execution: {
                         runId: state.runId!, callId: `${state.round}-${i}-${call.id}`, retryUncertain: resolving && args.resolveUncertain === 'retry',
                       } }));
                   } catch (e) {
@@ -871,8 +883,8 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
             const outputs=presentedOutputs(state.steps!);
             if (!state.content?.trim() && outputs.length) state.content=outputs.map(item=>item.text).join('\n\n');
             state.status='completed';state.reason=undefined;state.errorInfo=undefined;state.recovery=undefined;
-            await save();if(control.signal.aborted)throw abortError();
-            await events.onRunState(null);if(control.signal.aborted)throw abortError();
+            await save();assertDispatch();
+            await events.onRunState(null);assertDispatch();
             ended=true;events.onNotice('');events.onDone();return;
           }
           const stalled=previousChecks!==qualityCheckpoint(state)?qualityLoop(state):undefined;
@@ -896,7 +908,7 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
         let requestSucceeded = false;
         let lightRephraseHint:string|undefined;
         for (;;) {
-          if (control.signal.aborted) throw abortError();
+          assertDispatch();
           attempts++;
           const learned = args.limitOf?.();
           const cap = capabilities(args.profile,cfg,learned,args.modelInfo);
@@ -917,7 +929,7 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
           if (final) view = [...view, { id: 'wrap-up', role: 'user', content: '本阶段轮次已到。请如实汇总已完成与尚未完成的事项，不要声称未实际交付的文件已经生成。', createdAt: Date.now() }];
           const build = (v: ChatMessage[]) => applyImageFormat(prepareBody(buildRequestBody(cfg,toWire(v,cfg,!final && toolNames.length > 0,extra),final ? [] : toolNames,args.effortMappings),cfg,cap),readVision(args.profile,cfg.model)?.format);
           if (view.some(m => m.attachments?.some(a => a.kind === 'image')) && visionUntested(args.profile, cfg.model, args.modelInfo)) {
-            try { await probeVision(args.profile, cfg.model, args.apiKey, { signal: control.signal }); } catch (e) { if (control.signal.aborted) throw e; }
+            try { assertDispatch();await probeVision(args.profile, cfg.model, args.apiKey, { signal: control.signal }); } catch (e) { if (control.signal.aborted) throw e; }
           }
           validateMediaRoute(view, args.profile, cfg.model, args.modelInfo);
           let body = build(view);
@@ -963,7 +975,7 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
           const lightRephraseWatch=lightRephraseStagnationWatchdog();
           let loopDetected=false;
           lightRephraseHint=undefined;
-          await transport.chat({ privateInput:args.privateInput, requestId, runId: state.runId, round: state.round, attempt: attempts,
+          await dispatchChat({ privateInput:args.privateInput, requestId, runId: state.runId, round: state.round, attempt: attempts,
             purpose: final ? 'final' : 'agent', url: endpoint(args.profile.baseUrl, 'chat/completions'),
             headers: buildHeaders(args.apiKey, args.profile), body, stream: cfg.stream, timeoutMs: args.timeoutMs,
             ...paceFields(args.profile, cap, learned, bodyTokens, outputAllowance),
@@ -1095,7 +1107,7 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
         // Verify claimed file paths through the same permission-checked native executor.
         const paths = filePathsInText(resultContent);
         if (paths.length && args.canRunHostTools && state.steps!.length) {
-          const res = await interrupted(transport.callTool('register_outputs', { paths }, { ...args.toolCtx(), execution: { runId: state.runId!, callId: `delivery-${state.round}` } }));
+          const res = await interrupted(dispatchTool('register_outputs', { paths }, { ...args.toolCtx(), execution: { runId: state.runId!, callId: `delivery-${state.round}` } }));
           if (res.files?.length) {
             const step: ToolStep = { id: `delivery-${state.runId}-${state.round}`, callId: `delivery-${state.round}`, name: 'register_outputs', args: { paths },
               status: 'ok', summary: `已核实 ${res.files.length} 个交付文件`, output: res.content,
@@ -1146,7 +1158,7 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
         if(finalChecks.length && toolNames.includes('verify_requirements')){
           const startedAt=Date.now();
           const verified=await interrupted(verifyRequirements(state,{ids:finalChecks},check=>args.canRunHostTools
-            ?transport.callTool('inspect_deliverable',check,args.toolCtx())
+            ?dispatchTool('inspect_deliverable',check,args.toolCtx())
             :Promise.resolve({ok:false,content:'',error:'当前环境无法核验本地文件'})));
           const step:ToolStep={id:`acceptance-${state.runId}-${state.round}`,callId:`acceptance-${state.round}`,name:'verify_requirements',args:{ids:finalChecks},status:verified.ok?'ok':'error',summary:'交付前重新核对程序条件',output:verified.content,error:verified.error,startedAt,elapsedMs:Date.now()-startedAt};
           state.steps!.push(step);events.onStep(step);
@@ -1172,9 +1184,9 @@ export function runAgent(args: RunAgentArgs): AgentHandle {
         state.status = 'completed'; state.reason = undefined; state.errorInfo = undefined; state.recovery = undefined;
         state.harness!.stage='deliver';state.harness!.completion={status:'checked',reason:'响应完整，待执行操作与已登记验收条件已检查；语义质量仍可由用户反馈。',evidence:(state.steps??[]).filter(s=>s.status==='ok').map(s=>s.callId),at:Date.now()};
         await save(); // Persist completion before removing the resume affordance.
-        if (control.signal.aborted) throw abortError();
+        assertDispatch();
         await events.onRunState(null);
-        if (control.signal.aborted) throw abortError();
+        assertDispatch();
         ended = true; events.onNotice(''); events.onDone(); return;
       }
     } catch (err) {
