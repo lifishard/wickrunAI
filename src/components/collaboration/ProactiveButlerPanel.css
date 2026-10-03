@@ -1,4 +1,9 @@
 .proactive-butler{margin:20px 0 28px;display:grid;gap:18px;color:var(--fg)}
+.proactive-butler .team-field{display:flex;flex-direction:column;gap:8px;margin:0 0 17px;min-width:0}
+.proactive-butler .team-field>span{font-size:13px;font-weight:500}
+.proactive-butler .team-field input,.proactive-butler .team-field select,.proactive-butler .team-field textarea{width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:7px;background:var(--bg);color:var(--fg);font:inherit;min-width:0}
+.proactive-butler .team-field textarea{resize:vertical;line-height:1.65}
+.proactive-butler .team-check{display:flex;gap:9px;align-items:center;font-size:13px;padding:8px 0}
 .proactive-head,.proactive-section-head,.proactive-card-top{display:flex;align-items:start;justify-content:space-between;gap:14px}
 .proactive-head h2,.proactive-section-head h3{margin:0 0 5px}
 .proactive-head p{margin:0;color:var(--fg-dim);line-height:1.55;max-width:75ch}
