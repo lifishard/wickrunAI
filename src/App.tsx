@@ -101,7 +101,7 @@ import { butlerRuntime } from './lib/butler-runtime';
 import { butlerClock } from './lib/butler-policy';
 import { butlerMemorySources } from './lib/butler-memory';
 import { butlerWorkConfig } from './lib/butler-work';
-import type { ButlerJob, ButlerWorkCommand } from './lib/proactive-butler';
+import { butlerConsented, type ButlerJob, type ButlerWorkCommand } from './lib/proactive-butler';
 import { conversationQueue, nextQueuedIndex, type QueuedInput } from './lib/run-queue';
 import { teamNotifications } from './lib/team-notify';
 import { I18nProvider, LOCALES, setActiveLocale, translate, type Locale } from './lib/i18n';
@@ -433,7 +433,7 @@ export default function App() {
     let alive=true,seeded=false;const seen=new Set<string>();
     const update=()=>{
       const snapshot=butlerRuntime.getSnapshot(),prefs=settingsRef.current?.butler?.proactive;
-      if(!snapshot.deviceId||!prefs?.enabled||prefs.paused)return;
+      if(!snapshot.deviceId||!prefs?.enabled||prefs.paused||!butlerConsented(prefs))return;
       if(!seeded){
         seeded=true;for(const brief of snapshot.brain.briefs)seen.add(brief.id);
         const day=butlerClock(Date.now(),prefs.timezone).day,key='wickrun:butler:welcome:'+snapshot.brain.accountId;

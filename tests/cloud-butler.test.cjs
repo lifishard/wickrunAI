@@ -3,7 +3,7 @@ const assert=require('node:assert/strict');
 const path=require('node:path');
 const {loader}=require('./load-ts.cjs');
 const root=path.join(__dirname,'..','src','lib');
-const {emptyCloudData,projectCloudData,mergeCloudData,mergeButlerSlices,butlerBrainFromRows,butlerCloudSlice,firstButlerBase,withButlerCloudSlice}=loader()(path.join(root,'cloud-data.ts'));
+const {emptyCloudData,projectCloudData,mergeCloudData,mergeButlerSlices,butlerBrainFromRows,butlerPreferencesFromCloud,butlerCloudSlice,firstButlerBase,withButlerCloudSlice}=loader()(path.join(root,'cloud-data.ts'));
 
 function local(accountId='account-1'){
   return {settings:{defaultConfig:{},keyProfiles:[],butler:{proactive:{enabled:true,paused:false,hostDeviceId:'device-1',backend:{kind:'route-group',routeGroupId:'r',effort:'medium'},externalUnderstanding:'redacted-context',deviceConsent:{browser:true}}}},
@@ -40,6 +40,19 @@ test('concurrent pause beats resume; explicit off beats re-enable',()=>{
   assert.equal(merged.preferences['butler.paused'],true);
   assert.equal(merged.preferences['butler.enabled'],false);
   assert.equal(mergeButlerSlices(base,remote,local).preferences['butler.paused'],true);
+});
+
+test('Butler consent syncs across devices and explicit withdrawal removes prior consent',()=>{
+  const input=local();input.settings.butler.proactive.consent={version:1,at:123};
+  const accepted=projectCloudData(input);
+  assert.deepEqual(accepted.preferences['butler.consent'],{version:1,at:123});
+  const restored=butlerPreferencesFromCloud(accepted.preferences,undefined);
+  assert.deepEqual(restored.consent,{version:1,at:123});
+  delete input.settings.butler.proactive.consent;
+  const withdrawn=projectCloudData(input);
+  assert.equal(withdrawn.preferences['butler.consent'],null);
+  const revoked=butlerPreferencesFromCloud(withdrawn.preferences,restored);
+  assert.equal(Object.hasOwn(revoked,'consent'),false);
 });
 
 test('first sync accepts existing account pause instead of local defaults',()=>{

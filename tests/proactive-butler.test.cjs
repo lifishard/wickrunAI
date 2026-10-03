@@ -7,6 +7,12 @@ const base={id:'sig-1',accountId:'acct-1',source:'browser',sourceLabel:'Browser'
   topic:'Annual report',intent:'compare figures',summary:'User opened https://example.test/report?token=abc and reviewed figures',
   observedAt:100,confidence:'medium',basis:'behavior'};
 
+test('new Butler settings never grant data scope or routine execution implicitly',()=>{
+  assert.equal(b.DEFAULT_BUTLER_PREFERENCES.allowRoutineExecution,false);
+  for(const prefs of [undefined,{enabled:true},{consent:{version:0,at:100}},{consent:{version:1,at:NaN}}])assert.equal(b.butlerConsented(prefs),false);
+  assert.equal(b.butlerConsented({consent:{version:b.BUTLER_CONSENT_VERSION,at:100}}),true);
+});
+
 test('external evidence is opt-in on both account and collecting device, and projected by whitelist',()=>{
   assert.equal(b.projectButlerSignal(base,{browser:true},{}),null);
   assert.equal(b.projectButlerSignal(base,{wickrun:true},{browser:true}),null);

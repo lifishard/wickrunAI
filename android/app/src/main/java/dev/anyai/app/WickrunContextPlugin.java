@@ -179,9 +179,24 @@ public class WickrunContextPlugin extends Plugin {
     }
 
     @PluginMethod
+    public void setDataScopeConsent(PluginCall call) {
+        int version = call.getInt("version", 0);
+        if (version != 0 && version != WickrunContextStore.DATA_SCOPE_VERSION) {
+            call.reject("Unsupported Butler data scope."); return;
+        }
+        try {
+            WickrunContextStore.setDataScopeConsent(getContext(), version, Boolean.TRUE.equals(call.getBoolean("share")), Boolean.TRUE.equals(call.getBoolean("android")));
+            WickrunContextService.refresh(getContext());call.resolve(status());
+        } catch (Exception failure) { call.reject("Data-scope consent could not be saved."); }
+    }
+
+    @PluginMethod
     public void setEnabled(PluginCall call) {
         boolean enabled = Boolean.TRUE.equals(call.getBoolean("enabled"));
         if (enabled) {
+            if (!Integer.valueOf(WickrunContextStore.DATA_SCOPE_VERSION).equals(call.getInt("dataScopeVersion"))) {
+                call.reject("Confirm the current Butler data scope before enabling capture."); return;
+            }
             Set<String> available = WickrunContextStore.packages(getContext());available.removeAll(WickrunContextStore.denied(getContext()));
             if (available.isEmpty()) { call.reject("Choose an allowed app first."); return; }
             if (!serviceGranted()) { call.reject("Enable the Android accessibility service first."); return; }
@@ -227,6 +242,7 @@ public class WickrunContextPlugin extends Plugin {
         if (!kind.equals("accessibility") && !kind.equals("share")) { call.reject("Unknown source."); return; }
         try {
             if (kind.equals("accessibility")) WickrunContextStore.setEnabled(getContext(), false);
+            if (kind.equals("share")) WickrunContextStore.stopSharing(getContext());
             WickrunContextStore.eraseKind(getContext(), kind);
             WickrunContextService.refresh(getContext());
             call.resolve(status());

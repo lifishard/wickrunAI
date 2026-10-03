@@ -116,7 +116,8 @@ const take=(value:unknown,keys:string[]):Record<string,unknown>=>{
   return Object.fromEntries(keys.filter(k=>record[k]!==undefined).map(k=>[k,record[k]]));
 };
 const PREFS=['theme','locale','uiDensity','sendKey','fontScale','showReasoningByDefault','requestTimeoutMs','routeGroups'];
-const BUTLER_PREFS=['enabled','paused','sources','backend','maxTokensPerDay','cadence','morning','evening','timezone','hostDeviceId','allowResearch','allowRoutineExecution','maxWorkPerDay','externalUnderstanding'];
+const BUTLER_PREFS=['enabled','paused','consent','sources','backend','maxTokensPerDay','cadence','morning','evening','timezone','hostDeviceId','allowResearch','allowRoutineExecution','maxWorkPerDay','externalUnderstanding'];
+const BUTLER_NULLABLE=['hostDeviceId','consent'] as const;
 export function butlerCloudSlice(data:CloudData):CloudData {
   const slice=emptyCloudData();
   slice.butler=data.butler??[];
@@ -145,7 +146,7 @@ export function mergeButlerSlices(base:CloudData,local:CloudData,remote:CloudDat
 export function butlerPreferencesFromCloud(preferences:Record<string,unknown>,local:ButlerProactivePreferences|undefined):ButlerProactivePreferences|undefined {
   const result={...(local??{})} as ButlerProactivePreferences;
   for(const key of BUTLER_PREFS)if(preferences[`butler.${key}`]!==undefined){
-    if(key==='hostDeviceId'&&preferences[`butler.${key}`]===null)delete result.hostDeviceId;
+    if((BUTLER_NULLABLE as readonly string[]).includes(key)&&preferences[`butler.${key}`]===null)delete (result as unknown as Record<string,unknown>)[key];
     else (result as unknown as Record<string,unknown>)[key]=preferences[`butler.${key}`];
   }
   return Object.keys(result).length?result:undefined;
@@ -174,7 +175,7 @@ export function projectCloudData(local:CloudLocal):CloudData {
   const proactive=local.settings.butler?.proactive;
   if(proactive){
     for(const [key,value] of Object.entries(take(proactive,BUTLER_PREFS)))result.preferences[`butler.${key}`]=value;
-    result.preferences['butler.hostDeviceId']=proactive.hostDeviceId??null;
+    for(const key of BUTLER_NULLABLE)result.preferences[`butler.${key}`]=proactive[key]??null;
   }
   if(local.butler)result.butler=butlerRows(local.butler);
   result.profiles=local.settings.keyProfiles.map(p=>({ ...take(p,['name','baseUrl','createdAt','routeProfiles','quotaGroup']), id:p.id, extraHeaders:Object.fromEntries(Object.entries(p.extraHeaders??{}).filter(([k])=>!/(?:auth|token|secret|password|api.?key)/i.test(k))) }));

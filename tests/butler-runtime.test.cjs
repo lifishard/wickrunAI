@@ -13,18 +13,144 @@ function setup(options={}) {
   const load=loader({'./store':{uid},'./skills':{bodyHash:hash,slugify:s=>s},'./transport':{desktop:()=>null,getTransport:()=>noopStorage},
     './cloud-api':{cloudCall:async()=>({user:null}),cloudBridge:()=>null},'./butler-model':{runButlerModel:async()=>{throw Error('unexpected default model');}}});
   const domain=load(path.join(base,'proactive-butler.ts'));
-  let settings={butler:{proactive:{...domain.DEFAULT_BUTLER_PREFERENCES,enabled:true,hostDeviceId:'device-one',allowRoutineExecution:false,timezone:'UTC',...options.prefs}}},skills=[];
+  let settings={butler:{proactive:{...domain.DEFAULT_BUTLER_PREFERENCES,consent:{version:domain.BUTLER_CONSENT_VERSION,at:now},enabled:true,hostDeviceId:'device-one',allowRoutineExecution:false,timezone:'UTC',...options.prefs}}},skills=[];
   const conversations=[{id:'conv-1',title:'Useful agent skills',updatedAt:now,messages:[{id:'m1',role:'user',content:'Help me find AI skills useful for my daily work',createdAt:now}]}];
   const model=options.model??(async(_settings,_prefs,prompt)=>{calls.push(JSON.parse(prompt));const evidence=calls.at(-1).signals?.[0]?.id;
     return {text:JSON.stringify({goals:[{title:'Find practical AI skills',hypothesis:'May want a daily shortlist',evidenceIds:[evidence],confidence:'high'}],skills:[]}),tokens:800,sources:[],steps:[],route:'Fixture · brain'};});
   const {ButlerRuntime}=load(path.join(base,'butler-runtime.ts'));
-  const runtime=new ButlerRuntime({storage:()=>noopStorage,account:async()=>account,host:()=>options.host!==false,now:()=>now,model,
-    collector:options.collector??(async()=>({sources:{}}))});
+  const services={storage:()=>noopStorage,account:async()=>account,host:()=>options.host!==false,now:()=>now,model,
+    collector:options.collector??(async()=>({sources:{}}))};
+  const runtime=new ButlerRuntime(services);
   const config={settings:()=>settings,conversations:()=>conversations,skills:()=>skills,onSettings:s=>{settings=s;},onSkills:s=>{skills=s;},...options.work};
   runtime.configure(config);
-  return {runtime,db,calls,domain,settings:()=>settings,setRoutine:enabled=>{settings={...settings,butler:{...settings.butler,proactive:{...settings.butler.proactive,allowRoutineExecution:enabled}}};runtime.configure(config);},setAccount:id=>{account=id;},advance:ms=>{now+=ms;},load,conversations};
+  return {runtime,createRuntime:()=>{const next=new ButlerRuntime(services);next.configure(config);return next;},db,calls,domain,settings:()=>settings,setPrefs:patch=>{settings={...settings,butler:{...settings.butler,proactive:{...settings.butler.proactive,...patch}}};runtime.configure(config);},setRoutine:enabled=>{settings={...settings,butler:{...settings.butler,proactive:{...settings.butler.proactive,allowRoutineExecution:enabled}}};runtime.configure(config);},setAccount:id=>{account=id;},advance:ms=>{now+=ms;},load,conversations};
 }
 async function settle(runtime){for(let i=0;i<80;i++){await new Promise(r=>setImmediate(r));if(!runtime.getSnapshot().busy)return;}throw Error('runtime did not settle');}
+
+test('upgraded enabled preferences stop collection and work until explicit data-scope consent',async()=>{
+  const actions=[],started=[];
+  const f=setup({prefs:{consent:undefined,allowRoutineExecution:true,sources:{wickrun:true,android:true}},
+    collector:async(action,input)=>{actions.push({action,input});return {sources:{android:{available:true,consented:true}}};},
+    work:{startWork:async()=>{started.push(true);return 'unexpected';}}});
+  await f.runtime.tick();await settle(f.runtime);
+  assert.equal(f.settings().butler.proactive.paused,true);
+  assert.equal(f.settings().butler.proactive.allowRoutineExecution,false);
+  assert.equal(f.calls.length,0);assert.equal(started.length,0);assert.equal(f.runtime.getSnapshot().brain.signals.length,0);
+  assert.ok(!actions.some(x=>x.action==='poll'||x.action==='suspend'&&x.input.suspended===false));
+  for(const action of [{kind:'resume'},{kind:'add-need',text:'Plan my week'},{kind:'analyze-now'},{kind:'set-device-consent',source:'android',consented:true}])
+    await assert.rejects(f.runtime.action(action),/数据范围/);
+  await f.runtime.action({kind:'consent',granted:true});await settle(f.runtime);
+  const prefs=f.settings().butler.proactive;
+  assert.equal(prefs.consent.version,f.domain.BUTLER_CONSENT_VERSION);assert.equal(prefs.paused,false);assert.equal(prefs.allowRoutineExecution,false);
+  assert.ok(actions.some(x=>x.action==='suspend'&&x.input.suspended===false&&x.input.sources.android===false));
+});
+
+test('synced account consent cannot revive an old local Android source grant',async()=>{
+  const controls=[];const f=setup({host:false,prefs:{sources:{android:true}},collector:async(action,input)=>{
+    if(action==='suspend')controls.push(input);return {sources:{android:{available:true,consented:true}}};
+  }});
+  const old=JSON.parse(f.db.get('wickrun:butler:device:v1'));old.consent.android=true;f.db.set('wickrun:butler:device:v1',JSON.stringify(old));
+  await f.runtime.tick();
+  assert.equal(controls.at(-1).sources.android,false);assert.equal(f.runtime.getSnapshot().sources.android.consented,false);
+  assert.equal(JSON.parse(f.db.get('wickrun:butler:device:v1')).consent.android,undefined);
+  await f.runtime.action({kind:'set-device-consent',source:'android',consented:true});await f.runtime.tick();
+  assert.equal(controls.at(-1).sources.android,true);assert.equal(controls.at(-1).dataScopeVersion,f.domain.BUTLER_CONSENT_VERSION);
+});
+
+test('current local source grants survive reload, but withdrawal clears them and blocks resume',async()=>{
+  const controls=[];const f=setup({host:false,prefs:{sources:{android:true}},collector:async(action,input)=>{
+    if(action==='suspend')controls.push(input);return {sources:{android:{available:true,consented:true}}};
+  }});
+  const local=JSON.parse(f.db.get('wickrun:butler:device:v1'));local.consent.android=true;local.consentVersion=f.domain.BUTLER_CONSENT_VERSION;
+  f.db.set('wickrun:butler:device:v1',JSON.stringify(local));
+  await f.runtime.tick();assert.equal(controls.at(-1).sources.android,true);
+  await f.runtime.action({kind:'consent',granted:false});
+  assert.equal(controls.at(-1).suspended,true);assert.deepEqual(JSON.parse(f.db.get('wickrun:butler:device:v1')).consent,{});
+  assert.equal(f.settings().butler.proactive.enabled,false);assert.equal(f.settings().butler.proactive.consent,undefined);
+  await assert.rejects(f.runtime.action({kind:'resume'}),/数据范围/);
+  await f.runtime.action({kind:'consent',granted:true});await f.runtime.tick();assert.equal(controls.at(-1).sources.android,false);
+});
+
+test('withdrawal aborts in-flight inference and a late result cannot add a goal',async()=>{
+  let entered,resolveModel,signal;const ready=new Promise(r=>{entered=r;});
+  const f=setup({model:async(_s,_p,_prompt,_research,_budget,s)=>{signal=s;entered();return new Promise(r=>{resolveModel=r;});}});
+  await f.runtime.tick();await ready;
+  await f.runtime.action({kind:'consent',granted:false});assert.equal(signal.aborted,true);
+  resolveModel({text:'{"goals":[{"title":"late","hypothesis":"late","evidenceIds":[]}],"skills":[]}',tokens:1,sources:[],steps:[]});
+  await settle(f.runtime);assert.equal(f.runtime.getSnapshot().brain.goals.length,0);assert.equal(f.runtime.getSnapshot().brain.jobs[0].status,'failed');
+});
+
+test('remote consent removal immediately suspends a configured collector',async()=>{
+  const controls=[];const f=setup({host:false,collector:async(action,input)=>{if(action==='suspend')controls.push(input);return {sources:{}};}});
+  await f.runtime.tick();assert.equal(controls.at(-1).suspended,false);
+  f.setPrefs({consent:undefined});await new Promise(r=>setImmediate(r));assert.equal(controls.at(-1).suspended,true);
+  await f.runtime.reload();assert.equal(controls.at(-1).suspended,true);
+});
+
+test('source withdrawal closes the runtime gate before a pending native revoke finishes',async()=>{
+  const controls=[];let entered,release;const ready=new Promise(r=>{entered=r;});
+  const f=setup({host:false,prefs:{sources:{android:true}},collector:async(action,input)=>{
+    if(action==='suspend')controls.push(input);
+    if(action==='consent'&&!input.consented){entered();await new Promise(r=>{release=r;});}
+    return {sources:{android:{available:true,consented:true}}};
+  }});
+  await f.runtime.action({kind:'set-device-consent',source:'android',consented:true});await f.runtime.tick();
+  assert.equal(controls.at(-1).sources.android,true);
+  const revoked=f.runtime.action({kind:'set-device-consent',source:'android',consented:false});await ready;
+  const before=controls.length;await f.runtime.tick();
+  assert.ok(controls.slice(before).length>0);
+  assert.ok(controls.slice(before).every(input=>input.suspended||input.sources.android===false));
+  release();await revoked;await f.runtime.tick();
+  assert.equal(controls.at(-1).sources.android,false);
+  assert.equal(JSON.parse(f.db.get('wickrun:butler:device:v1')).consent.android,false);
+});
+
+test('a pending device grant cannot overwrite a newer withdrawal',async()=>{
+  let entered,release;const ready=new Promise(r=>{entered=r;});
+  const f=setup({host:false,prefs:{sources:{android:true}},collector:async(action,input)=>{
+    if(action==='consent'&&input.consented){entered();await new Promise(r=>{release=r;});}
+    return {sources:{android:{available:true,consented:true}}};
+  }});
+  const granted=f.runtime.action({kind:'set-device-consent',source:'android',consented:true});await ready;
+  await f.runtime.action({kind:'set-device-consent',source:'android',consented:false});
+  release();await granted;await f.runtime.tick();
+  assert.equal(JSON.parse(f.db.get('wickrun:butler:device:v1')).consent.android,false);
+  assert.equal(f.runtime.getSnapshot().sources.android.consented,false);
+});
+
+test('a poll from an older source grant is discarded even when the source is granted again',async()=>{
+  let entered,release;const ready=new Promise(r=>{entered=r;});
+  const f=setup({host:false,prefs:{sources:{android:true}},collector:async(action)=>{
+    if(action==='poll'){entered();return new Promise(r=>{release=r;});}
+    return {sources:{android:{available:true,consented:true}}};
+  }});
+  const local=JSON.parse(f.db.get('wickrun:butler:device:v1'));local.consent.android=true;local.consentVersion=f.domain.BUTLER_CONSENT_VERSION;
+  f.db.set('wickrun:butler:device:v1',JSON.stringify(local));
+  const tick=f.runtime.tick();await ready;
+  await f.runtime.action({kind:'set-device-consent',source:'android',consented:false});
+  await f.runtime.action({kind:'set-device-consent',source:'android',consented:true});
+  release({sources:{},signals:[{id:'late',source:'android',sourceLabel:'Reader',topic:'Old activity',intent:'Browse',summary:'An older source snapshot',observedAt:123,basis:'behavior',confidence:'medium'}]});
+  await tick;
+  assert.equal(f.runtime.getSnapshot().brain.signals.some(signal=>signal.id==='late'),false);
+});
+
+test('a replacement runtime can enable the same Android adapter after earlier source changes',async()=>{
+  let enabled=false;const scopes=[];
+  const status=()=>({enabled,active:enabled,serviceGranted:true,notificationGranted:true,allowedPackages:['example.reader'],deniedPackages:[]});
+  const plugin={getStatus:async()=>status(),listApps:async()=>({apps:[]}),poll:async()=>({items:[]}),
+    setDataScopeConsent:async input=>{if(!input.version||!input.android)enabled=false;return status();},
+    setEnabled:async input=>{enabled=input.enabled;return status();},revokeSource:async()=>{enabled=false;return status();}};
+  const mobile=loader({'@capacitor/core':{Capacitor:{getPlatform:()=> 'android'},registerPlugin:()=>plugin}})(path.join(base,'butler-mobile.ts'));
+  const f=setup({host:false,prefs:{sources:{android:true}},collector:(action,input)=>{
+    if(action==='suspend'&&!input.suspended)scopes.push(input.sourceEpoch);
+    return mobile.androidButlerCollector(action,input);
+  }});
+  for(const consented of [true,false,true,false]){await f.runtime.action({kind:'set-device-consent',source:'android',consented});await f.runtime.tick();}
+  const oldEpoch=scopes.at(-1);await f.runtime.flush();
+  const next=f.createRuntime();await next.action({kind:'set-device-consent',source:'android',consented:true});await next.tick();
+  assert.equal(enabled,true);assert.ok(scopes.at(-1)>oldEpoch);
+  await next.flush();
+});
 
 test('disabled Butler never dispatches a model or harvests internal conversations',async()=>{
   const f=setup({prefs:{enabled:false}});await f.runtime.tick();

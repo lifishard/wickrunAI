@@ -23,6 +23,9 @@ import javax.crypto.spec.GCMParameterSpec;
 final class WickrunContextStore {
     private static final String PREFS = "wickrun_context_consent";
     private static final String ENABLED = "enabled";
+    private static final String SCOPE_CONSENT = "data_scope_version";
+    private static final String SHARE_ENABLED = "share_enabled";
+    static final int DATA_SCOPE_VERSION = 1;
     private static final String PACKAGES = "packages";
     private static final String DENIED = "denied";
     private static final String QUEUE = "queue_v1";
@@ -31,16 +34,50 @@ final class WickrunContextStore {
     private static final int MAX_ITEMS = 24;
     private static final Object lock = new Object();
     private static volatile boolean forcedOff;
+    private static volatile boolean sharingForcedOff;
     private WickrunContextStore() {}
 
     private static SharedPreferences prefs(Context context) { return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE); }
-    static boolean enabled(Context context) { return !forcedOff && prefs(context).getBoolean(ENABLED, false); }
-    static void setEnabled(Context context, boolean value) {
-        if (!value) forcedOff = true;
-        if (!prefs(context).edit().putBoolean(ENABLED, value).commit()) throw new IllegalStateException("Consent could not be saved.");
-        if (value) forcedOff = false;
+    // The accessibility service can start before React. Legacy enabled=true is not a new data-scope grant.
+    static boolean enabled(Context context) {
+        SharedPreferences saved = prefs(context);
+        return !forcedOff && saved.getInt(SCOPE_CONSENT, 0) == DATA_SCOPE_VERSION && saved.getBoolean(ENABLED, false);
     }
-    static void revoke(Context context) { synchronized (lock) { setEnabled(context, false); clear(context); } }
+    static void setEnabled(Context context, boolean value) {
+        synchronized (lock) {
+            if (value && prefs(context).getInt(SCOPE_CONSENT, 0) != DATA_SCOPE_VERSION)
+                throw new IllegalStateException("Confirm the current Butler data scope first.");
+            if (!value) forcedOff = true;
+            SharedPreferences.Editor update = prefs(context).edit().putBoolean(ENABLED, value);
+            if (!update.commit()) throw new IllegalStateException("Consent could not be saved.");
+            if (value) forcedOff = false;
+        }
+    }
+    static void setDataScopeConsent(Context context, int version, boolean share, boolean capture) {
+        synchronized (lock) {
+            boolean accepted = version == DATA_SCOPE_VERSION;
+            boolean keepCapture = accepted && capture && enabled(context);
+            if (!keepCapture) forcedOff = true;
+            if (!accepted || !share) sharingForcedOff = true;
+            SharedPreferences.Editor update = prefs(context).edit()
+                    .putInt(SCOPE_CONSENT, accepted ? DATA_SCOPE_VERSION : 0)
+                    .putBoolean(SHARE_ENABLED, accepted && share)
+                    .putBoolean(ENABLED, keepCapture);
+            if (!update.commit()) throw new IllegalStateException("Data-scope consent could not be saved.");
+            if (accepted && share) sharingForcedOff = false;
+        }
+    }
+    static void stopSharing(Context context) {
+        synchronized (lock) {
+            sharingForcedOff = true;
+            if (!prefs(context).edit().putBoolean(SHARE_ENABLED, false).commit())
+                throw new IllegalStateException("Share consent could not be saved.");
+        }
+    }
+    private static boolean sharingEnabled(Context context) {
+        return !sharingForcedOff && prefs(context).getInt(SCOPE_CONSENT, 0) == DATA_SCOPE_VERSION && prefs(context).getBoolean(SHARE_ENABLED, false);
+    }
+    static void revoke(Context context) { synchronized (lock) { setDataScopeConsent(context, 0, false, false); clear(context); } }
     static Set<String> packages(Context context) { return new HashSet<>(prefs(context).getStringSet(PACKAGES, Collections.emptySet())); }
     static Set<String> denied(Context context) { return new HashSet<>(prefs(context).getStringSet(DENIED, Collections.emptySet())); }
     static boolean allowed(Context context, String packageName) {
@@ -106,6 +143,10 @@ final class WickrunContextStore {
     static boolean add(Context context, JSONObject item) {
         synchronized (lock) {
             try {
+                // Construction can race with revocation. Recheck while holding the same lock as consent changes.
+                String kind = item.optString("kind", "");
+                if ("share".equals(kind) ? !sharingEnabled(context)
+                        : !"accessibility".equals(kind) || !enabled(context) || !allowed(context, item.optString("packageName", ""))) return false;
                 WickrunContextPrivacy.Filtered filtered = privacy(context).apply(item.optString("text", ""));
                 JSONArray current = queue(context);
                 for (int mode = 0; mode < 2; mode++) {
@@ -162,6 +203,7 @@ final class WickrunContextStore {
         }
     }
     static void acceptShare(Context context, Intent intent) {
+        if (!sharingEnabled(context)) return;
         if (intent == null || !Intent.ACTION_SEND.equals(intent.getAction()) || !"text/plain".equals(intent.getType())) return;
         CharSequence value = intent.getCharSequenceExtra(Intent.EXTRA_TEXT);
         if (value == null) return;

@@ -31,6 +31,13 @@ export interface ButlerProactivePreferences {
   maxWorkPerDay?: number;
   /** Redacted excerpts can be sent to the selected model only while collection is on. */
   externalUnderstanding: 'local-topics' | 'redacted-context';
+  /** The account accepted this data scope; old enabled flags are not consent. */
+  consent?: {version:number;at:number};
+}
+
+export const BUTLER_CONSENT_VERSION=1;
+export function butlerConsented(prefs:Pick<ButlerProactivePreferences,'consent'>|undefined):boolean {
+  return !!prefs?.consent && prefs.consent.version>=BUTLER_CONSENT_VERSION && Number.isFinite(prefs.consent.at);
 }
 
 export interface ButlerSignal {
@@ -164,6 +171,7 @@ export type ButlerRuntimeAction =
   | {kind:'run-work';goalId:string}
   | {kind:'work-command';jobId:string;command:'message'|'pause'|'resume';text?:string}
   | {kind:'retry-job';jobId:string}
+  | {kind:'consent';granted:boolean}
   | {kind:'pause'} | {kind:'resume'} | {kind:'turn-off'};
 
 export interface ButlerRuntimeController {
@@ -179,7 +187,7 @@ export function emptyButlerBrain(accountId:string):ButlerBrainState {
 export const DEFAULT_BUTLER_PREFERENCES:ButlerProactivePreferences = {
   enabled:false,paused:false,sources:{wickrun:true},backend:{kind:'route-group',routeGroupId:'',effort:'medium'},
   maxTokensPerDay:12000,cadence:'twice-daily',morning:'08:00',evening:'18:00',
-  timezone:'UTC',allowResearch:true,allowRoutineExecution:true,maxWorkPerDay:3,externalUnderstanding:'redacted-context',
+  timezone:'UTC',allowResearch:true,allowRoutineExecution:false,maxWorkPerDay:3,externalUnderstanding:'redacted-context',
 };
 
 /** Remove raw links, identifiers and prompt-control text before a signal can leave a device. */

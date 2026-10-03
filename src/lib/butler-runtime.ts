@@ -11,7 +11,7 @@ import { butlerMemoryCapsule, butlerMemorySources, repeatsDeniedGoal, retainButl
 import { butlerWorkPrompt } from './butler-work';
 import { butlerPrivateText } from './butler-privacy';
 import { privateButlerBrain } from './butler-private-brain';
-import { DEFAULT_BUTLER_PREFERENCES, BUTLER_SOURCES, emptyButlerBrain, projectButlerBrainForSync, projectButlerSignal, addGoalProposal, addButlerBrief,
+import { DEFAULT_BUTLER_PREFERENCES, BUTLER_SOURCES, BUTLER_CONSENT_VERSION, butlerConsented, emptyButlerBrain, projectButlerBrainForSync, projectButlerSignal, addGoalProposal, addButlerBrief,
   modelSafeSummary, reviewGoal, reviewSkillProposal, revokeButlerSource,
   type ButlerBrainState, type ButlerProactivePreferences, type ButlerRuntimeSnapshot, type ButlerRuntimeAction, type ButlerSignal, type ButlerJob, type ButlerSource, type ButlerAudit, type ButlerBriefItem, type ButlerWorkCommand } from './proactive-butler';
 
@@ -23,7 +23,7 @@ interface Config { settings:()=>AppSettings; conversations:()=>Conversation[]; s
   controlWork?:(conversationId:string,command:ButlerWorkCommand)=>Promise<void>;
   workState?:(conversationId:string)=>{status:ButlerJob['status'];summary?:string;error?:string};
 }
-interface LocalState {deviceId:string;consent:Partial<Record<ButlerSource,boolean>>;day:string;spent:number;analyzed:string;done:string[];contextSeen:string[];commandsDone?:string[];internalSeen?:Record<string,string>}
+interface LocalState {deviceId:string;consent:Partial<Record<ButlerSource,boolean>>;consentVersion?:number;day:string;spent:number;analyzed:string;done:string[];contextSeen:string[];commandsDone?:string[];internalSeen?:Record<string,string>}
 export interface ButlerCollectorState {sources:ButlerRuntimeSnapshot['sources'];privacy?:ButlerRuntimeSnapshot['privacy'];background?:ButlerRuntimeSnapshot['background'];recordIds?:string[];signals?:Omit<ButlerSignal,'accountId'|'modelSafe'>[];contexts?:{id:string;source:ButlerSource;sourceLabel:string;observedAt:number;text:string}[];deviceName?:string}
 interface Services {
   storage:()=>{kvGet:(key:string)=>Promise<string|null>;kvSet:(key:string,value:string)=>Promise<void>};
@@ -34,6 +34,8 @@ interface Services {
 const services:Services={storage:getTransport,account:async()=>{const bridge=cloudBridge();if(bridge){const state=await bridge.cloudState();return state.workspaceAccountId??state.user?.id??'guest';}return (await cloudCall<CloudStatus>('status')).user?.id??'guest';},
   host:()=>Boolean(desktop()),now:Date.now,model:runButlerModel,
   collector:async(action,input)=>{const bridge=desktop();if(bridge?.butlerSources)return bridge.butlerSources(action,input);return androidButlerCollector(action,input);}};
+// The mobile adapter outlives a replaced controller, so new runtimes must outrank its earlier grants.
+let sourceEpochSequence=0;
 
 /** Only the selected desktop executes. Phones contribute evidence, queue work, and control it. */
 export class ButlerRuntime {
@@ -46,18 +48,20 @@ export class ButlerRuntime {
   private captureControl?:AbortController;private runningTask?:Promise<void>;private activeJobId?:string;private stopped=false;private tickTask?:Promise<void>;
   private checkpoints:Record<string,{fingerprint:string;state:RunState;at:number}>={};
   private checkpointEpoch=0;
+  private sourceEpoch=++sourceEpochSequence;private sourceGrantEpoch:Partial<Record<ButlerSource,number>>={};
   constructor(private io:Services=services) {}
   configure(config:Config) {
     this.config=config;
     this.stopped=false;
-    const prefs=this.prefs();
-    if(!prefs.enabled||prefs.paused||prefs.hostDeviceId!==this.local.deviceId)this.control?.abort();
-    if(!prefs.enabled||prefs.paused||prefs.hostDeviceId!==this.local.deviceId)this.stopWork();
+    const prefs=this.prefs(),off=!prefs.enabled||prefs.paused||!butlerConsented(prefs);
+    if(off||prefs.hostDeviceId!==this.local.deviceId)this.control?.abort();
+    if(off||prefs.hostDeviceId!==this.local.deviceId)this.stopWork();
     if(!prefs.allowRoutineExecution){
       if(this.snapshot.brain.jobs?.some(job=>job.id===this.activeJobId&&job.kind==='work'&&job.automatic))this.control?.abort();
       this.stopWork(undefined,true);
     }
-    if(!prefs.enabled||prefs.paused||prefs.externalUnderstanding!=='redacted-context')this.captureControl?.abort();
+    if(off||prefs.externalUnderstanding!=='redacted-context')this.captureControl?.abort();
+    if(off)void this.io.collector('suspend',{suspended:true}).catch(()=>{});
   }
   getSnapshot=()=>this.snapshot;
   getModelBrain=()=>privateButlerBrain(this.snapshot.brain,this.snapshot.privacy);
@@ -87,6 +91,8 @@ export class ButlerRuntime {
       let brain=emptyButlerBrain(account);
       try {const raw=JSON.parse(await storage.kvGet(BUTLER_BRAIN_KEY)??'null');if(raw?.schema===1&&raw.accountId===account)brain=projectButlerBrainForSync(raw);}catch{/* Ignore damaged Butler data; ordinary conversations remain intact. */}
       try {const raw=JSON.parse(await storage.kvGet(LOCAL_KEY)??'null');if(raw&&typeof raw.deviceId==='string')this.local={...this.local,...raw};}catch{/* Start with no external grants. */}
+      // A synced account consent must not revive this phone's pre-notice source grants.
+      if(this.local.consentVersion!==BUTLER_CONSENT_VERSION){this.local.consent={};this.local.consentVersion=BUTLER_CONSENT_VERSION;}
       this.checkpoints={};
       try {const raw=JSON.parse(await storage.kvGet(CHECKPOINT_KEY)??'null');if(raw?.accountId===account&&raw.sessions){
         for(const [id,value] of Object.entries(raw.sessions).slice(-8)){
@@ -106,6 +112,7 @@ export class ButlerRuntime {
     await this.load();
     const account=await this.io.account();
     if(account!==this.snapshot.brain.accountId){
+      this.sourceEpoch=++sourceEpochSequence;this.sourceGrantEpoch={};
       this.discardWrites=true;
       await this.flush();
       this.local={deviceId:'',consent:{},day:'',spent:0,analyzed:'',done:[],contextSeen:[]};
@@ -117,11 +124,12 @@ export class ButlerRuntime {
     const raw=JSON.parse(await this.io.storage().kvGet(BUTLER_BRAIN_KEY)??'null');
     if(raw?.accountId===this.snapshot.brain.accountId) {
       this.emit({brain:projectButlerBrainForSync(raw)});
-      if(!this.prefs().enabled||this.prefs().paused||this.prefs().hostDeviceId!==this.local.deviceId)this.control?.abort();
-      if(!this.prefs().enabled||this.prefs().paused)this.captureControl?.abort();
+      const prefs=this.prefs(),off=!prefs.enabled||prefs.paused||!butlerConsented(prefs);
+      if(off||prefs.hostDeviceId!==this.local.deviceId)this.control?.abort();
+      if(off){this.captureControl?.abort();await this.io.collector('suspend',{suspended:true});}
       this.refreshHost();
       if(this.io.host()&&this.prefs().hostDeviceId===this.local.deviceId){
-        if(!this.prefs().enabled||this.prefs().paused)this.stopWork();
+        if(off)this.stopWork();
         else await this.syncWorkJobs();
       }
     }
@@ -132,10 +140,10 @@ export class ButlerRuntime {
   }
   private async refreshSources() {
     const prefs=this.prefs();
+    if(!prefs.enabled||prefs.paused||!butlerConsented(prefs))await this.io.collector('suspend',{suspended:true}).catch(()=>{});
     const result=await this.io.collector('status').catch(()=>({sources:{}} as ButlerCollectorState));
     this.emit({privacy:result.privacy,background:result.background,sources:Object.fromEntries(BUTLER_SOURCES.map(source=>[source,source==='wickrun'?{available:true,consented:true}:
       {...result.sources[source],available:result.sources[source]?.available??source==='share',consented:this.local.consent[source]===true&&result.sources[source]?.consented!==false}]))});
-    if(!prefs.enabled||prefs.paused)await this.io.collector('suspend',{suspended:true}).catch(()=>{});
     this.refreshHost();
   }
   private ingestInternal() {
@@ -160,12 +168,15 @@ export class ButlerRuntime {
     this.local.internalSeen=Object.fromEntries(Object.entries(this.local.internalSeen??{}).filter(([id])=>retained.has(id)));
   }
   private async ingestExternal(supplied?:ButlerCollectorState) {
-    const prefs=this.prefs();
+    this.checkActive();
+    const prefs=this.prefs(),epoch=this.sourceEpoch;
+    const checkSourceScope=()=>{this.checkActive();if(epoch!==this.sourceEpoch)throw new DOMException('来源授权已变化；未继续采集。','AbortError');};
     const enabledSources=Object.fromEntries(BUTLER_SOURCES.map(source=>[source,prefs.sources[source]===true&&(source==='wickrun'||this.local.consent[source]===true)]));
-    await this.io.collector('suspend',{suspended:!prefs.enabled||prefs.paused,sources:enabledSources,mode:prefs.externalUnderstanding});
+    await this.io.collector('suspend',{suspended:false,sources:enabledSources,mode:prefs.externalUnderstanding,dataScopeVersion:BUTLER_CONSENT_VERSION,sourceEpoch:epoch});
+    checkSourceScope();
     const result=supplied??await this.io.collector('poll');
     if(result.privacy||result.background)this.emit({privacy:result.privacy??this.snapshot.privacy,background:result.background??this.snapshot.background});
-    this.checkActive();
+    checkSourceScope();
     let collected=result.signals??[];
     const contexts=(result.contexts??[]).filter(c=>prefs.sources[c.source]&&this.local.consent[c.source]&&!this.local.contextSeen.includes(c.id)).slice(0,3);
     if(contexts.length&&prefs.externalUnderstanding==='redacted-context'&&(prefs.backend.kind==='route-group'||this.io.host())&&!this.control&&this.io.now()>=this.nextCaptureAttempt) {
@@ -187,7 +198,7 @@ export class ButlerRuntime {
       }catch(error){if(control.signal.aborted)throw error;this.nextCaptureAttempt=this.io.now()+300000;this.audit('inference','内容理解暂未完成','已保留本机记录，当前只加入本地提取的主题；五分钟后重试。','failed');}
       finally{this.captureControl=undefined;}
     }
-    this.checkActive();
+    checkSourceScope();
     const brain=this.snapshot.brain,known=new Map(brain.signals.map(s=>[s.id,s]));
     const signals=collected.map(s=>projectButlerSignal({...s,accountId:brain.accountId},this.prefs().sources,this.local.consent)).filter((s):s is ButlerSignal=>!!s&&JSON.stringify(known.get(s.id))!==JSON.stringify(s));
     if(signals.length){const ids=new Set(signals.map(s=>s.id));this.emit({brain:{...brain,signals:retainButlerSignals({...brain,signals:[...brain.signals.filter(s=>!ids.has(s.id)&&!signals.some(next=>s.id.startsWith(next.id+':'))),...signals]}),updatedAt:this.io.now()}});this.audit('collection','提取外部活动线索',`在授权范围内提取 ${signals.length} 条主题与意图摘要。原始活动未进入共享大脑。`,'completed',{sourceIds:signals.map(s=>s.id)});}
@@ -244,6 +255,7 @@ export class ButlerRuntime {
   }
   private checkActive(control?:AbortController) {
     const prefs=this.prefs();
+    if(!butlerConsented(prefs))throw new DOMException('尚未确认管家的数据范围；未继续执行。','AbortError');
     if(this.stopped||!prefs.enabled||prefs.paused||control?.signal.aborted)throw new DOMException('已暂停；未继续执行。','AbortError');
   }
   private analysisFingerprint(signals=this.snapshot.brain.signals,seen=this.local.internalSeen??{}) {
@@ -383,8 +395,12 @@ export class ButlerRuntime {
   private async tickOnce() {
     this.ticking=true;
     try {
-      await this.load();const prefs=this.prefs();
-      if(!prefs.enabled||prefs.paused){this.control?.abort();this.captureControl?.abort();this.stopWork();await this.io.collector('suspend',{suspended:true});return;}
+      await this.load();let prefs=this.prefs();
+      if(prefs.enabled&&!butlerConsented(prefs)&&(!prefs.paused||prefs.allowRoutineExecution)){
+        this.setPrefs({paused:true,allowRoutineExecution:false});prefs=this.prefs();
+        this.audit('control','等你确认数据范围','管家已升级；确认之前已暂停，不收集、不分析、不执行。');await this.save();
+      }
+      if(!prefs.enabled||prefs.paused||!butlerConsented(prefs)){this.control?.abort();this.captureControl?.abort();this.stopWork();await this.io.collector('suspend',{suspended:true});return;}
       if(this.io.host()&&this.prefs().hostDeviceId===this.local.deviceId)await this.syncWorkJobs();
       this.ingestInternal();await this.ingestExternal();
       this.checkActive();
@@ -419,7 +435,7 @@ export class ButlerRuntime {
         if(!goal||!this.config?.startWork)throw Error('执行电脑尚未提供 Work，或目标已不存在。');
         if(job.automatic&&!this.prefs().allowRoutineExecution)throw Error('主动执行已关闭；任务保留，未继续操作。');
         const conversationId=await this.config.startWork(job,butlerWorkPrompt(modelBrain,goal,{autonomous:job.automatic===true}));
-        if(control.signal.aborted||!this.prefs().enabled||this.prefs().paused||(job.automatic&&!this.prefs().allowRoutineExecution)){
+        if(control.signal.aborted||!this.prefs().enabled||this.prefs().paused||!butlerConsented(this.prefs())||(job.automatic&&!this.prefs().allowRoutineExecution)){
           await this.config.controlWork?.(conversationId,{id:'stop-'+job.id,kind:'pause',createdAt:this.io.now()});
           throw Error('主动执行已关闭；已停止刚创建的 Work 任务。');
         }
@@ -442,13 +458,23 @@ export class ButlerRuntime {
       await this.io.collector('suspend',{suspended:true});
       this.audit('control',action.kind==='pause'?'已紧急暂停':'已关闭管家','已停止后续采集和模型派发，并取消本机正在运行的管家请求。');
       for(const job of this.snapshot.brain.jobs??[])if(job.status==='queued')this.patchJob(job.id,{status:'failed',error:'用户已暂停待执行任务。'});
-    }else if(action.kind==='resume'){this.setPrefs({enabled:true,paused:false});this.nextAttempt=0;}
+    }else if(action.kind==='resume'){
+      if(!butlerConsented(this.prefs()))throw Error('请先确认管家的数据范围。');
+      this.setPrefs({enabled:true,paused:false});this.nextAttempt=0;
+    }
     else if(action.kind==='refresh') {await this.refreshSources();const bridge=desktop();if(bridge){const nativeClients=await Promise.all(['codex','claude','grok','kimi','claude-desktop'].map(kind=>bridge.conversationClientCheck(kind as 'codex').catch(()=>null)));this.emit({nativeClients:nativeClients.filter((x):x is NonNullable<typeof x>=>!!x)});}}
     else if(action.kind==='select-host'){if(action.deviceId===this.local.deviceId&&!this.io.host())throw Error('请在常开电脑的桌面版选择执行主机。');this.setPrefs({hostDeviceId:action.deviceId});this.refreshHost();}
     else if(action.kind==='set-device-consent'){
       if(action.source==='wickrun')return;
-      await this.io.collector('consent',{source:action.source,consented:action.consented});this.local.consent[action.source]=action.consented;
-      if(!action.consented){this.control?.abort();this.captureControl?.abort();this.checkpointEpoch++;this.checkpoints={};this.emit({brain:revokeButlerSource(this.snapshot.brain,action.source)});}
+      if(action.consented&&!butlerConsented(this.prefs()))throw Error('请先确认管家的数据范围。');
+      const epoch=this.sourceEpoch=++sourceEpochSequence;this.sourceGrantEpoch[action.source]=epoch;
+      if(!action.consented){
+        // Close the local gate before the native revoke waits, so another tick cannot re-enable this source.
+        this.local.consent[action.source]=false;
+        this.control?.abort();this.captureControl?.abort();this.checkpointEpoch++;this.checkpoints={};this.emit({brain:revokeButlerSource(this.snapshot.brain,action.source)});
+      }
+      await this.io.collector('consent',{source:action.source,consented:action.consented,dataScopeVersion:butlerConsented(this.prefs())?BUTLER_CONSENT_VERSION:0,sourceEpoch:epoch});
+      if(action.consented&&this.sourceGrantEpoch[action.source]===epoch&&butlerConsented(this.prefs()))this.local.consent[action.source]=true;
       await this.refreshSources();
     }else if(action.kind==='configure-source'){
       await this.io.collector('configure',{source:action.source,allowlist:action.allowlist,denylist:action.denylist});
@@ -466,7 +492,24 @@ export class ButlerRuntime {
     else if(action.kind==='list-source-apps'){await this.io.collector('list-source-apps');await this.refreshSources();}
     else if(action.kind==='install-browser-extension'){await this.io.collector('install-browser-extension');}
     else if(action.kind==='import-link') {if(!this.local.consent.share||!this.prefs().sources.share)throw Error('请先授权分享来源。');this.checkActive();const result=await this.io.collector('import-link',{url:action.url});await this.ingestExternal(result);}
+    else if(action.kind==='consent'){
+      this.control?.abort();this.captureControl?.abort();this.stopWork();
+      if(!action.granted){
+        this.setPrefs({consent:undefined,enabled:false,paused:false,allowRoutineExecution:false});
+        this.checkpointEpoch++;this.checkpoints={};this.local.consent={};this.sourceEpoch=++sourceEpochSequence;this.sourceGrantEpoch={};
+      }
+      await this.io.collector('suspend',{suspended:true});
+      if(action.granted){
+        this.setPrefs({consent:{version:BUTLER_CONSENT_VERSION,at:this.io.now()},enabled:true,paused:false,allowRoutineExecution:false});this.nextAttempt=0;
+        this.audit('control','你确认了数据范围并启用管家','日常主动执行保持关闭；外部来源仍需在本机单独同意。');
+      }else{
+        for(const job of this.snapshot.brain.jobs??[])if(job.status==='queued')this.patchJob(job.id,{status:'failed',error:'你已撤回同意。'});
+        this.audit('control','你已撤回同意','管家已关闭；不会继续采集、分析或执行。已记住的内容保留。');
+      }
+      await this.refreshSources();
+    }
     else if(action.kind==='add-need') {
+      if(!butlerConsented(this.prefs()))throw Error('请先开启管家并确认数据范围。');
       const allowed=butlerPrivateText(action.text,this.snapshot.privacy),summary=allowed?modelSafeSummary(allowed,240):'';if(!summary||summary.includes('[REDACTED]'))throw Error('该内容受敏感规则保护；请去掉敏感信息后补充需求。');
       const brain=this.snapshot.brain,signal=projectButlerSignal({id:uid('need'),accountId:brain.accountId,source:'wickrun',sourceLabel:'你补充的需求',topic:summary.slice(0,60),intent:'用户明确提出',summary,observedAt:this.io.now(),confidence:'high',basis:'user-stated'},{wickrun:true},{});
       if(signal)this.emit({brain:{...brain,signals:retainButlerSignals({...brain,signals:[...brain.signals,signal]}),updatedAt:this.io.now()}});
@@ -498,6 +541,7 @@ export class ButlerRuntime {
       if(old&&action.decision==='accept'&&next!==this.snapshot.brain&&this.config&&!this.config.skills().some(s=>s.id===old.id))this.config.onSkills([...this.config.skills(),{id:old.id,name:slugify(old.name),description:old.description,body:old.body,source:'wickrunAI 管家 · 已审阅',enabled:false,installedAt:this.io.now(),uses:0}]);
       this.emit({brain:next});
     }else {
+      if(!butlerConsented(this.prefs()))throw Error('请先确认管家的数据范围。');
       if(!this.prefs().enabled||this.prefs().paused)throw Error('请先开启或恢复管家。');
       if(!this.prefs().hostDeviceId)throw Error('请先选择同账户的常开电脑。');
       if(action.kind==='analyze-now'){this.ingestInternal();this.queue('analyze');}

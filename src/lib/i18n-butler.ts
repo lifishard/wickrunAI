@@ -1,5 +1,18 @@
 /** English copy for the proactive Butler screen. Source copy lives in the UI. */
 export const BUTLER_EN: Record<string,string> = {
+  '等你确认': 'Awaiting your consent',
+  '撤回同意并关闭': 'Withdraw consent and turn off',
+  '管家升级了：确认数据范围后继续': 'Butler has been updated: review its data scope to continue',
+  '开启前，先看清管家会用到什么': 'Review what Butler will use before enabling it',
+  '旧的开启设置不会自动授权本次数据范围。确认之前，不收集、不分析、不执行；本机外部来源需要重新同意。': 'Your previous enabled setting does not grant this data scope. Nothing is collected, analyzed or executed before consent. External sources on this device need your consent again.',
+  '管家会从你在 wickrunAI 里发出的对话和任务提炼需求摘要，交给你选定的模型分析，并同步目标、简报和已审阅的记录到同一账号的设备。': 'Butler summarizes needs from your wickrunAI conversations and tasks for your chosen model to analyze. Goals, briefs and reviewed records sync between devices on the same account.',
+  '外部活动要在本设备单独授权。原始活动留在本机；选择增强理解时，脱敏片段会发给选定模型，脱敏不能保证识别所有敏感内容。': 'External activity needs separate permission on this device. Raw activity stays locally. Enhanced understanding sends redacted excerpts to your chosen model; redaction cannot detect every sensitive detail.',
+  '日常主动执行默认关闭。开启数据分析不等于授权付款、交易、谈判或发送消息。': 'Automatic routine execution is off by default. Enabling analysis does not authorize payments, trading, negotiation or sending messages.',
+  '可以随时紧急暂停、关闭或撤回同意。撤回会停止后续采集和执行；已有记录保留，已发给模型的内容无法撤回。': 'You can pause, turn off or withdraw consent at any time. Withdrawal stops further collection and execution. Existing records remain, and content already sent to a model cannot be recalled.',
+  '我已了解，同意管家按以上范围工作': 'I understand and agree to Butler working within this scope',
+  '同意并启用': 'Agree and enable',
+  '先关闭管家': 'Turn off for now',
+  '暂不开启': 'Not now',
   'wickrunAI 对话与任务': 'wickrunAI conversations and tasks',
   '浏览器活动': 'Browser activity',
   '电脑应用活动': 'Desktop app activity',

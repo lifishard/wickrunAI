@@ -1,6 +1,6 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import type { ButlerCollectorState } from './butler-runtime';
-import { modelSafeSummary, type ButlerSource } from './proactive-butler';
+import { BUTLER_CONSENT_VERSION, modelSafeSummary, type ButlerSource } from './proactive-butler';
 
 /** Android's local context inbox. Nothing is uploaded by these calls. */
 export interface MobileContextItem {
@@ -35,7 +35,8 @@ interface NativeContext {
   listApps(): Promise<{ apps: MobileContextApp[] }>;
   setAllowedPackages(options: { packages: string[]; deniedPackages:string[] }): Promise<MobileContextStatus>;
   configurePrivacy(options:{policy:MobilePrivacy}):Promise<MobileContextStatus>;
-  setEnabled(options: { enabled: boolean }): Promise<MobileContextStatus>;
+  setDataScopeConsent(options:{version:number;share:boolean;android:boolean}):Promise<MobileContextStatus>;
+  setEnabled(options: { enabled: boolean; dataScopeVersion?:number }): Promise<MobileContextStatus>;
   openAccessibilitySettings(): Promise<MobileContextStatus>;
   openNotificationSettings(): Promise<MobileContextStatus>;
   requestNotificationPermission(): Promise<MobileContextStatus>;
@@ -54,7 +55,8 @@ export const mobileContext = {
   apps: () => available() ? native.listApps().then(result => result.apps) : Promise.resolve([]),
   allowApps: (packages: string[], deniedPackages:string[] = []) => native.setAllowedPackages({ packages, deniedPackages }),
   configurePrivacy: (policy:MobilePrivacy) => native.configurePrivacy({policy}),
-  enable: () => native.setEnabled({ enabled: true }),
+  setDataScopeConsent:(version:number,share:boolean,android:boolean)=>native.setDataScopeConsent({version,share,android}),
+  enable: () => native.setEnabled({ enabled: true, dataScopeVersion:BUTLER_CONSENT_VERSION }),
   stop: () => native.setEnabled({ enabled: false }),
   openAccessibilitySettings: () => native.openAccessibilitySettings(),
   openNotificationSettings: () => native.openNotificationSettings(),
@@ -67,6 +69,13 @@ export const mobileContext = {
 
 let selectedSources: Partial<Record<ButlerSource, boolean>> = {};
 let suspended = true;
+let dataScopeVersion = 0;
+let controlEpoch = 0;
+let sourceEpoch = 0;
+let nativeUpdates:Promise<unknown>=Promise.resolve();
+function updateNative(work:()=>Promise<unknown>) {
+  const next=nativeUpdates.catch(()=>{}).then(work);nativeUpdates=next;return next;
+}
 let mode: 'local-topics' | 'redacted-context' = 'local-topics';
 
 function summarized(item: MobileContextItem) {
@@ -85,6 +94,10 @@ function summarized(item: MobileContextItem) {
 export async function androidButlerCollector(action: string, input: Record<string, unknown> = {}): Promise<ButlerCollectorState> {
   const empty: ButlerCollectorState = { sources: {} };
   if (!available()) return empty;
+  if((action==='suspend'||action==='consent')&&typeof input.sourceEpoch==='number'){
+    if(input.sourceEpoch<sourceEpoch)return empty;
+    sourceEpoch=input.sourceEpoch;
+  }
   if (action === 'status') {
     const state = await mobileContext.status();
     if (!state) return empty;
@@ -112,27 +125,40 @@ export async function androidButlerCollector(action: string, input: Record<strin
     return androidButlerCollector('status');
   }
   if (action === 'consent' && input.source === 'android') {
-    if (input.consented) await mobileContext.enable(); else await mobileContext.revokeSource('accessibility');
+    if (input.consented && input.dataScopeVersion!==BUTLER_CONSENT_VERSION) throw Error('请先确认管家的数据范围。');
+    // Selecting a source does not resume a paused Butler. The runtime unlocks it separately.
+    if (!input.consented) {controlEpoch++;selectedSources.android=false;await updateNative(()=>mobileContext.revokeSource('accessibility'));}
     return androidButlerCollector('status');
   }
   if (action === 'consent' && input.source === 'share') {
-    if (!input.consented) await mobileContext.revokeSource('share');
+    if (input.consented && input.dataScopeVersion!==BUTLER_CONSENT_VERSION) throw Error('请先确认管家的数据范围。');
+    if (!input.consented) {controlEpoch++;selectedSources.share=false;await updateNative(()=>mobileContext.revokeSource('share'));}
     return androidButlerCollector('status');
   }
   if (action === 'suspend') {
-    suspended = input.suspended === true;
+    const epoch=++controlEpoch;
+    dataScopeVersion=input.dataScopeVersion===BUTLER_CONSENT_VERSION?BUTLER_CONSENT_VERSION:0;
+    suspended = input.suspended !== false || dataScopeVersion!==BUTLER_CONSENT_VERSION;
     if (input.sources && typeof input.sources === 'object') selectedSources = input.sources as typeof selectedSources;
     if (input.mode === 'local-topics' || input.mode === 'redacted-context') mode = input.mode;
-    if (suspended || !selectedSources.android) await mobileContext.stop();
-    else {
-      const state = await mobileContext.status();
-      if (state?.serviceGranted && state.notificationGranted && state.allowedPackages.length) await mobileContext.enable();
-    }
+    // Native writes are serialized so an older enable cannot finish after a revoke.
+    await updateNative(async()=>{
+      if(epoch!==controlEpoch)return;
+      await mobileContext.setDataScopeConsent(suspended?0:dataScopeVersion,!suspended&&selectedSources.share===true,!suspended&&selectedSources.android===true);
+      if(epoch!==controlEpoch)return;
+      if (suspended || !selectedSources.android) await mobileContext.stop();
+      else {
+        const state = await mobileContext.status();
+        if (epoch===controlEpoch && !suspended && selectedSources.android && state?.serviceGranted && state.notificationGranted && state.allowedPackages.length) await mobileContext.enable();
+      }
+    });
     return androidButlerCollector('status');
   }
   if (action === 'poll') {
-    if (suspended) return empty;
+    if (suspended || dataScopeVersion!==BUTLER_CONSENT_VERSION) return empty;
+    const epoch=controlEpoch;
     const items = (await mobileContext.poll()).filter(item => selectedSources[item.kind === 'share' ? 'share' : 'android']);
+    if(epoch!==controlEpoch || suspended)return empty;
     return { sources: {}, recordIds: items.map(item => item.id), signals: items.map(summarized),
       contexts: mode === 'redacted-context' ? items.map(item => ({ id: item.id, source: item.kind === 'share' ? 'share' : 'android',
         sourceLabel: item.kind === 'share' ? '主动分享的内容' : `Android · ${item.packageName ?? '应用'}`,

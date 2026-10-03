@@ -75,6 +75,9 @@
 .proactive-app-rule small{display:block;font-size:11px;color:var(--fg-dim)}
 .proactive-app-rule select{max-width:48%;flex-shrink:0}
 .butler-home .proactive-butler{margin:0}
+.proactive-consent{padding:18px;border:1px solid var(--accent);border-radius:14px;background:var(--bg-elev);display:grid;gap:12px}
+.proactive-consent h3,.proactive-consent p{margin:0}
+.proactive-consent ul{margin:0;padding-left:20px;display:grid;gap:8px;line-height:1.6;color:var(--fg-dim)}
 @media(max-width:1050px){.proactive-grid{grid-template-columns:1fr 1fr}}
 @media(max-width:700px){
   .proactive-grid,.proactive-settings .proactive-grid{grid-template-columns:1fr}
