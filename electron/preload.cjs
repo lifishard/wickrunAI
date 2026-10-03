@@ -117,6 +117,7 @@ contextBridge.exposeInMainWorld('snc', {
   artifactWordPreview: p => ipcRenderer.invoke('snc:artifactWordPreview', p),
   artifactBinary: (action, input) => ipcRenderer.invoke('snc:artifactBinary', { action, input }),
   artifactEdit: (action, input) => ipcRenderer.invoke('snc:artifactEdit', { action, input }),
+  artifactDraft: (action, input) => ipcRenderer.invoke('snc:artifactDraft', { action, input }),
 
   skillsRead: (dir) => ipcRenderer.invoke('snc:skillsRead', dir),
   skillsWrite: (dir, items) => ipcRenderer.invoke('snc:skillsWrite', { dir, items }),

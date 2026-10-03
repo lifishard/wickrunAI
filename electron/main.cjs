@@ -640,11 +640,17 @@ function registerIpc() {
   const artifacts = require('./artifact-workspace.cjs');
   const artifactWorkspace = artifacts.createArtifactWorkspace(path.join(app.getPath('userData'), 'artifact-versions'));
   const binaryWorkspace = require('./artifact-binary.cjs').createBinaryWorkspace(path.join(app.getPath('userData'), 'artifact-binary-versions'));
+  const artifactDrafts = require('./artifact-drafts.cjs').createArtifactDrafts(path.join(app.getPath('userData'), 'artifact-drafts'));
   const artifactSender = e => {
     if (!mainWindow || e.sender !== mainWindow.webContents || e.senderFrame !== mainWindow.webContents.mainFrame) throw Error('请在应用的文件预览中操作。');
     dataAvailable();
   };
   ipcMain.handle('snc:artifactDocument', (e, p) => { artifactSender(e); return artifacts.readDocument(p); });
+  ipcMain.handle('snc:artifactDraft', (e, { action, input }) => {
+    artifactSender(e);
+    if (!['read', 'write', 'remove'].includes(action)) throw Error('不支持的草稿操作。');
+    return artifactDrafts[action](input);
+  });
   const generatedMedia = require('./generated-media.cjs').createGeneratedMedia({ dir: path.join(app.getPath('userData'), 'generated-media') });
   ipcMain.handle('snc:saveGeneratedMedia', async (e, parts) => {
     artifactSender(e);

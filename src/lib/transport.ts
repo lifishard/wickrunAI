@@ -136,6 +136,7 @@ interface ElectronBridge extends CloudBridge {
   artifactWordPreview(p: string): Promise<Uint8Array>;
   artifactBinary(action: 'read' | 'save' | 'restore', input: { path: string; expectedHash?: string; bytes?: Uint8Array; version?: string }): Promise<import('./office-edit').BinarySnapshot>;
   artifactEdit(action: 'read' | 'save' | 'restore', input: { path: string; expectedHash?: string; text?: string; version?: string }): Promise<import('./artifact-edit').ArtifactSnapshot>;
+  artifactDraft(action: 'read' | 'write' | 'remove', input: { kind: 'text' | 'office'; path: string; value?: import('./artifact-drafts').TextRecovery | import('./artifact-drafts').OfficeRecovery }): Promise<unknown>;
   saveAnalysisExport?(name:string,bytes:Uint8Array):Promise<FileRecord|null>;
   chat(init: ChatRequestInit): Promise<void>;
   abort(requestId: string): Promise<void>;

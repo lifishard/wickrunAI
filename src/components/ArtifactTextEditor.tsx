@@ -5,15 +5,16 @@ import Markdown from './Markdown';
 import ArtifactAiEdit, { type ProposeArtifactEdit } from './ArtifactAiEdit';
 import { findArtifactSelection } from '../lib/artifact-proposal';
 import CopyablePre from './CopyablePre';
+import { readDraft, writeDraft, removeDraft, flushDrafts, type TextRecovery } from '../lib/artifact-drafts';
 
-// Keep unsaved edits when the user closes or switches the preview within this session.
-const drafts = new Map<string, { text: string; hash: string }>();
 export default function ArtifactTextEditor({ path, markdown, busy, onRequestEdit, onPropose }: {
   path: string; markdown: boolean; busy: boolean; onRequestEdit: (prompt: string) => void; onPropose: ProposeArtifactEdit;
 }) {
   const [snapshot, setSnapshot] = React.useState<ArtifactSnapshot | null>(null);
-  const [draft, setDraft] = React.useState(drafts.get(path)?.text ?? '');
-  const [baseHash, setBaseHash] = React.useState(drafts.get(path)?.hash ?? '');
+  const [draft, setDraft] = React.useState('');
+  const [baseHash, setBaseHash] = React.useState('');
+  const [loadedPath, setLoadedPath] = React.useState('');
+  const [recoveryStatus, setRecoveryStatus] = React.useState('');
   const [mode, setMode] = React.useState<'preview' | 'edit' | 'history'>('preview');
   const [selected, setSelected] = React.useState({ start: 0, end: 0 });
   const [replacement, setReplacement] = React.useState('');
@@ -36,28 +37,40 @@ export default function ArtifactTextEditor({ path, markdown, busy, onRequestEdit
     if (!found) { setStatus('这段选区含重复文字或跨越格式标记，请在「编辑文本」中精确选择。'); return; }
     setSelected({ start: block.start + found.start, end: block.start + found.end }); setStatus('已选中预览文字，可在下方提出修改要求。');
   };
-  const dirty = snapshot ? draft !== snapshot.text : drafts.has(path);
+  const dirty = !!snapshot && draft !== snapshot.text;
   const conflict = !!snapshot && baseHash !== snapshot.hash;
-  const setContent = (text: string) => { setDraft(text); drafts.set(path, { text, hash: baseHash }); setStatus(''); };
-  const accept = (s: ArtifactSnapshot) => { setSnapshot(s); setDraft(s.text); setBaseHash(s.hash); drafts.delete(path); setSelected({ start: 0, end: 0 }); setVersion(''); };
+  const setContent = (text: string) => { setDraft(text); setRecoveryStatus('正在保存本地草稿…'); setStatus(''); };
+  const accept = async (s: ArtifactSnapshot) => { setSnapshot(s); setDraft(s.text); setBaseHash(s.hash); setSelected({ start: 0, end: 0 }); setVersion(''); await removeDraft('text', path); };
   React.useEffect(() => {
     let disposed = false;
-    void desktop()!.artifactEdit('read', { path }).then(s => {
+    setLoadedPath(''); setSnapshot(null); setDraft(''); setBaseHash(''); setError('');
+    void Promise.all([desktop()!.artifactEdit('read', { path }), readDraft<TextRecovery>('text', path)]).then(([s, recovered]) => {
       if (disposed) return;
+      if (recovered && (typeof recovered.text !== 'string' || typeof recovered.hash !== 'string')) throw Error('草稿格式无效，原记录已保留。');
       setSnapshot(s);
-      if (!drafts.has(path)) { setDraft(s.text); setBaseHash(s.hash); }
+      setDraft(recovered?.text ?? s.text); setBaseHash(recovered?.hash ?? s.hash); setLoadedPath(path);
+      if (recovered) setStatus('已恢复本地草稿。保存文件前请检查内容。');
     }).catch(e => { if (!disposed) setError(String(e)); });
-    return () => { disposed = true; };
+    return () => { disposed = true; void flushDrafts().catch(() => {}); };
   }, [path]);
+  React.useEffect(() => {
+    if (loadedPath !== path || !snapshot) return;
+    let disposed = false;
+    setRecoveryStatus(dirty ? '正在保存本地草稿…' : '');
+    const pending = dirty ? writeDraft('text', path, { text: draft, hash: baseHash }) : removeDraft('text', path);
+    void pending.then(() => { if (!disposed) setRecoveryStatus(dirty ? '草稿已保存在本机，可在重启后恢复' : ''); })
+      .catch(e => { if (!disposed) { setRecoveryStatus('本地草稿更新失败'); setError(dirty ? '本地草稿保存失败，请保存文件或复制内容后再关闭。' : String(e)); } });
+    return () => { disposed = true; };
+  }, [path, loadedPath, snapshot, draft, baseHash, dirty]);
   const action = async (fn: () => Promise<void>) => {
     setWorking(true); setError(''); setStatus('');
     try { await fn(); } catch (e) { setError(String(e)); } finally { setWorking(false); }
   };
   const chosen = snapshot?.versions.find(v => v.hash === version);
-  return <div className="artifact-editor">
+  return <fieldset className="artifact-editor" disabled={working} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
     <div className="artifact-editor-toolbar">
       {(['preview', 'edit', 'history'] as const).map((m, i) => <button key={m} className={`btn sm ${mode === m ? 'primary' : ''}`} aria-pressed={mode === m} onClick={() => setMode(m)}>{['预览', '编辑文本', '历史版本'][i]}</button>)}
-      <span className="hint">{dirty ? '未保存 · 草稿保留到退出应用' : snapshot ? '已保存' : '读取中…'}</span>
+      <span className="hint" role="status">{dirty ? `文件未保存 · ${recoveryStatus}` : snapshot ? '已保存' : '读取中…'}</span>
     </div>
     {error ? <p className="picker-error" role="alert">{error}</p> : null}
     {status ? <p role="status">{status}</p> : null}
@@ -79,15 +92,15 @@ export default function ArtifactTextEditor({ path, markdown, busy, onRequestEdit
       <p className="hint">保留最近 20 个不同内容版本（含当前文件），手动和 AI 建议在这里保存后都会留下记录。</p>
       <select aria-label="历史版本" value={version} onChange={e => setVersion(e.target.value)}><option value="">当前文件</option>{snapshot?.versions.map(v => <option value={v.hash} key={v.hash}>{new Date(v.at).toLocaleString()} · {v.hash.slice(0, 6)}</option>)}</select>
       <CopyablePre className="artifact-source" text={chosen?.text ?? snapshot?.text ?? ''} />
-      <button className="btn sm" disabled={!chosen || working || busy || dirty || conflict} onClick={() => void action(async () => { accept(await desktop()!.artifactEdit('restore', { path: snapshot!.path, expectedHash: snapshot!.hash, version })); setStatus('已恢复。恢复前的内容仍可在历史版本中找回。'); })}>恢复此版本</button>
+      <button className="btn sm" disabled={!chosen || working || busy || dirty || conflict} onClick={() => void action(async () => { await accept(await desktop()!.artifactEdit('restore', { path: snapshot!.path, expectedHash: snapshot!.hash, version })); setStatus('已恢复。恢复前的内容仍可在历史版本中找回。'); })}>恢复此版本</button>
       {dirty ? <p className="hint">请先保存或放弃草稿，再恢复版本。</p> : null}
     </div> : null}
     <div className="artifact-editor-toolbar">
-      <button className="btn sm primary" disabled={!snapshot || !dirty || working || busy || conflict} onClick={() => void action(async () => { accept(await desktop()!.artifactEdit('save', { path: snapshot!.path, expectedHash: baseHash, text: draft })); setStatus('已保存文件，原内容已保留在历史版本中。'); })}>保存文件</button>
-      <button className="btn sm" disabled={working} onClick={() => void action(async () => { const s = await desktop()!.artifactEdit('read', { path }); setSnapshot(s); if (!dirty) accept(s); setMode('history'); setVersion(''); setStatus(dirty ? '已读取磁盘内容。草稿保留在「编辑文本」中。' : '已重新读取文件。'); })}>重新读取</button>
-      {dirty && snapshot ? <button className="btn sm" disabled={working} onClick={() => { accept(snapshot); setStatus('已放弃草稿，显示最近读取的文件内容。'); }}>放弃草稿</button> : null}
-      {conflict ? <button className="btn sm" disabled={working} onClick={() => { setBaseHash(snapshot!.hash); drafts.set(path, { text: draft, hash: snapshot!.hash }); setStatus('已确认合并；请检查草稿后保存。'); }}>已对照，使用合并后的草稿</button> : null}
+      <button className="btn sm primary" disabled={!snapshot || !dirty || working || busy || conflict} onClick={() => void action(async () => { await accept(await desktop()!.artifactEdit('save', { path: snapshot!.path, expectedHash: baseHash, text: draft })); setStatus('已保存文件，原内容已保留在历史版本中。'); })}>保存文件</button>
+      <button className="btn sm" disabled={working} onClick={() => void action(async () => { const s = await desktop()!.artifactEdit('read', { path }); setSnapshot(s); if (!dirty) await accept(s); setMode('history'); setVersion(''); setStatus(dirty ? '已读取磁盘内容。草稿保留在「编辑文本」中。' : '已重新读取文件。'); })}>重新读取</button>
+      {dirty && snapshot ? <button className="btn sm" disabled={working} onClick={() => void action(async () => { await accept(snapshot); setStatus('已放弃草稿，显示最近读取的文件内容。'); })}>放弃草稿</button> : null}
+      {conflict ? <button className="btn sm" disabled={working} onClick={() => { setBaseHash(snapshot!.hash); setStatus('已确认合并；请检查草稿后保存。'); }}>已对照，使用合并后的草稿</button> : null}
       {busy ? <span className="hint">任务运行期间可编辑草稿，结束后再保存。</span> : null}
     </div>
-  </div>;
+  </fieldset>;
 }
