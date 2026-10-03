@@ -4,6 +4,11 @@ const windowHealth = require('./window-health.cjs');
 const path = require('node:path');
 const { app, BrowserWindow, ipcMain, shell, Menu, nativeTheme, dialog, Notification, powerMonitor, safeStorage, Tray, nativeImage, protocol } = require('electron');
 require('./app-identity.cjs').configureIdentity(app);
+// Started from the Start menu or right after an update, the working directory is the
+// install folder. Every program started from here inherits it, and one that outlives
+// us (the browser-tools Chrome, a helper) keeps that folder busy, so the next
+// installer cannot replace it ("Failed to uninstall old application files: 2").
+if (app.isPackaged) try { process.chdir(app.getPath('userData')); } catch { /* keep the inherited folder */ }
 const cloudAccount = require('./cloud-account.cjs').createCloudAccount({ app, safeStorage, openExternal: url => shell.openExternal(url) });
 const store = require('./store.cjs');
 const { extractErrorMessage } = require('./sse.cjs');

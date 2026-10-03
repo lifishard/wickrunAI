@@ -8,8 +8,8 @@
 
 Open or closed, paid or free. Bring your own keys; cloud sync is optional, and sharing never transfers your credentials.
 
-[![Version](https://img.shields.io/badge/version-4.1.0-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/version-4.1.1-1f6feb)](https://github.com/lifishard/wickrunAI-releases/releases)
+[![License: Proprietary](https://img.shields.io/badge/License-Proprietary-lightgrey.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-lightgrey)](#install)
 [![CI](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml/badge.svg)](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml)
 
@@ -125,7 +125,7 @@ Only the wickrunAI column is a claim about this repository, verified against the
 | Keys encrypted into the OS keystore | Yes | — | — | — | — |
 | Phone relays tool calls to your desktop over the LAN | Yes | — | — | — | — |
 | Calls subscription CLIs installed on your machine (Claude Code, Codex, Kimi Code) | Yes | — | — | — | — |
-| License | Apache-2.0 | — | — | — | — |
+| License | Proprietary, free to use | — | — | — | — |
 
 The four rows in the middle are the ones worth reading the code for:
 
@@ -248,7 +248,7 @@ Open **[Download wickrunAI](https://wickrunai.com/download)** to choose an opera
 | [Linux](https://wickrunai.com/download?platform=linux) | Intel / AMD · x64 | [AppImage](https://wickrunai.com/download/linux/x64/appimage) · [Debian / Ubuntu DEB](https://wickrunai.com/download/linux/x64/deb) |
 | [Android](https://wickrunai.com/download?platform=android) | Phones and tablets | [Preview APK](https://wickrunai.com/download/android/universal/apk) |
 
-Android is a debug-signed engineering preview. Device acceptance is pending; account sync and large file export are not available. See [GitHub Releases](https://github.com/lifishard/wickrunAI/releases) for release notes, checksums, and older versions.
+Android is a debug-signed engineering preview. Device acceptance is pending; account sync and large file export are not available. See [GitHub Releases](https://github.com/lifishard/wickrunAI-releases/releases) for release notes, checksums, and older versions.
 
 The packages are not code-signed, so Windows and macOS may warn about the publisher. Verify a download against `SHA256SUMS.txt` in the Release, or build from source as described below.
 
@@ -304,19 +304,19 @@ On desktop, API keys go into the operating system's encrypted storage where it i
 
 The desktop app runs on Electron 34 with a React 19, Vite, and TypeScript interface; the Android client uses Capacitor 7. See [Architecture](docs/ARCHITECTURE.md) and [Contributing](CONTRIBUTING.md).
 
-Published versions are listed under [Releases](https://github.com/lifishard/wickrunAI/releases). Android on a physical device and the reasoning-parameter mapping for some providers still need verification. Image attachments need a model that accepts image input.
+Published versions are listed under [Releases](https://github.com/lifishard/wickrunAI-releases/releases). Android on a physical device and the reasoning-parameter mapping for some providers still need verification. Image attachments need a model that accepts image input.
 
-For a problem, open an [issue](https://github.com/lifishard/wickrunAI/issues) with the app version, your system, the endpoint, the model ID, and the steps to reproduce. Remove API keys and private content before attaching logs or a request preview.
+For a problem, open an [issue](https://github.com/lifishard/wickrunAI-releases/issues) or write to admin@wickrunai.com with the app version, your system, the endpoint, the model ID, and the steps to reproduce. Remove API keys and private content before attaching logs or a request preview.
 
 ## Disclaimer
 
 wickrunAI is an independent service and is not affiliated with, endorsed by, or owned by Anthropic, OpenAI, Google, xAI, SenseTime, Moonshot AI, OpenRouter, or any other model provider or service named in this repository. Product names, logos and trademarks are the property of their respective owners and are used here only to describe what this client can connect to.
 
-Connecting to a provider requires your own account and credentials with that provider, and your use of their service is governed by their terms, not by this project's. Accounts, subscriptions, quotas and charges stay with the provider. This project neither resells nor proxies access to any of them.
+Connecting to a provider requires your own account and credentials with that provider, and your use of their service is governed by their terms, not by this project's. Accounts, subscriptions, quotas and charges stay with the provider. wickrunAI does not resell access to any of them. The web version relays your requests to the provider you chose, with your own key, and does not store them.
 
 ## License
 
-[Apache License 2.0](LICENSE). Keep the [NOTICE](NOTICE) file when you redistribute.
+From 4.1.1, wickrunAI is proprietary software that you may use free of charge under the [wickrunAI Software License](LICENSE). Versions 4.1.0 and earlier were released under the Apache License 2.0, and copies obtained under it remain under it. Open-source components keep their own licenses; see [NOTICE](NOTICE) and [THIRD_PARTY_LICENSES.txt](THIRD_PARTY_LICENSES.txt).
 
 
 ## Google account and cloud sync

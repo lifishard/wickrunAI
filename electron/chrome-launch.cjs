@@ -139,7 +139,10 @@ function createChromeLaunch(deps = {}) {
     try { io.mkdirSync(dir, { recursive: true }); }
     catch (error) { return { ok: false, error: `建不了专属浏览器配置目录：${error.message}` }; }
     const args = [`--remote-debugging-port=${port}`, `--user-data-dir=${dir}`, '--no-first-run', '--no-default-browser-check', 'about:blank'];
-    try { const child = startProcess(found.p, args, { detached: true, stdio: 'ignore', windowsHide: false }); child.unref(); }
+    // The browser outlives wickrunAI. Without an explicit working directory it inherits
+    // ours, which is the install folder when started from the Start menu; Windows then
+    // cannot rename that folder and the next installer stops with "error 2".
+    try { const child = startProcess(found.p, args, { cwd: path.dirname(dir), detached: true, stdio: 'ignore', windowsHide: false }); child.unref(); }
     catch (error) { return { ok: false, error: `启动失败：${error.message}` }; }
     for (let i = 0; i < 32; i++) {
       await wait(250);

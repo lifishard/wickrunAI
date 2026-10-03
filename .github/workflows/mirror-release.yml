@@ -1,0 +1,35 @@
+name: Mirror Release
+
+# Copies a published Release to the public releases repository (append-only).
+# Use it to backfill an older version or to retry after RELEASES_REPO_TOKEN was fixed.
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 要同步的版本标签，例如 v4.1.0
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mirror-release-${{ inputs.release_tag }}
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    name: 同步到 wickrunAI-releases
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: 同步
+        shell: bash
+        run: node scripts/mirror-release.mjs "$RELEASE_TAG"
+        env:
+          SOURCE_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MIRROR_TOKEN: ${{ secrets.RELEASES_REPO_TOKEN }}
+          RELEASE_TAG: ${{ inputs.release_tag }}

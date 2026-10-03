@@ -1,5 +1,6 @@
 "use strict";
-const RELEASES='https://github.com/lifishard/wickrunAI/releases/latest';
+// The code repository is private; installers are published in the public releases repository.
+const RELEASES='https://github.com/lifishard/wickrunAI-releases/releases/latest';
 function updateMode({packaged,platform,env}){
  if(!packaged)return 'development';
  if(platform==='win32'&&!env.PORTABLE_EXECUTABLE_DIR)return 'automatic';

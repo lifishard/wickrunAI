@@ -25,6 +25,8 @@ test('dedicated Chrome login profile migrates once and restores with the same di
   assert.equal(fs.readFileSync(path.join(profile,'Default','Network','Cookies'),'utf8'),'existing login database');
   assert.equal(fs.existsSync(f.legacy),false);
   assert.ok(f.launches[0].args.includes(`--user-data-dir=${profile}`));
+  // The long-lived browser must not keep the install folder busy for the next update.
+  assert.equal(f.launches[0].options.cwd,f.userData);assert.equal(f.launches[0].options.detached,true);
   assert.equal(fs.existsSync(path.join(f.userData,'chrome-connection.json')),true);
 
   f.stop();const second=f.make(),restored=await second.restore();

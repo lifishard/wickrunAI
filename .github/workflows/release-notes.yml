@@ -31,3 +31,13 @@ jobs:
           test -f "$notes" || { echo "::error::找不到 $notes"; exit 1; }
           gh release view "$RELEASE_TAG" >/dev/null
           gh release edit "$RELEASE_TAG" --notes-file "$notes"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: 把新说明同步到公开发布仓库
+        shell: bash
+        run: node scripts/mirror-release.mjs "$RELEASE_TAG"
+        env:
+          SOURCE_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MIRROR_TOKEN: ${{ secrets.RELEASES_REPO_TOKEN }}
+          RELEASE_TAG: ${{ inputs.release_tag }}

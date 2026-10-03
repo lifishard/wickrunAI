@@ -147,3 +147,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           SOURCE_REF: ${{ inputs.release_tag || github.ref }}
+      # Installs and the website read the public releases repository; the code repository can stay private.
+      - name: 同步到公开发布仓库 wickrunAI-releases
+        shell: bash
+        run: node scripts/mirror-release.mjs "v$(node -p "require('./package.json').version")"
+        env:
+          SOURCE_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MIRROR_TOKEN: ${{ secrets.RELEASES_REPO_TOKEN }}

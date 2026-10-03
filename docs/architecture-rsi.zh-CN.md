@@ -583,4 +583,4 @@ tasks 逐条合是对的，但计数器不能相加：**同一份数据同步两
 - **元层之所以存在，是因为前两层很有说服力。** 任何从自己轨迹里学习的系统都会产出一批往上走的数字。`evals.ts` 就是那个追问「它们到底有没有意义」的部分，而它的采纳契约之所以是逐题否决权，正是为了让一个在上升的平均分藏不住一项已经丢掉的能力。
 - **尚未验证：** Android 客户端在真机上的表现，以及部分供应商的思考强度参数映射。安装包没有代码签名。
 
-本应用 Apache-2.0，源码在 [github.com/lifishard/wickrunAI](https://github.com/lifishard/wickrunAI)。`src/lib/failover.ts` 92 行，`src/lib/routing-memory.ts` 129 行，都短到可以整份读完；这篇文章所转述的推理，原样写在它们的注释里。
+本应用免费使用，安装包发布在 [github.com/lifishard/wickrunAI-releases](https://github.com/lifishard/wickrunAI-releases)。4.1.0 及以前以 Apache-2.0 发布，4.1.1 起为专有软件。`src/lib/failover.ts` 92 行，`src/lib/routing-memory.ts` 129 行，都短到可以整份读完；这篇文章所转述的推理，原样写在它们的注释里。

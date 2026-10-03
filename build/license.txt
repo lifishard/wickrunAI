@@ -1,3 +1,6 @@
+﻿请阅读以下许可，中文说明在文末。点「我接受」即表示同意。
+Please read the license below. Click "I Agree" to accept it.
+
 wickrunAI (灯芯AI) Software License
 
 Copyright (c) 2026 the copyright holder of wickrunAI. All rights reserved.

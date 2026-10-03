@@ -127,13 +127,13 @@ Chrome 136 起，`--remote-debugging-port` 在默认用户目录下会被直接�
 
 ## 报告问题
 
-发现安全问题请开 issue：https://github.com/lifishard/wickrunAI/issues
+发现安全问题请发邮件到 admin@wickrunai.com，或在 https://github.com/lifishard/wickrunAI-releases/issues 开 issue。
 
-如果觉得不适合公开讨论，在 issue 里说一句「需要私下沟通」即可，别直接贴利用细节。
+涉及利用细节的问题请走邮件，不要贴在公开 issue 里。
 
 ## 没有的东西
 
 - 没有代码签名证书。Windows SmartScreen 和 macOS Gatekeeper 会警告「未知发布者」，
   这是预期行为
-- 没有自动更新。更新靠你自己下新版本
+- 自动更新默认开启，可在设置里关闭：启动约 20 秒后、之后每 4 小时向公开发布仓库查询新版本。Windows 安装版和 Linux AppImage 会在后台下载，在你点「保存并重启安装」或退出应用时安装；macOS、便携版和 deb 只提示并打开下载页
 - 没有遥测。这个应用不往任何地方上报使用数据——除了你自己配的那些 API

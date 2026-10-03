@@ -86,7 +86,7 @@ function buildMcpb({ outFile, serverFile, connectionFile, version, iconFile }) {
     description: '让 Claude 领取并完成灯芯AI（wickrunAI）排队的任务，结果交回灯芯AI。',
     long_description: '连接本机运行的灯芯AI。Claude 用 wickrun_claim_task 领取任务，完成后用 wickrun_submit_result 交回；缺权限或信息时用 wickrun_report_blocked 说明原因。API 密钥始终留在灯芯AI 里，扩展只保存本机连接地址。需要灯芯AI 保持运行。',
     author: { name: 'wickrunAI contributors' },
-    homepage: 'https://github.com/lifishard/wickrunAI',
+    homepage: 'https://wickrunai.com',
     ...(icon ? { icon: 'icon.png' } : {}),
     server: {
       type: 'node',

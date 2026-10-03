@@ -57,3 +57,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ inputs.release_tag }}
+      - name: 同步到公开发布仓库 wickrunAI-releases
+        shell: bash
+        run: node scripts/mirror-release.mjs "$RELEASE_TAG"
+        env:
+          SOURCE_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MIRROR_TOKEN: ${{ secrets.RELEASES_REPO_TOKEN }}
+          RELEASE_TAG: ${{ inputs.release_tag }}

@@ -8,8 +8,8 @@
 
 开源的、闭源的，付费的、免费的，都能调度。Key 自己带，云同步由你选择，共享内容不会传递你的凭据。
 
-[![Version](https://img.shields.io/badge/version-4.1.0-1f6feb)](https://github.com/lifishard/wickrunAI/releases)
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/version-4.1.1-1f6feb)](https://github.com/lifishard/wickrunAI-releases/releases)
+[![License: Proprietary](https://img.shields.io/badge/License-Proprietary-lightgrey.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-lightgrey)](#安装)
 [![CI](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml/badge.svg)](https://github.com/lifishard/wickrunAI/actions/workflows/ci.yml)
 
@@ -123,7 +123,7 @@
 | Key 加密进系统密钥库 | 是 | — | — | — | — |
 | 手机端经局域网把工具调用转给桌面执行 | 是 | — | — | — | — |
 | 调用本机已装的订阅制 CLI（Claude Code、Codex、Kimi Code） | 是 | — | — | — | — |
-| 许可证 | Apache-2.0 | — | — | — | — |
+| 许可证 | 专有软件，免费使用 | — | — | — | — |
 
 中间那几行值得直接去看代码：
 
@@ -246,7 +246,7 @@ Chat 与 Work 都支持 AI 提问卡片，可选择选项或填写自己的回�
 | [Linux](https://wickrunai.com/download?platform=linux) | Intel / AMD · x64 | [AppImage](https://wickrunai.com/download/linux/x64/appimage) · [Debian / Ubuntu DEB](https://wickrunai.com/download/linux/x64/deb) |
 | [Android](https://wickrunai.com/download?platform=android) | 手机与平板 | [APK 预览版](https://wickrunai.com/download/android/universal/apk) |
 
-Android 为测试签名的工程预览，尚未完成真机验收，账号同步和大型文件导出暂未提供。版本说明、校验和与历史版本见 [GitHub Releases](https://github.com/lifishard/wickrunAI/releases)。
+Android 为测试签名的工程预览，尚未完成真机验收，账号同步和大型文件导出暂未提供。版本说明、校验和与历史版本见 [GitHub Releases](https://github.com/lifishard/wickrunAI-releases/releases)。
 
 当前安装包没有代码签名，Windows 或 macOS 可能显示发布者提示。下载后可使用 Release 中的 `SHA256SUMS.txt` 核对文件；也可以按下面的方法从源码构建。
 
@@ -302,9 +302,9 @@ npm run dist:win
 
 桌面端使用 Electron 34，界面使用 React 19、Vite 和 TypeScript；Android 端使用 Capacitor 7。开发资料见 [架构说明](docs/ARCHITECTURE.md) 和 [贡献指南](CONTRIBUTING.md)。
 
-已发布版本以 [Releases](https://github.com/lifishard/wickrunAI/releases) 为准。目前 Android 真机运行、部分服务商的思考参数映射仍需验证。图片附件需要支持图片输入的模型。
+已发布版本以 [Releases](https://github.com/lifishard/wickrunAI-releases/releases) 为准。目前 Android 真机运行、部分服务商的思考参数映射仍需验证。图片附件需要支持图片输入的模型。
 
-遇到问题，请在 [Issues](https://github.com/lifishard/wickrunAI/issues) 中提供应用版本、系统、端点、模型 ID 和复现步骤。附上日志或请求预览前，请删除 API Key 和私人内容。
+遇到问题，请在 [Issues](https://github.com/lifishard/wickrunAI-releases/issues) 或发邮件到 admin@wickrunai.com，提供应用版本、系统、端点、模型 ID 和复现步骤。附上日志或请求预览前，请删除 API Key 和私人内容。
 
 ## English
 
@@ -314,11 +314,11 @@ A full English version of this page is at [README.md](README.md).
 
 wickrunAI 是独立服务，与 Anthropic、OpenAI、Google、xAI、商汤、月之暗面、OpenRouter 及本仓库中提及的任何其他模型供应商或服务均无关联，未获其认可，亦不为其所有（wickrunAI is an independent service and is not affiliated with, endorsed by, or owned by any of them）。相关产品名称、标识与商标归各自所有者所有，此处仅用于说明本客户端可以连接哪些服务。
 
-连接任一供应商都需要你自己在该供应商处的账号与凭据，你对其服务的使用受该供应商的条款约束，而非本项目的条款。账号、订阅、额度与费用均由供应商管理。本项目既不转售也不代理任何一家的访问权限。
+连接任一供应商都需要你自己在该供应商处的账号与凭据，你对其服务的使用受该供应商的条款约束，而非本项目的条款。账号、订阅、额度与费用均由供应商管理。wickrunAI 不转售任何一家的访问权限。网页版会用你自己的密钥把请求转发给你选的服务商，不保存请求内容。
 
 ## License
 
-[Apache License 2.0](LICENSE). 分发时请保留 [NOTICE](NOTICE)。
+自 4.1.1 起，wickrunAI 为专有软件，可按 [wickrunAI 软件许可](LICENSE) 免费使用。4.1.0 及更早版本以 Apache License 2.0 发布，依该许可取得的副本仍适用 Apache-2.0。开源组件按各自许可证授权，见 [NOTICE](NOTICE) 与 [THIRD_PARTY_LICENSES.txt](THIRD_PARTY_LICENSES.txt)。
 
 
 ## Google account and cloud sync

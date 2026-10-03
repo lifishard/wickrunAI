@@ -18,3 +18,6 @@ gradlew        text eol=lf
 *.ico  binary
 *.jar  binary
 *.keystore binary
+
+# Windows 安装程序的许可页：NSIS 用 CRLF 换行显示（由 npm run licenses 生成）
+build/license.txt text eol=crlf
