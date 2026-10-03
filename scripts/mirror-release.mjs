@@ -59,8 +59,16 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     process.exit(1);
   }
   // Each account only ever talks to its own repository; `gh api` calls carry the path themselves.
-  const gh = (who, args) => execFileSync('gh', [...args, ...(args[0] === 'api' ? [] : ['-R', who === 'source' ? SOURCE_REPO : MIRROR_REPO])],
-    { env: { ...process.env, GH_TOKEN: tokens[who] ?? '', GH_REPO: '' }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  const gh = (who, args) => {
+    try {
+      return execFileSync('gh', [...args, ...(args[0] === 'api' ? [] : ['-R', who === 'source' ? SOURCE_REPO : MIRROR_REPO])],
+        { env: { ...process.env, GH_TOKEN: tokens[who] ?? '', GH_REPO: '' }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    } catch (error) {
+      // gh explains failures on stderr (for example a token without write access); keep that.
+      const reason = String(error.stderr || '').trim().split('\n').slice(-3).join(' ').slice(0, 400);
+      throw new Error(`gh ${args.slice(0, 2).join(' ')} (${who === 'source' ? SOURCE_REPO : MIRROR_REPO}) failed${reason ? `: ${reason}` : ''}`);
+    }
+  };
   try {
     mirrorRelease({ tag, run: gh, download: (t, dir) => gh('source', ['release', 'download', t, '--dir', dir]) });
   } catch (error) {
